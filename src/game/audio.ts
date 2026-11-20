@@ -769,7 +769,7 @@ class SoundEngine {
   private ensureSessionMusicElements(): void {
     if (typeof window === 'undefined' || typeof Audio === 'undefined') return;
     if (!this.landingBgmAudio) {
-      const landingAudio = new Audio('/assets/aistudio/Funkopolis_Game_Title_Soundtrack_5d70c7e1.mp3');
+      const landingAudio = new Audio('/assets/audio/bgm-landing-funkopolis.mp3');
       landingAudio.preload = 'none';
       landingAudio.loop = true;
       landingAudio.addEventListener('timeupdate', () => {
@@ -783,7 +783,7 @@ class SoundEngine {
       this.landingBgmAudio = landingAudio;
     }
     if (!this.ingameBgmAudio) {
-      const ingameAudio = new Audio('/assets/aistudio/Sunny_Shibuya-Style_Urban_BGM_7f85cba2.mp3');
+      const ingameAudio = new Audio('/assets/audio/bgm-ingame-shibuya.mp3');
       // Keep preload="none" initially so it never blocks initial 3D loading or landing screen
       ingameAudio.preload = 'none';
       ingameAudio.loop = true;

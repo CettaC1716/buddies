@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {
+  CENTRAL_PARK_TRANSIT_KIOSK_SPEC,
   CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC,
   CITY_TRAFFIC_SIGNAL_POLE_SPECS,
   IndividualCommanderBaseState,
@@ -608,14 +609,12 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'lobby_civic_hall_balustrade_e', x: -87.95, z: -24.73, halfX: 2.85, halfZ: 1.15, rotY: 0, heightY: 4.5, mat: 'concrete' },
     { id: 'lobby_civic_hall_kiosk_w', x: -100.86, z: -27.99, halfX: 0.55, halfZ: 0.85, rotY: 0, heightY: 5.8, mat: 'wood' },
     { id: 'lobby_civic_hall_kiosk_e', x: -86.24, z: -28.42, halfX: 0.55, halfZ: 0.85, rotY: 0, heightY: 5.8, mat: 'wood' },
-    // 8 Vintage Park Lampposts with Flower Baskets along West & East Central Plaza Promenade (+2.50m Plaza Level + 4.30m height = 6.80m)
+    // 5 Vintage Park Lampposts + w3/e2/e3 replaced by Tier 4 Chandelier Lamps (+2.50m Plaza Level)
     { id: 'lobby_vintage_lamppost_w1', x: -108.95, z: -28.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
     { id: 'lobby_vintage_lamppost_w2', x: -109.15, z: -19.2, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
-    { id: 'lobby_vintage_lamppost_w3', x: -95.55, z: 11.6, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
+    { id: 'lobby_vintage_lamppost_w3', x: -95.55, z: 11.6, halfX: 0.45, halfZ: 0.45, rotY: 0, heightY: 9.9, mat: 'metal' },
     { id: 'lobby_vintage_lamppost_w4', x: -109.15, z: 11.6, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
     { id: 'lobby_vintage_lamppost_e1', x: -80.55, z: -28.5, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
-    { id: 'lobby_vintage_lamppost_e2', x: -80.55, z: -12.4, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
-    { id: 'lobby_vintage_lamppost_e3', x: -80.55, z: 12.4, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
     { id: 'lobby_vintage_lamppost_e4', x: -80.35, z: 21.6, halfX: 0.28, halfZ: 0.28, rotY: 0, heightY: 6.8, mat: 'metal' },
     // 2 Aligned Vintage Park Benches & Planter Boxes along East-North Plaza Promenade
     { id: 'lobby_vintage_bench_planter_en', x: -80.85, z: -16.40, halfX: 0.92, halfZ: 2.15, rotY: 0, heightY: 4.5, mat: 'wood' },
@@ -661,6 +660,16 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'beachfront_kai_transit_kiosk', x: 84.85, z: 65.65, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
     { id: 'beachfront_harbor_passenger_bench', x: 80.98, z: 26.9, halfX: 0.42, halfZ: 2.30, rotY: 0, heightY: 1.82, mat: 'wood' },
     { id: 'nw_fishing_lake_transit_kiosk', x: -44.5, z: -6.5, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
+    {
+      id: 'central_park_transit_kiosk',
+      x: CENTRAL_PARK_TRANSIT_KIOSK_SPEC.kioskX,
+      z: CENTRAL_PARK_TRANSIT_KIOSK_SPEC.kioskZ,
+      halfX: 0.42,
+      halfZ: 0.62,
+      rotY: CENTRAL_PARK_TRANSIT_KIOSK_SPEC.kioskRotY,
+      heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY,
+      mat: 'metal',
+    },
     // Blueprint Curved-Cantilever Traffic Signal Concrete Pedestals (Plaza West & East Harbor Crosswalks)
     ...CITY_TRAFFIC_SIGNAL_POLE_SPECS.map((pole) => ({
       id: `traffic_signal_${pole.id}`,

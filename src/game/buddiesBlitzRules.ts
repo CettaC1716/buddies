@@ -13895,6 +13895,7 @@ export function evaluateBasePlotProximityTriggers(params: {
 
 export type CityTransitStationId =
   | 'central_plaza'
+  | 'central_park'
   | 'beachfront_harbor'
   | 'kai_fish_market'
   | 'nw_fishing_lake'
@@ -13938,6 +13939,17 @@ export interface CityTransitDestinationSpec {
 
 export const CITY_TRANSIT_KIOSK_MAX_INTERACT_RADIUS = 3.5;
 
+export const CENTRAL_PARK_TRANSIT_KIOSK_SPEC = {
+  stationId: 'central_park' as CityTransitStationId,
+  kioskX: 36.0,
+  kioskY: 0.04,
+  kioskZ: -11.4,
+  kioskRotY: -Math.PI / 6,
+  spawnX: 35.0,
+  spawnZ: -9.65,
+  spawnYaw: -Math.PI / 6,
+} as const;
+
 export const CITY_TRANSIT_DESTINATIONS: readonly CityTransitDestinationSpec[] = [
   {
     id: 'central_plaza',
@@ -13964,6 +13976,29 @@ export const CITY_TRANSIT_DESTINATIONS: readonly CityTransitDestinationSpec[] = 
     shelterZ: 0.0,
     shelterRotY: -Math.PI / 2,
     tramTrackDistance: 44.0,
+  },
+  {
+    id: 'central_park',
+    name: 'Central Park',
+    title: 'CENTRAL PARK',
+    shortTitle: 'Central Park',
+    shortTag: 'URBAN PARK',
+    tag: 'URBAN PARK',
+    category: 'district',
+    targetWorldMode: 'safezone',
+    description:
+      'Lush central urban plaza island featuring the Civic Cascade Fountain, Wisteria Pergola Pond, Cozy Bites Cafe, and Glow Studio Salon.',
+    heroImageUrl: '/docs/hero-2-tram-station.jpg',
+    thumbnailUrl: '/docs/hero-2-tram-station.jpg',
+    kioskX: CENTRAL_PARK_TRANSIT_KIOSK_SPEC.kioskX,
+    kioskY: CENTRAL_PARK_TRANSIT_KIOSK_SPEC.kioskY,
+    kioskZ: CENTRAL_PARK_TRANSIT_KIOSK_SPEC.kioskZ,
+    kioskRotY: CENTRAL_PARK_TRANSIT_KIOSK_SPEC.kioskRotY,
+    spawnX: CENTRAL_PARK_TRANSIT_KIOSK_SPEC.spawnX,
+    spawnZ: CENTRAL_PARK_TRANSIT_KIOSK_SPEC.spawnZ,
+    spawnYaw: CENTRAL_PARK_TRANSIT_KIOSK_SPEC.spawnYaw,
+    hasHalteShelter: false,
+    tramTrackDistance: 128.0,
   },
   {
     id: 'beachfront_harbor',

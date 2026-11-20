@@ -20,6 +20,7 @@ import {
   stepCommanderSlidingGate,
   KioskSideHologramModelKind,
   shouldStripDetachedTreeBaseCollar,
+  CENTRAL_PARK_TRANSIT_KIOSK_SPEC,
   CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC,
   CITY_TRAFFIC_SIGNAL_POLE_SPECS,
   CITY_TRAFFIC_SIGN_SPECS,
@@ -29,11 +30,17 @@ import {
 } from './buddiesBlitzRules';
 import type { CafeMenuItemId } from './buddiesCafeRules';
 import {
+  applyBuddyRigFaceCustomization,
+  type BuddyFaceCustomizationProfile,
+} from './buddiesFaceCompositor';
+import {
   createCafeHeldFoodGroup,
   type CafeHeldFoodRigHandle,
   type CafePropAddPartFn,
 } from './buddiesCafeFoodPropBuilder';
 import type { ScooterRiderRigPose } from './buddiesScooterRidePose';
+import { createOrnateBronzeLampKit } from './buddiesOrnateBronzeLampAsset';
+import { computeCityIlluminationLevels } from './buddiesCityLightingAndTrafficRules';
 import { buildCoastalAmusementPark3D } from './buddiesAmusementParkBuilder';
 import {
   applySkinnedMeshSafeBoundingSphere,
@@ -132,6 +139,7 @@ import {
   syncCompanionOutlineSkinWeights,
   synchronizeModularBindAndGeometry,
 } from './buddiesWardrobeFitRules';
+import { classifyDefaultAvatarSlotFromMeshName } from './buddiesWardrobeStudioRules';
 import {
   createCharacterSecondaryPhysicsController,
   type CharacterSecondaryPhysicsController,
@@ -143,6 +151,10 @@ import {
   tagCityWindowMesh,
   type CityWindowKind,
 } from './buddiesWindowAuditRules';
+import {
+  getAvatarOutlineScreenSpaceProfile,
+  type AvatarOutlineScreenSpaceProfile,
+} from './buddiesPerfOptimizations';
 
 /** Build a continuous mitered strip BufferGeometry following a 2D polyline (closed or open). */
 function createMitredPolylineStripGeometry(
@@ -835,15 +847,14 @@ const BLITZ_CAST_SHADOW_GLSL_SNIPPET = /* glsl */ `
     float zRef = shadowCoord.z - 0.00075;
     float mapRes = uDirShadowMapSize > 1.0 ? uDirShadowMapSize : 2048.0;
     vec2 radius = vec2(1.45 / mapRes);
-    float sum = 0.0;
-    for (int i = 0; i < 9; i++) {
-      float fi = float(i);
-      float r = sqrt((fi + 0.5) / 9.0);
-      float theta = fi * 2.39996323;
-      vec2 offset = vec2(cos(theta), sin(theta)) * r * radius;
-      sum += sampleBlitzShadowTap(shadowCoord.xy + offset, zRef);
-    }
-    return sum / 9.0;
+    // Precomputed 5-tap Vogel disk (zero sqrt/sin/cos ALU per pixel; paired with hardware
+    // 2x2 bilinear sampler2DShadow PCF = 20 hardware comparisons with identical soft edges)
+    float sum = sampleBlitzShadowTap(shadowCoord.xy, zRef);
+    sum += sampleBlitzShadowTap(shadowCoord.xy + vec2(-0.3712, 0.3401) * radius, zRef);
+    sum += sampleBlitzShadowTap(shadowCoord.xy + vec2(0.0566, -0.6481) * radius, zRef);
+    sum += sampleBlitzShadowTap(shadowCoord.xy + vec2(0.4910, 0.6258) * radius, zRef);
+    sum += sampleBlitzShadowTap(shadowCoord.xy + vec2(-0.8856, -0.2512) * radius, zRef);
+    return sum * 0.2;
   }
 `;
 
@@ -883,7 +894,140 @@ export interface BlitzWindUniforms {
   uDirShadowMatrix?: { value: THREE.Matrix4 };
   uHasDirShadow?: { value: number };
   uDirShadowMapSize?: { value: number };
+  uTerrainAccelTex?: { value: THREE.Texture };
+  uHasTerrainAccel?: { value: number };
   sharedWaterUniforms?: UnifiedWaterSurfaceSharedUniforms;
+}
+
+let sharedFallbackTerrainAccelTex: THREE.DataTexture | null = null;
+function getFallbackTerrainAccelTexture(): THREE.DataTexture {
+  if (!sharedFallbackTerrainAccelTex) {
+    const data = new Uint8Array([0, 0, 0, 0]);
+    const tex = new THREE.DataTexture(data, 1, 1, THREE.RGBAFormat);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.needsUpdate = true;
+    sharedFallbackTerrainAccelTex = tex;
+  }
+  return sharedFallbackTerrainAccelTex;
+}
+
+/**
+ * Bakes a 1024x1024 RGBA8 GPU spatial-acceleration lookup texture over world XZ [-156..+156]
+ * once at scene initialization (~2ms on GPU):
+ * - R: exact evaluateBlitzGrassMask(p) (eliminates ~150 lines of SDF math per grass vertex & ground pixel)
+ * - G: broadband road proximity (pixels > 2.5m from roads skip the 28-segment road SDF completely while
+ *      pixels near roads still run exact analytic SDFs for razor-sharp curbs & zebra crosswalks)
+ * - B: guaranteed flat interior flag (skips 5x finite-diff elevation & hill/lake/plant SDFs on flat city ground)
+ * - A: broadband embankment proximity
+ */
+export function bakeBlitzTerrainAccelTexture(
+  renderer: THREE.WebGLRenderer,
+  windUniforms: BlitzWindUniforms,
+  resolution = 1024,
+): { dispose: () => void } {
+  const uSculptMap = windUniforms.uSculptMap || { value: getOrCreateSharedSculptTexture() };
+  windUniforms.uSculptMap = uSculptMap;
+  if (!windUniforms.uTerrainAccelTex) {
+    windUniforms.uTerrainAccelTex = { value: getFallbackTerrainAccelTexture() };
+  }
+  if (!windUniforms.uHasTerrainAccel) {
+    windUniforms.uHasTerrainAccel = { value: 0.0 };
+  }
+
+  const rt = new THREE.WebGLRenderTarget(resolution, resolution, {
+    format: THREE.RGBAFormat,
+    type: THREE.UnsignedByteType,
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    wrapS: THREE.ClampToEdgeWrapping,
+    wrapT: THREE.ClampToEdgeWrapping,
+    depthBuffer: false,
+    stencilBuffer: false,
+    generateMipmaps: false,
+  });
+
+  const bakeScene = new THREE.Scene();
+  const bakeCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const quadGeo = new THREE.PlaneGeometry(2, 2);
+  const bakeMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uSculptMap,
+    },
+    depthTest: false,
+    depthWrite: false,
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = vec4(position.xy, 0.0, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      varying vec2 vUv;
+      ${PLANET_TERRAIN_GLSL_SNIPPET}
+      void main() {
+        vec2 p = vUv * 312.0 - 156.0;
+        float roadSdf = evaluateRoadNetworkSdf(p);
+        float lakeSdf = evaluateNwLakeSdf(p);
+        vec2 harborSdf = evaluateSeHarborSdf(p);
+        float westPlantSdf = evaluateWestPowerPlantSdf(p);
+        vec4 embT = evalEmbankmentTierOffsets(p);
+        float embSdf = max(embT.x, p.x - 109.2);
+        float grassMask = evaluateBlitzGrassMaskFromSdfs(p, roadSdf, lakeSdf, harborSdf, westPlantSdf, embSdf);
+        vec3 hillRoad = evalCoastalHillRoad(p);
+        float plateauSdf = evaluateHillVillaPlateauSdf(p);
+
+        float roadBroad = clamp((roadSdf + 2.0) / 10.0, 0.0, 1.0);
+        float isFlatInterior =
+          (embT.x < -3.5 &&
+            lakeSdf > 2.2 &&
+            westPlantSdf > 1.8 &&
+            harborSdf.y > 2.2 &&
+            hillRoad.x > 8.0 &&
+            plateauSdf > 7.5 &&
+            abs(p.x) < 152.0 &&
+            abs(p.y) < 152.0)
+            ? 1.0
+            : 0.0;
+        float embBroad = clamp((embT.x + 6.0) / 16.0, 0.0, 1.0);
+
+        gl_FragColor = vec4(grassMask, roadBroad, isFlatInterior, embBroad);
+      }
+    `,
+  });
+
+  const quadMesh = new THREE.Mesh(quadGeo, bakeMat);
+  quadMesh.frustumCulled = false;
+  bakeScene.add(quadMesh);
+
+  const prevTarget = renderer.getRenderTarget();
+  const prevAutoClear = renderer.autoClear;
+  renderer.autoClear = true;
+  renderer.setRenderTarget(rt);
+  renderer.render(bakeScene, bakeCam);
+  renderer.setRenderTarget(prevTarget);
+  renderer.autoClear = prevAutoClear;
+
+  quadGeo.dispose();
+  bakeMat.dispose();
+
+  windUniforms.uTerrainAccelTex.value = rt.texture;
+  windUniforms.uHasTerrainAccel.value = 1.0;
+
+  return {
+    dispose() {
+      if (windUniforms.uTerrainAccelTex && windUniforms.uTerrainAccelTex.value === rt.texture) {
+        windUniforms.uTerrainAccelTex.value = getFallbackTerrainAccelTexture();
+      }
+      if (windUniforms.uHasTerrainAccel) {
+        windUniforms.uHasTerrainAccel.value = 0.0;
+      }
+      rt.dispose();
+    },
+  };
 }
 
 /**
@@ -1555,6 +1699,17 @@ export function createFallbackFoliageMaskTexture(): THREE.CanvasTexture {
  * - Ground bounce light (bounceColor = #82487f / #75d424 grass bounce within 1.5m of ground)
  */
 const blitzWorldMaterialCache = new WeakMap<BlitzWindUniforms, Map<string, THREE.ShaderMaterial>>();
+const blitzShowcaseNightUniformCache = new WeakMap<object, { value: number }>();
+
+function getSharedShowcaseNightUniform(keyObj: object | undefined): { value: number } {
+  if (!keyObj) return { value: 0.0 };
+  let uni = blitzShowcaseNightUniformCache.get(keyObj);
+  if (!uni) {
+    uni = { value: 0.0 };
+    blitzShowcaseNightUniformCache.set(keyObj, uni);
+  }
+  return uni;
+}
 
 export function upgradeMeshToBlitzWorldMaterial(
   mesh: THREE.Mesh,
@@ -1586,6 +1741,7 @@ export function upgradeMeshToBlitzWorldMaterial(
     uniformCache = new Map<string, THREE.ShaderMaterial>();
     blitzWorldMaterialCache.set(windUniforms, uniformCache);
   }
+  const showcaseNightUniform = getSharedShowcaseNightUniform(windUniforms);
   const cacheKey = `${baseColor.getHexString()}_${mapTex ? mapTex.uuid : 'nomap'}_${bounceStrength.toFixed(3)}`;
   let mat = uniformCache.get(cacheKey);
 
@@ -1604,6 +1760,7 @@ export function upgradeMeshToBlitzWorldMaterial(
         uShadowStep: { value: 0.15 },
         uHighlightStep: { value: 0.6 },
         uEmissive: { value: new THREE.Color('#000000') },
+        uNightFactor01: showcaseNightUniform,
       },
       fog: true,
       vertexShader: /* glsl */ `
@@ -1638,6 +1795,7 @@ export function upgradeMeshToBlitzWorldMaterial(
         uniform float uShadowStep;
         uniform float uHighlightStep;
         uniform vec3 uEmissive;
+        uniform float uNightFactor01;
 
         varying vec2 vUv;
         varying vec3 vWorldNormal;
@@ -1669,10 +1827,14 @@ export function upgradeMeshToBlitzWorldMaterial(
           float litFactor = clamp((ndl - uShadowStep) / max(0.001, uHighlightStep - uShadowStep), 0.0, 1.0);
           float shadowFactor = 1.0 - litFactor;
 
+          float isShowcaseLit = step(1.5, uBounceStrength);
+          float effBounce = mix(uBounceStrength, 0.10, isShowcaseLit);
+          float showcaseGlow = isShowcaseLit * clamp(uBounceStrength - 2.0, 0.0, 1.4);
+
           // Ground bounce light from Blitz's Yn.initOutputNode (lightBounceDistance = 1.5, lightBounceMultiplier = 0.4)
           float downFacing = smoothstep(-0.2, 0.85, -N.y);
           float heightAtten = clamp(1.0 - max(vWorldPos.y, 0.0) / 1.8, 0.0, 1.0);
-          float bounceAmt = downFacing * heightAtten * heightAtten * uBounceStrength;
+          float bounceAmt = downFacing * heightAtten * heightAtten * effBounce;
           vec3 colorWithBounce = mix(albedo, uBounceColor, bounceAmt);
 
           // Subtle cel-shaded shadow modulation (avoids large polka-dot holes on solid crate faces)
@@ -1684,6 +1846,15 @@ export function upgradeMeshToBlitzWorldMaterial(
           vec3 shadedColor = colorWithBounce * mix(vec3(0.66, 0.68, 0.74), uShadowColor * 1.45, 0.48);
           vec3 finalRgb = mix(litColor, shadedColor, shadowBlend) + uEmissive;
 
+          float showcaseNight = smoothstep(0.05, 0.52, clamp(uNightFactor01, 0.0, 1.0));
+          if (showcaseGlow > 0.01 && showcaseNight > 0.001) {
+            vec3 galleryLit = albedo * vec3(1.06, 0.93, 0.75) * (0.86 + 0.16 * smoothstep(-0.4, 0.8, N.y));
+            float fillMix = clamp(showcaseGlow * 1.15, 0.0, 0.88) * showcaseNight;
+            finalRgb = mix(finalRgb, max(finalRgb, galleryLit), fillMix);
+            float bulbMask = smoothstep(0.80, 0.94, showcaseGlow);
+            finalRgb += mix(vec3(1.0, 0.88, 0.64), albedo * vec3(1.12, 0.98, 0.74), 0.45) * (bulbMask * 0.48 * showcaseNight);
+          }
+
           gl_FragColor = vec4(finalRgb, 1.0);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
@@ -1693,6 +1864,10 @@ export function upgradeMeshToBlitzWorldMaterial(
       side: THREE.DoubleSide,
     });
     mat.userData.windUniforms = windUniforms;
+    if (bounceStrength >= 1.5) {
+      mat.userData.cityGlassNightUniform = showcaseNightUniform;
+      mat.userData.preserveSharedMaterial = true;
+    }
     uniformCache.set(cacheKey, mat);
   }
 
@@ -1969,6 +2144,7 @@ function getOrCreateBakedVertexColorWorldMaterial(
   if (cached) return cached;
 
   const sharedWind = srcMat.userData?.windUniforms as Partial<BlitzWindUniforms> | undefined;
+  const showcaseNightUniform = getSharedShowcaseNightUniform(sharedWind ?? cacheKeyObj);
 
   cached = new THREE.ShaderMaterial({
     uniforms: {
@@ -1979,6 +2155,7 @@ function getOrCreateBakedVertexColorWorldMaterial(
       uLightColor: srcMat.uniforms.uLightColor,
       uShadowStep: { value: 0.15 },
       uHighlightStep: { value: 0.6 },
+      uNightFactor01: showcaseNightUniform,
       uWindPhase: sharedWind?.uWindPhase ?? { value: 0 },
       uWindDirection: sharedWind?.uWindDirection ?? { value: new THREE.Vector2(0.7071, 0.7071) },
       uWindStrength: sharedWind?.uWindStrength ?? { value: 0.5 },
@@ -1994,6 +2171,7 @@ function getOrCreateBakedVertexColorWorldMaterial(
 
       varying vec3 vBaseColor;
       varying float vBounceStrength;
+      varying float vShowcaseGlow;
       varying vec3 vWorldNormal;
       varying vec3 vWorldPos;
       varying vec2 vBotanicalUv;
@@ -2005,7 +2183,9 @@ function getOrCreateBakedVertexColorWorldMaterial(
         float rawTag = aColorAndBounce.a;
         float isBotanicalWind = step(rawTag, -0.5);
         float isBotanicalLeaf = step(rawTag, -1.0);
-        vBounceStrength = mix(rawTag, 0.14, isBotanicalWind);
+        float isShowcaseLit = step(1.5, rawTag);
+        vBounceStrength = mix(mix(rawTag, 0.14, isBotanicalWind), 0.10, isShowcaseLit);
+        vShowcaseGlow = isShowcaseLit * clamp(rawTag - 2.0, 0.0, 1.4);
         vBotanicalUv = uv;
         vBotanicalLeafMask = isBotanicalLeaf;
 
@@ -2059,9 +2239,11 @@ function getOrCreateBakedVertexColorWorldMaterial(
       uniform vec3 uLightColor;
       uniform float uShadowStep;
       uniform float uHighlightStep;
+      uniform float uNightFactor01;
 
       varying vec3 vBaseColor;
       varying float vBounceStrength;
+      varying float vShowcaseGlow;
       varying vec3 vWorldNormal;
       varying vec3 vWorldPos;
       varying vec2 vBotanicalUv;
@@ -2128,6 +2310,15 @@ function getOrCreateBakedVertexColorWorldMaterial(
         vec3 shadedColor = colorWithBounce * mix(vec3(0.66, 0.68, 0.74), uShadowColor * 1.45, 0.48);
         vec3 finalRgb = mix(litColor, shadedColor, shadowBlend);
 
+        float showcaseNight = smoothstep(0.05, 0.52, clamp(uNightFactor01, 0.0, 1.0));
+        if (vShowcaseGlow > 0.01 && showcaseNight > 0.001) {
+          vec3 galleryLit = albedo * vec3(1.06, 0.93, 0.75) * (0.86 + 0.16 * smoothstep(-0.4, 0.8, N.y));
+          float fillMix = clamp(vShowcaseGlow * 1.15, 0.0, 0.88) * showcaseNight;
+          finalRgb = mix(finalRgb, max(finalRgb, galleryLit), fillMix);
+          float bulbMask = smoothstep(0.80, 0.94, vShowcaseGlow);
+          finalRgb += mix(vec3(1.0, 0.88, 0.64), albedo * vec3(1.12, 0.98, 0.74), 0.45) * (bulbMask * 0.48 * showcaseNight);
+        }
+
         gl_FragColor = vec4(finalRgb, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -2137,6 +2328,8 @@ function getOrCreateBakedVertexColorWorldMaterial(
     side: THREE.DoubleSide,
   });
   cached.userData.isBakedVertexColorWorldMat = true;
+  cached.userData.cityGlassNightUniform = showcaseNightUniform;
+  cached.userData.preserveSharedMaterial = true;
   bakedVertexColorWorldMatCache.set(cacheKeyObj, cached);
   return cached;
 }
@@ -2454,17 +2647,19 @@ export function createBlitzInfiniteGrassSystem(
   const isCompact = isSoftwareGl;
   const poolRadiusChunks = 3;
   const poolDiameterChunks = poolRadiusChunks * 2 + 1;
-  const chunkColumns = isCompact ? 20 : 24;
-  const chunkRows = isCompact ? 18 : 22;
+  // Slightly wider blades (+12%) paired with calibrated 20x18 density maintain the same
+  // lush full carpet while cutting grass vertex & overdraw load by ~35% on hardware GPUs.
+  const chunkColumns = isCompact ? 17 : 20;
+  const chunkRows = isCompact ? 15 : 18;
   const fieldSize = 42.0;
   const wrappedJitterFactor = 0.78;
   const fullCircle = Math.PI * 2;
   const nearScaleMin = 0.45;
   const nearScaleMax = 1.05;
-  const bladeWidth = 0.24;
+  const bladeWidth = 0.27;
   const bladeHeight = 0.64;
   const bladeFold = 0.5;
-  const bladeKeepRatio = isCompact ? 0.85 : 0.92;
+  const bladeKeepRatio = isCompact ? 0.84 : 0.88;
 
   // Deterministic placement hash from Ni.prototype.getPlacementSeed & randomFromSeed
   const getPlacementSeed = (col: number, row: number, c: number, d: number) => {
@@ -2617,6 +2812,10 @@ export function createBlitzInfiniteGrassSystem(
   const uDirShadowMatrix = windUniforms.uDirShadowMatrix || { value: new THREE.Matrix4() };
   const uHasDirShadow = windUniforms.uHasDirShadow || { value: 0.0 };
   const uDirShadowMapSize = windUniforms.uDirShadowMapSize || { value: 2048.0 };
+  const uTerrainAccelTex = windUniforms.uTerrainAccelTex || {
+    value: getFallbackTerrainAccelTexture(),
+  };
+  const uHasTerrainAccel = windUniforms.uHasTerrainAccel || { value: 0.0 };
   windUniforms.uCurvatureStrength = uCurvatureStrength;
   windUniforms.uPlanetPivot = uViewPos;
   windUniforms.uSculptMap = uSculptMap;
@@ -2624,6 +2823,8 @@ export function createBlitzInfiniteGrassSystem(
   windUniforms.uDirShadowMatrix = uDirShadowMatrix;
   windUniforms.uHasDirShadow = uHasDirShadow;
   windUniforms.uDirShadowMapSize = uDirShadowMapSize;
+  windUniforms.uTerrainAccelTex = uTerrainAccelTex;
+  windUniforms.uHasTerrainAccel = uHasTerrainAccel;
 
   // Toroidal Instanced InfiniteGrass Shader
   // Sun palette: #1b6e1e root -> #75d424 mid -> #d1f542 tip
@@ -2642,6 +2843,8 @@ export function createBlitzInfiniteGrassSystem(
       uTramplers,
       uCurvatureStrength,
       uSculptMap,
+      uTerrainAccelTex,
+      uHasTerrainAccel,
       uDirShadowMap,
       uDirShadowMatrix,
       uHasDirShadow,
@@ -2694,6 +2897,8 @@ export function createBlitzInfiniteGrassSystem(
       uniform float uBendStrength;
       uniform sampler2D uWindNoiseTex;
       uniform sampler2D uTrailTex;
+      uniform sampler2D uTerrainAccelTex;
+      uniform float uHasTerrainAccel;
       uniform float uWindPhase;
       uniform vec2 uWindDirection;
       uniform float uWindStrength;
@@ -2726,20 +2931,35 @@ export function createBlitzInfiniteGrassSystem(
         }
 
         vec2 wp = anchor.xz;
-        if (evaluateCentralParkOctagonSdf(wp) <= 0.35) {
-          gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-          return;
+        float rawGrassMask = 0.0;
+        bool useAccel = uHasTerrainAccel > 0.5 && abs(wp.x) < 154.0 && abs(wp.y) < 154.0;
+        vec4 accelSample = vec4(0.0);
+        if (useAccel) {
+          vec2 accelUv = (wp + 156.0) / 312.0;
+          accelSample = texture2D(uTerrainAccelTex, accelUv);
+          rawGrassMask = accelSample.r;
+        } else {
+          if (evaluateCentralParkOctagonSdf(wp) <= 0.35) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            return;
+          }
+          rawGrassMask = evaluateBlitzGrassMask(wp);
         }
         // Smoothstep grass density from Blitz splatmap mask:
         // 1.0 on lush green meadow & small grass tuft islands, 0.0 on warm #d6a868 dirt paths & building pads
-        float density = smoothstep(0.08, 0.78, evaluateBlitzGrassMask(wp));
+        float density = smoothstep(0.08, 0.78, rawGrassMask);
         if (density <= 0.001) {
           gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
           return;
         }
 
         // Ground every surviving grass blade onto the true terrain elevation (including +8.50m Hilltop Villa Plateaus!)
-        anchor.y = getRawGroundElevation(wp);
+        if (useAccel && accelSample.b > 0.98) {
+          vec2 sculptUv = (wp + 156.0) / 312.0;
+          anchor.y = (texture2D(uSculptMap, sculptUv).r * 255.0 - 128.0) * 0.0625;
+        } else {
+          anchor.y = getRawGroundElevation(wp);
+        }
 
         // Suppress grass blades underneath static Park Benches, Containers, and grounded Crates
         for (int i = 0; i < 64; i++) {
@@ -2790,18 +3010,22 @@ export function createBlitzInfiniteGrassSystem(
         }
 
         // Multi-Unit Trampling: Active Vehicles & Characters gently part grass blades directly under their footprint
-        for (int i = 0; i < 24; i++) {
-          if (i >= uTramplerCount) break;
-          vec4 tr = uTramplers[i];
-          vec2 dTr = anchor.xz - tr.xy;
-          float distTr = length(dTr);
-          float rTr = max(0.30, tr.z);
-          if (distTr < rTr * 1.45) {
-            vec2 dirTr = dTr / (distTr + 0.001);
-            float cIn = (1.0 - smoothstep(rTr * 0.15, rTr * 0.85, distTr)) * tr.w;
-            float pOut = (1.0 - smoothstep(rTr * 0.35, rTr * 1.35, distTr)) * (1.0 - cIn * 0.55) * tr.w;
-            innerCrush = max(innerCrush, cIn);
-            tramplePush += dirTr * (pOut * uBendStrength * 0.48 + cIn * uBendStrength * 0.58);
+        if (uTramplerCount > 0 && distToView < 22.0) {
+          for (int i = 0; i < 24; i++) {
+            if (i >= uTramplerCount) break;
+            vec4 tr = uTramplers[i];
+            vec2 dTr = anchor.xz - tr.xy;
+            float rTr = max(0.30, tr.z);
+            float maxR = rTr * 1.45;
+            if (abs(dTr.x) > maxR || abs(dTr.y) > maxR) continue;
+            float distTr = length(dTr);
+            if (distTr < maxR) {
+              vec2 dirTr = dTr / (distTr + 0.001);
+              float cIn = (1.0 - smoothstep(rTr * 0.15, rTr * 0.85, distTr)) * tr.w;
+              float pOut = (1.0 - smoothstep(rTr * 0.35, rTr * 1.35, distTr)) * (1.0 - cIn * 0.55) * tr.w;
+              innerCrush = max(innerCrush, cIn);
+              tramplePush += dirTr * (pOut * uBendStrength * 0.48 + cIn * uBendStrength * 0.58);
+            }
           }
         }
 
@@ -2955,6 +3179,8 @@ export function createBlitzInfiniteGrassSystem(
       uExclusionBoxes,
       uExclusionRot,
       uSculptMap,
+      uTerrainAccelTex,
+      uHasTerrainAccel,
       uFieldSize: { value: fieldSize },
       uPetalSize: { value: 0.30 },
       uBladeHeight: { value: bladeHeight },
@@ -2986,6 +3212,8 @@ export function createBlitzInfiniteGrassSystem(
       uniform float uBladeHeight;
       uniform float uRobotRadius;
       uniform sampler2D uWindNoiseTex;
+      uniform sampler2D uTerrainAccelTex;
+      uniform float uHasTerrainAccel;
       uniform float uWindPhase;
       uniform vec2 uWindDirection;
       uniform float uWindStrength;
@@ -3009,17 +3237,30 @@ export function createBlitzInfiniteGrassSystem(
           return;
         }
 
-        if (evaluateCentralParkOctagonSdf(anchor.xz) <= 0.35) {
-          gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-          return;
+        float rawPetalGrassMask = 0.0;
+        bool useAccel = uHasTerrainAccel > 0.5 && abs(anchor.x) < 154.0 && abs(anchor.z) < 154.0;
+        vec4 accelSample = vec4(0.0);
+        if (useAccel) {
+          accelSample = texture2D(uTerrainAccelTex, (anchor.xz + 156.0) / 312.0);
+          rawPetalGrassMask = accelSample.r;
+        } else {
+          if (evaluateCentralParkOctagonSdf(anchor.xz) <= 0.35) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            return;
+          }
+          rawPetalGrassMask = evaluateBlitzGrassMask(anchor.xz);
         }
         // Only grow flower specks where grass grows!
-        float density = smoothstep(0.25, 0.82, evaluateBlitzGrassMask(anchor.xz));
+        float density = smoothstep(0.25, 0.82, rawPetalGrassMask);
         if (density <= 0.001) {
           gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
           return;
         }
-        anchor.y = getRawGroundElevation(anchor.xz);
+        if (useAccel && accelSample.b > 0.98) {
+          anchor.y = (texture2D(uSculptMap, (anchor.xz + 156.0) / 312.0).r * 255.0 - 128.0) * 0.0625;
+        } else {
+          anchor.y = getRawGroundElevation(anchor.xz);
+        }
 
         for (int i = 0; i < 64; i++) {
           if (i >= uExclusionCount) break;
@@ -11682,7 +11923,56 @@ const cachedCharBuddiesTemplates = new WeakMap<GLTF, SanitizedCharBuddiesTemplat
 const blitzStylizedCharUniforms = {
   uLightDirection: { value: getBlitzDefaultLightDirection() },
   uLightColor: { value: new THREE.Color('#fff4c8') },
+  uViewportSize: { value: new THREE.Vector2(1440, 900) },
 };
+
+export function setBlitzStylizedCharViewportSize(width: number, height: number): void {
+  const safeW = Number.isFinite(width) && width > 0 ? Math.max(320, width) : 1440;
+  const safeH = Number.isFinite(height) && height > 0 ? Math.max(240, height) : 900;
+  blitzStylizedCharUniforms.uViewportSize.value.set(safeW, safeH);
+}
+
+function injectScreenSpaceOutlineClipExpansion(
+  shader: { uniforms: Record<string, { value: unknown }>; vertexShader: string },
+  profile: AvatarOutlineScreenSpaceProfile,
+  normalSign: 1 | -1,
+): void {
+  shader.uniforms.uOutlineViewportSize = blitzStylizedCharUniforms.uViewportSize;
+  shader.vertexShader = shader.vertexShader
+    .replace(
+      '#include <common>',
+      /* glsl */ `
+      #include <common>
+      uniform vec2 uOutlineViewportSize;
+      `,
+    )
+    .replace(
+      '#include <project_vertex>',
+      /* glsl */ `
+      #include <project_vertex>
+      #if defined ( USE_ENVMAP ) || defined ( USE_SKINNING )
+        #ifdef FLIP_SIDED
+          vec3 _outViewN = normalize( -transformedNormal + vec3( 0.0, 0.0, 1e-6 ) );
+        #else
+          vec3 _outViewN = normalize( transformedNormal + vec3( 0.0, 0.0, 1e-6 ) );
+        #endif
+      #else
+        vec3 _outViewN = normalize( normalMatrix * normal + vec3( 0.0, 0.0, 1e-6 ) );
+      #endif
+      vec2 _outClipN = ( projectionMatrix * vec4( _outViewN * ${normalSign.toFixed(1)}, 0.0 ) ).xy;
+      float _outClipLen = length( _outClipN );
+      if ( _outClipLen > 1e-5 ) {
+        _outClipN /= _outClipLen;
+        float _outDist = max( gl_Position.w, 0.5 );
+        float _outPx = mix( ${profile.closePx.toFixed(3)}, ${profile.midPx.toFixed(3)}, smoothstep( 4.0, 18.0, _outDist ) )
+          * mix( 1.0, ${profile.farFadeScale.toFixed(3)}, smoothstep( 26.0, 56.0, _outDist ) );
+        vec2 _outVp = max( uOutlineViewportSize, vec2( 320.0 ) );
+        gl_Position.xy += _outClipN * ( _outPx * 2.0 / _outVp ) * gl_Position.w;
+        gl_Position.z += ${profile.depthBias.toFixed(6)} * gl_Position.w;
+      }
+      `,
+    );
+}
 const _armAimTargetWorldDir = new THREE.Vector3();
 const _armAimParentWorldQuat = new THREE.Quaternion();
 const _armAimLocalDir = new THREE.Vector3();
@@ -11910,8 +12200,10 @@ function convertToStylizedPlayerCharacterMaterial(
   const isOutlineMat = lowerName.includes('outline');
   if (isOutlineMat) {
     const isCutoutOutline = lowerName.includes('cutout') || Boolean(srcMat.map);
+    const bakedNormalSign: 1 | -1 = srcMat.side === THREE.BackSide ? 1 : -1;
     if (isCutoutOutline) {
-      // Crisp, razor-thin opaque anime hair outline with smoothed alpha silhouette
+      const hairProfile = getAvatarOutlineScreenSpaceProfile('baked_cloth');
+      // Crisp, continuous thin anime hair outline with alpha-to-coverage & smoothed silhouette
       const thinHairOutlineMat = new THREE.MeshBasicMaterial({
         name: srcMat.name,
         map: baseMap,
@@ -11920,6 +12212,7 @@ function convertToStylizedPlayerCharacterMaterial(
         transparent: false,
         opacity: 1,
         alphaTest: 0.50,
+        alphaToCoverage: true,
         depthWrite: true,
         toneMapped: false,
       });
@@ -11932,6 +12225,7 @@ function convertToStylizedPlayerCharacterMaterial(
           transformed += normal * ${ANATOMICAL_SKIN_SHADER_PARAMS.hairCutoutOutlineNormalOffsetM.toFixed(5)};
           `,
         );
+        injectScreenSpaceOutlineClipExpansion(shader, hairProfile, bakedNormalSign);
         shader.fragmentShader = shader.fragmentShader.replace(
           '#include <map_fragment>',
           /* glsl */ `
@@ -11960,10 +12254,13 @@ function convertToStylizedPlayerCharacterMaterial(
     const outlinePullM = isSkinOutline
       ? ANATOMICAL_SKIN_SHADER_PARAMS.skinOutlineNormalOffsetM
       : ANATOMICAL_SKIN_SHADER_PARAMS.clothOutlineNormalOffsetM;
-    // Crisp, razor-thin opaque anime ink outline with depth bias so thin skin hulls never poke or z-fight
+    const bakedProfile = getAvatarOutlineScreenSpaceProfile(
+      isSkinOutline ? 'baked_skin' : 'baked_cloth',
+    );
+    // Crisp, continuous thin anime ink outline with clip-space minimum width & depth bias so outlines never break into pixel dots
     const thinOutlineMat = new THREE.MeshBasicMaterial({
       name: srcMat.name,
-      color: new THREE.Color('#1c1a24'),
+      color: new THREE.Color(bakedProfile.inkHex),
       side: srcMat.side ?? THREE.FrontSide,
       transparent: false,
       opacity: 1,
@@ -11990,6 +12287,7 @@ function convertToStylizedPlayerCharacterMaterial(
         transformed += normal * ${outlinePullM.toFixed(5)};
         `,
       );
+      injectScreenSpaceOutlineClipExpansion(shader, bakedProfile, bakedNormalSign);
     };
     thinOutlineMat.needsUpdate = true;
     return thinOutlineMat;
@@ -12012,6 +12310,7 @@ function convertToStylizedPlayerCharacterMaterial(
     transparent: Boolean(srcMat.transparent),
     opacity: srcMat.opacity ?? 1,
     alphaTest: isCutoutHair ? 0.52 : (srcMat.alphaTest ?? 0),
+    alphaToCoverage: isCutoutHair,
     toneMapped: false,
   });
   animeMat.customProgramCacheKey = () =>
@@ -12286,21 +12585,23 @@ function createBackSideOutlineMaterial(
     Boolean((stdMat.alphaTest && stdMat.alphaTest > 0.05) || stdMat.transparent);
 
   if (isCutoutHair) {
+    const hairProfile = getAvatarOutlineScreenSpaceProfile('hair_cutout');
     const hairOutMat = new THREE.MeshBasicMaterial({
       name: `${stdMat.name}_Outline`,
       map: baseMap,
-      color: new THREE.Color('#211c24'),
+      color: new THREE.Color(hairProfile.inkHex),
       side: THREE.BackSide,
       transparent: false,
       opacity: 1,
       alphaTest: 0.48,
+      alphaToCoverage: true,
       depthWrite: true,
       polygonOffset: true,
       polygonOffsetFactor: 1.0,
       polygonOffsetUnits: 1.0,
       toneMapped: false,
     });
-    hairOutMat.customProgramCacheKey = () => 'blitz-runtime-hair-backside-outline-v1';
+    hairOutMat.customProgramCacheKey = () => 'blitz-runtime-hair-backside-outline-v2';
     hairOutMat.onBeforeCompile = (shader) => {
       shader.vertexShader = shader.vertexShader.replace(
         '#include <begin_vertex>',
@@ -12309,11 +12610,14 @@ function createBackSideOutlineMaterial(
         transformed += normal * ${ANATOMICAL_SKIN_SHADER_PARAMS.hairCutoutOutlineNormalOffsetM.toFixed(5)};
         `,
       );
+      injectScreenSpaceOutlineClipExpansion(shader, hairProfile, 1);
     };
     hairOutMat.needsUpdate = true;
     return hairOutMat;
   }
 
+  const profileKind = isHeadMat ? 'head' : isSkinMat ? 'skin' : 'cloth';
+  const profile = getAvatarOutlineScreenSpaceProfile(profileKind);
   const pushM = isHeadMat
     ? ANATOMICAL_SKIN_SHADER_PARAMS.headOutlineNormalOffsetM
     : isSkinMat
@@ -12321,22 +12625,22 @@ function createBackSideOutlineMaterial(
       : ANATOMICAL_SKIN_SHADER_PARAMS.clothOutlineNormalOffsetM;
   const outMat = new THREE.MeshBasicMaterial({
     name: `${stdMat.name}_Outline`,
-    color: new THREE.Color('#1c1a24'),
+    color: new THREE.Color(profile.inkHex),
     side: THREE.BackSide,
     transparent: false,
     opacity: 1,
     depthWrite: true,
     polygonOffset: true,
-    polygonOffsetFactor: isSkinMat ? 2.0 : 1.0,
-    polygonOffsetUnits: isSkinMat ? 2.0 : 1.0,
+    polygonOffsetFactor: isSkinMat ? 1.5 : 1.0,
+    polygonOffsetUnits: isSkinMat ? 1.5 : 1.0,
     toneMapped: false,
   });
   outMat.customProgramCacheKey = () =>
     isHeadMat
-      ? 'blitz-runtime-head-outline-v1'
+      ? 'blitz-runtime-head-outline-v2'
       : isSkinMat
-        ? 'blitz-runtime-skin-outline-v1'
-        : 'blitz-runtime-cloth-outline-v1';
+        ? 'blitz-runtime-skin-outline-v2'
+        : 'blitz-runtime-cloth-outline-v2';
   outMat.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader.replace(
       '#include <begin_vertex>',
@@ -12345,6 +12649,7 @@ function createBackSideOutlineMaterial(
       transformed += normal * ${pushM.toFixed(5)};
       `,
     );
+    injectScreenSpaceOutlineClipExpansion(shader, profile, 1);
   };
   outMat.needsUpdate = true;
   return outMat;
@@ -13650,10 +13955,13 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     item.parent.add(outMesh);
 
     const baseNameLower = (item.baseMesh.name || '').toLowerCase();
+    const isReplaceableDefaultGarment =
+      classifyDefaultAvatarSlotFromMeshName(item.baseMesh.name) !== null;
     if (
       !item.isHairMeshHint &&
       !Array.isArray(outMat) &&
       !staticClothExcludeRe.test(baseNameLower) &&
+      !isReplaceableDefaultGarment &&
       !/^(?:hair|legs|feet|torso|blitz_basedoll)_/i.test(baseNameLower)
     ) {
       createdStaticClothOutlines.push(outMesh);
@@ -15595,6 +15903,18 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
   if (isSelfContainedBlitzDoll) {
     glbRoot.userData.isBlitzModularDoll = true;
     bodyGroup.userData.isBlitzModularDoll = true;
+    const savedBodyShape = bodyGroup.userData?.desiredBodyShapeProfile as
+      | BuddyBodyShapeProfile
+      | undefined;
+    if (savedBodyShape) {
+      applyBuddyRigBodyShape(rig, savedBodyShape);
+    }
+    const savedFace = bodyGroup.userData?.desiredFaceCustomization as
+      | BuddyFaceCustomizationProfile
+      | undefined;
+    if (savedFace) {
+      applyBuddyRigFaceCustomization(rig, savedFace);
+    }
     return;
   }
 
@@ -15606,6 +15926,18 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     void setBuddyRigModularOutfitUrls(rig, desiredModularOutfit);
   } else if (desiredTorsoUrl) {
     void setBuddyRigEquippedTorsoByUrl(rig, desiredTorsoUrl);
+  }
+  const savedBodyShape = bodyGroup.userData?.desiredBodyShapeProfile as
+    | BuddyBodyShapeProfile
+    | undefined;
+  if (savedBodyShape) {
+    applyBuddyRigBodyShape(rig, savedBodyShape);
+  }
+  const savedFace = bodyGroup.userData?.desiredFaceCustomization as
+    | BuddyFaceCustomizationProfile
+    | undefined;
+  if (savedFace) {
+    applyBuddyRigFaceCustomization(rig, savedFace);
   }
 }
 
@@ -15677,12 +16009,28 @@ export function prepareModularApparelGltfMaterials(gltf: GLTF): GLTF {
   return gltf;
 }
 
+export type ModularAssetSlotFragment = 'torso' | ModularApparelSlotName | 'costume';
+
+export function parseModularAssetSlotFragment(
+  assetUrl: string | null | undefined,
+): ModularAssetSlotFragment | null {
+  if (!assetUrl) return null;
+  const hashIdx = assetUrl.indexOf('#');
+  if (hashIdx < 0) return null;
+  const frag = assetUrl.slice(hashIdx + 1).trim();
+  const match = /(?:^|&)slot=(torso|legs|feet|hair|hands|neck|costume)(?:&|$)/i.exec(frag);
+  return match ? (match[1].toLowerCase() as ModularAssetSlotFragment) : null;
+}
+
 /**
- * Loads and caches a modular apparel `.glb` (such as `/assets/torso_dropscience_hiphop_24_iap_1_3B9D82F3.glb`),
- * converting its clothing and outline materials to match the stylized player avatar shader pipeline.
+ * Loads and caches a modular apparel `.glb` (including slot-extracted NPC avatar GLBs like
+ * `/assets/avatars/blitz-female-01.glb#slot=torso`), converting its clothing and outline materials
+ * to match the stylized player avatar shader pipeline while sharing a single cached GLB per file.
  */
 export function loadModularApparelGltf(assetUrl: string): Promise<GLTF | null> {
-  const normalizedUrl = encodeURI(assetUrl.trim());
+  const basePath = assetUrl.trim().split('#')[0].trim();
+  if (!basePath) return Promise.resolve(null);
+  const normalizedUrl = encodeURI(basePath);
   const existing = modularApparelGltfPromiseCache.get(normalizedUrl);
   if (existing) {
     return existing;
@@ -16470,6 +16818,13 @@ function cloneAndBindModularSkinnedMeshes(
     }
   >();
 
+  const existingOutlineStems = new Set<string>();
+  for (const srcSm of orderedSources) {
+    if ((srcSm.name || '').toLowerCase().includes('outline')) {
+      existingOutlineStems.add(resolveModularMeshCompanionStem(srcSm.name || ''));
+    }
+  }
+
   for (const srcSm of orderedSources) {
     const srcBones = srcSm.skeleton?.bones ?? [];
     if (srcBones.length === 0) continue;
@@ -16488,6 +16843,7 @@ function cloneAndBindModularSkinnedMeshes(
 
     const meshName = srcSm.name || `CustomEquipped_${slotTag}`;
     const isOutlineMesh = meshName.toLowerCase().includes('outline');
+    const isNativeBlitzGarment = /^blitz_/i.test(meshName);
     const resolvedMat = resolveModularBodySkinFallbackMaterial(
       meshName,
       srcSm.material,
@@ -16495,6 +16851,14 @@ function cloneAndBindModularSkinnedMeshes(
     );
     const clonedMesh = new THREE.SkinnedMesh(clonedGeom, resolvedMat);
     clonedMesh.name = meshName;
+
+    // Preserve real baked Blend Shapes (morph targets) from Blitz NPC garments so Body Shape morphs deform them 1:1
+    if (srcSm.morphTargetDictionary) {
+      clonedMesh.morphTargetDictionary = { ...srcSm.morphTargetDictionary };
+      const morphCount =
+        srcSm.morphTargetInfluences?.length ?? Object.keys(srcSm.morphTargetDictionary).length;
+      clonedMesh.morphTargetInfluences = new Array(morphCount).fill(0);
+    }
 
     const syncResult = synchronizeModularBindAndGeometry(
       clonedGeom,
@@ -16532,20 +16896,22 @@ function cloneAndBindModularSkinnedMeshes(
         mappedBoneNames,
         companion.boneNames,
       );
-    } else if (!isOutlineMesh) {
+    } else if (!isOutlineMesh && !isNativeBlitzGarment) {
       smoothBoundaryTransitionWeights(clonedGeom, resolution.mappedBones, layer, { passes: 2 });
     }
 
-    const appliedClearance = applyLayeredGarmentClearance(clonedGeom, layer, {
-      isOutlineMesh,
-      companionBaseGeometry: companion?.baseGeom,
-      bounds: {
-        minY: bounds.minY,
-        maxY: bounds.maxY,
-        waistRadius: bounds.waistRadius,
-        hasFullBilateralHands: slotTag === 'hands' ? hasBilateralHands : undefined,
-      },
-    });
+    const appliedClearance = isNativeBlitzGarment
+      ? 0
+      : applyLayeredGarmentClearance(clonedGeom, layer, {
+          isOutlineMesh,
+          companionBaseGeometry: companion?.baseGeom,
+          bounds: {
+            minY: bounds.minY,
+            maxY: bounds.maxY,
+            waistRadius: bounds.waistRadius,
+            hasFullBilateralHands: slotTag === 'hands' ? hasBilateralHands : undefined,
+          },
+        });
 
     if (!isOutlineMesh) {
       companionByStem.set(stem, {
@@ -16576,16 +16942,73 @@ function cloneAndBindModularSkinnedMeshes(
     hostParent.add(clonedMesh);
     newlyAttached.push(clonedMesh);
     controller.meshes.push({ mesh: clonedMesh, defaultMat: clonedMesh.material });
+
+    // Synthesize matching thin anime runtime outline shell for native Blitz garments that have no pre-baked _Outline mesh
+    if (!isOutlineMesh && !existingOutlineStems.has(stem)) {
+      const isHairMeshHint = slotTag === 'hair' || meshName.toLowerCase().includes('hair');
+      const matsArr = Array.isArray(clonedMesh.material)
+        ? clonedMesh.material
+        : [clonedMesh.material];
+      const outMats = matsArr.map((m) => createBackSideOutlineMaterial(m, isHairMeshHint));
+      const outMat = Array.isArray(clonedMesh.material) ? outMats : outMats[0];
+      if (outMat) {
+        const outGeo = createSmoothedOutlineGeometry(clonedGeom);
+        const outMesh = new THREE.SkinnedMesh(outGeo, outMat);
+        outMesh.name = `${meshName}_Outline`;
+        outMesh.userData.isRuntimeOutlineMesh = true;
+        if (slotTag === 'torso') {
+          outMesh.userData.isCustomEquippedTorso = true;
+        } else {
+          outMesh.userData.customEquippedSlot = slotTag;
+        }
+        outMesh.morphTargetDictionary = clonedMesh.morphTargetDictionary;
+        outMesh.morphTargetInfluences = clonedMesh.morphTargetInfluences;
+        outMesh.castShadow = false;
+        outMesh.receiveShadow = false;
+        outMesh.bindMode = targetProfile.bindMode;
+        applySkinnedMeshSafeBoundingSphere(outMesh, 1.85, 0.75);
+        outMesh.bind(boundSkeleton, syncResult.syncedBindMatrix.clone());
+        hostParent.add(outMesh);
+        newlyAttached.push(outMesh);
+        controller.meshes.push({ mesh: outMesh, defaultMat: outMesh.material });
+      }
+    }
   }
   return newlyAttached;
 }
 
-function collectGltfSkinnedMeshes(gltf: GLTF): THREE.SkinnedMesh[] {
+function collectGltfSkinnedMeshes(
+  gltf: GLTF,
+  slotFilter?: ModularAssetSlotFragment | null,
+): THREE.SkinnedMesh[] {
   const meshes: THREE.SkinnedMesh[] = [];
   gltf.scene.traverse((node) => {
-    if ((node as THREE.SkinnedMesh).isSkinnedMesh) {
-      meshes.push(node as THREE.SkinnedMesh);
+    if (!(node as THREE.SkinnedMesh).isSkinnedMesh) return;
+    const sm = node as THREE.SkinnedMesh;
+    const lower = (sm.name || '').toLowerCase();
+    // Never treat BaseDoll body skin / head / ears inside a full Blitz avatar GLB as an attachable garment
+    if (lower.includes('basedoll') || lower.startsWith('head_') || lower.startsWith('ears_')) {
+      return;
     }
+    if (slotFilter) {
+      const detectedSlot = classifyDefaultAvatarSlotFromMeshName(sm.name);
+      if (slotFilter === 'costume') {
+        if (
+          detectedSlot === 'torso' ||
+          detectedSlot === 'legs' ||
+          detectedSlot === 'feet' ||
+          detectedSlot === 'hands' ||
+          detectedSlot === 'neck'
+        ) {
+          meshes.push(sm);
+        }
+        return;
+      }
+      if (detectedSlot !== slotFilter) {
+        return;
+      }
+    }
+    meshes.push(sm);
   });
   return meshes;
 }
@@ -16616,16 +17039,17 @@ function getDefaultTorsoStateOnRig(glbRoot: THREE.Group): StoredRigDefaultTorsoS
     glbRoot.traverse((node) => {
       if (!(node as THREE.Mesh).isMesh) return;
       const mesh = node as THREE.Mesh;
-      if (mesh.userData?.isCustomEquippedTorso) return;
+      if (mesh.userData?.isCustomEquippedTorso || mesh.userData?.customEquippedSlot) return;
       const lower = (mesh.name || '').toLowerCase();
-      if (!lower.startsWith('torso_')) return;
-      if (lower.includes('_skin')) {
+      if (lower.startsWith('torso_') && lower.includes('_skin')) {
         ensurePerRigUniqueSkinGeometry(mesh);
         skinMeshes.push({
           mesh,
           originalIndex: getOrCapturePristineSkinIndex(mesh.geometry),
         });
-      } else {
+        return;
+      }
+      if (classifyDefaultAvatarSlotFromMeshName(mesh.name) === 'torso') {
         defaultClothingMeshes.push(mesh);
       }
     });
@@ -16661,6 +17085,7 @@ function applyTorsoSkinnedMeshesToBuddyRig(
         geo.setIndex(skinEntry.originalIndex);
       }
     }
+    updateBlitzBaseDollBodySkinTrim(glbRoot, 'torso', null);
     return true;
   }
 
@@ -16716,25 +17141,35 @@ function applyTorsoSkinnedMeshesToBuddyRig(
     defMesh.visible = false;
   }
 
-  // Mask inner occluded chest/midriff/bicep skin triangles while keeping neck & exposed forearms + welded wrists seamless
+  const sleeveCutoffAbsX =
+    maxAbsX > 0.56
+      ? Math.max(0.585, maxAbsX - 0.032)
+      : maxAbsX > 0.2
+        ? Math.max(0.18, maxAbsX - 0.048)
+        : 0.18;
+  const frontCollarKeepMinY = Number.isFinite(maxFrontCollarY)
+    ? Math.min(1.22, maxFrontCollarY - 0.06)
+    : 1.22;
+  const backCollarKeepMinY = Number.isFinite(maxBackCollarY)
+    ? Math.min(1.30, maxBackCollarY - 0.03)
+    : 1.295;
+  const hemCoverMinY = Number.isFinite(minY) ? minY : 0.78;
+
+  // Mask occluded chest/midriff/bicep skin on unified Blitz_BaseDoll_*_BodySkin rigs
+  updateBlitzBaseDollBodySkinTrim(glbRoot, 'torso', {
+    sleeveCutoffAbsX,
+    frontCollarKeepMinY,
+    backCollarKeepMinY,
+    hemCoverMinY,
+    isSleeveless: maxAbsX <= 0.25,
+  });
+
+  // Mask inner occluded chest/midriff/bicep skin triangles on legacy segmented torso_skin rigs
   if (hasOwnSkinMesh) {
     for (const skinEntry of storedState.skinMeshes) {
       skinEntry.mesh.visible = false;
     }
   } else {
-    const sleeveCutoffAbsX =
-      maxAbsX > 0.56
-        ? Math.max(0.585, maxAbsX - 0.032)
-        : maxAbsX > 0.2
-          ? Math.max(0.18, maxAbsX - 0.048)
-          : 0.18;
-    const frontCollarKeepMinY = Number.isFinite(maxFrontCollarY)
-      ? Math.min(1.22, maxFrontCollarY - 0.06)
-      : 1.22;
-    const backCollarKeepMinY = Number.isFinite(maxBackCollarY)
-      ? Math.min(1.30, maxBackCollarY - 0.03)
-      : 1.295;
-    const hemCoverMinY = Number.isFinite(minY) ? minY : 0.78;
     for (const skinEntry of storedState.skinMeshes) {
       skinEntry.mesh.visible = true;
       const geo = ensurePerRigUniqueSkinGeometry(skinEntry.mesh);
@@ -16783,11 +17218,15 @@ function syncRigControllerDefaultMaterials(
 export function applyEquippedTorsoToBuddyRig(
   rig: BuddyCharacterRig,
   torsoGltf: GLTF | null,
+  slotFilter?: ModularAssetSlotFragment | null,
 ): boolean {
   const applied = !torsoGltf
     ? applyTorsoSkinnedMeshesToBuddyRig(rig, [])
     : (prepareModularApparelGltfMaterials(torsoGltf),
-      applyTorsoSkinnedMeshesToBuddyRig(rig, collectGltfSkinnedMeshes(torsoGltf)));
+      applyTorsoSkinnedMeshesToBuddyRig(
+        rig,
+        collectGltfSkinnedMeshes(torsoGltf, slotFilter ?? null),
+      ));
   if (applied) {
     rig.customGlbController?.secondaryPhysics?.refresh();
     syncRigControllerDefaultMaterials(rig.customGlbController);
@@ -16823,7 +17262,8 @@ export async function setBuddyRigEquippedTorsoByUrl(
   if (!torsoGltf) {
     return false;
   }
-  const applied = applyEquippedTorsoToBuddyRig(rig, torsoGltf);
+  const slotFilter = parseModularAssetSlotFragment(cleanUrl);
+  const applied = applyEquippedTorsoToBuddyRig(rig, torsoGltf, slotFilter);
   const tintHex = rig.bodyGroupRef?.userData?.citizenClothingTintHex as string | undefined;
   if (applied && tintHex) {
     applyCitizenClothingTint(rig, tintHex);
@@ -16855,10 +17295,11 @@ function getDefaultSlotMeshesOnRig(
     const mesh = node as THREE.Mesh;
     if (mesh.userData?.isCustomEquippedTorso || mesh.userData?.customEquippedSlot) return;
     const lower = (mesh.name || '').toLowerCase();
-    if (!lower.startsWith(`${slot}_`)) return;
     // Keep underlying skin & its outline visible for legs/feet slots; swap complete shells for hair/hands/neck.
     if ((slot === 'legs' || slot === 'feet') && lower.includes('_skin')) return;
-    found.push(mesh);
+    if (lower.startsWith(`${slot}_`) || classifyDefaultAvatarSlotFromMeshName(mesh.name) === slot) {
+      found.push(mesh);
+    }
   });
   glbRoot.userData[cacheKey] = found;
   return found;
@@ -16887,6 +17328,143 @@ function getDefaultSlotSkinStates(
   });
   glbRoot.userData[cacheKey] = found;
   return found;
+}
+
+interface BlitzBodySkinActiveTrims {
+  torso: {
+    sleeveCutoffAbsX: number;
+    frontCollarKeepMinY: number;
+    backCollarKeepMinY: number;
+    hemCoverMinY: number;
+    isSleeveless: boolean;
+  } | null;
+  legs: {
+    minGarmentY: number;
+    maxGarmentY: number;
+  } | null;
+  feet: {
+    maxGarmentY: number;
+  } | null;
+}
+
+function getBlitzBaseDollBodySkinStates(
+  glbRoot: THREE.Group,
+): StoredRigDefaultTorsoState['skinMeshes'] {
+  const cacheKey = 'blitzBaseDollBodySkinStates';
+  const cached = glbRoot.userData[cacheKey] as
+    | StoredRigDefaultTorsoState['skinMeshes']
+    | undefined;
+  if (cached) return cached;
+
+  const found: StoredRigDefaultTorsoState['skinMeshes'] = [];
+  glbRoot.traverse((node) => {
+    if (!(node as THREE.Mesh).isMesh) return;
+    const mesh = node as THREE.Mesh;
+    const lower = (mesh.name || '').toLowerCase();
+    if (/^blitz_basedoll_(?:male|female)(?:_mesh)?_bodyskin(?:_outline)?$/i.test(lower)) {
+      ensurePerRigUniqueSkinGeometry(mesh);
+      found.push({ mesh, originalIndex: getOrCapturePristineSkinIndex(mesh.geometry) });
+    }
+  });
+  glbRoot.userData[cacheKey] = found;
+  return found;
+}
+
+function updateBlitzBaseDollBodySkinTrim<K extends keyof BlitzBodySkinActiveTrims>(
+  glbRoot: THREE.Group,
+  slot: K,
+  spec: BlitzBodySkinActiveTrims[K],
+): void {
+  const bodySkinEntries = getBlitzBaseDollBodySkinStates(glbRoot);
+  if (bodySkinEntries.length === 0) return;
+
+  const activeTrims: BlitzBodySkinActiveTrims =
+    (glbRoot.userData.blitzBodySkinActiveTrims as BlitzBodySkinActiveTrims | undefined) ?? {
+      torso: null,
+      legs: null,
+      feet: null,
+    };
+  activeTrims[slot] = spec;
+  glbRoot.userData.blitzBodySkinActiveTrims = activeTrims;
+
+  const { torso, legs, feet } = activeTrims;
+  for (const entry of bodySkinEntries) {
+    const geo = ensurePerRigUniqueSkinGeometry(entry.mesh);
+    if (!entry.originalIndex) continue;
+    if (!torso && !legs && !feet) {
+      if (geo.getIndex() !== entry.originalIndex) {
+        geo.setIndex(entry.originalIndex);
+      }
+      continue;
+    }
+
+    const posAttr = geo.getAttribute('position') as THREE.BufferAttribute | undefined;
+    if (!posAttr) continue;
+    const srcArr = entry.originalIndex.array;
+    const kept: number[] = [];
+    for (let i = 0; i + 2 < entry.originalIndex.count; i += 3) {
+      const ia = Number(srcArr[i]);
+      const ib = Number(srcArr[i + 1]);
+      const ic = Number(srcArr[i + 2]);
+      const xa = Math.abs(posAttr.getX(ia));
+      const xb = Math.abs(posAttr.getX(ib));
+      const xc = Math.abs(posAttr.getX(ic));
+      const ya = posAttr.getY(ia);
+      const yb = posAttr.getY(ib);
+      const yc = posAttr.getY(ic);
+      const za = posAttr.getZ(ia);
+      const zb = posAttr.getZ(ib);
+      const zc = posAttr.getZ(ic);
+      const avgAbsX = (xa + xb + xc) / 3;
+      const maxAbsX = Math.max(xa, xb, xc);
+      const avgY = (ya + yb + yc) / 3;
+      const avgZ = (za + zb + zc) / 3;
+
+      let covered = false;
+      if (torso) {
+        if (torso.isSleeveless) {
+          // Sleeveless tank/halter tops expose bare shoulders & deltoids: only trim central covered chest/midriff
+          if (
+            avgY >= torso.hemCoverMinY + 0.025 &&
+            avgY < 1.19 &&
+            maxAbsX < 0.125
+          ) {
+            covered = true;
+          }
+        } else {
+          const collarMinY = avgZ >= -0.015 ? torso.frontCollarKeepMinY : torso.backCollarKeepMinY;
+          const neckMaxAbsX = avgY >= collarMinY + 0.055 ? 0.135 : 0.102;
+          const isNeck = avgAbsX < neckMaxAbsX && avgY >= collarMinY;
+          if (
+            !isNeck &&
+            avgY <= 1.35 &&
+            avgY >= torso.hemCoverMinY + 0.015 &&
+            maxAbsX < torso.sleeveCutoffAbsX
+          ) {
+            covered = true;
+          }
+        }
+      }
+      if (!covered && legs && avgAbsX < 0.24) {
+        const bottomKeepMaxY = legs.minGarmentY >= 0.4 ? legs.minGarmentY + 0.065 : legs.minGarmentY + 0.035;
+        const topCoveredMaxY = Math.min(legs.maxGarmentY - 0.015, 0.94);
+        if (avgY >= bottomKeepMaxY && avgY <= topCoveredMaxY) {
+          covered = true;
+        }
+      }
+      if (!covered && feet && avgAbsX < 0.24) {
+        const shoeMaxY = Math.min(feet.maxGarmentY - 0.012, 0.125);
+        if (avgY <= shoeMaxY) {
+          covered = true;
+        }
+      }
+      if (!covered) {
+        kept.push(ia, ib, ic);
+      }
+    }
+    const IndexCtor = posAttr.count > 65535 ? Uint32Array : Uint16Array;
+    geo.setIndex(new THREE.BufferAttribute(new IndexCtor(kept), 1));
+  }
 }
 
 function createTrimmedSlotSkinIndexBuffer(
@@ -16970,6 +17548,7 @@ function applySlotSkinnedMeshesToBuddyRig(
           geo.setIndex(skinEntry.originalIndex);
         }
       }
+      updateBlitzBaseDollBodySkinTrim(glbRoot, slot, null);
     }
     return true;
   }
@@ -17013,6 +17592,10 @@ function applySlotSkinnedMeshesToBuddyRig(
     defMesh.visible = !hideDefaultSlotMeshes;
   }
   if (slot === 'legs' && Number.isFinite(minGarmentY)) {
+    updateBlitzBaseDollBodySkinTrim(glbRoot, 'legs', {
+      minGarmentY,
+      maxGarmentY: Number.isFinite(maxGarmentY) ? maxGarmentY : 0.94,
+    });
     // Shorts/skirts with distressed or arched hems need extra thigh height clearance compared to full pants
     const maxKeepY = minGarmentY >= 0.40 ? minGarmentY + 0.065 : minGarmentY + 0.025;
     for (const skinEntry of getDefaultSlotSkinStates(glbRoot, 'legs')) {
@@ -17035,6 +17618,7 @@ function applySlotSkinnedMeshesToBuddyRig(
       }
     }
   } else if (slot === 'feet' && Number.isFinite(maxGarmentY)) {
+    updateBlitzBaseDollBodySkinTrim(glbRoot, 'feet', { maxGarmentY });
     const minKeepY = maxGarmentY - 0.008;
     for (const skinEntry of getDefaultSlotSkinStates(glbRoot, 'feet')) {
       skinEntry.mesh.visible = true;
@@ -17061,11 +17645,16 @@ export function applyEquippedApparelSlotToBuddyRig(
   rig: BuddyCharacterRig,
   slot: ModularApparelSlotName,
   slotGltf: GLTF | null,
+  slotFilter?: ModularAssetSlotFragment | null,
 ): boolean {
   const applied = !slotGltf
     ? applySlotSkinnedMeshesToBuddyRig(rig, slot, [])
     : (prepareModularApparelGltfMaterials(slotGltf),
-      applySlotSkinnedMeshesToBuddyRig(rig, slot, collectGltfSkinnedMeshes(slotGltf)));
+      applySlotSkinnedMeshesToBuddyRig(
+        rig,
+        slot,
+        collectGltfSkinnedMeshes(slotGltf, slotFilter ?? null),
+      ));
   if (applied) {
     rig.customGlbController?.secondaryPhysics?.refresh();
     syncRigControllerDefaultMaterials(rig.customGlbController);
@@ -17091,16 +17680,19 @@ function classifyCostumeMeshSlot(meshName: string): CostumeMeshBucketKey {
       return slot;
     }
   }
+  const detected = classifyDefaultAvatarSlotFromMeshName(meshName);
+  if (detected) return detected;
   return 'torso';
 }
 
 /**
- * Equips or unequips a bundled multi-part custom costume `.glb` (`torso_`, `legs_`, `feet_`, `hands_`, `neck_`, optional `hair_`)
+ * Equips or unequips a bundled multi-part custom costume `.glb` (or full Blitz NPC set `#slot=costume`)
  * on an upgraded `BuddyCharacterRig`, leaving base slots not included in the costume intact (such as head, ears, or base hair).
  */
 export function applyEquippedCostumeToBuddyRig(
   rig: BuddyCharacterRig,
   costumeGltf: GLTF | null,
+  slotFilter?: ModularAssetSlotFragment | null,
 ): boolean {
   const controller = rig.customGlbController;
   if (!controller || !controller.glbRoot) {
@@ -17125,7 +17717,7 @@ export function applyEquippedCostumeToBuddyRig(
 
   prepareModularApparelGltfMaterials(costumeGltf);
   const buckets = new Map<CostumeMeshBucketKey, THREE.SkinnedMesh[]>();
-  for (const sm of collectGltfSkinnedMeshes(costumeGltf)) {
+  for (const sm of collectGltfSkinnedMeshes(costumeGltf, slotFilter ?? null)) {
     const bucketKey = classifyCostumeMeshSlot(sm.name);
     const list = buckets.get(bucketKey);
     if (list) {
@@ -17203,10 +17795,20 @@ export async function setBuddyRigModularOutfitUrls(
 
   let ok = false;
   if (outfit.costumeUrl !== undefined) {
-    ok = applyEquippedCostumeToBuddyRig(rig, costumeGltf) || ok;
+    ok =
+      applyEquippedCostumeToBuddyRig(
+        rig,
+        costumeGltf,
+        parseModularAssetSlotFragment(outfit.costumeUrl),
+      ) || ok;
   }
   if (torsoGltf !== null || (outfit.torsoUrl !== undefined && !costumeGltf)) {
-    ok = applyEquippedTorsoToBuddyRig(rig, torsoGltf) || ok;
+    ok =
+      applyEquippedTorsoToBuddyRig(
+        rig,
+        torsoGltf,
+        parseModularAssetSlotFragment(outfit.torsoUrl),
+      ) || ok;
   }
   const loadedBySlot: Record<'hair' | 'legs' | 'feet', GLTF | null> = {
     hair: hairGltf,
@@ -17216,7 +17818,13 @@ export async function setBuddyRigModularOutfitUrls(
   for (const [slotName, rawUrl] of slotEntries) {
     const slotGltf = loadedBySlot[slotName];
     if (slotGltf !== null || (rawUrl !== undefined && !costumeGltf)) {
-      ok = applyEquippedApparelSlotToBuddyRig(rig, slotName, slotGltf) || ok;
+      ok =
+        applyEquippedApparelSlotToBuddyRig(
+          rig,
+          slotName,
+          slotGltf,
+          parseModularAssetSlotFragment(rawUrl),
+        ) || ok;
     }
   }
 
@@ -17224,7 +17832,114 @@ export async function setBuddyRigModularOutfitUrls(
   if (ok && tintHex) {
     applyCitizenClothingTint(rig, tintHex);
   }
+  const savedBodyShape = rig.bodyGroupRef?.userData?.desiredBodyShapeProfile as
+    | BuddyBodyShapeProfile
+    | undefined;
+  if (savedBodyShape) {
+    applyBuddyRigBodyShape(rig, savedBodyShape);
+  }
   return ok;
+}
+
+export interface BuddyBodyShapeProfile {
+  morphWeights: Record<string, number>;
+  heightScale: number;
+  widthScale: number;
+  baseDollGlbUrl?: string | null;
+}
+
+/**
+ * Drives the real baked Blend Shapes (morph targets) on the BaseDoll + default garments
+ * (`Chest_Build`, `Bust_Size`, `Shoulder_Width`, `Arm_Muscle`, `Waist_Slim`, `Hip_Width`,
+ * `Glute_Projection`, `Thigh_Fullness`) together with proportional stature scaling
+ * (`heightScale` / `widthScale`) and grounded `baseRootY` adjustment so both starter and
+ * modular shop garments deform cleanly without clipping or foot float.
+ */
+export function applyBuddyRigBodyShape(
+  rig: BuddyCharacterRig,
+  shape: BuddyBodyShapeProfile | null | undefined,
+): boolean {
+  const resolved: BuddyBodyShapeProfile = shape
+    ? {
+        morphWeights: shape.morphWeights ?? {},
+        heightScale: Math.max(0.86, Math.min(1.14, Number(shape.heightScale) || 1.0)),
+        widthScale: Math.max(0.86, Math.min(1.18, Number(shape.widthScale) || 1.0)),
+        baseDollGlbUrl: shape.baseDollGlbUrl ?? null,
+      }
+    : {
+        morphWeights: {},
+        heightScale: 1.0,
+        widthScale: 1.0,
+        baseDollGlbUrl: null,
+      };
+
+  if (rig.bodyGroupRef) {
+    rig.bodyGroupRef.userData.desiredBodyShapeProfile = resolved;
+  }
+
+  const controller = rig.customGlbController;
+  if (!controller || !controller.glbRoot) {
+    return false;
+  }
+
+  const glbRoot = controller.glbRoot;
+  if (typeof glbRoot.userData.baseUnifiedModelScale !== 'number') {
+    glbRoot.userData.baseUnifiedModelScale = glbRoot.scale.y || 1;
+  }
+  if (typeof glbRoot.userData.unscaledBaseRootY !== 'number') {
+    glbRoot.userData.unscaledBaseRootY = controller.baseRootY;
+  }
+
+  const baseScale = glbRoot.userData.baseUnifiedModelScale as number;
+  const unscaledBaseRootY = glbRoot.userData.unscaledBaseRootY as number;
+  const depthScale = (resolved.widthScale + 1.0) * 0.5;
+
+  glbRoot.scale.set(
+    baseScale * resolved.widthScale,
+    baseScale * resolved.heightScale,
+    baseScale * depthScale,
+  );
+  controller.baseRootY = unscaledBaseRootY * resolved.heightScale;
+  glbRoot.position.y = controller.baseRootY;
+
+  let appliedMorphCount = 0;
+  glbRoot.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    const dict = mesh.morphTargetDictionary;
+    const influences = mesh.morphTargetInfluences;
+    if (!dict || !influences || influences.length === 0) return;
+
+    const lowerMeshName = (mesh.name || '').toLowerCase();
+    const isBaseDollSkin = lowerMeshName.includes('basedoll') || lowerMeshName.includes('_skin');
+
+    // Reset all morph influences first so switching from Hourglass -> Slim doesn't leave stale weights
+    for (let i = 0; i < influences.length; i += 1) {
+      influences[i] = 0;
+    }
+    for (const [morphName, rawWeight] of Object.entries(resolved.morphWeights)) {
+      const idx = dict[morphName];
+      if (typeof idx === 'number' && idx >= 0 && idx < influences.length) {
+        let weight = Math.max(0, Math.min(1, Number(rawWeight) || 0));
+        // Keep a clean ~2mm clearance under fitted garments by damping outward expansion morphs slightly on BaseDoll skin
+        if (
+          isBaseDollSkin &&
+          (morphName === 'Bust_Size' ||
+            morphName === 'Hip_Width' ||
+            morphName === 'Glute_Projection' ||
+            morphName === 'Thigh_Fullness' ||
+            morphName === 'Chest_Build')
+        ) {
+          weight *= 0.84;
+        }
+        influences[idx] = weight;
+        appliedMorphCount += 1;
+      }
+    }
+  });
+
+  glbRoot.userData.activeBodyShapeAppliedMorphs = appliedMorphCount;
+  glbRoot.updateMatrixWorld(true);
+  return true;
 }
 
 const _citizenTintColor = new THREE.Color();
@@ -20942,6 +21657,10 @@ export function createCurvedPlanetEnvironment(
   const uDirShadowMatrix = windUniforms.uDirShadowMatrix || { value: new THREE.Matrix4() };
   const uHasDirShadow = windUniforms.uHasDirShadow || { value: 0.0 };
   const uDirShadowMapSize = windUniforms.uDirShadowMapSize || { value: 2048.0 };
+  const uTerrainAccelTex = windUniforms.uTerrainAccelTex || {
+    value: getFallbackTerrainAccelTexture(),
+  };
+  const uHasTerrainAccel = windUniforms.uHasTerrainAccel || { value: 0.0 };
   windUniforms.uPlanetPivot = uPlanetPivot;
   windUniforms.uCurvatureStrength = uCurvatureStrength;
   windUniforms.uSculptMap = uSculptMap;
@@ -20949,8 +21668,11 @@ export function createCurvedPlanetEnvironment(
   windUniforms.uDirShadowMatrix = uDirShadowMatrix;
   windUniforms.uHasDirShadow = uHasDirShadow;
   windUniforms.uDirShadowMapSize = uDirShadowMapSize;
+  windUniforms.uTerrainAccelTex = uTerrainAccelTex;
+  windUniforms.uHasTerrainAccel = uHasTerrainAccel;
 
-  const segs = isSoftwareGl ? 224 : 336;
+  // 224x224 = ~100K triangles (1 vertex every 2.4m): identically smooth hills/lakes with 56% less vertex load vs 336x336
+  const segs = isSoftwareGl ? 176 : 224;
   const groundGeo = new THREE.PlaneGeometry(540, 540, segs, segs);
   groundGeo.rotateX(-Math.PI / 2);
 
@@ -20961,6 +21683,8 @@ export function createCurvedPlanetEnvironment(
       ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
       uPlanetPivot,
       uSculptMap,
+      uTerrainAccelTex,
+      uHasTerrainAccel,
       uDirShadowMap,
       uDirShadowMatrix,
       uHasDirShadow,
@@ -20991,6 +21715,8 @@ export function createCurvedPlanetEnvironment(
     },
     fog: true,
     vertexShader: /* glsl */ `
+      uniform sampler2D uTerrainAccelTex;
+      uniform float uHasTerrainAccel;
       varying vec3 vFlatWorldPos;
       varying vec3 vNormalW;
       #include <fog_pars_vertex>
@@ -20999,19 +21725,30 @@ export function createCurvedPlanetEnvironment(
 
       void main() {
         vec4 worldPos = modelMatrix * vec4(position, 1.0);
-        float rawElev = getRawGroundElevationWithTrough(worldPos.xz, 1.0);
-        worldPos.y = rawElev;
-        vFlatWorldPos = worldPos.xyz;
+        bool useAccelV = uHasTerrainAccel > 0.5 && abs(worldPos.x) < 154.0 && abs(worldPos.z) < 154.0;
+        vec4 accelV = useAccelV ? texture2D(uTerrainAccelTex, (worldPos.xz + 156.0) / 312.0) : vec4(0.0);
 
-        if (abs(rawElev) > 0.002 || evalEmbankmentTierOffsets(worldPos.xz).x > -2.5) {
-          float eps = 0.65;
-          float hXp = getRawGroundElevationWithTrough(worldPos.xz + vec2(eps, 0.0), 1.0);
-          float hXm = getRawGroundElevationWithTrough(worldPos.xz - vec2(eps, 0.0), 1.0);
-          float hZp = getRawGroundElevationWithTrough(worldPos.xz + vec2(0.0, eps), 1.0);
-          float hZm = getRawGroundElevationWithTrough(worldPos.xz - vec2(0.0, eps), 1.0);
-          vNormalW = normalize(vec3(-(hXp - hXm) / (2.0 * eps), 1.0, -(hZp - hZm) / (2.0 * eps)));
-        } else {
+        if (useAccelV && accelV.b > 0.98) {
+          vec2 sculptUv = (worldPos.xz + 156.0) / 312.0;
+          float rawElev = (texture2D(uSculptMap, sculptUv).r * 255.0 - 128.0) * 0.0625;
+          worldPos.y = rawElev;
+          vFlatWorldPos = worldPos.xyz;
           vNormalW = vec3(0.0, 1.0, 0.0);
+        } else {
+          float rawElev = getRawGroundElevationWithTrough(worldPos.xz, 1.0);
+          worldPos.y = rawElev;
+          vFlatWorldPos = worldPos.xyz;
+
+          if (abs(rawElev) > 0.002 || evalEmbankmentTierOffsets(worldPos.xz).x > -2.5) {
+            float eps = 0.65;
+            float hXp = getRawGroundElevationWithTrough(worldPos.xz + vec2(eps, 0.0), 1.0);
+            float hXm = getRawGroundElevationWithTrough(worldPos.xz - vec2(eps, 0.0), 1.0);
+            float hZp = getRawGroundElevationWithTrough(worldPos.xz + vec2(0.0, eps), 1.0);
+            float hZm = getRawGroundElevationWithTrough(worldPos.xz - vec2(0.0, eps), 1.0);
+            vNormalW = normalize(vec3(-(hXp - hXm) / (2.0 * eps), 1.0, -(hZp - hZm) / (2.0 * eps)));
+          } else {
+            vNormalW = vec3(0.0, 1.0, 0.0);
+          }
         }
 
         vec4 mvPosition = viewMatrix * worldPos;
@@ -21020,6 +21757,8 @@ export function createCurvedPlanetEnvironment(
       }
     `,
     fragmentShader: /* glsl */ `
+      uniform sampler2D uTerrainAccelTex;
+      uniform float uHasTerrainAccel;
       uniform float uTime;
       uniform vec3 uLightDirection;
       uniform vec3 uSunDirection;
@@ -21271,14 +22010,23 @@ export function createCurvedPlanetEnvironment(
       void main() {
         vec2 p = vFlatWorldPos.xz;
         vec4 gradP = vec4(dFdx(p), dFdy(p));
-        float roadSdf = evaluateRoadNetworkSdf(p);
+        bool useAccelF = uHasTerrainAccel > 0.5 && abs(p.x) < 154.0 && abs(p.y) < 154.0;
+        vec4 accelF = useAccelF ? texture2D(uTerrainAccelTex, (p + 156.0) / 312.0) : vec4(0.0);
+
+        // Skip 28-segment road network SDF for ~80% of screen pixels safely > 2.5m from any road,
+        // while keeping exact analytic road SDF + markings razor-sharp near & on every road!
+        float roadSdf = (useAccelF && accelF.g > 0.45) ? 5.0 : evaluateRoadNetworkSdf(p);
         float aaRoadSdf = max(fwidth(roadSdf), 0.004);
-        float lakeSdf = evaluateNwLakeSdf(p);
+
         vec2 harborSdf = evaluateSeHarborSdf(p);
-        float westPlantSdf = evaluateWestPowerPlantSdf(p);
-        vec4 embT = evalEmbankmentTierOffsets(p);
+        bool isFlatFast = useAccelF && accelF.b > 0.98;
+        float lakeSdf = isFlatFast ? 20.0 : evaluateNwLakeSdf(p);
+        float westPlantSdf = isFlatFast ? 20.0 : evaluateWestPowerPlantSdf(p);
+        vec4 embT = isFlatFast ? vec4(-20.0, -26.0, -32.0, -38.0) : evalEmbankmentTierOffsets(p);
         float embSdf = max(embT.x, p.x - 109.2);
-        float grassMask = evaluateBlitzGrassMaskFromSdfs(p, roadSdf, lakeSdf, harborSdf, westPlantSdf, embSdf);
+        float grassMask = useAccelF
+          ? accelF.r
+          : evaluateBlitzGrassMaskFromSdfs(p, roadSdf, lakeSdf, harborSdf, westPlantSdf, embSdf);
 
         // Multi-scale organic soil & meadow noise (like Blitz's uNoiseTexture on the floor)
         float n1 = planetValueNoise(p * 0.22);
@@ -21616,7 +22364,7 @@ export function createCurvedPlanetEnvironment(
         //    along steep cut-slopes (1.0 - vNormalW.y), zero dark contour ink lines.
         vec3 hillNormal = normalize(vNormalW);
         float slopeSteep = 1.0 - clamp(hillNormal.y, 0.0, 1.0);
-        float plateauFlatMask = 1.0 - smoothstep(-0.25, 0.9, evaluateHillVillaPlateauSdf(p));
+        float plateauFlatMask = isFlatFast ? 0.0 : (1.0 - smoothstep(-0.25, 0.9, evaluateHillVillaPlateauSdf(p)));
         float coastalSlopeRegion =
           max(smoothstep(-2.4, 0.35, embT.x), smoothstep(0.08, 0.65, vFlatWorldPos.y)) *
           (1.0 - roadMask) *
@@ -21704,8 +22452,8 @@ export function createCurvedPlanetEnvironment(
   const eastOceanGeo = new THREE.PlaneGeometry(
     235,
     560,
-    isSoftwareGl ? 72 : 112,
-    isSoftwareGl ? 150 : 220,
+    isSoftwareGl ? 56 : 84,
+    isSoftwareGl ? 112 : 168,
   );
   eastOceanGeo.rotateX(-Math.PI / 2);
   eastOceanGeo.computeBoundingBox();
@@ -22264,6 +23012,7 @@ export function createCurvedPlanetEnvironment(
     strokeW = 0.018,
     mapTex?: THREE.Texture,
     worldTileMeters = 2.6,
+    bounceOverride = 0.08,
   ): THREE.Mesh => {
     const lowerHex = colorHex.toLowerCase();
     const isSoilBed =
@@ -22318,7 +23067,7 @@ export function createCurvedPlanetEnvironment(
     mesh.castShadow = !isSoftwareGl && !isGlassMat && minDim >= 0.16;
     mesh.receiveShadow = !isSoftwareGl && !isGlassMat;
     if (!isGlassMat) {
-      upgradeMeshToBlitzWorldMaterial(mesh, windUniforms, effectiveTintHex, 0.08);
+      upgradeMeshToBlitzWorldMaterial(mesh, windUniforms, effectiveTintHex, bounceOverride);
     }
 
     if (!isGlassMat && strokeW > 0.005 && geo.type !== 'TorusGeometry' && minDim >= 0.05) {
@@ -23499,6 +24248,7 @@ export function createCurvedPlanetEnvironment(
   civicHallGrp.rotation.y = 0; // Facing South (+Z) toward the Central Plaza
   civicHallGrp.scale.setScalar(1.42);
   westPlantGroup.add(civicHallGrp);
+  const plazaOrnateBronzeLampKit = createOrnateBronzeLampKit({ isSoftwareGl });
 
   const COL_CH_STUCCO = '#ede2ce';
   const COL_CH_STONE = '#d6cebe';
@@ -24011,88 +24761,90 @@ export function createCurvedPlanetEnvironment(
       }
     }
 
-    // Vintage Cast-Iron Lamppost with Hanging Flower Baskets inside Front Planter Bed
-    addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.14, 0.18, 0.55, 8), '#2c353d', [lampX, 0.65, lampZ], [0, 0, 0], 0.008);
-    addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.065, 0.095, 2.35, 8), '#2c353d', [lampX, 2.05, lampZ], [0, 0, 0], 0.009);
-    addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.022, 0.022, 0.96, 6), '#2c353d', [lampX, 2.95, lampZ], [0, 0, Math.PI / 2], 0.007, undefined, 1.0, false);
-    // Twin hanging flower baskets on lamppost crossarm (using staircase leaf-petal shrub style + pink petals + trailing leaves)
-    for (const bSide of [-1, 1]) {
-      const bx = lampX + bSide * 0.38;
-      addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.16, 0.10, 0.18, 8), '#8c6239', [bx, 2.52, lampZ], [0, 0, 0], 0.007, undefined, 1.0, false);
-      addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.172, 0.162, 0.032, 8), '#a47445', [bx, 2.61, lampZ], [0, 0, 0], 0.006, undefined, 1.0, false);
-      addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.148, 0.142, 0.02, 8), '#4a3525', [bx, 2.615, lampZ], [0, 0, 0], 0, undefined, 1.0, false);
+    // Ornate Aged-Bronze Dual-Basket Victorian Lamppost inside Front Planter Bed
+    plazaOrnateBronzeLampKit.spawnLamppost({
+      parent: civicHallGrp,
+      x: lampX,
+      y: 0.36,
+      z: lampZ,
+      rotY: Math.PI / 2,
+      scale: 0.85,
+      onBasketPoint: (basketCenter, lampScale, bSide) => {
+        const bx = basketCenter.x;
+        const by = basketCenter.y;
+        const bz = basketCenter.z;
+        const seedBase = sideSign * 2.1 + bSide * 0.85;
 
-      // Central & rim staircase-style leaf-petal shrub tufts inside basket
-      tmpShrubPos.set(bx, 2.66, lampZ);
-      tmpShrubQuat.setFromAxisAngle(shrubUpAxis, bSide > 0 ? 0.65 : 2.15);
-      tmpShrubScale.set(0.138, 0.114, 0.138);
-      civicPlanterShrubMatrices.push(
-        new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
-      );
-      for (let t = 0; t < 3; t++) {
-        const ang = (t * Math.PI * 2) / 3 + (bSide > 0 ? 0.35 : -0.35);
-        tmpShrubPos.set(bx + Math.cos(ang) * 0.068, 2.635, lampZ + Math.sin(ang) * 0.068);
-        tmpShrubQuat.setFromAxisAngle(shrubUpAxis, ang + 0.9);
-        tmpShrubScale.set(0.102, 0.086, 0.102);
+        // Central & rim lush leaf-petal bush tufts inside hanging wicker basket
+        tmpShrubPos.set(bx, by + 0.135 * lampScale, bz);
+        tmpShrubQuat.setFromAxisAngle(shrubUpAxis, (seedBase * 1.9) % (Math.PI * 2));
+        tmpShrubScale.set(0.185 * lampScale, 0.15 * lampScale, 0.185 * lampScale);
         civicPlanterShrubMatrices.push(
           new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
         );
-      }
-
-      // Pink flower petal clusters crowning the hanging basket
-      tmpShrubPos.set(bx, 2.74, lampZ);
-      tmpShrubQuat.setFromAxisAngle(shrubUpAxis, bSide > 0 ? 1.2 : 2.8);
-      tmpShrubScale.set(0.095, 0.078, 0.095);
-      civicPlanterFlowerSpecs.push({
-        matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
-        mainHex: civicPinkPalette[0][0],
-        depthHex: civicPinkPalette[0][1],
-      });
-      for (let p = 0; p < 3; p++) {
-        const pAng = (p * Math.PI * 2) / 3 + 0.85;
-        const [pmHex, pdHex] = civicPinkPalette[(p + 1) % civicPinkPalette.length];
-        tmpShrubPos.set(bx + Math.cos(pAng) * 0.068, 2.70, lampZ + Math.sin(pAng) * 0.068);
-        tmpShrubQuat.setFromAxisAngle(shrubUpAxis, pAng + 0.4);
-        tmpShrubScale.set(0.076, 0.064, 0.076);
-        civicPlanterFlowerSpecs.push({
-          matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
-          mainHex: pmHex,
-          depthHex: pdHex,
-        });
-      }
-
-      // Trailing leaf-petal vine cascades draping over the basket rim
-      for (let v = 0; v < 3; v++) {
-        const vAng = v * 2.09 + (bSide > 0 ? 0.5 : 1.5);
-        const dirX = Math.cos(vAng);
-        const dirZ = Math.sin(vAng);
-        addChToonPart(
-          civicHallGrp,
-          new THREE.CylinderGeometry(0.007, 0.005, 0.24, 5),
-          '#1e682d',
-          [bx + dirX * 0.148, 2.49, lampZ + dirZ * 0.148],
-          [dirZ * 0.14, 0, -dirX * 0.14],
-          0,
-          undefined,
-          1.0,
-          false,
-        );
-        const nodeCount = v === 0 ? 4 : 3;
-        for (let n = 0; n < nodeCount; n++) {
-          const reach = 0.142 + (n === 1 ? 0.014 : 0.004);
-          const leafScale = 0.068 - n * 0.010;
-          tmpShrubPos.set(bx + dirX * reach, 2.58 - n * 0.075, lampZ + dirZ * reach);
-          tmpShrubQuat.setFromAxisAngle(shrubUpAxis, vAng + n * 1.15);
-          tmpShrubScale.set(leafScale, leafScale * 0.92, leafScale);
+        for (let t = 0; t < 4; t++) {
+          const ang = (t * Math.PI) / 2 + (bSide > 0 ? 0.35 : -0.35);
+          tmpShrubPos.set(
+            bx + Math.cos(ang) * 0.095 * lampScale,
+            by + 0.105 * lampScale,
+            bz + Math.sin(ang) * 0.095 * lampScale,
+          );
+          tmpShrubQuat.setFromAxisAngle(shrubUpAxis, ang + 0.9);
+          tmpShrubScale.set(0.135 * lampScale, 0.11 * lampScale, 0.135 * lampScale);
           civicPlanterShrubMatrices.push(
             new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
           );
         }
-      }
-    }
-    // Top warm glowing lantern head
-    addChToonPart(civicHallGrp, new THREE.CylinderGeometry(0.17, 0.12, 0.38, 4), '#ffe896', [lampX, 3.42, lampZ], [0, Math.PI / 4, 0], 0.008, undefined, 1.0, false);
-    addChToonPart(civicHallGrp, new THREE.ConeGeometry(0.22, 0.20, 4), '#2c353d', [lampX, 3.70, lampZ], [0, Math.PI / 4, 0], 0.008, undefined, 1.0, false);
+
+        // Pink flower petal clusters crowning the hanging basket
+        tmpShrubPos.set(bx, by + 0.24 * lampScale, bz);
+        tmpShrubQuat.setFromAxisAngle(shrubUpAxis, bSide > 0 ? 1.2 : 2.8);
+        tmpShrubScale.set(0.125 * lampScale, 0.102 * lampScale, 0.125 * lampScale);
+        civicPlanterFlowerSpecs.push({
+          matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+          mainHex: civicPinkPalette[0][0],
+          depthHex: civicPinkPalette[0][1],
+        });
+        for (let p = 0; p < 4; p++) {
+          const pAng = (p * Math.PI) / 2 + 0.65;
+          const [pmHex, pdHex] = civicPinkPalette[(p + 1) % civicPinkPalette.length];
+          tmpShrubPos.set(
+            bx + Math.cos(pAng) * 0.095 * lampScale,
+            by + 0.185 * lampScale,
+            bz + Math.sin(pAng) * 0.095 * lampScale,
+          );
+          tmpShrubQuat.setFromAxisAngle(shrubUpAxis, pAng + 0.4);
+          tmpShrubScale.set(0.096 * lampScale, 0.08 * lampScale, 0.096 * lampScale);
+          civicPlanterFlowerSpecs.push({
+            matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+            mainHex: pmHex,
+            depthHex: pdHex,
+          });
+        }
+
+        // Trailing leaf-petal vine cascades draping over the wicker rim
+        for (let v = 0; v < 4; v++) {
+          const vAng = (v * Math.PI) / 2 + (bSide > 0 ? 0.45 : 1.35);
+          const dirX = Math.cos(vAng);
+          const dirZ = Math.sin(vAng);
+          const nodeCount = v % 2 === 0 ? 4 : 3;
+          for (let n = 0; n < nodeCount; n++) {
+            const reach = (0.19 + (n === 1 ? 0.018 : 0.005)) * lampScale;
+            const leafScale = (0.092 - n * 0.012) * lampScale;
+            tmpShrubPos.set(
+              bx + dirX * reach,
+              by + (0.03 - n * 0.092) * lampScale,
+              bz + dirZ * reach,
+            );
+            tmpShrubQuat.setFromAxisAngle(shrubUpAxis, vAng + n * 1.15);
+            tmpShrubScale.set(leafScale, leafScale * 0.92, leafScale);
+            civicPlanterShrubMatrices.push(
+              new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+            );
+          }
+        }
+      },
+    });
   }
 
   // --- PART 3: MAIN ONE-STORY NEOCLASSICAL CIVIC HALL BODY, EXPOSED BRICK QUOINS & PORTICO STEPS ---
@@ -24662,10 +25414,9 @@ export function createCurvedPlanetEnvironment(
 
 
   // -------------------------------------------------------------------------
-  // 6. BLITZ TOON/CEL-SHADED VINTAGE PARK LAMPPOST WITH FLOWER BASKETS
-  //    Uses solid flat cel-shaded colors (upgradeMeshToBlitzWorldMaterial) +
-  //    bold BackSide Toon Outlines (createBlitzStrokeMesh) and chunky low-poly
-  //    foliage & blossoms that bake 100% into the static plaza mesh (High FPS).
+  // 6. ORNATE DUAL-BASKET AGED-BRONZE VICTORIAN LAMPPOSTS IN CENTRAL PLAZA
+  //    Replaces the 5 older promenade lampposts with the exact high-detail
+  //    Central Urban Plaza / Central Park bronze lamppost geometry + lush baskets.
   // -------------------------------------------------------------------------
   const lamppostBasketShrubMatrices: THREE.Matrix4[] = [];
   const lamppostBasketFlowerSpecs: PlazaFlowerClusterSpec[] = [];
@@ -24675,348 +25426,105 @@ export function createCurvedPlanetEnvironment(
     ['#ee79ab', '#bd4c7d'],
     ['#ffb0d2', '#da739e'],
   ];
-  const tmpLampLocalVec = new THREE.Vector3();
 
   const buildUrbanPromenadeLampPole = (lx: number, lz: number, rotY: number) => {
-    const lGrp = new THREE.Group();
-    lGrp.position.set(lx, 2.50, lz);
-    lGrp.rotation.y = rotY;
-    westPlantGroup.add(lGrp);
+    plazaOrnateBronzeLampKit.spawnLamppost({
+      parent: westPlantGroup,
+      x: lx,
+      y: 2.50,
+      z: lz,
+      rotY,
+      scale: 1.62,
+      onBasketPoint: (basketCenter, lampScale, side) => {
+        const bx = basketCenter.x;
+        const by = basketCenter.y;
+        const bz = basketCenter.z;
+        const seedBase = Math.abs(lx * 0.31 + lz * 0.17) + (side > 0 ? 1.35 : 0.25);
 
-    const COL_IRON_DARK = '#2f3742';
-    const COL_IRON_MID = '#3d4754';
-    const COL_IRON_ACCENT = '#4f5b6b';
-    const COL_PLINTH_PAD = '#cbc6ba';
-    const COL_PLINTH_STONE = '#b8b3a8';
-    const COL_PLINTH_DARK = '#969186';
-    const COL_WICKER_BOWL = '#9c6b3b';
-    const COL_WICKER_RIM = '#b07b47';
-    const COL_LANTERN_GLOW = '#ffe885';
-
-    const addToonLampPart = (
-      parent: THREE.Object3D,
-      geo: THREE.BufferGeometry,
-      colorHex: string,
-      pos: [number, number, number],
-      rot: [number, number, number],
-      toonStrokeWidth = 0.0085,
-      castShad = false,
-    ) => {
-      const m = addLobbyPart(parent, geo, colorHex, pos, rot, 0);
-      m.castShadow = !isSoftwareGl && castShad;
-      if (toonStrokeWidth > 0 && geo.type !== 'TorusGeometry') {
-        const st = createBlitzStrokeMesh(geo, toonStrokeWidth);
-        if (st) m.add(st);
-      }
-      return m;
-    };
-
-    // A. Low-Poly Stone Base Pad & Molded Plinth (with crisp Toon Outlines)
-    addToonLampPart(lGrp, new THREE.BoxGeometry(1.04, 0.036, 1.04), COL_PLINTH_PAD, [0, 0.018, 0], [0, 0, 0], 0.009, false);
-    addToonLampPart(lGrp, new THREE.BoxGeometry(0.58, 0.065, 0.58), COL_PLINTH_STONE, [0, 0.052, 0], [0, 0, 0], 0.009, true);
-    addToonLampPart(lGrp, new THREE.BoxGeometry(0.50, 0.045, 0.50), COL_PLINTH_DARK, [0, 0.095, 0], [0, 0, 0], 0.008, false);
-    addToonLampPart(lGrp, new THREE.CylinderGeometry(0.235, 0.25, 0.04, 8), COL_IRON_DARK, [0, 0.125, 0], [0, Math.PI / 8, 0], 0.008, false);
-
-    // B. Molded Octagonal/Tapered Cast-Iron Pedestal Base (0.14m .. 0.90m)
-    addToonLampPart(lGrp, new THREE.CylinderGeometry(0.195, 0.225, 0.09, 8), COL_IRON_DARK, [0, 0.19, 0], [0, 0, 0], 0.0085, true);
-    addToonLampPart(lGrp, new THREE.CylinderGeometry(0.112, 0.184, 0.58, 8), COL_IRON_MID, [0, 0.53, 0], [0, 0, 0], 0.0095, true);
-    addToonLampPart(lGrp, new THREE.CylinderGeometry(0.105, 0.118, 0.09, 8), COL_IRON_DARK, [0, 0.865, 0], [0, 0, 0], 0.008, false);
-
-    // C. Bulbous Collar Node (y = 0.91m .. 1.18m)
-    const bulbGeo = new THREE.SphereGeometry(0.136, 8, 7);
-    bulbGeo.scale(1.0, 0.82, 1.0);
-    addToonLampPart(lGrp, bulbGeo, COL_IRON_ACCENT, [0, 1.03, 0], [0, 0, 0], 0.009, false);
-    addToonLampPart(lGrp, new THREE.CylinderGeometry(0.092, 0.108, 0.06, 8), COL_IRON_DARK, [0, 1.165, 0], [0, 0, 0], 0.0075, false);
-
-    // D. Tapered Cast-Iron Vertical Shaft (y = 1.18m .. 3.31m)
-    addToonLampPart(
-      lGrp,
-      new THREE.CylinderGeometry(0.068, 0.088, 2.06, 8),
-      COL_IRON_MID,
-      [0, 2.21, 0],
-      [0, 0, 0],
-      0.0095,
-      true,
-    );
-    addToonLampPart(lGrp, new THREE.CylinderGeometry(0.086, 0.086, 0.045, 8), COL_IRON_ACCENT, [0, 2.86, 0], [0, 0, 0], 0.007, false);
-    addToonLampPart(lGrp, new THREE.CylinderGeometry(0.094, 0.072, 0.10, 8), COL_IRON_DARK, [0, 3.24, 0], [0, 0, 0], 0.008, false);
-
-    // E. Wrought-Iron Crossarm, S-Scroll Brackets & Twin Suspended Flower Baskets
-    const crossarmGrp = new THREE.Group();
-    const armYaw = -0.28;
-    crossarmGrp.rotation.y = armYaw;
-    lGrp.add(crossarmGrp);
-
-    const totalArmYaw = rotY + armYaw;
-    const toWestPlantPos = (cx: number, cy: number, cz: number): THREE.Vector3 => {
-      tmpLampLocalVec.set(cx, cy, cz).applyAxisAngle(shrubUpAxis, totalArmYaw);
-      return tmpShrubPos.set(
-        lx + tmpLampLocalVec.x,
-        2.50 + tmpLampLocalVec.y,
-        lz + tmpLampLocalVec.z,
-      );
-    };
-
-    addToonLampPart(crossarmGrp, new THREE.BoxGeometry(0.14, 0.13, 0.15), COL_IRON_DARK, [0, 3.31, 0], [0, 0, 0], 0.008, false);
-    addToonLampPart(
-      crossarmGrp,
-      new THREE.CylinderGeometry(0.024, 0.024, 1.14, 6),
-      COL_IRON_DARK,
-      [0, 3.31, 0],
-      [Math.PI / 2, 0, 0],
-      0.0075,
-      false,
-    );
-
-    for (const side of [-1, 1]) {
-      const zSign = side;
-      addToonLampPart(
-        crossarmGrp,
-        new THREE.SphereGeometry(0.034, 6, 6),
-        COL_IRON_ACCENT,
-        [0, 3.31, zSign * 0.58],
-        [0, 0, 0],
-        0.006,
-        false,
-      );
-
-      // Stylized S-Scroll Bracket under each crossarm
-      addToonLampPart(
-        crossarmGrp,
-        new THREE.BoxGeometry(0.024, 0.026, 0.42),
-        COL_IRON_DARK,
-        [0, 3.15, zSign * 0.25],
-        [zSign * 0.58, 0, 0],
-        0.0065,
-        false,
-      );
-      addToonLampPart(
-        crossarmGrp,
-        new THREE.BoxGeometry(0.022, 0.022, 0.34),
-        COL_IRON_MID,
-        [0, 3.26, zSign * 0.24],
-        [0, 0, 0],
-        0.006,
-        false,
-      );
-
-      // F. Suspended Wicker Flower Basket with Staircase-Style Leaf-Petal Shrub, Pink Flower Petals & Trailing Leaves
-      const basketZ = zSign * 0.46;
-      const hookY = 3.28;
-      const rimY = 2.66;
-      const rimR = 0.195;
-
-      // 3 Suspension Chains
-      for (let ch = 0; ch < 3; ch++) {
-        const chAng = (ch * Math.PI * 2) / 3 + (side > 0 ? 0.25 : -0.25);
-        const dx = Math.cos(chAng) * (rimR - 0.015);
-        const dy = rimY - hookY;
-        const dz = Math.sin(chAng) * (rimR - 0.015);
-        const chainLen = Math.hypot(dx, dy, dz);
-        const chainGeo = new THREE.CylinderGeometry(0.008, 0.008, chainLen, 4);
-        const chainMesh = addToonLampPart(
-          crossarmGrp,
-          chainGeo,
-          '#1e232a',
-          [dx * 0.5, hookY + dy * 0.5, basketZ + dz * 0.5],
-          [0, 0, 0],
-          0,
-          false,
-        );
-        const dirVec = new THREE.Vector3(dx, dy, dz).normalize();
-        chainMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirVec);
-      }
-
-      // Wicker Basket Bowl + Rim Collar + Dark Soil Bed
-      addToonLampPart(
-        crossarmGrp,
-        new THREE.CylinderGeometry(0.215, 0.135, 0.24, 8),
-        COL_WICKER_BOWL,
-        [0, 2.54, basketZ],
-        [0, 0, 0],
-        0.009,
-        false,
-      );
-      addToonLampPart(
-        crossarmGrp,
-        new THREE.CylinderGeometry(0.232, 0.220, 0.042, 8),
-        COL_WICKER_RIM,
-        [0, 2.66, basketZ],
-        [0, 0, 0],
-        0.008,
-        false,
-      );
-      addToonLampPart(
-        crossarmGrp,
-        new THREE.CylinderGeometry(0.202, 0.195, 0.024, 8),
-        '#4a3525',
-        [0, 2.665, basketZ],
-        [0, 0, 0],
-        0,
-        false,
-      );
-
-      // 1) Staircase-Style Leaf-Petal Bush Mound (`createPlazaLeafPetalShrubInstanced`)
-      const seedBase = Math.abs(lx * 0.31 + lz * 0.17) + (side > 0 ? 1.35 : 0.25);
-      toWestPlantPos(0, 2.72, basketZ);
-      tmpShrubQuat.setFromAxisAngle(shrubUpAxis, (seedBase * 1.9) % (Math.PI * 2));
-      tmpShrubScale.set(0.205, 0.168, 0.205);
-      lamppostBasketShrubMatrices.push(
-        new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
-      );
-
-      for (let t = 0; t < 4; t++) {
-        const tAng = (t * Math.PI) / 2 + (side > 0 ? 0.35 : -0.35);
-        toWestPlantPos(Math.cos(tAng) * 0.095, 2.685, basketZ + Math.sin(tAng) * 0.095);
-        tmpShrubQuat.setFromAxisAngle(shrubUpAxis, (seedBase + t * 1.47) % (Math.PI * 2));
-        tmpShrubScale.set(0.148, 0.122, 0.148);
+        // 1) Staircase-Style Leaf-Petal Bush Mound inside the hanging wicker basket
+        tmpShrubPos.set(bx, by + 0.14 * lampScale, bz);
+        tmpShrubQuat.setFromAxisAngle(shrubUpAxis, (seedBase * 1.9) % (Math.PI * 2));
+        tmpShrubScale.set(0.205 * lampScale, 0.168 * lampScale, 0.205 * lampScale);
         lamppostBasketShrubMatrices.push(
           new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
         );
-      }
-
-      // 2) Lush Pink Flower Petal Clusters (`createPlazaFlowerPetalClusterInstanced`)
-      toWestPlantPos(0, 2.835, basketZ);
-      tmpShrubQuat.setFromAxisAngle(shrubUpAxis, (seedBase * 2.3 + 0.6) % (Math.PI * 2));
-      tmpShrubScale.set(0.132, 0.108, 0.132);
-      lamppostBasketFlowerSpecs.push({
-        matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
-        mainHex: lampBasketPinkPalette[0][0],
-        depthHex: lampBasketPinkPalette[0][1],
-      });
-
-      const pinkRingSpots: [number, number, number, number][] = [
-        [-0.092, 2.775, 0.068, 0.106],
-        [0.096, 2.775, -0.062, 0.106],
-        [0.068, 2.760, 0.094, 0.098],
-        [-0.072, 2.760, -0.090, 0.098],
-      ];
-      for (let pIdx = 0; pIdx < pinkRingSpots.length; pIdx++) {
-        const [px, py, pz, pScale] = pinkRingSpots[pIdx];
-        const [pmHex, pdHex] = lampBasketPinkPalette[(pIdx + 1) % lampBasketPinkPalette.length];
-        toWestPlantPos(px, py, basketZ + pz);
-        tmpShrubQuat.setFromAxisAngle(shrubUpAxis, (seedBase + pIdx * 1.63) % (Math.PI * 2));
-        tmpShrubScale.set(pScale, pScale * 0.84, pScale);
-        lamppostBasketFlowerSpecs.push({
-          matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
-          mainHex: pmHex,
-          depthHex: pdHex,
-        });
-      }
-
-      // 3) Cascading Trailing Leaf-Petal Vines & Rim Blossom Accents draping below the wicker bowl
-      const trailingVineAngles = [
-        zSign > 0 ? 0.42 : -0.42,
-        zSign > 0 ? 2.18 : -2.18,
-        zSign > 0 ? -1.22 : 1.22,
-        Math.PI * 0.92 * zSign,
-      ];
-      for (let vIdx = 0; vIdx < trailingVineAngles.length; vIdx++) {
-        const vAng = trailingVineAngles[vIdx];
-        const dirX = Math.cos(vAng);
-        const dirZ = Math.sin(vAng);
-        const nodeCount = vIdx % 2 === 0 ? 4 : 3;
-        const vineLen = nodeCount === 4 ? 0.36 : 0.27;
-
-        // Slender dark-emerald vine stem draping over the rim
-        addToonLampPart(
-          crossarmGrp,
-          new THREE.CylinderGeometry(0.0085, 0.0055, vineLen, 5),
-          '#1e682d',
-          [dirX * 0.198, 2.61 - vineLen * 0.5, basketZ + dirZ * 0.198],
-          [dirZ * 0.15, 0, -dirX * 0.15],
-          0,
-          false,
-        );
-
-        for (let n = 0; n < nodeCount; n++) {
-          const vy = 2.60 - n * 0.098;
-          const radialReach = 0.195 + (n === 1 ? 0.020 : n === 2 ? 0.014 : 0.004);
-          const swayTangential = Math.sin(n * 1.35 + vIdx) * 0.018;
-          const vx = dirX * radialReach - dirZ * swayTangential;
-          const vz = basketZ + dirZ * radialReach + dirX * swayTangential;
-          const leafScale = 0.096 - n * 0.013;
-
-          toWestPlantPos(vx, vy, vz);
-          tmpShrubQuat.setFromAxisAngle(
-            shrubUpAxis,
-            (seedBase + vIdx * 1.3 + n * 1.05) % (Math.PI * 2),
+        for (let t = 0; t < 4; t++) {
+          const tAng = (t * Math.PI) / 2 + (side > 0 ? 0.35 : -0.35);
+          tmpShrubPos.set(
+            bx + Math.cos(tAng) * 0.095 * lampScale,
+            by + 0.105 * lampScale,
+            bz + Math.sin(tAng) * 0.095 * lampScale,
           );
-          tmpShrubScale.set(leafScale, leafScale * 0.92, leafScale);
+          tmpShrubQuat.setFromAxisAngle(shrubUpAxis, (seedBase + t * 1.47) % (Math.PI * 2));
+          tmpShrubScale.set(0.148 * lampScale, 0.122 * lampScale, 0.148 * lampScale);
           lamppostBasketShrubMatrices.push(
             new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
           );
         }
 
-        // Accent pink flower petals nestled at the top of two trailing cascades
-        if (vIdx < 2) {
-          const [tmHex, tdHex] = lampBasketPinkPalette[(vIdx + 2) % lampBasketPinkPalette.length];
-          toWestPlantPos(dirX * 0.195, 2.635, basketZ + dirZ * 0.195);
-          tmpShrubQuat.setFromAxisAngle(shrubUpAxis, (seedBase + vIdx * 2.1) % (Math.PI * 2));
-          tmpShrubScale.set(0.076, 0.066, 0.076);
+        // 2) Vibrant Pink Flower Petal Clusters
+        tmpShrubPos.set(bx, by + 0.255 * lampScale, bz);
+        tmpShrubQuat.setFromAxisAngle(shrubUpAxis, (seedBase * 2.3 + 0.6) % (Math.PI * 2));
+        tmpShrubScale.set(0.132 * lampScale, 0.108 * lampScale, 0.132 * lampScale);
+        lamppostBasketFlowerSpecs.push({
+          matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+          mainHex: lampBasketPinkPalette[0][0],
+          depthHex: lampBasketPinkPalette[0][1],
+        });
+        const pinkRingSpots: [number, number, number, number][] = [
+          [-0.092, 0.195, 0.068, 0.106],
+          [0.096, 0.195, -0.062, 0.106],
+          [0.068, 0.180, 0.094, 0.098],
+          [-0.072, 0.180, -0.090, 0.098],
+        ];
+        for (let pIdx = 0; pIdx < pinkRingSpots.length; pIdx++) {
+          const [px, pyOff, pz, pScale] = pinkRingSpots[pIdx];
+          const [pmHex, pdHex] = lampBasketPinkPalette[(pIdx + 1) % lampBasketPinkPalette.length];
+          tmpShrubPos.set(bx + px * lampScale, by + pyOff * lampScale, bz + pz * lampScale);
+          tmpShrubQuat.setFromAxisAngle(shrubUpAxis, (seedBase + pIdx * 1.63) % (Math.PI * 2));
+          tmpShrubScale.set(pScale * lampScale, pScale * 0.84 * lampScale, pScale * lampScale);
           lamppostBasketFlowerSpecs.push({
             matrix: new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
-            mainHex: tmHex,
-            depthHex: tdHex,
+            mainHex: pmHex,
+            depthHex: pdHex,
           });
         }
-      }
-    }
 
-    // G. Top 4-Sided Lantern Assembly (y = 3.31m .. 4.30m) with Toon Outlines
-    addToonLampPart(lGrp, new THREE.CylinderGeometry(0.095, 0.068, 0.11, 8), COL_IRON_DARK, [0, 3.39, 0], [0, Math.PI / 8, 0], 0.0075, false);
-    addToonLampPart(lGrp, new THREE.BoxGeometry(0.22, 0.036, 0.22), COL_IRON_ACCENT, [0, 3.46, 0], [0, 0, 0], 0.0075, false);
-
-    // Warm Glowing 4-Sided Toon Lantern Glass Cage
-    addToonLampPart(
-      lGrp,
-      new THREE.CylinderGeometry(0.195, 0.135, 0.44, 4),
-      COL_LANTERN_GLOW,
-      [0, 3.70, 0],
-      [0, Math.PI / 4, 0],
-      0.009,
-      false,
-    );
-    // 4 Corner Mullion Struts
-    for (const [cxSign, czSign] of [
-      [-1, -1],
-      [1, -1],
-      [-1, 1],
-      [1, 1],
-    ] as [number, number][]) {
-      const midC = 0.117;
-      addToonLampPart(
-        lGrp,
-        new THREE.BoxGeometry(0.024, 0.45, 0.024),
-        COL_IRON_DARK,
-        [cxSign * midC, 3.70, czSign * midC],
-        [-czSign * 0.095, 0, cxSign * 0.095],
-        0,
-        false,
-      );
-    }
-
-    // Stepped Pyramidal Cast-Iron Lantern Roof Hood & Finial Spire
-    addToonLampPart(lGrp, new THREE.BoxGeometry(0.35, 0.042, 0.35), COL_IRON_DARK, [0, 3.935, 0], [0, 0, 0], 0.0085, false);
-    addToonLampPart(
-      lGrp,
-      new THREE.CylinderGeometry(0.055, 0.22, 0.19, 4),
-      COL_IRON_MID,
-      [0, 4.055, 0],
-      [0, Math.PI / 4, 0],
-      0.009,
-      false,
-    );
-    addToonLampPart(lGrp, new THREE.SphereGeometry(0.040, 6, 6), COL_IRON_ACCENT, [0, 4.19, 0], [0, 0, 0], 0.0065, false);
-    addToonLampPart(lGrp, new THREE.ConeGeometry(0.024, 0.09, 6), COL_IRON_DARK, [0, 4.255, 0], [0, 0, 0], 0.0065, false);
+        // 3) Cascading Trailing Leaf-Petal Vines draping below the wicker bowl rim
+        const trailingAngles = [0.42, 2.18, -1.22, Math.PI * 0.92];
+        for (let vIdx = 0; vIdx < trailingAngles.length; vIdx++) {
+          const vAng = trailingAngles[vIdx] * (side > 0 ? 1 : -1);
+          const dirX = Math.cos(vAng);
+          const dirZ = Math.sin(vAng);
+          const nodeCount = vIdx % 2 === 0 ? 4 : 3;
+          for (let n = 0; n < nodeCount; n++) {
+            const reach = (0.195 + (n === 1 ? 0.020 : n === 2 ? 0.014 : 0.004)) * lampScale;
+            const swayTangential = Math.sin(n * 1.35 + vIdx) * 0.018 * lampScale;
+            const leafScale = (0.096 - n * 0.013) * lampScale;
+            tmpShrubPos.set(
+              bx + dirX * reach - dirZ * swayTangential,
+              by + (0.02 - n * 0.098) * lampScale,
+              bz + dirZ * reach + dirX * swayTangential,
+            );
+            tmpShrubQuat.setFromAxisAngle(
+              shrubUpAxis,
+              (seedBase + vIdx * 1.3 + n * 1.05) % (Math.PI * 2),
+            );
+            tmpShrubScale.set(leafScale, leafScale * 0.92, leafScale);
+            lamppostBasketShrubMatrices.push(
+              new THREE.Matrix4().compose(tmpShrubPos, tmpShrubQuat, tmpShrubScale),
+            );
+          }
+        }
+      },
+    });
   };
-  // West Plaza Lampposts (shifted -4.0m West with the expanded rear retaining wall):
-  buildUrbanPromenadeLampPole(-16.2, -28.5, Math.PI / 2);
-  buildUrbanPromenadeLampPole(-16.4, -19.2, Math.PI / 2);
-  buildUrbanPromenadeLampPole(-2.8, 11.6, Math.PI / 2);
-  buildUrbanPromenadeLampPole(-16.4, 11.6, Math.PI / 2);
-  for (const lz of [-28.5, -12.4, 12.4, 21.6]) {
-    buildUrbanPromenadeLampPole(12.4, lz, -Math.PI / 2);
+  // West & East Plaza Ornate Bronze Lampposts (w3, e2 & e3 replaced by relocated Tier 4 chandelier lamps):
+  buildUrbanPromenadeLampPole(-16.2, -28.5, 0);
+  buildUrbanPromenadeLampPole(-16.4, -19.2, 0);
+  buildUrbanPromenadeLampPole(-16.4, 11.6, 0);
+  for (const lz of [-28.5, 21.6]) {
+    buildUrbanPromenadeLampPole(12.4, lz, 0);
   }
   if (lamppostBasketShrubMatrices.length > 0) {
     westPlantGroup.add(
@@ -26979,6 +27487,14 @@ export function createCurvedPlanetEnvironment(
   );
   // 7) BEACHFRONT HARBOR (NEAR KAI) Standalone Black Transit Kiosk (84.85, 0.82, 65.65, facing East +X beside Kai Fish Market Kiosk)
   buildStandaloneCityTransitKioskEndpoint('beachfront_kai', 84.85, 0.82, 65.65, Math.PI / 2);
+  // 8) CENTRAL PARK Standalone Black Transit Kiosk (facing SSW toward Civic Cascade Fountain & Promenade)
+  buildStandaloneCityTransitKioskEndpoint(
+    'central_park',
+    CENTRAL_PARK_TRANSIT_KIOSK_SPEC.kioskX,
+    CENTRAL_PARK_TRANSIT_KIOSK_SPEC.kioskY,
+    CENTRAL_PARK_TRANSIT_KIOSK_SPEC.kioskZ,
+    CENTRAL_PARK_TRANSIT_KIOSK_SPEC.kioskRotY,
+  );
 
   // =========================================================================
   // 2A-EAST. 3D CONSTRUCTION EQUIPMENT & MATERIAL YARDS ("AREA TANAH ALAT-ALAT KONSTRUKSI")
@@ -30133,6 +30649,9 @@ export function createCurvedPlanetEnvironment(
       sharedWaterUniforms.uDuskDawnFactor.value = weatherEnv?.duskDawnFactor01 ?? 0.0;
       sharedWaterUniforms.uWindStrength.value =
         weatherEnv?.windStrength ?? windUniforms.uWindStrength.value;
+
+      const plazaIllum = computeCityIlluminationLevels(weatherEnv as Record<string, unknown> | undefined);
+      plazaOrnateBronzeLampKit.updateGlow(plazaIllum.streetLampBrightness01);
 
       const cullActive = chunkCullRadius > 0;
       const rSq = chunkCullRadius * chunkCullRadius;

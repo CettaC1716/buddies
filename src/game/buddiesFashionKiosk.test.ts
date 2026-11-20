@@ -136,7 +136,7 @@ describe('Fashion & Apparel Boutique Kiosk Trigger, Bag Purchase & Wardrobe Equi
     const maleJson = parseGlbJson(
       path.join(
         process.cwd(),
-        'public/assets/aistudio/character_custom_idle_runway_catwalk_stylish_11 (2).glb',
+        'public/assets/character_custom_idle_runway_catwalk_stylish_11 (2).glb',
       ),
     );
     const femaleJson = parseGlbJson(

@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {
+  attachClearStorefrontGlassNightShader,
   computeDeterministicWindowSeed,
   computeManifestWindowIntensityScale,
   computeManifestWindowPhaseOffset,
@@ -352,5 +353,57 @@ describe('Dynamic Night Window & Storefront Lighting Rules (Workstream 2)', () =
     // Municipal clock glow diagonal must fit strictly inside dial circle radius (0.58 * 1.42 = 0.8236)
     const civicClock = CITY_BUILDING_GLOW_MANIFEST.find((p) => p.id === 'glow_civic_clock_front');
     assert.ok(civicClock && Math.hypot(civicClock.width * 0.5, civicClock.height * 0.5) < 0.58 * 1.42);
+  });
+
+  it('equips shared clear storefront glass with zero-draw-call night curtain & Fresnel reflection shader', () => {
+    const clearMat = new THREE.MeshStandardMaterial({
+      color: '#d6f4ff',
+      transparent: true,
+      opacity: 0.30,
+      depthWrite: false,
+    });
+    attachClearStorefrontGlassNightShader(clearMat, { yMin: 0.82, yMax: 4.07 });
+
+    assert.equal(clearMat.userData.preserveSharedMaterial, true);
+    assert.equal(clearMat.userData.cityClearStorefrontGlassHooked, true);
+    assert.equal(clearMat.userData.cityGlassNightUniform?.value, 0.0);
+    assert.equal(clearMat.customProgramCacheKey(), 'city-clear-storefront-glass-v1');
+
+    // Mock Three.js shader compilation hook
+    const mockShader = {
+      uniforms: {} as Record<string, { value: unknown }>,
+      vertexShader: '#include <common>\nvoid main() {\n#include <begin_vertex>\n}',
+      fragmentShader: '#include <common>\nvoid main() {\n#include <opaque_fragment>\n}',
+    };
+    clearMat.onBeforeCompile(mockShader as unknown as THREE.WebGLProgramParametersWithUniforms, {} as THREE.WebGLRenderer);
+    assert.equal(mockShader.uniforms.uNightFactor01, clearMat.userData.cityGlassNightUniform);
+    assert.equal(mockShader.uniforms.uSfYMin.value, 0.82);
+    assert.equal(mockShader.uniforms.uSfYMax.value, 4.07);
+    assert.ok(mockShader.vertexShader.includes('vSfGlassWorldPos'));
+    assert.ok(mockShader.fragmentShader.includes('sfTopCurtain'));
+    assert.ok(mockShader.fragmentShader.includes('sfFresnel'));
+    assert.ok(mockShader.fragmentShader.includes('sfNightFade'));
+
+    const group = new THREE.Group();
+    const paneA = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.5, 0.024), clearMat);
+    const paneB = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.5, 0.024), clearMat);
+    tagCityWindowMesh(paneA, { id: 'storefront-a', kind: 'storefront', seed: 101 });
+    tagCityWindowMesh(paneB, { id: 'storefront-b', kind: 'storefront', seed: 202 });
+    group.add(paneA, paneB);
+
+    updateCityWindowNightLighting(group, 0.03, 0.0);
+    assert.equal(clearMat.userData.cityGlassNightUniform.value, 0.03);
+    assert.equal(paneA.material, clearMat);
+    assert.equal(paneB.material, clearMat);
+
+    updateCityWindowNightLighting(group, 1.0, 4.5);
+    assert.equal(clearMat.userData.cityGlassNightUniform.value, 1.0);
+    assert.equal(paneA.material, clearMat);
+    assert.equal(paneB.material, clearMat);
+    assert.equal(clearMat.transparent, true);
+    assert.equal(clearMat.depthWrite, false);
+
+    invalidateCityWindowNightLightingCache(group);
+    clearMat.dispose();
   });
 });

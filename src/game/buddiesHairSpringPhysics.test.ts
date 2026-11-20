@@ -701,7 +701,7 @@ test('Real bundled character & modular outfit GLBs attach colliders + scalp-safe
     },
     {
       label: 'Player Male',
-      file: 'public/assets/aistudio/character_custom_idle_runway_catwalk_stylish_11 (2).glb',
+      file: 'public/assets/character_custom_idle_runway_catwalk_stylish_11 (2).glb',
       expectLongHair: false,
       expectMinHooks: 2, // hair + outline
     },
@@ -719,13 +719,13 @@ test('Real bundled character & modular outfit GLBs attach colliders + scalp-safe
     },
     {
       label: 'NPC Kenji',
-      file: 'public/assets/aistudio/character_custom_sit_runway_catwalk_stylish_4.glb',
+      file: 'public/assets/character_custom_sit_runway_catwalk_stylish_4.glb',
       expectLongHair: false,
       expectMinHooks: 2,
     },
     {
       label: 'NPC Kai',
-      file: 'public/assets/aistudio/character_custom_idle_runway_catwalk_stylish_11 (1).glb',
+      file: 'public/assets/character_custom_idle_runway_catwalk_stylish_11 (1).glb',
       expectLongHair: false,
       expectMinHooks: 2,
     },

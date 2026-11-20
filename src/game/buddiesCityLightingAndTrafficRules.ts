@@ -196,7 +196,7 @@ export function computeCityIlluminationLevels(
 // ============================================================================
 
 export type LampTier = 1 | 2 | 3 | 4;
-export type CityLampVariant = 'single' | 'corner';
+export type CityLampVariant = 'single' | 'corner' | 'pier_lantern';
 
 export type CityLampDistrict =
   | 'central_plaza'
@@ -219,6 +219,8 @@ export interface CityLampSpec {
   y: number;
   z: number;
   rotY: number;
+  /** Optional elevation offset above deck/ground Y (e.g. pier-mounted balustrade lanterns). */
+  mountHeightOffset?: number;
   poolRadius: number;
   hasFlowerBaskets: boolean;
 }
@@ -365,15 +367,16 @@ interface RawLampEntry {
   x: number;
   z: number;
   rotY: number;
+  mountHeightOffset?: number;
 }
 
 const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   // =========================================================================
   // TIER 1: GROUND BOLLARD / PATHWAY SPIKE LIGHTS (~0.45m) — 18 lamps
   // =========================================================================
-  // Glasshouse Cafe West L-Wing Terrace Border (clear of Cafe door & parasol tables)
-  { id: 'lamp_t1_cafe_terrace_1', tier: 1, district: 'glasshouse_cafe', x: -93.85, z: 14.8, rotY: 0 },
-  { id: 'lamp_t1_cafe_terrace_2', tier: 1, district: 'glasshouse_cafe', x: -93.85, z: 19.6, rotY: 0 },
+  // Glasshouse Cafe West L-Wing Terrace Border (clear of Cafe door, parasol tables, & chandelier at -95.55, 11.6)
+  { id: 'lamp_t1_cafe_terrace_1', tier: 1, district: 'glasshouse_cafe', x: -93.85, z: 16.0, rotY: 0 },
+  { id: 'lamp_t1_cafe_terrace_2', tier: 1, district: 'glasshouse_cafe', x: -93.85, z: 20.6, rotY: 0 },
   // Harbor Concrete Coping Edge (rhythmic 10–11m coastal edge spacing)
   { id: 'lamp_t1_harbor_cope_1', tier: 1, district: 'harbor_dock', x: 108.4, z: -14.0, rotY: 0 },
   { id: 'lamp_t1_harbor_cope_2', tier: 1, district: 'harbor_dock', x: 108.4, z: -3.0, rotY: 0 },
@@ -397,11 +400,11 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   // =========================================================================
   // TIER 2: WAIST-HEIGHT BRICK PEDESTAL LANTERNS (~1.10m) — 14 lamps
   // =========================================================================
-  // Central Plaza Upper Staircase Portals & Civic / Retail Terraces (lower sidewalk left clear!)
+  // Central Plaza Upper Staircase Portals, Civic Balustrade End-Piers (lantern-only, no brick pier) & Retail Terraces
   { id: 'lamp_t2_plaza_portal_tn', tier: 2, district: 'central_plaza', x: -88.05, z: -12.6, rotY: 0 },
   { id: 'lamp_t2_plaza_portal_ts', tier: 2, district: 'central_plaza', x: -88.05, z: 12.6, rotY: 0 },
-  { id: 'lamp_t2_civic_step_w', tier: 2, district: 'central_plaza', x: -97.45, z: -22.2, rotY: 0 },
-  { id: 'lamp_t2_civic_step_e', tier: 2, district: 'central_plaza', x: -89.65, z: -22.2, rotY: 0 },
+  { id: 'lamp_t2_civic_step_w', tier: 2, lampVariant: 'pier_lantern', district: 'central_plaza', x: -96.319, z: -23.264, rotY: 0, mountHeightOffset: 1.2212 },
+  { id: 'lamp_t2_civic_step_e', tier: 2, lampVariant: 'pier_lantern', district: 'central_plaza', x: -90.781, z: -23.264, rotY: 0, mountHeightOffset: 1.2212 },
   { id: 'lamp_t2_fashion_terrace', tier: 2, district: 'central_plaza', x: -100.85, z: 7.4, rotY: 0 },
   { id: 'lamp_t2_realestate_terrace', tier: 2, district: 'central_plaza', x: -100.85, z: -16.8, rotY: 0 },
   // Grand Casino Valet Entrance Piers
@@ -477,10 +480,10 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   // =========================================================================
   // TIER 4: GRAND MULTI-ARM VICTORIAN CHANDELIER + FLOWER BASKETS (~4.80m) — 11 lamps
   // =========================================================================
-  // Central Plaza Main Square & Glasshouse Cafe Courtyard (clear of parasol tables & doors)
-  { id: 'lamp_t4_plaza_center_n', tier: 4, district: 'central_plaza', x: -89.65, z: -6.2, rotY: 0 },
-  { id: 'lamp_t4_plaza_center_s', tier: 4, district: 'central_plaza', x: -89.65, z: 6.2, rotY: 0 },
-  { id: 'lamp_t4_cafe_corner', tier: 4, district: 'glasshouse_cafe', x: -87.85, z: 17.4, rotY: Math.PI / 4 },
+  // Central Plaza Main Square & Glasshouse Cafe Courtyard (replaces small lamps w3 at -95.55, 11.6, e2 at -80.35, -12.4 & e3 at -80.35, 12.4)
+  { id: 'lamp_t4_plaza_center_n', tier: 4, district: 'central_plaza', x: -80.35, z: -12.4, rotY: 0 },
+  { id: 'lamp_t4_plaza_center_s', tier: 4, district: 'central_plaza', x: -80.35, z: 12.4, rotY: 0 },
+  { id: 'lamp_t4_cafe_corner', tier: 4, district: 'glasshouse_cafe', x: -95.55, z: 11.6, rotY: 0 },
   // Grand Casino South Forecourt Plaza & North Lawn Approach
   { id: 'lamp_t4_casino_forecourt_s', tier: 4, district: 'grand_casino', x: -68.0, z: -55.5, rotY: Math.PI / 4 },
   { id: 'lamp_t4_casino_forecourt_n', tier: 4, district: 'grand_casino', x: -69.5, z: -88.0, rotY: -Math.PI / 4 },
@@ -507,9 +510,10 @@ export const CITY_LAMP_MANIFEST: readonly CityLampSpec[] = RAW_CITY_LAMPS.map((e
   ...(entry.lampVariant ? { lampVariant: entry.lampVariant } : {}),
   district: entry.district,
   x: entry.x,
-  y: computeLampGroundY(entry.x, entry.z),
+  y: computeLampGroundY(entry.x, entry.z) + (entry.mountHeightOffset ?? 0),
   z: entry.z,
   rotY: entry.rotY,
+  ...(entry.mountHeightOffset ? { mountHeightOffset: entry.mountHeightOffset } : {}),
   poolRadius:
     entry.tier === 3
       ? entry.lampVariant === 'corner'
@@ -524,15 +528,15 @@ export const CITY_LAMP_MANIFEST: readonly CityLampSpec[] = RAW_CITY_LAMPS.map((e
  * synchronized warm ground light pools & soft lantern halos during Dusk/Night/Dawn/Rain.
  */
 export const EXISTING_CITY_LAMP_POOL_ANCHORS: readonly CityLampPoolAnchor[] = [
-  // Central Plaza 8 Vintage Flower-Basket Lamps (y = 2.50m deck + ~3.70m lantern height)
-  { id: 'existing_plaza_w1', x: -108.95, y: 2.5, z: -28.5, lanternYOffset: 3.7, poolRadius: 8.5, haloScale: 0.88 },
-  { id: 'existing_plaza_w2', x: -109.15, y: 2.5, z: -19.2, lanternYOffset: 3.7, poolRadius: 8.5, haloScale: 0.88 },
-  { id: 'existing_plaza_w3', x: -95.55, y: 2.5, z: 11.6, lanternYOffset: 3.7, poolRadius: 8.5, haloScale: 0.88 },
-  { id: 'existing_plaza_w4', x: -109.15, y: 2.5, z: 11.6, lanternYOffset: 3.7, poolRadius: 8.5, haloScale: 0.88 },
-  { id: 'existing_plaza_e1', x: -80.55, y: 2.5, z: -28.5, lanternYOffset: 3.7, poolRadius: 8.5, haloScale: 0.88 },
-  { id: 'existing_plaza_e2', x: -80.55, y: 2.5, z: -12.4, lanternYOffset: 3.7, poolRadius: 8.5, haloScale: 0.88 },
-  { id: 'existing_plaza_e3', x: -80.55, y: 2.5, z: 12.4, lanternYOffset: 3.7, poolRadius: 8.5, haloScale: 0.88 },
-  { id: 'existing_plaza_e4', x: -80.35, y: 2.5, z: 21.6, lanternYOffset: 3.7, poolRadius: 8.5, haloScale: 0.88 },
+  // Central Plaza 5 Ornate Dual-Basket Bronze Promenade Lamps (y = 2.50m deck + 3.685*1.62 = 5.97m lantern center)
+  { id: 'existing_plaza_w1', x: -108.95, y: 2.5, z: -28.5, lanternYOffset: 5.97, poolRadius: 8.5, haloScale: 0.94 },
+  { id: 'existing_plaza_w2', x: -109.15, y: 2.5, z: -19.2, lanternYOffset: 5.97, poolRadius: 8.5, haloScale: 0.94 },
+  { id: 'existing_plaza_w4', x: -109.15, y: 2.5, z: 11.6, lanternYOffset: 5.97, poolRadius: 8.5, haloScale: 0.94 },
+  { id: 'existing_plaza_e1', x: -80.35, y: 2.5, z: -28.5, lanternYOffset: 5.97, poolRadius: 8.5, haloScale: 0.94 },
+  { id: 'existing_plaza_e4', x: -80.35, y: 2.5, z: 21.6, lanternYOffset: 5.97, poolRadius: 8.5, haloScale: 0.94 },
+  // Civic Hall Front Planter Bed Ornate Dual-Basket Bronze Lamps (scale 0.85 * 1.42 = 1.207, lantern center y = 2.50 + 4.96 = 7.46m)
+  { id: 'existing_civic_planter_w', x: -100.295, y: 2.5, z: -24.585, lanternYOffset: 4.96, poolRadius: 6.8, haloScale: 0.74 },
+  { id: 'existing_civic_planter_e', x: -86.805, y: 2.5, z: -24.585, lanternYOffset: 4.96, poolRadius: 6.8, haloScale: 0.74 },
   // Grand Casino 6 Street Lamps
   ...GRAND_CASINO_MASTERPLAN.streetLamps.map((lamp) => ({
     id: `existing_${lamp.id}`,

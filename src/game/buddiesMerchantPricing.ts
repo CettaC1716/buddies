@@ -2490,13 +2490,15 @@ export function parseNpcChatTransactionIntent(
     /\b(where|dimana|di mana|lokasi|arah|kemana|ke mana|teleport|warp|fast travel|transit|map|peta|district|districts|distrik|how to get|how do i get|cara ke|go to|mau ke|pergi ke|ingin ke|take me)\b/.test(
       q,
     ) ||
-    /^(pantai|beach|harbor|pelabuhan|danau|lake|kai|fish market|pasar ikan|plaza|central plaza|warzone|north residence|south residence)\??$/.test(
+    /^(pantai|beach|harbor|pelabuhan|danau|lake|kai|fish market|pasar ikan|plaza|central plaza|central park|taman|taman kota|warzone|north residence|south residence)\??$/.test(
       q,
     );
 
   if (asksLocationOrTeleport) {
     let focusStationId: CityTransitStationId | null = null;
-    if (/\b(beachfront|beach|harbor|ocean|sea|coast|pantai|laut|pelabuhan)\b/.test(q)) {
+    if (/\b(central park|taman kota|taman|fountain|pergola|glow studio|beauty salon)\b/.test(q)) {
+      focusStationId = 'central_park';
+    } else if (/\b(beachfront|beach|harbor|ocean|sea|coast|pantai|laut|pelabuhan)\b/.test(q)) {
       focusStationId = 'beachfront_harbor';
     } else if (/\b(fish market|pasar ikan|kai)\b/.test(q)) {
       focusStationId = 'kai_fish_market';
@@ -2578,6 +2580,7 @@ export function buildOfflineChatTransactionAck(
     case 'teleport_places': {
       const targetNameMap: Record<CityTransitStationId, string> = {
         central_plaza: 'Central Plaza',
+        central_park: 'Central Park',
         beachfront_harbor: 'Beachfront Harbor',
         kai_fish_market: 'Kai Fish Market',
         nw_fishing_lake: 'NW Fishing Lake',

@@ -1571,14 +1571,33 @@ function buildTier2PedestalGeos() {
   const stoneGeo = mergeNormalizedGeos(stoneParts);
 
   // 3. Cast-Iron Foundation Plate + Fluted Post (`y = 0.962 .. 1.375m`) + Carriage Lantern (`y = 1.375 .. 1.96m`)
+  const topGeos = buildTier2TopLanternGeos(0.962);
+
+  return {
+    brickGeo,
+    stoneGeo,
+    ironFrameGeo: topGeos.ironFrameGeo,
+    glassGeo: topGeos.glassGeo,
+    bulbGeo: topGeos.bulbGeo,
+    lanternY: topGeos.lanternY,
+  };
+}
+
+/**
+ * Shared upper Tier-2 carriage-lantern assembly (cast-iron anchor plate + bolts + turned pedestal +
+ * square carriage lantern) positioned relative to `plateBottomY` (`0.962` above ground on brick piers,
+ * or `0.0` directly atop stone balustrade end-piers).
+ */
+function buildTier2TopLanternGeos(plateBottomY: number) {
+  const yOff = plateBottomY - 0.962;
   const ironParts: THREE.BufferGeometry[] = [
-    remapGeoUvs(makeTranslatedRoundedBox(0.256, 0.024, 0.256, 0.006, 0, 0.974, 0), 0.04, 0.80),
+    remapGeoUvs(makeTranslatedRoundedBox(0.256, 0.024, 0.256, 0.006, 0, 0.974 + yOff, 0), 0.04, 0.80),
   ];
   for (const bx of [-0.096, 0.096]) {
     for (const bz of [-0.096, 0.096]) {
       ironParts.push(
-        remapGeoUvs(makeTranslatedCylinder(0.018, 0.018, 0.008, 10, bx, 0.990, bz), 0.06, 0.78),
-        remapGeoUvs(makeTranslatedCylinder(0.012, 0.012, 0.014, 6, bx, 1.001, bz), 0.06, 0.78),
+        remapGeoUvs(makeTranslatedCylinder(0.018, 0.018, 0.008, 10, bx, 0.990 + yOff, bz), 0.06, 0.78),
+        remapGeoUvs(makeTranslatedCylinder(0.012, 0.012, 0.014, 6, bx, 1.001 + yOff, bz), 0.06, 0.78),
       );
     }
   }
@@ -1600,7 +1619,7 @@ function buildTier2PedestalGeos() {
         ],
         14,
         0,
-        0.986,
+        0.986 + yOff,
         0,
       ),
       0.04,
@@ -1610,23 +1629,17 @@ function buildTier2PedestalGeos() {
 
   const lantern = buildSquareCarriageLanternParts({
     cx: 0,
-    baseY: 1.375,
+    baseY: 1.375 + yOff,
     cz: 0,
     scale: 1.04,
     includeHingeLatch: true,
   });
   ironParts.push(...lantern.ironParts);
 
-  const ironFrameGeo = mergeNormalizedGeos(ironParts);
-  const glassGeo = mergeNormalizedGeos(lantern.glassParts);
-  const bulbGeo = mergeNormalizedGeos(lantern.bulbParts);
-
   return {
-    brickGeo,
-    stoneGeo,
-    ironFrameGeo,
-    glassGeo,
-    bulbGeo,
+    ironFrameGeo: mergeNormalizedGeos(ironParts),
+    glassGeo: mergeNormalizedGeos(lantern.glassParts),
+    bulbGeo: mergeNormalizedGeos(lantern.bulbParts),
     lanternY: lantern.haloY,
   };
 }
@@ -2549,48 +2562,72 @@ export function buildCityLightingAndTrafficSystem(
 
   // -------------------------------------------------------------------------
   // TIER 2: Brick Pier + Limestone Coping + Square Carriage Lantern (~2.98m world @ 1.52x)
+  //         plus Pier-Top Carriage Lanterns (lantern head only atop balustrade stone piers)
   // -------------------------------------------------------------------------
   if (lampsByTier[2].length > 0) {
-    const t2Geos = buildTier2PedestalGeos();
-    const t2BrickMat = new THREE.MeshStandardMaterial({
-      color: '#ffffff',
-      map: brickPbr.map,
-      roughnessMap: brickPbr.roughnessMap,
-      bumpMap: brickPbr.bumpMap,
-      bumpScale: 0.022,
-      roughness: 0.88,
-      metalness: 0.03,
-    });
-    const t2StoneMat = new THREE.MeshStandardMaterial({
-      color: '#ffffff',
-      map: limestonePbr.map,
-      roughnessMap: limestonePbr.roughnessMap,
-      bumpMap: limestonePbr.bumpMap,
-      bumpScale: 0.012,
-      roughness: 0.82,
-      metalness: 0.04,
-    });
-    disposeMats.push(t2BrickMat, t2StoneMat);
+    const t2PedestalLamps = lampsByTier[2].filter((l) => l.lampVariant !== 'pier_lantern');
+    const t2PierLamps = lampsByTier[2].filter((l) => l.lampVariant === 'pier_lantern');
 
-    const t2Mats = lampsByTier[2].map((l) => {
-      haloEntries.push({
-        x: l.x,
-        y: l.y + t2Geos.lanternY * TIER2_INSTANCE_SCALE,
-        z: l.z,
-        scale: 0.88,
+    if (t2PedestalLamps.length > 0) {
+      const t2Geos = buildTier2PedestalGeos();
+      const t2BrickMat = new THREE.MeshStandardMaterial({
+        color: '#ffffff',
+        map: brickPbr.map,
+        roughnessMap: brickPbr.roughnessMap,
+        bumpMap: brickPbr.bumpMap,
+        bumpScale: 0.022,
+        roughness: 0.88,
+        metalness: 0.03,
       });
-      return composePose(l.x, l.y, l.z, l.rotY, TIER2_INSTANCE_SCALE);
-    });
-    createStaticBatch('CityLamp_Tier2_Brick', t2Geos.brickGeo, t2BrickMat, t2Mats);
-    createStaticBatch('CityLamp_Tier2_Stone', t2Geos.stoneGeo, t2StoneMat, t2Mats, {
-      strokeWidth: 0.006,
-      strokeColor: '#5c5448',
-    });
-    createStaticBatch('CityLamp_Tier2_Iron', t2Geos.ironFrameGeo, forgedIronPbrMat, t2Mats);
-    createStaticBatch('CityLamp_Tier2_Bulb', t2Geos.bulbGeo, lanternBulbMat, t2Mats);
-    createStaticBatch('CityLamp_Tier2_Glass', t2Geos.glassGeo, lanternGlassMat, t2Mats, {
-      renderOrder: 1,
-    });
+      const t2StoneMat = new THREE.MeshStandardMaterial({
+        color: '#ffffff',
+        map: limestonePbr.map,
+        roughnessMap: limestonePbr.roughnessMap,
+        bumpMap: limestonePbr.bumpMap,
+        bumpScale: 0.012,
+        roughness: 0.82,
+        metalness: 0.04,
+      });
+      disposeMats.push(t2BrickMat, t2StoneMat);
+
+      const t2Mats = t2PedestalLamps.map((l) => {
+        haloEntries.push({
+          x: l.x,
+          y: l.y + t2Geos.lanternY * TIER2_INSTANCE_SCALE,
+          z: l.z,
+          scale: 0.88,
+        });
+        return composePose(l.x, l.y, l.z, l.rotY, TIER2_INSTANCE_SCALE);
+      });
+      createStaticBatch('CityLamp_Tier2_Brick', t2Geos.brickGeo, t2BrickMat, t2Mats);
+      createStaticBatch('CityLamp_Tier2_Stone', t2Geos.stoneGeo, t2StoneMat, t2Mats, {
+        strokeWidth: 0.006,
+        strokeColor: '#5c5448',
+      });
+      createStaticBatch('CityLamp_Tier2_Iron', t2Geos.ironFrameGeo, forgedIronPbrMat, t2Mats);
+      createStaticBatch('CityLamp_Tier2_Bulb', t2Geos.bulbGeo, lanternBulbMat, t2Mats);
+      createStaticBatch('CityLamp_Tier2_Glass', t2Geos.glassGeo, lanternGlassMat, t2Mats, {
+        renderOrder: 1,
+      });
+    }
+
+    if (t2PierLamps.length > 0) {
+      const t2PierGeos = buildTier2TopLanternGeos(0.0);
+      const t2PierMats = t2PierLamps.map((l) => {
+        haloEntries.push({
+          x: l.x,
+          y: l.y + t2PierGeos.lanternY * TIER2_INSTANCE_SCALE,
+          z: l.z,
+          scale: 0.88,
+        });
+        return composePose(l.x, l.y, l.z, l.rotY, TIER2_INSTANCE_SCALE);
+      });
+      createStaticBatch('CityLamp_Tier2_Pier_Iron', t2PierGeos.ironFrameGeo, forgedIronPbrMat, t2PierMats);
+      createStaticBatch('CityLamp_Tier2_Pier_Bulb', t2PierGeos.bulbGeo, lanternBulbMat, t2PierMats);
+      createStaticBatch('CityLamp_Tier2_Pier_Glass', t2PierGeos.glassGeo, lanternGlassMat, t2PierMats, {
+        renderOrder: 1,
+      });
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -2817,7 +2854,7 @@ export function buildCityLightingAndTrafficSystem(
         const poolY = crossesRaisedSidewalk ? Math.max(l.y + 0.032, 0.118) : l.y + 0.032;
         return composePose(poolX, poolY, poolZ, 0, radius * 2);
       }
-      return composePose(l.x, l.y + 0.032, l.z, 0, l.poolRadius * 2);
+      return composePose(l.x, l.y - (l.mountHeightOffset ?? 0) + 0.032, l.z, 0, l.poolRadius * 2);
     }),
     ...filteredExistingAnchors.map((a) => composePose(a.x, a.y + 0.032, a.z, 0, a.poolRadius * 2)),
   ];

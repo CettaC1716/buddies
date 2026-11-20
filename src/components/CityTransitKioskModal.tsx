@@ -80,6 +80,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
       const store = winStore.__BUDDIES_KIOSK_THUMBNAILS__;
       const requiredDistrictKeys: CityTransitStationId[] = [
         'central_plaza',
+        'central_park',
         'beachfront_harbor',
         'nw_fishing_lake',
         'north_residence',
@@ -170,6 +171,11 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
         : dest;
     });
   }, [searchQuery, showRecentOnly, recentStationIds, kioskThumbnails]);
+
+  const districtDestinationCount = useMemo(
+    () => CITY_TRANSIT_DESTINATIONS.filter((d) => d.category === 'district').length,
+    [],
+  );
 
   const selectedDestination: CityTransitDestinationSpec = useMemo(() => {
     const found = filteredDestinations.find((d) => d.id === selectedStationId);
@@ -397,7 +403,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                     THE CITY NETWORK
                   </span>
                   <span className="px-2 py-0.5 bg-black/80 text-white border-[2px] border-white/80 text-[10px] font-black uppercase">
-                    5 DISTRICTS
+                    {districtDestinationCount} DISTRICTS
                   </span>
                 </div>
 
@@ -408,7 +414,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                     TRAVEL &amp; DISTRICTS
                   </div>
                   <p className="mt-1 text-xs font-bold text-slate-200 line-clamp-2">
-                    Fast-travel by City Tram across Central Plaza, Beachfront Harbor, NW Fishing Lake, and North/South Residences.
+                    Fast-travel by City Tram across Central Plaza, Central Park, Beachfront Harbor, NW Fishing Lake, and Residences.
                   </p>
                 </div>
               </button>
@@ -543,7 +549,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   src={
                     kioskThumbnails.jobs_cafe ||
                     kioskThumbnails.cafe_glasshouse ||
-                    '/assets/aistudio/screenshot_7_5a2e994c.webp'
+                    '/assets/kiosk/cafe_glasshouse.webp'
                   }
                   alt="Citizen Jobs - Cafe Glasshouse"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
@@ -600,7 +606,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   src={
                     kioskThumbnails.jobs_cafe ||
                     kioskThumbnails.cafe_glasshouse ||
-                    '/assets/aistudio/screenshot_7_5a2e994c.webp'
+                    '/assets/kiosk/cafe_glasshouse.webp'
                   }
                   alt="Cafe Glasshouse"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"

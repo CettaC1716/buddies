@@ -152,8 +152,11 @@ if ( vFrostMaskFlag > 0.5 ) {
 } else if ( cafeNightGlowFade > 0.001 ) {
   vec3 clearViewDir = normalize( vViewPosition );
   float clearNdotV = abs( dot( normalize( normal ), clearViewDir ) );
-  float clearFresnel = pow( clamp( 1.0 - clearNdotV, 0.0, 1.0 ), 2.2 );
-  outgoingLight = mix( outgoingLight, vec3( 1.0, 0.88, 0.66 ), clamp( clearFresnel * 0.26 * cafeNightGlowFade, 0.0, 0.26 ) );
+  float clearFresnel = pow( clamp( 1.0 - clearNdotV, 0.0, 1.0 ), 1.75 );
+  float arcadeTopGlow = smoothstep( 4.2, 6.5, vFrostWorldPos.y );
+  float clearSheen = clamp( clearFresnel * 0.34 + arcadeTopGlow * 0.22 + 0.04, 0.0, 0.46 ) * cafeNightGlowFade;
+  outgoingLight += vec3( 1.0, 0.88, 0.64 ) * ( clearSheen * 0.72 );
+  diffuseColor.a = clamp( diffuseColor.a + clearSheen * 0.14, 0.20, 0.48 );
 }
 #include <opaque_fragment>`,
       );

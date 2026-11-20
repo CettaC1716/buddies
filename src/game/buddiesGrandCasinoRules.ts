@@ -261,6 +261,118 @@ export function evaluateGrandCasinoPavedPlatformSdf(px: number, pz: number): num
   );
 }
 
+const GRAND_CASINO_SIDEWALK_POLYGON: ReadonlyArray<readonly [number, number]> = (() => {
+  const cz = GRAND_CASINO_MASTERPLAN.centerZ;
+  const vl = GRAND_CASINO_MASTERPLAN.valetLoop;
+  const innerCurbX = vl.boxCenterX - vl.boxHalfX - vl.laneHalfWidth; // -76.20
+  const valetArcCx = vl.boxCenterX - vl.boxHalfX + vl.cornerRadius; // -68.30
+  const valetArcSouthCz = cz + vl.boxHalfZ - vl.cornerRadius; // -68.45
+  const valetOuterCurbR = vl.cornerRadius + vl.laneHalfWidth + 0.01; // 7.91
+
+  const pts: Array<readonly [number, number]> = [
+    [-73.93, -38.10],
+    [-73.93, -44.00],
+  ];
+  const tramArcTheta0 = Math.PI;
+  const tramArcTheta1 = Math.acos(-1.93 / 11.93);
+  for (let s = 1; s <= 14; s++) {
+    const th = tramArcTheta0 + (s / 14) * (tramArcTheta1 - tramArcTheta0);
+    pts.push([-62.0 + Math.cos(th) * 11.93, -44.0 - Math.sin(th) * 11.93]);
+  }
+  pts.push([-63.93, -60.56]);
+  for (let s = 0; s <= 12; s++) {
+    const ang = Math.PI * 0.5 + (s / 12) * (Math.PI * 0.5);
+    pts.push([
+      valetArcCx + Math.cos(ang) * valetOuterCurbR,
+      valetArcSouthCz + Math.sin(ang) * valetOuterCurbR,
+    ]);
+  }
+  pts.push(
+    [innerCurbX, -87.20],
+    [-75.05, -90.60],
+    [-74.85, -95.20],
+    [-76.50, -100.20],
+    [-80.40, -101.40],
+    [-87.20, -98.80],
+    [-94.80, -94.80],
+    [-101.55, -90.80],
+    [-101.55, -50.20],
+    [-77.45, -50.20],
+    [-76.58, -46.80],
+    [-76.58, -38.10],
+  );
+  return pts;
+})();
+
+function pointInCasinoSidewalkPolygon(px: number, pz: number): boolean {
+  let inside = false;
+  const poly = GRAND_CASINO_SIDEWALK_POLYGON;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0];
+    const zi = poly[i][1];
+    const xj = poly[j][0];
+    const zj = poly[j][1];
+    const intersect =
+      zi > pz !== zj > pz && px < ((xj - xi) * (pz - zi)) / (zj - zi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Evaluates exact walkable ground elevation across the Grand Casino District:
+ * - `+0.14m` on the D-shaped Landscaped Median Island
+ * - `+0.09m` on the continuous Urban Sidewalk & North Garden slab (`mainSidewalkSlabGeo`)
+ * - `+0.022m` on the Porte-Cochere Fan-Pattern Cobblestone Valet Apron
+ * - `0.0m` on the Valet Loop asphalt road & surrounding lawns
+ */
+export function evaluateGrandCasinoSidewalkElevation(px: number, pz: number): number {
+  if (px > -63.5 || px < -101.65 || pz > -38.05 || pz < -101.5) {
+    return 0.0;
+  }
+  const vl = GRAND_CASINO_MASTERPLAN.valetLoop;
+  const cz = GRAND_CASINO_MASTERPLAN.centerZ;
+  const arcCx = vl.boxCenterX - vl.boxHalfX + vl.cornerRadius; // -68.30
+  const arcSouthCz = cz + vl.boxHalfZ - vl.cornerRadius; // -68.45
+  const arcNorthCz = cz - vl.boxHalfZ + vl.cornerRadius; // -72.75
+  const islandArcRad = vl.cornerRadius - vl.laneHalfWidth - 0.10; // 2.40
+
+  // 1. D-Shaped Landscaped Median Island (yTop = +0.14m)
+  if (
+    px <= -64.05 &&
+    pz >= arcNorthCz - islandArcRad &&
+    pz <= arcSouthCz + islandArcRad
+  ) {
+    if (px >= arcCx) {
+      return 0.14;
+    }
+    const clampedZ = Math.max(arcNorthCz, Math.min(arcSouthCz, pz));
+    if (Math.hypot(px - arcCx, pz - clampedZ) <= islandArcRad + 0.02) {
+      return 0.14;
+    }
+  }
+
+  // 2. Continuous Grand Casino Pedestrian Sidewalk & North Garden (yTop = +0.09m)
+  if (pointInCasinoSidewalkPolygon(px, pz)) {
+    return 0.09;
+  }
+
+  // 3. Porte-Cochere Cobblestone Valet Drop-Off Apron (yTop = +0.022m)
+  const innerCurbX = vl.boxCenterX - vl.boxHalfX - vl.laneHalfWidth; // -76.20
+  const outerIslandWestX = vl.boxCenterX - vl.boxHalfX + vl.laneHalfWidth; // -70.80
+  const cobbleHalfZ = GRAND_CASINO_MASTERPLAN.porteCochere.halfZ + 0.35; // 4.50
+  if (
+    px >= innerCurbX &&
+    px <= outerIslandWestX &&
+    pz >= cz - cobbleHalfZ &&
+    pz <= cz + cobbleHalfZ
+  ) {
+    return 0.022;
+  }
+
+  return 0.0;
+}
+
 /**
  * Returns true if `(worldX, worldZ)` lies inside either of the 2 painted Grand Casino
  * Valet Loop throat Zebra Crosswalks.

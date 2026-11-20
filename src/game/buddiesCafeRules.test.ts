@@ -1475,7 +1475,7 @@ test('non-upright Mixamo retarget filter and scale-invariant seated floor helper
 
   for (const relGlb of [
     'public/assets/character_custom_idle_runway_catwalk_stylish_11 (3).glb',
-    'public/assets/aistudio/character_custom_idle_runway_catwalk_stylish_11 (2).glb',
+    'public/assets/character_custom_idle_runway_catwalk_stylish_11 (2).glb',
   ]) {
     const absPath = path.resolve(process.cwd(), relGlb);
     assert.ok(fs.existsSync(absPath), `Missing ${absPath}`);

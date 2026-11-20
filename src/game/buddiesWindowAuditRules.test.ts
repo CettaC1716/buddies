@@ -584,6 +584,36 @@ test('buildCentralBotanicalPark3D exposes unbaked cityWindowSpec 3D glass meshes
     });
     assert.equal(transparentSalonPanes, 8, 'Expected 5 curved showcase glass segments + 3 glazed salon doors');
 
+    const boutiqueGlassHost = park.group.getObjectByName('UrbanPlazaBoutiqueTowerGlassHost');
+    assert.ok(boutiqueGlassHost, 'UrbanPlazaBoutiqueTowerGlassHost must remain unbaked in animatedGroup');
+    let boutiqueBayGlassCount = 0;
+    boutiqueGlassHost.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && obj.name.startsWith('Boutique1FDisplayGlass_')) {
+        const mat = obj.material as THREE.MeshStandardMaterial;
+        assert.equal(obj.userData?.cityWindowSpec?.kind, 'storefront');
+        assert.equal(mat.transparent, true, `${obj.name} must be transparent to reveal interior mannequins`);
+        assert.ok(mat.opacity <= 0.35, `${obj.name} opacity must stay clear`);
+        assert.equal(mat.depthWrite, false, `${obj.name} must keep depthWrite=false for crisp see-through vitrines`);
+        boutiqueBayGlassCount++;
+      }
+    });
+    assert.equal(boutiqueBayGlassCount, 8, 'Expected 8 transparent 1F display bay glass panes on BoutiqueTower');
+
+    const cozyCafeGlassHost = park.group.getObjectByName('UrbanPlazaCozyBitesCafeGlassHost');
+    assert.ok(cozyCafeGlassHost, 'UrbanPlazaCozyBitesCafeGlassHost must remain unbaked in animatedGroup');
+    let cozyBayGlassCount = 0;
+    cozyCafeGlassHost.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && obj.name.startsWith('CozyBitesShowcaseGlass_')) {
+        const mat = obj.material as THREE.MeshStandardMaterial;
+        assert.equal(obj.userData?.cityWindowSpec?.kind, 'storefront');
+        assert.equal(mat.transparent, true, `${obj.name} must be transparent to reveal interior pastry stands`);
+        assert.ok(mat.opacity <= 0.35, `${obj.name} opacity must stay clear`);
+        assert.equal(mat.depthWrite, false, `${obj.name} must keep depthWrite=false for crisp see-through vitrines`);
+        cozyBayGlassCount++;
+      }
+    });
+    assert.equal(cozyBayGlassCount, 7, 'Expected 7 transparent 1F showcase glass panes on CozyBitesCafe');
+
     park.dispose();
   });
 });
@@ -675,6 +705,16 @@ function getMeshLocalBoxInGroup(mesh: THREE.Mesh, rootGroup: THREE.Object3D): TH
   return bb.applyMatrix4(relMat);
 }
 
+function getObjectBoundsInGroup(obj: THREE.Object3D, rootGroup: THREE.Object3D): THREE.Box3 {
+  const combined = new THREE.Box3();
+  obj.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      combined.union(getMeshLocalBoxInGroup(child, rootGroup));
+    }
+  });
+  return combined;
+}
+
 test('Boutique Tower 1F and CozyBites Cafe Pavilion seal all corners and connect all storefront mullions/jambs cleanly', async () => {
   const { buildBoutiqueRooftopTower3D, buildCozyBitesCafePavilion3D } = await import(
     './buddiesUrbanPlazaBuildingsBuilder'
@@ -686,10 +726,13 @@ test('Boutique Tower 1F and CozyBites Cafe Pavilion seal all corners and connect
       buildBoutiqueRooftopTower3D(mock.ctx);
       buildCozyBitesCafePavilion3D(mock.ctx);
       mock.staticGroup.updateMatrixWorld(true);
+      mock.animatedGroup.updateMatrixWorld(true);
 
       // 1. Boutique Tower 1F corner piers + 8 display bays
       const boutiqueGrp = mock.staticGroup.getObjectByName('UrbanPlazaBoutiqueTower3D')!;
+      const boutiqueGlassHost = mock.animatedGroup.getObjectByName('UrbanPlazaBoutiqueTowerGlassHost')!;
       assert.ok(boutiqueGrp, 'UrbanPlazaBoutiqueTower3D must exist');
+      assert.ok(boutiqueGlassHost, 'UrbanPlazaBoutiqueTowerGlassHost must exist');
 
       for (const sx of [-1, 1] as const) {
         for (const sz of [-1, 1] as const) {
@@ -745,11 +788,40 @@ test('Boutique Tower 1F and CozyBites Cafe Pavilion seal all corners and connect
           assert.ok(lo <= spec.minBound - 0.03, `Boutique bay ${spec.idx} ${label} low (${lo}) must embed >= 0.03m past ${spec.minBound}`);
           assert.ok(hi >= spec.maxBound + 0.03, `Boutique bay ${spec.idx} ${label} high (${hi}) must embed >= 0.03m past ${spec.maxBound}`);
         }
+
+        // Front clear glass must sit strictly IN FRONT of interior mannequins & behind outer mullions
+        const backdropMesh = bayGrp.getObjectByName('Boutique1FDisplayBackdrop') as THREE.Mesh;
+        const mLeft = bayGrp.getObjectByName('BoutiqueMannequin_Left')!;
+        const mRight = bayGrp.getObjectByName('BoutiqueMannequin_Right')!;
+        const glassMesh = boutiqueGlassHost.getObjectByName(`Boutique1FDisplayGlass_${spec.idx}`) as THREE.Mesh;
+        assert.ok(backdropMesh, `Boutique bay ${spec.idx} missing Boutique1FDisplayBackdrop`);
+        assert.ok(mLeft && mRight, `Boutique bay ${spec.idx} missing mannequins`);
+        assert.ok(glassMesh, `Boutique bay ${spec.idx} missing Boutique1FDisplayGlass_${spec.idx}`);
+
+        const glassMat = glassMesh.material as THREE.MeshStandardMaterial;
+        assert.equal(glassMat.transparent, true);
+        assert.ok(glassMat.opacity <= 0.35);
+        assert.equal(glassMat.depthWrite, false);
+
+        const backdropBb = getMeshLocalBoxInGroup(backdropMesh, bayGrp);
+        const leftBb = getObjectBoundsInGroup(mLeft, bayGrp);
+        const rightBb = getObjectBoundsInGroup(mRight, bayGrp);
+        const glassBb = getMeshLocalBoxInGroup(glassMesh, bayGrp);
+        const transomBayBb = getMeshLocalBoxInGroup(transom, bayGrp);
+
+        assert.ok(backdropBb.max.z < leftBb.min.z && backdropBb.max.z < rightBb.min.z,
+          `Boutique bay ${spec.idx} mannequins must sit cleanly in front of alcove backdrop`);
+        assert.ok(leftBb.max.z < glassBb.min.z && rightBb.max.z < glassBb.min.z,
+          `Boutique bay ${spec.idx} mannequins (maxZ=${Math.max(leftBb.max.z, rightBb.max.z)}) must sit strictly behind front glass (minZ=${glassBb.min.z})`);
+        assert.ok(glassBb.max.z <= transomBayBb.max.z,
+          `Boutique bay ${spec.idx} glass (maxZ=${glassBb.max.z}) must sit behind/flush within outer mullions (maxZ=${transomBayBb.max.z})`);
       }
 
       // 2. CozyBites Cafe Pavilion corner piers + West front piers + 7 showcase bays
       const cafeGrp = mock.staticGroup.getObjectByName('UrbanPlazaCozyBitesCafe3D')!;
+      const cafeGlassHost = mock.animatedGroup.getObjectByName('UrbanPlazaCozyBitesCafeGlassHost')!;
       assert.ok(cafeGrp, 'UrbanPlazaCozyBitesCafe3D must exist');
+      assert.ok(cafeGlassHost, 'UrbanPlazaCozyBitesCafeGlassHost must exist');
 
       for (const sx of [-1, 1] as const) {
         for (const sz of [-1, 1] as const) {
@@ -814,6 +886,31 @@ test('Boutique Tower 1F and CozyBites Cafe Pavilion seal all corners and connect
           const cornerClamp = spec.axis === 'x' ? 4.10 : 3.60;
           assert.ok(lo >= -cornerClamp && hi <= cornerClamp, `CozyBites bay ${spec.idx} ${label} must not protrude past outer corner`);
         }
+
+        // Front clear glass must sit strictly IN FRONT of interior pastry counter/stands & behind outer mullions
+        const backdropMesh = bayGrp.getObjectByName('CozyBitesShowcaseBackdrop') as THREE.Mesh;
+        const displayGrp = bayGrp.getObjectByName('CozyBitesShowcaseDisplay')!;
+        const glassMesh = cafeGlassHost.getObjectByName(`CozyBitesShowcaseGlass_${spec.idx}`) as THREE.Mesh;
+        assert.ok(backdropMesh, `CozyBites bay ${spec.idx} missing CozyBitesShowcaseBackdrop`);
+        assert.ok(displayGrp, `CozyBites bay ${spec.idx} missing CozyBitesShowcaseDisplay`);
+        assert.ok(glassMesh, `CozyBites bay ${spec.idx} missing CozyBitesShowcaseGlass_${spec.idx}`);
+
+        const glassMat = glassMesh.material as THREE.MeshStandardMaterial;
+        assert.equal(glassMat.transparent, true);
+        assert.ok(glassMat.opacity <= 0.35);
+        assert.equal(glassMat.depthWrite, false);
+
+        const backdropBb = getMeshLocalBoxInGroup(backdropMesh, bayGrp);
+        const displayBb = getObjectBoundsInGroup(displayGrp, bayGrp);
+        const glassBb = getMeshLocalBoxInGroup(glassMesh, bayGrp);
+        const transomBayBb = getMeshLocalBoxInGroup(transom, bayGrp);
+
+        assert.ok(backdropBb.max.z < displayBb.min.z,
+          `CozyBites bay ${spec.idx} pastry display (minZ=${displayBb.min.z}) must sit cleanly in front of alcove backdrop (maxZ=${backdropBb.max.z})`);
+        assert.ok(displayBb.max.z < glassBb.min.z,
+          `CozyBites bay ${spec.idx} pastry display (maxZ=${displayBb.max.z}) must sit strictly behind front glass (minZ=${glassBb.min.z})`);
+        assert.ok(glassBb.max.z <= transomBayBb.max.z,
+          `CozyBites bay ${spec.idx} glass (maxZ=${glassBb.max.z}) must sit behind/flush within outer mullions (maxZ=${transomBayBb.max.z})`);
       }
     } finally {
       mock.dispose();
@@ -992,4 +1089,67 @@ test('buildBeautySalonStudio3D creates curved-corner GLOW STUDIO / BEAUTY & GLOW
   } finally {
     (globalThis as { document?: unknown }).document = origDocument;
   }
+});
+
+test('BoutiqueTower, CozyBitesCafe, and BeautySalon clear storefront glass share zero-draw-call night curtain shaders & LED coves', async () => {
+  const { buildBoutiqueRooftopTower3D, buildCozyBitesCafePavilion3D } = await import(
+    './buddiesUrbanPlazaBuildingsBuilder'
+  );
+  const { buildBeautySalonStudio3D } = await import('./buddiesBeautySalonBuilder');
+  const { updateCityWindowNightLighting } = await import('./buddiesNightLightingRules');
+
+  await withStubDocument(async () => {
+    const mock = createMockUrbanPlazaContext();
+    try {
+      buildBoutiqueRooftopTower3D(mock.ctx);
+      buildCozyBitesCafePavilion3D(mock.ctx);
+      buildBeautySalonStudio3D(mock.ctx);
+
+      const boutiqueStatic = mock.staticGroup.getObjectByName('UrbanPlazaBoutiqueTower3D')!;
+      const boutiqueGlassHost = mock.animatedGroup.getObjectByName('UrbanPlazaBoutiqueTowerGlassHost')!;
+      const cafeStatic = mock.staticGroup.getObjectByName('UrbanPlazaCozyBitesCafe3D')!;
+      const cafeGlassHost = mock.animatedGroup.getObjectByName('UrbanPlazaCozyBitesCafeGlassHost')!;
+      const salonGlassHost = mock.animatedGroup.getObjectByName('UrbanPlazaBeautySalonGlassHost')!;
+
+      let boutiqueLedCount = 0;
+      boutiqueStatic.traverse((obj) => {
+        if (obj.name === 'Boutique1FDisplayLedCove') boutiqueLedCount++;
+      });
+      assert.equal(boutiqueLedCount, 8, 'Expected 8 1F vitrine LED cove strips in BoutiqueTower');
+
+      let cafeLedCount = 0;
+      cafeStatic.traverse((obj) => {
+        if (obj.name === 'CozyBitesShowcaseLedCove') cafeLedCount++;
+      });
+      assert.equal(cafeLedCount, 7, 'Expected 7 1F showcase LED cove strips in CozyBitesCafe');
+
+      const sharedGlassMats = new Set<THREE.Material>();
+      for (const host of [boutiqueGlassHost, cafeGlassHost, salonGlassHost]) {
+        host.traverse((obj) => {
+          if (obj instanceof THREE.Mesh && obj.userData?.cityWindowSpec?.kind === 'storefront') {
+            const mat = obj.material as THREE.MeshStandardMaterial;
+            assert.equal(mat.transparent, true);
+            assert.equal(mat.depthWrite, false);
+            assert.ok(mat.opacity <= 0.35);
+            assert.equal(mat.userData.preserveSharedMaterial, true);
+            assert.equal(mat.userData.cityClearStorefrontGlassHooked, true);
+            assert.ok(mat.userData.cityGlassNightUniform);
+            sharedGlassMats.add(mat);
+          }
+        });
+      }
+      assert.ok(sharedGlassMats.size <= 3, `Expected shared clear glass materials across storefronts, got ${sharedGlassMats.size}`);
+
+      updateCityWindowNightLighting(mock.animatedGroup, 0.02, 0);
+      for (const mat of sharedGlassMats) {
+        assert.equal(mat.userData.cityGlassNightUniform.value, 0.02);
+      }
+      updateCityWindowNightLighting(mock.animatedGroup, 1.0, 3.0);
+      for (const mat of sharedGlassMats) {
+        assert.equal(mat.userData.cityGlassNightUniform.value, 1.0);
+      }
+    } finally {
+      mock.dispose();
+    }
+  });
 });

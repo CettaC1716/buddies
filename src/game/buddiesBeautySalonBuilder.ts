@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { attachClearStorefrontGlassNightShader } from './buddiesNightLightingRules';
 import {
   createCityWindowSpec,
   tagCityWindowMesh,
@@ -720,15 +721,15 @@ function buildSalonInteriorFixtures(
   // 1. Interior Terrazzo Floor, Cream Walls & Bright Illuminated Ceiling
   const floorGeo = createCurvedPodiumSlabGeo(-0.22, 0.02, 0.075, 0.004);
   ctx.applyPlanarUvs(floorGeo, 1.8);
-  ctx.addPart(grp, floorGeo, '#ffffff', [0, 0, 0], [0, 0, 0], { map: floorTex, receiveShadow: true });
+  ctx.addPart(grp, floorGeo, '#ffffff', [0, 0, 0], [0, 0, 0], { map: floorTex, receiveShadow: true, bounce: 2.54 });
 
   const ceilingGeo = createCurvedPodiumSlabGeo(-0.22, 3.50, 3.58, 0.004);
-  ctx.addPart(grp, ceilingGeo, '#fdf6ec', [0, 0, 0]);
+  ctx.addPart(grp, ceilingGeo, '#fdf6ec', [0, 0, 0], [0, 0, 0], { bounce: 2.60 });
 
   // Interior backdrop partition wall at z = -2.25m (bright sunlit cream behind vanity & display niches)
-  ctx.addPart(grp, createBeveledBox(6.8, 3.44, 0.14, 0.010), '#f7efe4', [-0.35, 1.78, -2.25]);
+  ctx.addPart(grp, createBeveledBox(6.8, 3.44, 0.14, 0.010), '#f7efe4', [-0.35, 1.78, -2.25], [0, 0, 0], { bounce: 2.66 });
   // Right-side decorative partition wall at x = +1.36m supporting arched niche facing -X toward curved window
-  ctx.addPart(grp, createBeveledBox(0.14, 3.44, 2.25, 0.010), '#f5eadb', [1.36, 1.78, -1.12]);
+  ctx.addPart(grp, createBeveledBox(0.14, 3.44, 2.25, 0.010), '#f5eadb', [1.36, 1.78, -1.12], [0, 0, 0], { bounce: 2.66 });
 
   // 2. Arched Backlit Display Wall Niches stocked with pastel skincare bottles & perfume jars
   const buildDisplayNiche = (nx: number, nz: number, rotY: number) => {
@@ -738,11 +739,20 @@ function buildSalonInteriorFixtures(
     grp.add(nGrp);
 
     // Cream cabinet surround + arched warm backlit inner panel (#fff2de)
-    ctx.addPart(nGrp, createBeveledBox(1.36, 2.40, 0.24, 0.014), '#ebd9c8', [0, 1.20, 0]);
-    ctx.addPart(nGrp, createBeveledBox(1.06, 1.85, 0.04, 0.008), '#fff1d9', [0, 1.32, 0.11]);
-    ctx.addPart(nGrp, new THREE.CylinderGeometry(0.53, 0.53, 0.04, 16, 1, false, 0, Math.PI), '#fff1d9', [0, 2.24, 0.11], [Math.PI * 0.5, 0, 0]);
+    ctx.addPart(nGrp, createBeveledBox(1.36, 2.40, 0.24, 0.014), '#ebd9c8', [0, 1.20, 0], [0, 0, 0], { bounce: 2.62 });
+    ctx.addPart(nGrp, createBeveledBox(1.06, 1.85, 0.04, 0.008), '#fff1d9', [0, 1.32, 0.11], [0, 0, 0], { bounce: 2.92 });
+    ctx.addPart(
+      nGrp,
+      new THREE.CylinderGeometry(0.53, 0.53, 0.04, 16, 1, false, 0, Math.PI),
+      '#fff1d9',
+      [0, 2.24, 0.11],
+      [Math.PI * 0.5, 0, 0],
+      { bounce: 2.92 },
+    );
     // Arched oak trim border
-    ctx.addPart(nGrp, new THREE.TorusGeometry(0.54, 0.036, 6, 16, Math.PI), COL_SALON_OAK, [0, 2.24, 0.13]);
+    ctx.addPart(nGrp, new THREE.TorusGeometry(0.54, 0.036, 6, 16, Math.PI), COL_SALON_OAK, [0, 2.24, 0.13], [0, 0, 0], {
+      bounce: 2.60,
+    });
 
     // 4 Display Shelves stocked with pastel skincare bottles, serum droppers & perfume jars
     const bottleCols = ['#f6b4c8', '#d7c3f4', '#b4e3d4', '#f8d6a8', '#fffaf4', '#f39ebc'];
@@ -750,14 +760,24 @@ function buildSalonInteriorFixtures(
       const sy = 0.58 + sh * 0.46;
       ctx.addPart(nGrp, createBeveledBox(1.04, 0.032, 0.18, 0.006), '#ffffff', [0, sy, 0.16], [0, 0, 0], {
         map: oakTex,
+        bounce: 2.62,
       });
       for (let b = 0; b < 5; b++) {
         const bx = -0.38 + b * 0.19;
         const bCol = bottleCols[(sh * 3 + b) % bottleCols.length];
         const bH = b % 2 === 0 ? 0.16 : 0.12;
         const bR = b % 3 === 0 ? 0.045 : 0.034;
-        ctx.addPart(nGrp, new THREE.CylinderGeometry(bR, bR * 1.05, bH, 8), bCol, [bx, sy + 0.016 + bH * 0.5, 0.18]);
-        ctx.addPart(nGrp, new THREE.CylinderGeometry(bR * 0.55, bR * 0.55, 0.035, 7), COL_SALON_BRASS, [bx, sy + 0.016 + bH + 0.018, 0.18]);
+        ctx.addPart(nGrp, new THREE.CylinderGeometry(bR, bR * 1.05, bH, 8), bCol, [bx, sy + 0.016 + bH * 0.5, 0.18], [0, 0, 0], {
+          bounce: 2.68,
+        });
+        ctx.addPart(
+          nGrp,
+          new THREE.CylinderGeometry(bR * 0.55, bR * 0.55, 0.035, 7),
+          COL_SALON_BRASS,
+          [bx, sy + 0.016 + bH + 0.018, 0.18],
+          [0, 0, 0],
+          { bounce: 2.68 },
+        );
       }
     }
   };
@@ -768,28 +788,37 @@ function buildSalonInteriorFixtures(
   const recGrp = new THREE.Group();
   recGrp.position.set(2.48, 0.075, -1.15);
   grp.add(recGrp);
-  ctx.addPart(recGrp, createBeveledBox(1.42, 0.96, 0.52, 0.014), '#f3e5d6', [0, 0.48, 0], [0, 0, 0], { castShadow: true });
-  ctx.addPart(recGrp, createBeveledBox(1.50, 0.06, 0.58, 0.012), COL_SALON_MARBLE, [0, 0.99, 0]);
-  ctx.addPart(recGrp, new THREE.CylinderGeometry(0.08, 0.06, 0.18, 10), '#d9b4a2', [-0.42, 1.11, 0]);
-  ctx.addPart(recGrp, new THREE.SphereGeometry(0.13, 8, 7), '#f3a4bf', [-0.42, 1.24, 0]);
+  ctx.addPart(recGrp, createBeveledBox(1.42, 0.96, 0.52, 0.014), '#f3e5d6', [0, 0.48, 0], [0, 0, 0], {
+    castShadow: true,
+    bounce: 2.64,
+  });
+  ctx.addPart(recGrp, createBeveledBox(1.50, 0.06, 0.58, 0.012), COL_SALON_MARBLE, [0, 0.99, 0], [0, 0, 0], { bounce: 2.64 });
+  ctx.addPart(recGrp, new THREE.CylinderGeometry(0.08, 0.06, 0.18, 10), '#d9b4a2', [-0.42, 1.11, 0], [0, 0, 0], { bounce: 2.64 });
+  ctx.addPart(recGrp, new THREE.SphereGeometry(0.13, 8, 7), '#f3a4bf', [-0.42, 1.24, 0], [0, 0, 0], { bounce: 2.64 });
 
   // 3. Center White Marble Display Pedestal Table with Makeup Brush Cup & Bottles (curved corner foreground!)
   const pedGrp = new THREE.Group();
   pedGrp.position.set(-2.05, 0.075, 1.35);
   grp.add(pedGrp);
 
-  ctx.addPart(pedGrp, new THREE.CylinderGeometry(0.64, 0.66, 0.06, 20), COL_SALON_BRASS, [0, 0.03, 0]);
+  ctx.addPart(pedGrp, new THREE.CylinderGeometry(0.64, 0.66, 0.06, 20), COL_SALON_BRASS, [0, 0.03, 0], [0, 0, 0], { bounce: 2.68 });
   ctx.addPart(pedGrp, new THREE.CylinderGeometry(0.60, 0.62, 0.84, 20), COL_SALON_MARBLE, [0, 0.48, 0], [0, 0, 0], {
     castShadow: true,
     receiveShadow: true,
+    bounce: 2.68,
   });
   ctx.addPart(pedGrp, new THREE.CylinderGeometry(0.68, 0.66, 0.07, 20), '#fcf9f5', [0, 0.935, 0], [0, 0, 0], {
     castShadow: true,
+    bounce: 2.68,
   });
-  ctx.addPart(pedGrp, new THREE.TorusGeometry(0.67, 0.016, 6, 20), COL_SALON_BRASS, [0, 0.90, 0], [Math.PI * 0.5, 0, 0]);
+  ctx.addPart(pedGrp, new THREE.TorusGeometry(0.67, 0.016, 6, 20), COL_SALON_BRASS, [0, 0.90, 0], [Math.PI * 0.5, 0, 0], {
+    bounce: 2.68,
+  });
 
   // Makeup Brush Cup + 7 Angled Brushes + Display Bottles on Pedestal Table
-  ctx.addPart(pedGrp, new THREE.CylinderGeometry(0.085, 0.075, 0.17, 12), '#e5c9a8', [0.14, 1.055, 0.08]);
+  ctx.addPart(pedGrp, new THREE.CylinderGeometry(0.085, 0.075, 0.17, 12), '#e5c9a8', [0.14, 1.055, 0.08], [0, 0, 0], {
+    bounce: 2.68,
+  });
   for (let br = 0; br < 7; br++) {
     const ba = (br / 7) * Math.PI * 2;
     const tilt = 0.22;
@@ -799,12 +828,15 @@ function buildSalonInteriorFixtures(
       '#d8ab6a',
       [0.14 + Math.cos(ba) * 0.025, 1.15, 0.08 + Math.sin(ba) * 0.025],
       [Math.sin(ba) * tilt, 0, -Math.cos(ba) * tilt],
+      { bounce: 2.68 },
     );
     ctx.addPart(
       pedGrp,
       new THREE.SphereGeometry(0.022, 6, 5),
       br % 2 === 0 ? '#5c4338' : '#e6a8b8',
       [0.14 + Math.cos(ba) * 0.05, 1.26, 0.08 + Math.sin(ba) * 0.05],
+      [0, 0, 0],
+      { bounce: 2.68 },
     );
   }
   for (const [bx, bz, bh, col] of [
@@ -813,8 +845,17 @@ function buildSalonInteriorFixtures(
     [-0.28, -0.05, 0.13, '#b8e0d2'],
     [0.24, -0.16, 0.15, '#f6d6aa'],
   ] as const) {
-    ctx.addPart(pedGrp, new THREE.CylinderGeometry(0.048, 0.052, bh, 10), col, [bx, 0.97 + bh * 0.5, bz]);
-    ctx.addPart(pedGrp, new THREE.CylinderGeometry(0.025, 0.025, 0.04, 8), COL_SALON_BRASS, [bx, 0.97 + bh + 0.02, bz]);
+    ctx.addPart(pedGrp, new THREE.CylinderGeometry(0.048, 0.052, bh, 10), col, [bx, 0.97 + bh * 0.5, bz], [0, 0, 0], {
+      bounce: 2.68,
+    });
+    ctx.addPart(
+      pedGrp,
+      new THREE.CylinderGeometry(0.025, 0.025, 0.04, 8),
+      COL_SALON_BRASS,
+      [bx, 0.97 + bh + 0.02, bz],
+      [0, 0, 0],
+      { bounce: 2.68 },
+    );
   }
 
   // 4. Hollywood Bulb-Lit Vanity Mirror + Counter + Cushioned Seat (`x = -0.85, z = -1.65`)
@@ -824,45 +865,67 @@ function buildSalonInteriorFixtures(
 
   ctx.addPart(vanGrp, createBeveledBox(1.56, 0.84, 0.50, 0.014), '#f8f2ea', [0, 0.42, 0], [0, 0, 0], {
     castShadow: true,
+    bounce: 2.64,
   });
-  ctx.addPart(vanGrp, createBeveledBox(1.64, 0.06, 0.56, 0.012), COL_SALON_MARBLE, [0, 0.87, 0]);
+  ctx.addPart(vanGrp, createBeveledBox(1.64, 0.06, 0.56, 0.012), COL_SALON_MARBLE, [0, 0.87, 0], [0, 0, 0], { bounce: 2.64 });
   // Drawer pulls
   for (const dx of [-0.46, 0.46]) {
-    ctx.addPart(vanGrp, createBeveledBox(0.58, 0.20, 0.03, 0.008), '#eedfce', [dx, 0.68, 0.255]);
-    ctx.addPart(vanGrp, createBeveledBox(0.14, 0.025, 0.025, 0.005), COL_SALON_BRASS, [dx, 0.68, 0.275]);
+    ctx.addPart(vanGrp, createBeveledBox(0.58, 0.20, 0.03, 0.008), '#eedfce', [dx, 0.68, 0.255], [0, 0, 0], { bounce: 2.64 });
+    ctx.addPart(vanGrp, createBeveledBox(0.14, 0.025, 0.025, 0.005), COL_SALON_BRASS, [dx, 0.68, 0.275], [0, 0, 0], {
+      bounce: 2.64,
+    });
   }
   // Mirror frame + reflective pane + 14 warm Hollywood vanity bulbs
-  ctx.addPart(vanGrp, createBeveledBox(1.26, 1.32, 0.08, 0.014), '#fdfaf5', [0, 1.56, -0.18]);
-  ctx.addPart(vanGrp, new THREE.BoxGeometry(1.04, 1.10, 0.025), '#c9e0ee', [0, 1.56, -0.135]);
+  ctx.addPart(vanGrp, createBeveledBox(1.26, 1.32, 0.08, 0.014), '#fdfaf5', [0, 1.56, -0.18], [0, 0, 0], { bounce: 2.66 });
+  ctx.addPart(vanGrp, new THREE.BoxGeometry(1.04, 1.10, 0.025), '#c9e0ee', [0, 1.56, -0.135], [0, 0, 0], { bounce: 2.64 });
   for (let ly = 0; ly < 5; ly++) {
     const by = 1.04 + ly * 0.26;
-    ctx.addPart(vanGrp, new THREE.SphereGeometry(0.036, 7, 6), '#fff4c8', [-0.57, by, -0.12]);
-    ctx.addPart(vanGrp, new THREE.SphereGeometry(0.036, 7, 6), '#fff4c8', [0.57, by, -0.12]);
+    ctx.addPart(vanGrp, new THREE.SphereGeometry(0.036, 7, 6), '#fff4c8', [-0.57, by, -0.12], [0, 0, 0], { bounce: 2.95 });
+    ctx.addPart(vanGrp, new THREE.SphereGeometry(0.036, 7, 6), '#fff4c8', [0.57, by, -0.12], [0, 0, 0], { bounce: 2.95 });
   }
   for (let lx = 0; lx < 5; lx++) {
     const bx = -0.44 + lx * 0.22;
-    ctx.addPart(vanGrp, new THREE.SphereGeometry(0.036, 7, 6), '#fff4c8', [bx, 2.16, -0.12]);
+    ctx.addPart(vanGrp, new THREE.SphereGeometry(0.036, 7, 6), '#fff4c8', [bx, 2.16, -0.12], [0, 0, 0], { bounce: 2.95 });
   }
   // Plush blush-pink vanity stool
-  ctx.addPart(vanGrp, new THREE.CylinderGeometry(0.24, 0.26, 0.14, 14), '#e8b4c0', [0, 0.46, 0.56]);
-  ctx.addPart(vanGrp, new THREE.CylinderGeometry(0.04, 0.05, 0.36, 8), COL_SALON_BRASS, [0, 0.21, 0.56]);
-  ctx.addPart(vanGrp, new THREE.CylinderGeometry(0.22, 0.24, 0.035, 12), COL_SALON_BRASS, [0, 0.018, 0.56]);
+  ctx.addPart(vanGrp, new THREE.CylinderGeometry(0.24, 0.26, 0.14, 14), '#e8b4c0', [0, 0.46, 0.56], [0, 0, 0], { bounce: 2.62 });
+  ctx.addPart(vanGrp, new THREE.CylinderGeometry(0.04, 0.05, 0.36, 8), COL_SALON_BRASS, [0, 0.21, 0.56], [0, 0, 0], {
+    bounce: 2.62,
+  });
+  ctx.addPart(vanGrp, new THREE.CylinderGeometry(0.22, 0.24, 0.035, 12), COL_SALON_BRASS, [0, 0.018, 0.56], [0, 0, 0], {
+    bounce: 2.62,
+  });
 
   // 5. Round Lit Mirror Station + Counter + Seat (`x = +0.54, z = -1.55`)
   const rndGrp = new THREE.Group();
   rndGrp.position.set(0.54, 0.075, -1.55);
   grp.add(rndGrp);
 
-  ctx.addPart(rndGrp, createBeveledBox(1.04, 0.80, 0.46, 0.014), '#ffffff', [0, 0.40, 0], [0, 0, 0], { map: oakTex });
-  ctx.addPart(rndGrp, createBeveledBox(1.10, 0.055, 0.52, 0.012), COL_SALON_MARBLE, [0, 0.825, 0]);
+  ctx.addPart(rndGrp, createBeveledBox(1.04, 0.80, 0.46, 0.014), '#ffffff', [0, 0.40, 0], [0, 0, 0], {
+    map: oakTex,
+    bounce: 2.64,
+  });
+  ctx.addPart(rndGrp, createBeveledBox(1.10, 0.055, 0.52, 0.012), COL_SALON_MARBLE, [0, 0.825, 0], [0, 0, 0], {
+    bounce: 2.64,
+  });
   // Circular mirror with glowing LED rim halo
-  ctx.addPart(rndGrp, new THREE.CylinderGeometry(0.46, 0.46, 0.04, 24), '#fff3c9', [0, 1.48, -0.16], [Math.PI * 0.5, 0, 0]);
-  ctx.addPart(rndGrp, new THREE.CylinderGeometry(0.41, 0.41, 0.05, 24), '#cae0ed', [0, 1.48, -0.15], [Math.PI * 0.5, 0, 0]);
-  ctx.addPart(rndGrp, new THREE.TorusGeometry(0.44, 0.022, 6, 24), COL_SALON_BRASS, [0, 1.48, -0.14]);
+  ctx.addPart(rndGrp, new THREE.CylinderGeometry(0.46, 0.46, 0.04, 24), '#fff3c9', [0, 1.48, -0.16], [Math.PI * 0.5, 0, 0], {
+    bounce: 2.95,
+  });
+  ctx.addPart(rndGrp, new THREE.CylinderGeometry(0.41, 0.41, 0.05, 24), '#cae0ed', [0, 1.48, -0.15], [Math.PI * 0.5, 0, 0], {
+    bounce: 2.64,
+  });
+  ctx.addPart(rndGrp, new THREE.TorusGeometry(0.44, 0.022, 6, 24), COL_SALON_BRASS, [0, 1.48, -0.14], [0, 0, 0], {
+    bounce: 2.64,
+  });
   // Stool
-  ctx.addPart(rndGrp, new THREE.CylinderGeometry(0.22, 0.22, 0.12, 12), '#e6d4c4', [0, 0.45, 0.54]);
-  ctx.addPart(rndGrp, new THREE.CylinderGeometry(0.038, 0.045, 0.36, 8), COL_SALON_BRASS, [0, 0.20, 0.54]);
-  ctx.addPart(rndGrp, new THREE.CylinderGeometry(0.20, 0.22, 0.035, 12), COL_SALON_BRASS, [0, 0.018, 0.54]);
+  ctx.addPart(rndGrp, new THREE.CylinderGeometry(0.22, 0.22, 0.12, 12), '#e6d4c4', [0, 0.45, 0.54], [0, 0, 0], { bounce: 2.62 });
+  ctx.addPart(rndGrp, new THREE.CylinderGeometry(0.038, 0.045, 0.36, 8), COL_SALON_BRASS, [0, 0.20, 0.54], [0, 0, 0], {
+    bounce: 2.62,
+  });
+  ctx.addPart(rndGrp, new THREE.CylinderGeometry(0.20, 0.22, 0.035, 12), COL_SALON_BRASS, [0, 0.018, 0.54], [0, 0, 0], {
+    bounce: 2.62,
+  });
 
   // 6. Warm Hanging Pendant Lamps suspended from ceiling over display table & reception
   for (const [px, pz, drop] of [
@@ -870,9 +933,15 @@ function buildSalonInteriorFixtures(
     [0.05, 0.25, 0.82],
     [2.35, 0.85, 0.86],
   ] as const) {
-    ctx.addPart(grp, new THREE.CylinderGeometry(0.012, 0.012, drop, 6), COL_SALON_BRASS, [px, 3.50 - drop * 0.5, pz]);
-    ctx.addPart(grp, new THREE.CylinderGeometry(0.05, 0.22, 0.18, 14), COL_SALON_BRASS, [px, 3.50 - drop, pz]);
-    ctx.addPart(grp, new THREE.SphereGeometry(0.075, 10, 8), '#fff3c4', [px, 3.50 - drop - 0.06, pz]);
+    ctx.addPart(grp, new THREE.CylinderGeometry(0.012, 0.012, drop, 6), COL_SALON_BRASS, [px, 3.50 - drop * 0.5, pz], [0, 0, 0], {
+      bounce: 2.64,
+    });
+    ctx.addPart(grp, new THREE.CylinderGeometry(0.05, 0.22, 0.18, 14), COL_SALON_BRASS, [px, 3.50 - drop, pz], [0, 0, 0], {
+      bounce: 2.64,
+    });
+    ctx.addPart(grp, new THREE.SphereGeometry(0.075, 10, 8), '#fff3c4', [px, 3.50 - drop - 0.06, pz], [0, 0, 0], {
+      bounce: 2.95,
+    });
   }
 }
 
@@ -1042,6 +1111,7 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
     side: THREE.DoubleSide,
     depthWrite: false,
   });
+  attachClearStorefrontGlassNightShader(clearStorefrontGlassMat, { yMin: 0.88, yMax: 3.46 });
   ctx.registerMat(clearStorefrontGlassMat);
 
   // Procedural CanvasTextures

@@ -565,7 +565,7 @@ test('3D GPU-instanced city lighting builder removes all CityTraffic_* meshes, u
   assert.deepEqual(trafficObjects, [], 'Must have zero CityTraffic_* objects in rootGroup');
   assert.equal(foundPointLights, 0, 'Must never add THREE.PointLight instances');
   assert.equal(instancedCount, handle.stats.instancedMeshCount);
-  assert.equal(instancedCount, 31, `Expected 31 city lighting instanced batches, got ${instancedCount}`);
+  assert.equal(instancedCount, 34, `Expected 34 city lighting instanced batches, got ${instancedCount}`);
 
   for (const requiredName of [
     'CityLamp_Tier1_Metal',
@@ -576,6 +576,9 @@ test('3D GPU-instanced city lighting builder removes all CityTraffic_* meshes, u
     'CityLamp_Tier2_Iron',
     'CityLamp_Tier2_Bulb',
     'CityLamp_Tier2_Glass',
+    'CityLamp_Tier2_Pier_Iron',
+    'CityLamp_Tier2_Pier_Bulb',
+    'CityLamp_Tier2_Pier_Glass',
     'CityLamp_Tier3_Single_Metal',
     'CityLamp_Tier3_Single_Bulb',
     'CityLamp_Tier3_Single_Glass',
@@ -783,3 +786,62 @@ test('radial lantern glow curves, camera-distance scaling, and daytime cutoff ra
   assert.ok(beachAnchor);
   assert.ok(Math.abs(beachAnchor.x + (beachAnchor.lanternXOffset ?? 0) - 76.48) < 1e-6);
 });
+
+test('Relocated Tier 4 lamp_t4_plaza_center_n cleanly replaces smaller NE terrace lamp at (-80.35, -12.4)', () => {
+  const lampN = CITY_LAMP_MANIFEST.find((l) => l.id === 'lamp_t4_plaza_center_n');
+  assert.ok(lampN);
+  assert.equal(lampN.tier, 4);
+  assert.equal(lampN.x, -80.35);
+  assert.equal(lampN.z, -12.4);
+  assert.equal(lampN.y, 2.5);
+
+  assert.equal(
+    EXISTING_CITY_LAMP_POOL_ANCHORS.some((a) => a.id === 'existing_plaza_e2'),
+    false,
+    'Old smaller lamp light pool anchor existing_plaza_e2 must be removed',
+  );
+  assert.equal(
+    CITY_LAMP_MANIFEST.some((l) => l.id === 'lamp_t4_plaza_center_n' && l.x === -80.35 && l.z === -12.4),
+    true,
+    'Relocated Tier 4 lamp must be active in CITY_LAMP_MANIFEST at (-80.35, -12.4)',
+  );
+
+  // Both civic step lanterns are mounted lantern-only atop the stone balustrade end-piers (no brick pier)
+  const pierW = CITY_LAMP_MANIFEST.find((l) => l.id === 'lamp_t2_civic_step_w');
+  const pierE = CITY_LAMP_MANIFEST.find((l) => l.id === 'lamp_t2_civic_step_e');
+  assert.ok(pierW && pierE);
+  assert.equal(pierW.lampVariant, 'pier_lantern');
+  assert.equal(pierE.lampVariant, 'pier_lantern');
+  assert.equal(pierW.z, pierE.z);
+  assert.ok(Math.abs((pierW.x + pierE.x) * 0.5 - -93.55) < 1e-4);
+  assert.ok(pierW.y > 3.7 && pierE.y > 3.7);
+});
+
+test('Pier-mounted Tier 2 lanterns render lantern-only batch without brick pedestal meshes', () => {
+  const scene = new THREE.Scene();
+  const handle = buildCityLightingAndTrafficSystem(scene, undefined, false);
+  const t2BrickMesh = handle.rootGroup.getObjectByName('CityLamp_Tier2_Brick') as THREE.InstancedMesh;
+  const t2PierIronMesh = handle.rootGroup.getObjectByName('CityLamp_Tier2_Pier_Iron') as THREE.InstancedMesh;
+  assert.ok(t2BrickMesh);
+  assert.ok(t2PierIronMesh);
+  assert.equal(
+    t2BrickMesh.count,
+    CITY_LAMP_MANIFEST.filter((l) => l.tier === 2 && l.lampVariant !== 'pier_lantern').length,
+  );
+  assert.equal(
+    t2PierIronMesh.count,
+    CITY_LAMP_MANIFEST.filter((l) => l.tier === 2 && l.lampVariant === 'pier_lantern').length,
+  );
+  handle.dispose();
+
+  for (const id of ['existing_plaza_w1', 'existing_plaza_w2', 'existing_plaza_w4', 'existing_plaza_e1', 'existing_plaza_e4']) {
+    const a = EXISTING_CITY_LAMP_POOL_ANCHORS.find((entry) => entry.id === id);
+    assert.ok(a && a.lanternYOffset === 5.97, `Upgraded promenade bronze lamp ${id} should align lanternYOffset at 5.97m`);
+  }
+  for (const id of ['existing_civic_planter_w', 'existing_civic_planter_e']) {
+    const a = EXISTING_CITY_LAMP_POOL_ANCHORS.find((entry) => entry.id === id);
+    assert.ok(a && a.lanternYOffset === 4.96, `Upgraded civic planter bronze lamp ${id} should align lanternYOffset at 4.96m`);
+  }
+});
+
+

@@ -283,6 +283,7 @@ import {
 } from './game/buddiesFishingMarket';
 import { UrbanScooterShowroomModal } from './components/UrbanScooterShowroomModal';
 import { FashionBoutiqueModal } from './components/FashionBoutiqueModal';
+import { WardrobeStudioModal } from './components/WardrobeStudioModal';
 import {
   FASHION_APPAREL_CATALOG_ITEMS,
   type FashionApparelCatalogItem,
@@ -292,6 +293,18 @@ import {
   resolveEquippedTorsoGlbForGender,
   toggleEquipFashionApparel,
 } from './game/buddiesFashionKioskRules';
+import {
+  EMPTY_WARDROBE_DRAFT,
+  WARDROBE_STUDIO_ITEMS,
+  getWardrobeDraftStorageKey,
+  purchaseWardrobeCatalogItem,
+  resolveWardrobeDraftBodyShape,
+  resolveWardrobeDraftFaceCustomization,
+  resolveWardrobeDraftToModularOutfitUrls,
+  sanitizeDraftToOwnedOnly,
+  type WardrobeCatalogItem,
+  type WardrobeOutfitDraft,
+} from './game/buddiesWardrobeStudioRules';
 import { GrandCasinoModal, type CasinoTab } from './components/GrandCasinoModal';
 import type { CasinoSlotGameVariant } from './game/buddiesGrandCasinoRules';
 import {
@@ -930,6 +943,7 @@ export default function App() {
   const [isDailyMissionsModalOpen, setIsDailyMissionsModalOpen] = useState<boolean>(false);
   const [isScooterShowroomModalOpen, setIsScooterShowroomModalOpen] = useState<boolean>(false);
   const [isFashionBoutiqueModalOpen, setIsFashionBoutiqueModalOpen] = useState<boolean>(false);
+  const [isWardrobeStudioOpen, setIsWardrobeStudioOpen] = useState<boolean>(false);
   const [isGrandCasinoModalOpen, setIsGrandCasinoModalOpen] = useState<boolean>(false);
   const [grandCasinoInitialTab, setGrandCasinoInitialTab] = useState<CasinoTab>('slots');
   const [grandCasinoSlotVariant, setGrandCasinoSlotVariant] =
@@ -1008,21 +1022,74 @@ export default function App() {
     }
   }, []);
 
+  const loadWardrobeDraftFromStorage = useCallback(
+    (acctKey: string, fallbackTorsoId: string | null): WardrobeOutfitDraft => {
+      if (typeof window === 'undefined') {
+        return { ...EMPTY_WARDROBE_DRAFT, topId: fallbackTorsoId };
+      }
+      try {
+        const raw = window.localStorage.getItem(getWardrobeDraftStorageKey(acctKey));
+        if (!raw) return { ...EMPTY_WARDROBE_DRAFT, topId: fallbackTorsoId };
+        const parsed = JSON.parse(raw) as Partial<WardrobeOutfitDraft> | null;
+        if (!parsed || typeof parsed !== 'object') {
+          return { ...EMPTY_WARDROBE_DRAFT, topId: fallbackTorsoId };
+        }
+        return {
+          topId: typeof parsed.topId === 'string' ? parsed.topId : null,
+          bottomsId: typeof parsed.bottomsId === 'string' ? parsed.bottomsId : null,
+          shoesId: typeof parsed.shoesId === 'string' ? parsed.shoesId : null,
+          hairId: typeof parsed.hairId === 'string' ? parsed.hairId : null,
+          setId: typeof parsed.setId === 'string' ? parsed.setId : null,
+          bodyShapeId: typeof parsed.bodyShapeId === 'string' ? parsed.bodyShapeId : null,
+          eyeStyleId: typeof parsed.eyeStyleId === 'string' ? parsed.eyeStyleId : null,
+          browStyleId: typeof parsed.browStyleId === 'string' ? parsed.browStyleId : null,
+          lipStyleId: typeof parsed.lipStyleId === 'string' ? parsed.lipStyleId : null,
+          animSetId: typeof parsed.animSetId === 'string' ? parsed.animSetId : null,
+          dancePoseId: typeof parsed.dancePoseId === 'string' ? parsed.dancePoseId : null,
+          clothingTintHex:
+            typeof parsed.clothingTintHex === 'string' ? parsed.clothingTintHex : null,
+        };
+      } catch {
+        return { ...EMPTY_WARDROBE_DRAFT, topId: fallbackTorsoId };
+      }
+    },
+    [],
+  );
+
   const [ownedApparelIds, setOwnedApparelIds] = useState<string[]>(() =>
     loadOwnedApparelFromStorage('guest'),
   );
   const [equippedTorsoItemId, setEquippedTorsoItemId] = useState<string | null>(() =>
     loadEquippedTorsoFromStorage('guest'),
   );
+  const [equippedWardrobeDraft, setEquippedWardrobeDraft] = useState<WardrobeOutfitDraft>(() => {
+    const initialOwned = loadOwnedApparelFromStorage('guest');
+    const initialTorso = loadEquippedTorsoFromStorage('guest');
+    const validTorso = initialTorso && initialOwned.includes(initialTorso) ? initialTorso : null;
+    return sanitizeDraftToOwnedOnly(
+      loadWardrobeDraftFromStorage('guest', validTorso),
+      initialOwned,
+    );
+  });
 
   useEffect(() => {
     const loadedOwned = loadOwnedApparelFromStorage(dailyMissionsAccountKey);
     const loadedEquipped = loadEquippedTorsoFromStorage(dailyMissionsAccountKey);
-    setOwnedApparelIds(loadedOwned);
-    setEquippedTorsoItemId(
-      loadedEquipped && loadedOwned.includes(loadedEquipped) ? loadedEquipped : null,
+    const validTorso =
+      loadedEquipped && loadedOwned.includes(loadedEquipped) ? loadedEquipped : null;
+    const loadedDraft = sanitizeDraftToOwnedOnly(
+      loadWardrobeDraftFromStorage(dailyMissionsAccountKey, validTorso),
+      loadedOwned,
     );
-  }, [dailyMissionsAccountKey, loadOwnedApparelFromStorage, loadEquippedTorsoFromStorage]);
+    setOwnedApparelIds(loadedOwned);
+    setEquippedTorsoItemId(loadedDraft.setId ? null : loadedDraft.topId);
+    setEquippedWardrobeDraft(loadedDraft);
+  }, [
+    dailyMissionsAccountKey,
+    loadOwnedApparelFromStorage,
+    loadEquippedTorsoFromStorage,
+    loadWardrobeDraftFromStorage,
+  ]);
   const lastEnteredHousePlotRef = useRef<{
     team: 'blue' | 'red' | null;
     plotIndex: number | null;
@@ -2450,13 +2517,20 @@ export default function App() {
   );
 
   useEffect(() => {
-    const activeItemId =
-      equippedTorsoItemId && ownedApparelIds.includes(equippedTorsoItemId)
-        ? equippedTorsoItemId
-        : null;
-    const torsoGlbPath = resolveEquippedTorsoGlbForGender(activeItemId, characterGender);
-    dispatchBuddyAction(`setEquippedTorso:${torsoGlbPath ?? ''}`);
-  }, [equippedTorsoItemId, ownedApparelIds, characterGender, gameState, dispatchBuddyAction]);
+    const ownedDraft = sanitizeDraftToOwnedOnly(
+      equippedWardrobeDraft,
+      ownedApparelIds,
+      characterGender,
+    );
+    const modularUrls = resolveWardrobeDraftToModularOutfitUrls(ownedDraft, characterGender);
+    const payload = {
+      ...modularUrls,
+      clothingTintHex: ownedDraft.clothingTintHex,
+      bodyShape: resolveWardrobeDraftBodyShape(ownedDraft),
+      faceCustomization: resolveWardrobeDraftFaceCustomization(ownedDraft),
+    };
+    dispatchBuddyAction(`setEquippedModularOutfit:${JSON.stringify(payload)}`);
+  }, [equippedWardrobeDraft, ownedApparelIds, characterGender, gameState, dispatchBuddyAction]);
 
   const handlePurchaseFashionApparelToBag = useCallback(
     (item: FashionApparelCatalogItem): { ok: boolean; errorMessage?: string } => {
@@ -2493,12 +2567,90 @@ export default function App() {
     [ownedApparelIds, dailyMissionsAccountKey, dispatchBuddyAction],
   );
 
+  const handlePurchaseWardrobeStudioItem = useCallback(
+    (item: WardrobeCatalogItem): { ok: boolean; errorMessage?: string } => {
+      const res = purchaseWardrobeCatalogItem(ownedApparelIds, hudRef.current.gold, item.id);
+      if (!res.ok) {
+        return { ok: false, errorMessage: res.errorMessage };
+      }
+      if (!res.alreadyOwned) {
+        if (res.priceChargedLul > 0) {
+          dispatchBuddyAction(`adjustPlayerLul:${-res.priceChargedLul}`);
+          setHud((prev) => ({ ...prev, gold: res.nextLulBalance }));
+          const buyerAcct = hudRef.current.nearWalletId || '';
+          if (buyerAcct) {
+            void syncPlayerBalancesToSupabase({
+              nearAccountId: buyerAcct,
+              lulBalance: res.nextLulBalance,
+              cyonBalance: cyonBalanceRef.current,
+              respiteBalance: respiteBalanceRef.current,
+            });
+          }
+        }
+        setOwnedApparelIds(res.nextOwnedIds);
+        try {
+          window.localStorage.setItem(
+            getOwnedApparelStorageKey(dailyMissionsAccountKey),
+            JSON.stringify(res.nextOwnedIds),
+          );
+        } catch {
+          // ignore storage errors
+        }
+      }
+      return { ok: true };
+    },
+    [ownedApparelIds, dailyMissionsAccountKey, dispatchBuddyAction],
+  );
+
+  const handleCompleteWardrobeStudio = useCallback(
+    (committedOwnedDraft: WardrobeOutfitDraft) => {
+      const safeDraft = sanitizeDraftToOwnedOnly(committedOwnedDraft, ownedApparelIds);
+      setEquippedWardrobeDraft(safeDraft);
+      const nextTopId = safeDraft.setId ? null : safeDraft.topId;
+      setEquippedTorsoItemId(nextTopId);
+      try {
+        window.localStorage.setItem(
+          getWardrobeDraftStorageKey(dailyMissionsAccountKey),
+          JSON.stringify(safeDraft),
+        );
+        if (nextTopId) {
+          window.localStorage.setItem(
+            getEquippedTorsoStorageKey(dailyMissionsAccountKey),
+            nextTopId,
+          );
+        } else {
+          window.localStorage.removeItem(getEquippedTorsoStorageKey(dailyMissionsAccountKey));
+        }
+      } catch {
+        // ignore storage errors
+      }
+      setIsWardrobeStudioOpen(false);
+    },
+    [ownedApparelIds, dailyMissionsAccountKey],
+  );
+
   const handleToggleEquipApparel = useCallback(
     (itemId: string | null) => {
       const toggled = toggleEquipFashionApparel(ownedApparelIds, equippedTorsoItemId, itemId);
       if (!toggled.ok) return;
       soundEngine.playUiConfirm();
       setEquippedTorsoItemId(toggled.nextEquippedId);
+      setEquippedWardrobeDraft((prev) => {
+        const nextDraft: WardrobeOutfitDraft = {
+          ...prev,
+          setId: null,
+          topId: toggled.nextEquippedId,
+        };
+        try {
+          window.localStorage.setItem(
+            getWardrobeDraftStorageKey(dailyMissionsAccountKey),
+            JSON.stringify(nextDraft),
+          );
+        } catch {
+          // ignore storage errors
+        }
+        return nextDraft;
+      });
       try {
         if (toggled.nextEquippedId) {
           window.localStorage.setItem(
@@ -9067,6 +9219,7 @@ export default function App() {
                       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
                       window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
                       setIsGearModalOpen(false);
+                      setIsWardrobeStudioOpen(false);
                       setIsPersonalBagModalOpen((prev) => !prev);
                     }}
                     className={`-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs ${
@@ -9082,6 +9235,39 @@ export default function App() {
                       {hud.equippedWeapon === 'Joran Fishing' && (
                         <span className="w-2 h-2 rounded-full bg-[#166534] border border-black" />
                       )}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-top-wardrobe-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setIsTargetMenuExpanded(false);
+                      setSelectedTargetUser(null);
+                      setIsProfileModalOpen(false);
+                      setIsKioskModalOpen(false);
+                      setIsSocialChatModalOpen(false);
+                      setIsPersonalWalletModalOpen(false);
+                      setIsPersonalBagModalOpen(false);
+                      setIsDailyMissionsModalOpen(false);
+                      setIsFashionBoutiqueModalOpen(false);
+                      setIsScooterShowroomModalOpen(false);
+                      setIsRealEstateCatalogModalOpen(false);
+                      setIsGrandCasinoModalOpen(false);
+                      setActiveSpecialModal('none');
+                      setActiveTeleportKioskModal('none');
+                      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                      window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+                      setIsGearModalOpen(false);
+                      setIsWardrobeStudioOpen(true);
+                    }}
+                    className="-skew-x-12 px-2.5 h-9 flex items-center justify-center gap-1.5 font-black text-xs bg-[#f0abfc] hover:bg-[#f5d0fe] text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+                    title="Open UHD 3D Wardrobe Dressing Room Studio"
+                  >
+                    <span className="skew-x-12 flex items-center gap-1">
+                      <Shirt className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                      <span>WARDROBE</span>
                     </span>
                   </button>
 
@@ -12484,6 +12670,9 @@ export default function App() {
               const ownedWardrobeItems = FASHION_APPAREL_CATALOG_ITEMS.filter((apparel) =>
                 ownedApparelIds.includes(apparel.id),
               );
+              const totalOwnedStudioCount = WARDROBE_STUDIO_ITEMS.filter(
+                (item) => item.isStarterDefault || ownedApparelIds.includes(item.id),
+              ).length;
               return (
                 <div className="space-y-3">
                   {/* Wardrobe & Apparel Section inside Personal Bag */}
@@ -12492,27 +12681,43 @@ export default function App() {
                       <div className="flex items-center gap-1.5">
                         <Shirt className="w-4 h-4 text-[#0284c7] shrink-0" />
                         <span className="text-[11px] font-black uppercase tracking-wider text-slate-900">
-                          WARDROBE &amp; APPAREL ({ownedWardrobeItems.length})
+                          WARDROBE &amp; APPAREL ({totalOwnedStudioCount})
                         </span>
                       </div>
-                      {equippedTorsoItemId && (
-                        <button
-                          type="button"
-                          onClick={() => handleToggleEquipApparel(null)}
-                          className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-900 text-[9.5px] font-black uppercase border border-black cursor-pointer whitespace-nowrap"
-                        >
-                          Default Top
-                        </button>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {equippedTorsoItemId && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleEquipApparel(null)}
+                            className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-900 text-[9.5px] font-black uppercase border border-black cursor-pointer whitespace-nowrap"
+                          >
+                            Default Top
+                          </button>
+                        )}
+                        {hud.worldMode !== 'warzone' && (
+                          <button
+                            type="button"
+                            data-bag-open-wardrobe-studio-btn="true"
+                            onClick={() => {
+                              soundEngine.playUiConfirm();
+                              setIsPersonalBagModalOpen(false);
+                              setIsWardrobeStudioOpen(true);
+                            }}
+                            className="-skew-x-6 px-2.5 py-1 bg-[#f0abfc] hover:bg-[#f5d0fe] text-black text-[9.5px] font-black uppercase border-2 border-black shadow-[2px_2px_0_#000] cursor-pointer whitespace-nowrap"
+                          >
+                            <span className="skew-x-6 inline-block">3D STUDIO</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {ownedWardrobeItems.length === 0 ? (
                       <div className="p-3 bg-white border border-dashed border-slate-300 text-center space-y-1">
                         <div className="text-[11px] font-black uppercase text-slate-600">
-                          No Clothing in Bag Yet
+                          Starter Wardrobe Ready
                         </div>
                         <p className="text-[10.5px] font-bold text-slate-500">
-                          Visit the Fashion &amp; Apparel Boutique kiosk on Central Plaza to buy outfits into your Bag.
+                          Open the 3D Wardrobe Studio to customize Top, Bottoms, Hair, Shoes, Sets, and Dye Colors.
                         </p>
                       </div>
                     ) : (
@@ -12884,6 +13089,7 @@ export default function App() {
           isNearWalletSelectorOpen ||
           isScooterShowroomModalOpen ||
           isFashionBoutiqueModalOpen ||
+          isWardrobeStudioOpen ||
           isRealEstateCatalogModalOpen ||
           isGrandCasinoModalOpen ||
           isCitizenDialogueOpen ||
@@ -13102,7 +13308,7 @@ export default function App() {
         )}
       {isInsideGlasshouseCafe && cafeShiftState.isWorking && cafePrepStatus && (
         <div
-          className="pointer-events-none fixed bottom-24 left-1/2 z-40 -translate-x-1/2 flex items-center gap-2.5 rounded-full border border-amber-300/70 bg-slate-950/92 px-4 py-2 text-xs font-extrabold tracking-wide text-amber-100 shadow-[0_12px_30px_rgba(0,0,0,0.45)] backdrop-blur-md"
+          className="pointer-events-none fixed bottom-24 left-1/2 z-40 -translate-x-1/2 flex items-center gap-2.5 rounded-full border border-amber-300/70 bg-slate-950/95 px-4 py-2 text-xs font-extrabold tracking-wide text-amber-100 shadow-[0_12px_30px_rgba(0,0,0,0.45)]"
           data-testid="cafe-work-prep-status"
         >
           <span className="inline-block h-2.5 w-2.5 animate-ping rounded-full bg-amber-400" />
@@ -13132,6 +13338,7 @@ export default function App() {
           isDailyMissionsModalOpen ||
           isScooterShowroomModalOpen ||
           isFashionBoutiqueModalOpen ||
+          isWardrobeStudioOpen ||
           isRealEstateCatalogModalOpen ||
           isGrandCasinoModalOpen ||
           isCitizenDialogueOpen ||
@@ -13586,6 +13793,21 @@ export default function App() {
           setIsPersonalBagModalOpen(true);
         }}
       />
+      <WardrobeStudioModal
+        isOpen={isWardrobeStudioOpen && hud.worldMode !== 'warzone'}
+        accountKey={dailyMissionsAccountKey}
+        characterGender={characterGender}
+        lulBalance={hud.gold}
+        ownedApparelIds={ownedApparelIds}
+        initialDraft={equippedWardrobeDraft}
+        onChangeGender={(nextGender) => {
+          setCharacterGender(nextGender);
+          dispatchBuddyAction(`setCharacterGender:${nextGender}`);
+        }}
+        onPurchaseItem={handlePurchaseWardrobeStudioItem}
+        onComplete={handleCompleteWardrobeStudio}
+        onClose={() => setIsWardrobeStudioOpen(false)}
+      />
       <RealEstateCatalogModal
         isOpen={isRealEstateCatalogModalOpen && hud.worldMode !== 'warzone'}
         initialTab={realEstateCatalogTab}
@@ -13758,7 +13980,7 @@ export default function App() {
                   left: `${nb.leftPct}%`,
                   top: `${nb.topPct}%`,
                 }}
-                className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 px-3 py-1.5 rounded-xl bg-[#0f131c]/72 hover:bg-[#0f131c]/90 text-white border border-white/25 backdrop-blur-md shadow-[0_8px_22px_rgba(0,0,0,0.32)] text-left cursor-pointer transition-all hover:scale-105 active:scale-95"
+                className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 px-3 py-1.5 rounded-xl bg-[#0f131c]/88 hover:bg-[#0f131c]/95 text-white border border-white/25 shadow-[0_8px_22px_rgba(0,0,0,0.32)] text-left cursor-pointer transition-all hover:scale-105 active:scale-95"
               >
                 <div className="text-[11px] font-bold leading-tight">{nb.label}</div>
                 <div className="text-[9.5px] text-white/75 leading-tight">{nb.subtitle}</div>
@@ -13767,7 +13989,7 @@ export default function App() {
 
             {/* Top-Left District & Kota Overview Pills */}
             <div className="pointer-events-auto fixed top-3 left-3 sm:top-4 sm:left-4 max-w-[calc(100vw-11rem)] sm:max-w-[540px] flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-2xl bg-[#0f131c]/75 border border-white/15 backdrop-blur-md shadow-[0_12px_32px_rgba(0,0,0,0.35)]">
+              <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-2xl bg-[#0f131c]/90 border border-white/15 shadow-[0_12px_32px_rgba(0,0,0,0.35)]">
                 <button
                   type="button"
                   data-city-view-pill="kota"
@@ -13809,7 +14031,7 @@ export default function App() {
 
             {/* Top-Right Prev / Index / Next + Exit Button */}
             <div className="pointer-events-auto fixed top-3 right-3 sm:top-4 sm:right-4 flex items-center gap-2">
-              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-[#0f131c]/75 border border-white/15 backdrop-blur-md shadow-[0_12px_32px_rgba(0,0,0,0.35)] text-white">
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-[#0f131c]/90 border border-white/15 shadow-[0_12px_32px_rgba(0,0,0,0.35)] text-white">
                 <button
                   type="button"
                   data-city-view-prev="true"
@@ -13854,7 +14076,7 @@ export default function App() {
             </div>
 
             {/* Bottom-Center Click-to-Walk Hint inside 3D Aerial City View */}
-            <div className="pointer-events-none fixed bottom-4 left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full bg-[#0f131c]/78 text-white/90 border border-white/20 backdrop-blur-md shadow-[0_8px_22px_rgba(0,0,0,0.35)] text-[11px] font-semibold tracking-wide whitespace-nowrap">
+            <div className="pointer-events-none fixed bottom-4 left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full bg-[#0f131c]/90 text-white/90 border border-white/20 shadow-[0_8px_22px_rgba(0,0,0,0.35)] text-[11px] font-semibold tracking-wide whitespace-nowrap">
               Klik lokasi mana saja di peta 3D untuk berjalan ke sana · Drag untuk geser kamera
             </div>
 

@@ -812,7 +812,7 @@ test('Per-NPC idleClipOverrideName binds mira_idle.001 strictly to Mira and publ
 test('Per-NPC idleClipOverrideName binds bima_idle.001 strictly to Bima and public/assets/bima-idle-anim.glb matches ambientMaleNpcGlb PelvisRoot nodes', async () => {
   assertAnimGlbMatchesBaseSkeleton(
     'public/assets/bima-idle-anim.glb',
-    'public/assets/aistudio/character_custom_sit_runway_catwalk_stylish_4.glb',
+    'public/assets/character_custom_sit_runway_catwalk_stylish_4.glb',
     'Idle_blitz_Kasual_Harian_Pria_14',
   );
 
@@ -898,7 +898,7 @@ test('Per-NPC idleClipOverrideName binds bima_idle.001 strictly to Bima and publ
 test('Per-NPC idleClipOverrideName binds raka_idle.001 strictly to Raka and matches playerMaleGlb PelvisRoot nodes', async () => {
   assertAnimGlbMatchesBaseSkeleton(
     'public/assets/bima-idle-anim.glb',
-    'public/assets/aistudio/character_custom_idle_runway_catwalk_stylish_11 (2).glb',
+    'public/assets/character_custom_idle_runway_catwalk_stylish_11 (2).glb',
     'Idle_blitz_Kasual_Harian_Pria_14',
   );
 
@@ -980,7 +980,7 @@ test('Per-NPC idleClipOverrideName binds raka_idle.001 strictly to Raka and matc
 test('Per-NPC runClipOverrideName binds kenji_run.001 strictly to Kenji and public/assets/kenji-run-anim.glb matches ambientMaleNpcGlb PelvisRoot nodes', async () => {
   assertAnimGlbMatchesBaseSkeleton(
     'public/assets/kenji-run-anim.glb',
-    'public/assets/aistudio/character_custom_sit_runway_catwalk_stylish_4.glb',
+    'public/assets/character_custom_sit_runway_catwalk_stylish_4.glb',
     'Run_blitz_Kasual_Harian_Pria_4',
   );
 
@@ -1619,7 +1619,7 @@ test('Mira 5-anim GLB pack binds mira_idle.001, mira_walk.001, mira_run.001, and
 test('Raka 5-anim GLB pack binds raka_idle.001, raka_walk.001, raka_run.001, and raka_sit.001 exclusively onto Raka without affecting other NPCs', async () => {
   await assertFourStateAnimPackRigIsolation({
     animGlbPath: 'public/assets/raka-anims.glb',
-    baseGlbPath: 'public/assets/aistudio/character_custom_idle_runway_catwalk_stylish_11 (2).glb',
+    baseGlbPath: 'public/assets/character_custom_idle_runway_catwalk_stylish_11 (2).glb',
     sourceSuffix: 'blitz_Formal_Tenang_Pria_4',
     targetPrefix: 'raka',
     isMale: true,
@@ -1629,7 +1629,7 @@ test('Raka 5-anim GLB pack binds raka_idle.001, raka_walk.001, raka_run.001, and
 test('Bima 5-anim GLB pack binds bima_idle.001, bima_walk.001, bima_run.001, and bima_sit.001 exclusively onto Bima without affecting other NPCs', async () => {
   await assertFourStateAnimPackRigIsolation({
     animGlbPath: 'public/assets/bima-anims.glb',
-    baseGlbPath: 'public/assets/aistudio/character_custom_sit_runway_catwalk_stylish_4.glb',
+    baseGlbPath: 'public/assets/character_custom_sit_runway_catwalk_stylish_4.glb',
     sourceSuffix: 'blitz_Kasual_Harian_Pria_15',
     targetPrefix: 'bima',
     isMale: true,
@@ -1639,7 +1639,7 @@ test('Bima 5-anim GLB pack binds bima_idle.001, bima_walk.001, bima_run.001, and
 test('Kenji 5-anim GLB pack binds kenji_idle.001, kenji_walk.001, kenji_run.001, and kenji_sit.001 exclusively onto Kenji without affecting other NPCs', async () => {
   await assertFourStateAnimPackRigIsolation({
     animGlbPath: 'public/assets/kenji-anims.glb',
-    baseGlbPath: 'public/assets/aistudio/character_custom_sit_runway_catwalk_stylish_4.glb',
+    baseGlbPath: 'public/assets/character_custom_sit_runway_catwalk_stylish_4.glb',
     sourceSuffix: 'blitz_Kasual_Harian_3',
     targetPrefix: 'kenji',
     isMale: true,
@@ -2429,7 +2429,7 @@ test('Real GLB outfits in public/assets/outfit/ and DropScience bind cleanly ont
   ] = await Promise.all([
     loadRealDracoGlbForTest('public/assets/mixamo-locomotion-anim.glb'),
     loadRealDracoGlbForTest('public/assets/character_custom_idle_runway_catwalk_stylish_11 (3).glb'),
-    loadRealDracoGlbForTest('public/assets/aistudio/character_custom_idle_runway_catwalk_stylish_11 (2).glb'),
+    loadRealDracoGlbForTest('public/assets/character_custom_idle_runway_catwalk_stylish_11 (2).glb'),
     loadRealDracoGlbForTest('public/assets/character_custom_sit_formal_tenang_2.glb'),
     loadRealDracoGlbForTest('public/assets/torso_dropscience_hiphop_24_iap_1_3B9D82F3.glb'),
     loadRealDracoGlbForTest('public/assets/outfit/bima/blitz_hair_trend_autumn_edit_2_9582695C.glb'),
@@ -2588,7 +2588,7 @@ test('Real GLB outfits in public/assets/outfit/ and DropScience bind cleanly ont
 
 test('Secondary physics shader hooks persist across frames, Raka ankles never cross midline, and sleeveless collar covers straps', async () => {
   const maleGltf = await loadRealDracoGlbForTest(
-    'public/assets/aistudio/character_custom_idle_runway_catwalk_stylish_11 (2).glb',
+    'public/assets/character_custom_idle_runway_catwalk_stylish_11 (2).glb',
   );
   const rakaTorso = await loadRealDracoGlbForTest(
     'public/assets/outfit/raka/blitz_torso_colorpop_bunny_club_1_7DF6EF18.glb',

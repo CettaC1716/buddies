@@ -43,6 +43,8 @@ import {
   isPointOnBeachfrontStiltCabinDeck,
   evaluateBeachfrontStiltCabinElevation,
   getBaseProceduralGroundElevation,
+  URBAN_SIDEWALK_TOP_Y,
+  evaluateUrbanSidewalkElevation,
 } from './buddiesPlanetCurvature';
 import {
   bakeStaticGroupMeshes,
@@ -883,4 +885,110 @@ test('Coastal Beachfront & Taman Ria render timber, shingles, and BeachfrontStil
     }
   }
 });
+
+test('all urban sidewalks (trotoar) have exact +0.09m terrain collision elevation while adjacent roads & lawns stay 0.0m', () => {
+  resetTerrainSculptGrid();
+  assert.equal(URBAN_SIDEWALK_TOP_Y, 0.09);
+
+  // 1. Central Plaza Roadside Pedestrian Sidewalk (Center Landing, North, South)
+  for (const [x, z] of [
+    [-76.5, 0.0],
+    [-74.2, 0.0],
+    [-76.5, -24.0],
+    [-74.5, -36.0],
+    [-76.5, 24.0],
+    [-74.5, 36.0],
+  ]) {
+    assert.ok(
+      Math.abs(getTerrainElevation(x, z) - 0.09) < 1e-6,
+      `Central Plaza sidewalk (${x}, ${z}) must collide at +0.09m, got ${getTerrainElevation(x, z)}`,
+    );
+  }
+
+  // 2. Tennis Club Perimeter Sidewalks (+0.09m) & Scenic Clay Court (+0.108m)
+  for (const [x, z] of [
+    [-76.0, 50.0],
+    [-90.0, 64.0],
+    [-102.0, 50.0],
+  ]) {
+    assert.ok(
+      Math.abs(getTerrainElevation(x, z) - 0.09) < 1e-6,
+      `Tennis Club sidewalk (${x}, ${z}) must collide at +0.09m, got ${getTerrainElevation(x, z)}`,
+    );
+  }
+  assert.ok(
+    Math.abs(getTerrainElevation(-88.0, 50.0) - 0.108) < 1e-6,
+    `Tennis Club clay court must collide at +0.108m, got ${getTerrainElevation(-88.0, 50.0)}`,
+  );
+
+  // 3. Outer & Inner Tram Ring 4.40m Sidewalks (+0.09m)
+  for (const [x, z] of [
+    [-52.0, -58.0], // North outer collector block
+    [52.0, 58.0],   // South outer collector block
+    [76.0, 0.0],    // East-Central harbor sidewalk block
+    [76.0, -30.0],  // NE outer block
+    [60.0, 0.0],    // Inner East-Central block
+    [-60.0, 28.0],  // Inner West-South block
+    [-60.0, -28.0], // Inner West-North block
+    [30.0, 42.0],   // Inner South-East block
+    [-9.0, -42.0],  // Inner North collector block
+  ]) {
+    assert.ok(
+      Math.abs(getTerrainElevation(x, z) - 0.09) < 1e-6,
+      `Tram sidewalk (${x}, ${z}) must collide at +0.09m, got ${getTerrainElevation(x, z)}`,
+    );
+  }
+
+  // 4. Grand Casino Sidewalk (+0.09m), Median Island (+0.14m), & Cobblestone Apron (+0.022m)
+  for (const [x, z] of [
+    [-75.0, -42.0], // Flush Plaza-to-Casino connector
+    [-67.0, -57.0], // SE Casino sidewalk plaza
+    [-77.8, -56.0], // Casino East front sidewalk
+    [-77.8, -84.0], // Casino NE sidewalk
+    [-99.5, -70.0], // Casino West rear service sidewalk
+    [-80.0, -98.0], // Curved North garden promenade
+  ]) {
+    assert.ok(
+      Math.abs(getTerrainElevation(x, z) - 0.09) < 1e-6,
+      `Grand Casino sidewalk (${x}, ${z}) must collide at +0.09m, got ${getTerrainElevation(x, z)}`,
+    );
+  }
+  assert.ok(
+    Math.abs(getTerrainElevation(-67.0, -70.6) - 0.14) < 1e-6,
+    `Grand Casino median island must collide at +0.14m, got ${getTerrainElevation(-67.0, -70.6)}`,
+  );
+  assert.ok(
+    Math.abs(getTerrainElevation(-73.5, -70.6) - 0.022) < 1e-6,
+    `Grand Casino Porte-Cochere cobble apron must collide at +0.022m`,
+  );
+
+  // 5. Asphalt carriageways, zebra crosswalks, and lawns adjacent to sidewalks MUST remain 0.0m
+  for (const [x, z] of [
+    [-73.8, 0.0],    // West Ring asphalt right outside Plaza curb
+    [-70.0, 0.0],    // West Tram track centerline
+    [-60.0, 15.0],   // Inner West S-curve crosswalk
+    [-18.0, 42.0],   // Inner South S-curve crosswalk
+    [19.0, -42.0],   // Inner North S-curve crosswalk
+    [-60.0, 58.0],   // Outer South collector crosswalk
+    [-66.0, -63.25], // Grand Casino South Valet Loop asphalt throat
+    [-66.0, -77.95], // Grand Casino North Valet Loop asphalt throat
+    [-66.5, -82.0],  // NE Grand Casino green lawn
+    [-78.0, -45.0],  // West green lawn south of Grand Casino
+  ]) {
+    assert.equal(
+      getTerrainElevation(x, z),
+      0.0,
+      `Road/lawn (${x}, ${z}) must remain strictly 0.0m, got ${getTerrainElevation(x, z)}`,
+    );
+  }
+
+  // 6. Raised Halte platforms remain +0.26m and ramps bridge smoothly onto +0.09m sidewalks
+  assert.ok(Math.abs(evaluateUrbanSidewalkElevation(-76.5, 0.0) - 0.09) < 1e-6);
+  assert.ok(Math.abs(getTerrainElevation(-58.9, 0.0) - 0.26) < 1e-6);
+  const rampMid = getTerrainElevation(-58.9, 8.2);
+  const rampEnd = getTerrainElevation(-58.9, 9.2);
+  assert.ok(rampMid > 0.09 && rampMid < 0.26, `Halte ramp mid (${rampMid}) should bridge 0.09..0.26`);
+  assert.ok(Math.abs(rampEnd - 0.09) < 1e-6, `Halte ramp bottom (${rampEnd}) should meet inner sidewalk at +0.09m`);
+});
+
 

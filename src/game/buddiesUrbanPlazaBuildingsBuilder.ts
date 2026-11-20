@@ -3,6 +3,9 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { CENTRAL_PARK_MASTERPLAN } from './buddiesCentralParkRules';
 import { createUnifiedWaterSurfaceMaterial, type BlitzWindUniforms } from './buddiesBlitzShadersAndAssets';
 import {
+  attachClearStorefrontGlassNightShader,
+} from './buddiesNightLightingRules';
+import {
   computeAuditedFacadeWindowTransform,
   createCityWindowSpec,
   tagCityWindowMesh,
@@ -622,6 +625,117 @@ export function createWarmWindowGlowTexture(
   );
 }
 
+function createClearStorefrontGlassTexture(ctx: UrbanPlazaBuildingsContext): THREE.Texture {
+  return makeBuildingCanvasTexture(
+    ctx,
+    256,
+    256,
+    (c, w, h) => {
+      c.clearRect(0, 0, w, h);
+      // Translucent icy sky-blue tint across the glass sheet
+      const tintGrad = c.createLinearGradient(0, 0, w, h);
+      tintGrad.addColorStop(0, 'rgba(220, 244, 255, 0.72)');
+      tintGrad.addColorStop(0.5, 'rgba(232, 248, 255, 0.64)');
+      tintGrad.addColorStop(1, 'rgba(208, 238, 252, 0.76)');
+      c.fillStyle = tintGrad;
+      c.fillRect(0, 0, w, h);
+
+      // Subtle diagonal exterior specular window reflection streaks
+      c.strokeStyle = 'rgba(255, 255, 255, 0.96)';
+      c.lineWidth = 14;
+      c.beginPath();
+      c.moveTo(w * 0.14, h * 0.86);
+      c.lineTo(w * 0.44, h * 0.10);
+      c.moveTo(w * 0.31, h * 0.89);
+      c.lineTo(w * 0.56, h * 0.22);
+      c.stroke();
+
+      c.lineWidth = 6;
+      c.strokeStyle = 'rgba(255, 255, 255, 0.78)';
+      c.beginPath();
+      c.moveTo(w * 0.62, h * 0.78);
+      c.lineTo(w * 0.82, h * 0.28);
+      c.stroke();
+    },
+    false,
+  );
+}
+
+function createDisplayAlcoveBackdropTexture(
+  ctx: UrbanPlazaBuildingsContext,
+  kind: 'boutique' | 'cafe',
+): THREE.Texture {
+  return makeBuildingCanvasTexture(
+    ctx,
+    256,
+    256,
+    (c, w, h) => {
+      const grad = c.createLinearGradient(0, 0, 0, h);
+      if (kind === 'boutique') {
+        grad.addColorStop(0, '#f7f1e6');
+        grad.addColorStop(0.55, '#ede2cf');
+        grad.addColorStop(1, '#dfd0b8');
+      } else {
+        grad.addColorStop(0, '#f9f1e2');
+        grad.addColorStop(0.55, '#eee0c8');
+        grad.addColorStop(1, '#dec9aa');
+      }
+      c.fillStyle = grad;
+      c.fillRect(0, 0, w, h);
+
+      // Soft warm ceiling display spotlight pools above interior merchandise
+      const drawSpot = (cx: number, cy: number, r: number) => {
+        const spot = c.createRadialGradient(cx, cy, 4, cx, cy, r);
+        spot.addColorStop(0, 'rgba(255, 248, 224, 0.72)');
+        spot.addColorStop(1, 'rgba(255, 248, 224, 0)');
+        c.fillStyle = spot;
+        c.beginPath();
+        c.arc(cx, cy, r, 0, Math.PI * 2);
+        c.fill();
+      };
+
+      if (kind === 'boutique') {
+        drawSpot(w * 0.27, h * 0.22, 68);
+        drawSpot(w * 0.73, h * 0.22, 68);
+        // Subtle architectural wall panelling trim & baseboard
+        c.strokeStyle = 'rgba(154, 128, 96, 0.22)';
+        c.lineWidth = 3;
+        c.strokeRect(18, 22, w * 0.5 - 26, h * 0.68);
+        c.strokeRect(w * 0.5 + 8, 22, w * 0.5 - 26, h * 0.68);
+        c.fillStyle = 'rgba(136, 108, 78, 0.24)';
+        c.fillRect(0, h * 0.84, w, h * 0.16);
+      } else {
+        drawSpot(w * 0.5, h * 0.24, 82);
+        // Warm timber bakery wall shelves behind tiered cake stands
+        c.fillStyle = 'rgba(148, 102, 60, 0.42)';
+        c.fillRect(16, h * 0.50, w - 32, 10);
+        c.fillRect(16, h * 0.70, w - 32, 10);
+        c.fillStyle = 'rgba(116, 78, 44, 0.28)';
+        c.fillRect(0, h * 0.84, w, h * 0.16);
+      }
+    },
+    false,
+  );
+}
+
+function createClearStorefrontGlassMaterial(
+  ctx: UrbanPlazaBuildingsContext,
+  streakTex: THREE.Texture,
+): THREE.MeshStandardMaterial {
+  const mat = new THREE.MeshStandardMaterial({
+    color: '#d6f4ff',
+    map: streakTex,
+    transparent: true,
+    opacity: 0.30,
+    roughness: 0.08,
+    metalness: 0.14,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  attachClearStorefrontGlassNightShader(mat, { yMin: 0.82, yMax: 4.07 });
+  return ctx.registerMat(mat) as THREE.MeshStandardMaterial;
+}
+
 function createCozyBitesSignTexture(ctx: UrbanPlazaBuildingsContext): THREE.Texture {
   return makeBuildingCanvasTexture(
     ctx,
@@ -920,24 +1034,25 @@ function buildBoutiqueMannequinSilhouette(
   grp.position.set(pos[0], pos[1], pos[2]);
   parent.add(grp);
 
-  // Brass display base & stand + continuous lathe dress skirt/bodice + seamless neck collar -> head knob
-  ctx.addPart(grp, new THREE.CylinderGeometry(0.14, 0.16, 0.04, 12), '#c59c4a', [0, 0.02, 0]);
-  ctx.addPart(grp, new THREE.CylinderGeometry(0.022, 0.026, 0.72, 8), '#c59c4a', [0, 0.38, 0]);
-  ctx.addPart(grp, new THREE.CylinderGeometry(0.11, 0.24, 0.56, 12), dressHex, [0, 0.82, 0]);
-  ctx.addPart(grp, new THREE.CylinderGeometry(0.15, 0.10, 0.34, 12), dressHex, [0, 1.25, 0]);
+  // Sleek brass display base & stand + tailored A-line dress skirt/bodice + seamless neck collar -> head knob
+  // Sized (`max r = 0.152m`) so scaled 1.16x mannequins fit cleanly inside the 0.37m storefront vitrine cavity behind front glass.
+  ctx.addPart(grp, new THREE.CylinderGeometry(0.115, 0.130, 0.04, 12), '#c59c4a', [0, 0.02, 0], [0, 0, 0], { bounce: 2.68 });
+  ctx.addPart(grp, new THREE.CylinderGeometry(0.020, 0.024, 0.72, 8), '#c59c4a', [0, 0.38, 0], [0, 0, 0], { bounce: 2.68 });
+  ctx.addPart(grp, new THREE.CylinderGeometry(0.095, 0.152, 0.56, 14), dressHex, [0, 0.82, 0], [0, 0, 0], { bounce: 2.68 });
+  ctx.addPart(grp, new THREE.CylinderGeometry(0.135, 0.092, 0.34, 14), dressHex, [0, 1.25, 0], [0, 0, 0], { bounce: 2.68 });
   const neckCollarGeo = new THREE.LatheGeometry(
     [
       new THREE.Vector2(0.0, 1.40),
-      new THREE.Vector2(0.095, 1.40),
-      new THREE.Vector2(0.056, 1.44),
-      new THREE.Vector2(0.044, 1.50),
-      new THREE.Vector2(0.052, 1.54),
+      new THREE.Vector2(0.088, 1.40),
+      new THREE.Vector2(0.052, 1.44),
+      new THREE.Vector2(0.042, 1.50),
+      new THREE.Vector2(0.048, 1.54),
       new THREE.Vector2(0.0, 1.54),
     ],
     14,
   );
-  ctx.addPart(grp, neckCollarGeo, '#f0e2ca', [0, 0, 0]);
-  ctx.addPart(grp, new THREE.SphereGeometry(0.085, 10, 8), '#f0e2ca', [0, 1.56, 0]);
+  ctx.addPart(grp, neckCollarGeo, '#f0e2ca', [0, 0, 0], [0, 0, 0], { bounce: 2.68 });
+  ctx.addPart(grp, new THREE.SphereGeometry(0.080, 10, 8), '#f0e2ca', [0, 1.56, 0], [0, 0, 0], { bounce: 2.68 });
 }
 
 export function buildArchedCasementWindow(
@@ -1330,6 +1445,9 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
   const honeyOakTex = createHoneyOakTimberTexture(ctx);
   const yellowAwningTex = createStripedAwningTexture(ctx, '#efc24c', '#fcf2da');
   const boutiqueGlowTex = createWarmWindowGlowTexture(ctx, 'boutique');
+  const boutiqueBackdropTex = createDisplayAlcoveBackdropTexture(ctx, 'boutique');
+  const clearStorefrontGlassTex = createClearStorefrontGlassTexture(ctx);
+  const clearStorefrontGlassMat = createClearStorefrontGlassMaterial(ctx, clearStorefrontGlassTex);
   const casementGlowTex = createWarmWindowGlowTexture(ctx, 'casement');
 
   const W = 9.2; // local X span [-4.6 .. +4.6] -> World Z [-5.0 .. +4.2]
@@ -1470,10 +1588,10 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
     [0, 0, 0],
     { map: boutiqueGlowTex },
   );
-  tagCityWindowMesh(
-    frontDoorGlass,
-    createCityWindowSpec('boutique-1f-entry-door', 'storefront', '#e8f4fc', 1, 0),
-  );
+  tagCityWindowMesh(frontDoorGlass, {
+    ...createCityWindowSpec('boutique-1f-entry-door', 'civic', '#e8f4fc', 1, 0),
+    intensityScale: 0.65,
+  });
   ctx.addPart(grp, createBeveledBox(0.085, 3.94, 0.06, 0.008), '#543c2c', [0, 2.05, halfD + 0.01]);
   ctx.addPart(grp, createBeveledBox(2.02, 0.075, 0.06, 0.008), '#543c2c', [0, 3.24, halfD + 0.01]);
   for (const hx of [-0.14, 0.14]) {
@@ -1488,13 +1606,17 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
     bayW: number,
     dressColors: readonly [string, string],
   ) => {
+    const bayIdx = storeBayIdx;
+    storeBayIdx += 1;
+
     const bayGrp = new THREE.Group();
-    bayGrp.name = `Boutique1FDisplayBay_${storeBayIdx}`;
+    bayGrp.name = `Boutique1FDisplayBay_${bayIdx}`;
     bayGrp.position.set(bayPos[0], bayPos[1], bayPos[2]);
     bayGrp.rotation.y = rotY;
     grp.add(bayGrp);
 
     const glassBayGrp = new THREE.Group();
+    glassBayGrp.name = `Boutique1FDisplayGlassBay_${bayIdx}`;
     glassBayGrp.position.set(bayPos[0], bayPos[1], bayPos[2]);
     glassBayGrp.rotation.y = rotY;
     glassHost.add(glassBayGrp);
@@ -1506,31 +1628,57 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
     const sillMesh = ctx.addPart(bayGrp, createBeveledBox(bayW + 0.02, 0.12, 0.49, 0.012), '#dfd3bb', [0, 0.76, 0.215]);
     sillMesh.name = 'Boutique1FDisplaySill';
     ctx.addPart(bayGrp, createBeveledBox(clearW - 0.10, 0.26, 0.06, 0.008), '#883029', [0, 0.54, 0.40]);
-    // Tall illuminated interior boutique glow backdrop (`y = 0.82 .. 4.02m`, 3D box flush on recess core)
-    const bayGlassMesh = ctx.addPart(
-      glassBayGrp,
-      new THREE.BoxGeometry(bayW, 3.20, 0.028),
+
+    // Warm illuminated boutique gallery alcove backing wall behind the mannequins (`z = -0.010 .. +0.016`)
+    const backdropMesh = ctx.addPart(
+      bayGrp,
+      new THREE.BoxGeometry(clearW - 0.04, 3.14, 0.026),
       '#ffffff',
-      [0, 2.42, 0.036],
+      [0, 2.39, 0.003],
       [0, 0, 0],
-      { map: boutiqueGlowTex },
+      { map: boutiqueBackdropTex, bounce: 2.72 },
     );
-    tagCityWindowMesh(
-      bayGlassMesh,
-      createCityWindowSpec(`boutique-1f-bay-${storeBayIdx}`, 'storefront', '#e8f4fc', 1, storeBayIdx + 1),
+    backdropMesh.name = 'Boutique1FDisplayBackdrop';
+    // Recessed warm tungsten LED cove bar mounted under vitrine header soffit
+    const ledStripMesh = ctx.addPart(
+      bayGrp,
+      new THREE.BoxGeometry(clearW - 0.24, 0.045, 0.09),
+      '#fff1cc',
+      [0, 3.93, 0.20],
+      [0, 0, 0],
+      { bounce: 2.95 },
     );
-    storeBayIdx += 1;
-    // Interior boutique mannequins scaled 1.32x inside tall storefront window
+    ledStripMesh.name = 'Boutique1FDisplayLedCove';
+
+    // Interior boutique mannequins (`z = 0.200`, radius <= 0.176m -> `z in [0.024 .. 0.376]`) seated strictly behind front glass (`z in [0.388 .. 0.412]`)
     const mLeft = new THREE.Group();
-    mLeft.scale.setScalar(1.32);
-    mLeft.position.set(-bayW * 0.24, 0.82, 0.22);
+    mLeft.name = 'BoutiqueMannequin_Left';
+    mLeft.scale.setScalar(1.16);
+    mLeft.position.set(-bayW * 0.24, 0.82, 0.200);
     bayGrp.add(mLeft);
     buildBoutiqueMannequinSilhouette(mLeft, ctx, [0, 0, 0], dressColors[0]);
     const mRight = new THREE.Group();
-    mRight.scale.setScalar(1.32);
-    mRight.position.set(bayW * 0.24, 0.82, 0.22);
+    mRight.name = 'BoutiqueMannequin_Right';
+    mRight.scale.setScalar(1.16);
+    mRight.position.set(bayW * 0.24, 0.82, 0.200);
     bayGrp.add(mRight);
     buildBoutiqueMannequinSilhouette(mRight, ctx, [0, 0, 0], dressColors[1]);
+
+    // Clear reflective 3D storefront showcase glass mounted AT the front mullion rabbet (`z = 0.400`, behind outer bronze mullions `0.4075..0.4625`)
+    const bayGlassGeo = new THREE.BoxGeometry(bayW, 3.14, 0.024);
+    ctx.registerGeo(bayGlassGeo);
+    const bayGlassMesh = new THREE.Mesh(bayGlassGeo, clearStorefrontGlassMat);
+    bayGlassMesh.name = `Boutique1FDisplayGlass_${bayIdx}`;
+    bayGlassMesh.position.set(0, 2.39, 0.400);
+    bayGlassMesh.castShadow = false;
+    bayGlassMesh.receiveShadow = false;
+    bayGlassMesh.renderOrder = 2;
+    glassBayGrp.add(bayGlassMesh);
+    tagCityWindowMesh(
+      bayGlassMesh,
+      createCityWindowSpec(`boutique-1f-bay-${bayIdx}`, 'storefront', '#d6f4ff', 1, bayIdx + 1),
+    );
+
     // Full-depth dark-bronze side jamb returns (`z = -0.03 .. +0.46`, embedded +4.5cm inside flanking pilasters)
     for (const jx of [-clearW * 0.5, clearW * 0.5]) {
       const jambMesh = ctx.addPart(bayGrp, new THREE.BoxGeometry(0.09, 3.28, 0.49), '#463f38', [jx, 2.42, 0.215]);
@@ -2016,6 +2164,9 @@ export function buildCozyBitesCafePavilion3D(ctx: UrbanPlazaBuildingsContext): v
   const honeyOakTex = createHoneyOakTimberTexture(ctx);
   const cafeAwningTex = createStripedAwningTexture(ctx, '#efe5d2', '#b89f82');
   const cafeGlowTex = createWarmWindowGlowTexture(ctx, 'cafe');
+  const cafeBackdropTex = createDisplayAlcoveBackdropTexture(ctx, 'cafe');
+  const cafeClearGlassTex = createClearStorefrontGlassTexture(ctx);
+  const cafeClearGlassMat = createClearStorefrontGlassMaterial(ctx, cafeClearGlassTex);
   const signTex = createCozyBitesSignTexture(ctx);
   const menuTex = createCafeChalkboardMenuTexture(ctx);
 
@@ -2213,10 +2364,10 @@ export function buildCozyBitesCafePavilion3D(ctx: UrbanPlazaBuildingsContext): v
     [0, 0, 0],
     { map: cafeGlowTex },
   );
-  tagCityWindowMesh(
-    cafeDoorGlass,
-    createCityWindowSpec('cozy-cafe-1f-entry-door', 'storefront', '#e8f4fc', 1, 0),
-  );
+  tagCityWindowMesh(cafeDoorGlass, {
+    ...createCityWindowSpec('cozy-cafe-1f-entry-door', 'civic', '#e8f4fc', 1, 0),
+    intensityScale: 0.65,
+  });
   ctx.addPart(grp, createBeveledBox(1.36, 0.075, 0.055, 0.008), '#7c512f', [0.85, 3.10, halfD + 0.055]);
   ctx.addPart(grp, createBeveledBox(1.36, 0.24, 0.055, 0.008), '#8a5934', [0.85, 0.62, halfD + 0.055]);
   buildTubularDoorPull(grp, ctx, [0.36, 1.66, halfD + 0.055], 0.52, '#d4a644', 0.08);
@@ -2224,13 +2375,17 @@ export function buildCozyBitesCafePavilion3D(ctx: UrbanPlazaBuildingsContext): v
   // Showcase Window Helper with Interior Bakery Counter & Pastry Stand Silhouettes seated inside tall recessed bay
   let cafeBayIdx = 0;
   const addCafeShowcaseBay = (pos: [number, number, number], rotY: number, bayW: number) => {
+    const bayIdx = cafeBayIdx;
+    cafeBayIdx += 1;
+
     const bGrp = new THREE.Group();
-    bGrp.name = `CozyBitesShowcaseBay_${cafeBayIdx}`;
+    bGrp.name = `CozyBitesShowcaseBay_${bayIdx}`;
     bGrp.position.set(pos[0], pos[1], pos[2]);
     bGrp.rotation.y = rotY;
     grp.add(bGrp);
 
     const glassBayGrp = new THREE.Group();
+    glassBayGrp.name = `CozyBitesShowcaseGlassBay_${bayIdx}`;
     glassBayGrp.position.set(pos[0], pos[1], pos[2]);
     glassBayGrp.rotation.y = rotY;
     cafeGlassHost.add(glassBayGrp);
@@ -2241,25 +2396,59 @@ export function buildCozyBitesCafePavilion3D(ctx: UrbanPlazaBuildingsContext): v
     // Sill (`y = 0.96`) and lintel (`y = 4.14`) seal full depth (`local z = -0.04 .. +0.38`) from core wall to outer pilaster plane
     const sillMesh = ctx.addPart(bGrp, createBeveledBox(bayW + 0.02, 0.12, 0.42, 0.012), '#ddd0b6', [0, 0.96, 0.17]);
     sillMesh.name = 'CozyBitesShowcaseSill';
-    const showcaseGlass = ctx.addPart(
-      glassBayGrp,
-      new THREE.BoxGeometry(bayW, 3.04, 0.028),
+
+    // Warm interior bakery showcase wall backdrop flush against core (`z = -0.030 .. +0.014`)
+    const backdropMesh = ctx.addPart(
+      bGrp,
+      new THREE.BoxGeometry(clearW - 0.04, 3.04, 0.044),
       '#ffffff',
-      [0, 2.52, 0.04],
+      [0, 2.55, -0.008],
       [0, 0, 0],
-      { map: cafeGlowTex },
+      { map: cafeBackdropTex, bounce: 2.72 },
     );
+    backdropMesh.name = 'CozyBitesShowcaseBackdrop';
+    // Recessed warm tungsten LED cove bar mounted under showcase lintel soffit
+    const cafeLedMesh = ctx.addPart(
+      bGrp,
+      new THREE.BoxGeometry(clearW - 0.24, 0.045, 0.08),
+      '#fff1cc',
+      [0, 4.04, 0.16],
+      [0, 0, 0],
+      { bounce: 2.95 },
+    );
+    cafeLedMesh.name = 'CozyBitesShowcaseLedCove';
+
+    // Interior pastry counter & tiered cake stands seated inside recess (`z in [0.035 .. 0.265]`, strictly behind front glass `0.302..0.326`)
+    const displayGrp = new THREE.Group();
+    displayGrp.name = 'CozyBitesShowcaseDisplay';
+    bGrp.add(displayGrp);
+    ctx.addPart(displayGrp, createBeveledBox(bayW * 0.88, 0.54, 0.14, 0.010), '#96653f', [0, 1.28, 0.14], [0, 0, 0], {
+      bounce: 2.66,
+    });
+    for (const sx of [-bayW * 0.24, 0, bayW * 0.24]) {
+      ctx.addPart(displayGrp, new THREE.CylinderGeometry(0.115, 0.080, 0.10, 10), '#fff5e4', [sx, 1.60, 0.15], [0, 0, 0], {
+        bounce: 2.66,
+      });
+      ctx.addPart(displayGrp, new THREE.SphereGeometry(0.082, 8, 6), '#e49f6e', [sx, 1.71, 0.15], [0, 0, 0], {
+        bounce: 2.66,
+      });
+    }
+
+    // Clear reflective 3D storefront showcase glass mounted AT front mullion plane (`z = 0.314`, behind outer rails/mullions `0.310..0.380`)
+    const showcaseGlassGeo = new THREE.BoxGeometry(bayW, 3.04, 0.024);
+    ctx.registerGeo(showcaseGlassGeo);
+    const showcaseGlass = new THREE.Mesh(showcaseGlassGeo, cafeClearGlassMat);
+    showcaseGlass.name = `CozyBitesShowcaseGlass_${bayIdx}`;
+    showcaseGlass.position.set(0, 2.55, 0.314);
+    showcaseGlass.castShadow = false;
+    showcaseGlass.receiveShadow = false;
+    showcaseGlass.renderOrder = 2;
+    glassBayGrp.add(showcaseGlass);
     tagCityWindowMesh(
       showcaseGlass,
-      createCityWindowSpec(`cozy-cafe-1f-bay-${cafeBayIdx}`, 'storefront', '#e8f4fc', 1, cafeBayIdx + 1),
+      createCityWindowSpec(`cozy-cafe-1f-bay-${bayIdx}`, 'storefront', '#d6f4ff', 1, bayIdx + 1),
     );
-    cafeBayIdx += 1;
-    // Interior pastry counter & tiered cake stands visible behind the mullions
-    ctx.addPart(bGrp, createBeveledBox(bayW * 0.88, 0.54, 0.16, 0.010), '#96653f', [0, 1.28, 0.16]);
-    for (const sx of [-bayW * 0.24, 0, bayW * 0.24]) {
-      ctx.addPart(bGrp, new THREE.CylinderGeometry(0.15, 0.10, 0.10, 8), '#fff5e4', [sx, 1.60, 0.18]);
-      ctx.addPart(bGrp, new THREE.SphereGeometry(0.10, 8, 6), '#e49f6e', [sx, 1.72, 0.18]);
-    }
+
     // Full-depth side jamb returns (`local z = -0.045 .. +0.385`, embedded +5cm into flanking pilasters/piers)
     for (const jx of [-clearW * 0.5, clearW * 0.5]) {
       const jambMesh = ctx.addPart(bGrp, new THREE.BoxGeometry(0.10, 3.16, 0.43), '#6b482c', [jx, 2.55, 0.17]);

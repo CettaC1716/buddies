@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { shouldRefreshNightLightingFrame } from './buddiesPerfOptimizations';
 
 export type CityWindowKind =
   | 'upper_floor'
@@ -514,15 +515,103 @@ export function enableInstancedWindowEmissiveAttribute(
   return emissiveAttr;
 }
 
+/**
+ * Equips a shared clear storefront `MeshStandardMaterial` with a zero-extra-light,
+ * zero-extra-draw-call `onBeforeCompile` shader driven by `cityGlassNightUniform` (`uNightFactor01`).
+ * Daytime (`nightFactor01 <= 0.05`) stays completely unchanged; at night, adds a subtle warm
+ * top-down gallery light curtain and grazing Fresnel rim reflection while keeping center glass
+ * clear so illuminated storefront interiors shine through.
+ */
+export function attachClearStorefrontGlassNightShader(
+  mat: THREE.MeshStandardMaterial,
+  opts?: { yMin?: number; yMax?: number },
+): THREE.MeshStandardMaterial {
+  if (!mat.userData) {
+    mat.userData = {};
+  }
+  if (!mat.userData.cityGlassNightUniform) {
+    mat.userData.cityGlassNightUniform = { value: 0.0 };
+  }
+  mat.userData.preserveSharedMaterial = true;
+  if (mat.userData.cityClearStorefrontGlassHooked) {
+    return mat;
+  }
+  mat.userData.cityClearStorefrontGlassHooked = true;
+
+  const nightUniform = mat.userData.cityGlassNightUniform as { value: number };
+  const yMinUniform = { value: typeof opts?.yMin === 'number' ? opts.yMin : 0.25 };
+  const yMaxUniform = { value: typeof opts?.yMax === 'number' ? opts.yMax : 4.05 };
+  const prevCompile = mat.onBeforeCompile;
+
+  mat.customProgramCacheKey = () => 'city-clear-storefront-glass-v1';
+  mat.onBeforeCompile = (shader, renderer) => {
+    if (typeof prevCompile === 'function') {
+      prevCompile(shader, renderer);
+    }
+    shader.uniforms.uNightFactor01 = nightUniform;
+    shader.uniforms.uSfYMin = yMinUniform;
+    shader.uniforms.uSfYMax = yMaxUniform;
+
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+varying vec3 vSfGlassWorldPos;`,
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+vSfGlassWorldPos = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;`,
+      );
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+uniform float uNightFactor01;
+uniform float uSfYMin;
+uniform float uSfYMax;
+varying vec3 vSfGlassWorldPos;`,
+      )
+      .replace(
+        '#include <opaque_fragment>',
+        `float sfNightFade = smoothstep( 0.05, 0.58, clamp( uNightFactor01, 0.0, 1.0 ) );
+if ( sfNightFade > 0.001 ) {
+  vec3 sfViewDir = normalize( vViewPosition );
+  vec3 sfNorm = normalize( normal );
+  float sfNdotV = abs( dot( sfNorm, sfViewDir ) );
+  float sfFresnel = pow( clamp( 1.0 - sfNdotV, 0.0, 1.0 ), 1.65 );
+  float sfYNorm = clamp( ( vSfGlassWorldPos.y - uSfYMin ) / max( 0.25, uSfYMax - uSfYMin ), 0.0, 1.0 );
+  float sfTopCurtain = smoothstep( 0.42, 1.0, sfYNorm );
+  float sfBottomSillRim = ( 1.0 - smoothstep( 0.0, 0.14, sfYNorm ) ) * 0.45;
+  float sfSheen = clamp( sfTopCurtain * 0.36 + sfFresnel * 0.40 + sfBottomSillRim * 0.16 + 0.04, 0.0, 0.72 );
+  vec3 sfWarmAmber = mix( vec3( 1.0, 0.85, 0.56 ), vec3( 1.0, 0.94, 0.78 ), sfTopCurtain * 0.65 + sfFresnel * 0.35 );
+  outgoingLight += sfWarmAmber * ( sfSheen * sfNightFade * 0.82 );
+  diffuseColor.a = clamp( diffuseColor.a + ( sfTopCurtain * 0.10 + sfFresnel * 0.12 ) * sfNightFade, 0.18, 0.54 );
+}
+#include <opaque_fragment>`,
+      );
+  };
+
+  return mat;
+}
+
 interface CachedGlassShaderUniform {
   uniform: { value: number };
 }
 
 interface CachedWindowRegistry {
-  rootChildCount: number;
+  scannedChildren: WeakSet<THREE.Object3D>;
+  seenUniformRefs: Set<object>;
+  distinctSeedsPerMat: Map<THREE.Material, Set<number>>;
+  fallbackIndex: number;
   slots: CachedWindowSlot[];
   instancedSlots: CachedInstancedSlot[];
   glassUniforms: CachedGlassShaderUniform[];
+  hasAppliedInitial: boolean;
+  prevWasDay: boolean;
+  prevNightFactor: number;
+  prevElapsedSec: number;
 }
 
 const REGISTRY_CACHE = new WeakMap<THREE.Object3D, CachedWindowRegistry>();
@@ -623,219 +712,275 @@ function cloneMaterialPreservingSharedEnvUniforms(mat: THREE.Material): THREE.Ma
   return mat.clone();
 }
 
-function collectWindowRegistry(root: THREE.Object3D): CachedWindowRegistry {
+function scanSubtreesIntoRegistry(
+  subtrees: ReadonlyArray<THREE.Object3D>,
+  registry: CachedWindowRegistry,
+): number {
   const discoveredRaw: {
     mesh: THREE.Mesh;
     spec: CityWindowSpec;
     materialIndex: number;
     material: THREE.Material;
   }[] = [];
-  const instancedSlots: CachedInstancedSlot[] = [];
-  const glassUniforms: CachedGlassShaderUniform[] = [];
-  const seenUniformRefs = new Set<object>();
-  let fallbackIndex = 0;
+  const startSlots = registry.slots.length;
+  const startInstanced = registry.instancedSlots.length;
+  const startUniforms = registry.glassUniforms.length;
 
   const trackGlassUniform = (mat: THREE.Material) => {
     const nightUni = mat.userData?.cityGlassNightUniform as { value: number } | undefined;
-    if (nightUni && typeof nightUni.value === 'number' && !seenUniformRefs.has(nightUni)) {
-      seenUniformRefs.add(nightUni);
-      glassUniforms.push({ uniform: nightUni });
+    if (
+      nightUni &&
+      typeof nightUni.value === 'number' &&
+      !registry.seenUniformRefs.has(nightUni)
+    ) {
+      registry.seenUniformRefs.add(nightUni);
+      registry.glassUniforms.push({ uniform: nightUni });
     }
     if (mat instanceof THREE.ShaderMaterial) {
       const shaderNightUni = mat.uniforms?.uNightFactor01 as { value: number } | undefined;
       if (
         shaderNightUni &&
         typeof shaderNightUni.value === 'number' &&
-        !seenUniformRefs.has(shaderNightUni)
+        !registry.seenUniformRefs.has(shaderNightUni)
       ) {
-        seenUniformRefs.add(shaderNightUni);
-        glassUniforms.push({ uniform: shaderNightUni });
+        registry.seenUniformRefs.add(shaderNightUni);
+        registry.glassUniforms.push({ uniform: shaderNightUni });
       }
     }
   };
 
-  root.traverse((obj) => {
-    if (!(obj instanceof THREE.Mesh)) return;
-    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-    for (let i = 0; i < mats.length; i++) {
-      if (mats[i]) trackGlassUniform(mats[i]);
-    }
+  for (let sIdx = 0; sIdx < subtrees.length; sIdx++) {
+    subtrees[sIdx].traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh)) return;
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      for (let i = 0; i < mats.length; i++) {
+        if (mats[i]) trackGlassUniform(mats[i]);
+      }
 
-    if (obj instanceof THREE.InstancedMesh) {
-      const explicitArray = obj.userData?.cityWindowInstancedSpecs as
-        | readonly CityWindowSpec[]
-        | undefined;
-      const singleSpec = obj.userData?.cityWindowSpec as CityWindowSpec | undefined;
-      if (explicitArray || singleSpec) {
-        const count = obj.count;
-        const specs: CityWindowSpec[] = [];
-        const baseColors: THREE.Color[] = [];
-        const targetMat = mats[0];
-        if (!targetMat) return;
-        const hadInstanceColor = Boolean(obj.instanceColor);
-        const fallbackColor = captureBaseColor(targetMat, singleSpec?.baseColorHex);
-        // Three.js multiplies mat.color * instanceColor. When initializing instanceColor on a
-        // mesh whose material holds the base tint, shift mat.color to white so daytime isn't squared.
-        const anyTargetMat = targetMat as { color?: THREE.Color };
-        if (!hadInstanceColor && anyTargetMat.color instanceof THREE.Color) {
-          anyTargetMat.color.set('#ffffff');
-        }
-        for (let idx = 0; idx < count; idx++) {
-          const itemSpec = explicitArray?.[idx];
-          const spec: CityWindowSpec = itemSpec
-            ? itemSpec
-            : {
-                id: `${singleSpec!.id}#${idx}`,
-                kind: singleSpec!.kind,
-                seed: computeDeterministicWindowSeed(singleSpec!.id, idx, 0),
-                baseColorHex: singleSpec!.baseColorHex,
-                intensityScale: singleSpec!.intensityScale,
-              };
-          specs.push(spec);
-          if (hadInstanceColor && obj.instanceColor) {
-            const c = new THREE.Color();
-            obj.getColorAt(idx, c);
-            baseColors.push(c);
-          } else {
-            baseColors.push(
-              spec.baseColorHex ? new THREE.Color(spec.baseColorHex) : fallbackColor.clone(),
-            );
+      if (obj instanceof THREE.InstancedMesh) {
+        const explicitArray = obj.userData?.cityWindowInstancedSpecs as
+          | readonly CityWindowSpec[]
+          | undefined;
+        const singleSpec = obj.userData?.cityWindowSpec as CityWindowSpec | undefined;
+        if (explicitArray || singleSpec) {
+          const count = obj.count;
+          const specs: CityWindowSpec[] = [];
+          const baseColors: THREE.Color[] = [];
+          const targetMat = mats[0];
+          if (!targetMat) return;
+          const hadInstanceColor = Boolean(obj.instanceColor);
+          const fallbackColor = captureBaseColor(targetMat, singleSpec?.baseColorHex);
+          // Three.js multiplies mat.color * instanceColor. When initializing instanceColor on a
+          // mesh whose material holds the base tint, shift mat.color to white so daytime isn't squared.
+          const anyTargetMat = targetMat as { color?: THREE.Color };
+          if (!hadInstanceColor && anyTargetMat.color instanceof THREE.Color) {
+            anyTargetMat.color.set('#ffffff');
           }
-        }
-        // Ensure instanceColor buffer exists once during cache construction (never per-frame).
-        if (!hadInstanceColor) {
           for (let idx = 0; idx < count; idx++) {
-            obj.setColorAt(idx, baseColors[idx]);
+            const itemSpec = explicitArray?.[idx];
+            const spec: CityWindowSpec = itemSpec
+              ? itemSpec
+              : {
+                  id: `${singleSpec!.id}#${idx}`,
+                  kind: singleSpec!.kind,
+                  seed: computeDeterministicWindowSeed(singleSpec!.id, idx, 0),
+                  baseColorHex: singleSpec!.baseColorHex,
+                  intensityScale: singleSpec!.intensityScale,
+                };
+            specs.push(spec);
+            if (hadInstanceColor && obj.instanceColor) {
+              const c = new THREE.Color();
+              obj.getColorAt(idx, c);
+              baseColors.push(c);
+            } else {
+              baseColors.push(
+                spec.baseColorHex ? new THREE.Color(spec.baseColorHex) : fallbackColor.clone(),
+              );
+            }
           }
-          if (obj.instanceColor) {
-            obj.instanceColor.needsUpdate = true;
+          // Ensure instanceColor buffer exists once during cache construction (never per-frame).
+          if (!hadInstanceColor) {
+            for (let idx = 0; idx < count; idx++) {
+              obj.setColorAt(idx, baseColors[idx]);
+            }
+            if (obj.instanceColor) {
+              obj.instanceColor.needsUpdate = true;
+            }
           }
+          const stdMat = targetMat as THREE.MeshStandardMaterial;
+          const emissiveAttr = obj.geometry?.getAttribute?.('instanceEmissive');
+          registry.instancedSlots.push({
+            mesh: obj,
+            specs,
+            baseColors,
+            material: targetMat,
+            materialKind: classifyMaterial(targetMat),
+            baseEmissiveIntensity:
+              typeof stdMat.emissiveIntensity === 'number' ? stdMat.emissiveIntensity : 0,
+            emissiveAttr:
+              emissiveAttr instanceof THREE.InstancedBufferAttribute ? emissiveAttr : null,
+          });
         }
-        const stdMat = targetMat as THREE.MeshStandardMaterial;
-        const emissiveAttr = obj.geometry?.getAttribute?.('instanceEmissive');
-        instancedSlots.push({
+        return;
+      }
+
+      const spec = inferCityWindowSpecFromMesh(obj, registry.fallbackIndex++);
+      if (!spec) return;
+
+      for (let i = 0; i < mats.length; i++) {
+        const mat = mats[i];
+        if (!mat) continue;
+        discoveredRaw.push({
           mesh: obj,
-          specs,
-          baseColors,
-          material: targetMat,
-          materialKind: classifyMaterial(targetMat),
-          baseEmissiveIntensity:
-            typeof stdMat.emissiveIntensity === 'number' ? stdMat.emissiveIntensity : 0,
-          emissiveAttr:
-            emissiveAttr instanceof THREE.InstancedBufferAttribute ? emissiveAttr : null,
+          spec,
+          materialIndex: Array.isArray(obj.material) ? i : -1,
+          material: mat,
         });
       }
-      return;
-    }
-
-    const spec = inferCityWindowSpecFromMesh(obj, fallbackIndex++);
-    if (!spec) return;
-
-    for (let i = 0; i < mats.length; i++) {
-      const mat = mats[i];
-      if (!mat) continue;
-      discoveredRaw.push({
-        mesh: obj,
-        spec,
-        materialIndex: Array.isArray(obj.material) ? i : -1,
-        material: mat,
-      });
-    }
-  });
-
-  // Count distinct seeds sharing each material for non-storefront/non-shared-shader windows so
-  // each apartment/civic/dormer window can glow & fade independently without clobbering siblings.
-  const distinctSeedsPerMat = new Map<THREE.Material, Set<number>>();
-  for (let i = 0; i < discoveredRaw.length; i++) {
-    const entry = discoveredRaw[i];
-    if (
-      entry.spec.kind === 'storefront' ||
-      entry.spec.kind === 'conservatory' ||
-      entry.material.userData?.preserveSharedMaterial === true ||
-      entry.material.userData?.cityGlassNightUniform
-    ) {
-      continue;
-    }
-    let set = distinctSeedsPerMat.get(entry.material);
-    if (!set) {
-      set = new Set<number>();
-      distinctSeedsPerMat.set(entry.material, set);
-    }
-    set.add(entry.spec.seed);
-  }
-
-  const clonedMatBySeedKey = new Map<string, THREE.Material>();
-  const slots: CachedWindowSlot[] = [];
-
-  for (let i = 0; i < discoveredRaw.length; i++) {
-    const entry = discoveredRaw[i];
-    let targetMat = entry.material;
-    const sharedSet = distinctSeedsPerMat.get(targetMat);
-    if (sharedSet && sharedSet.size > 1) {
-      const cloneKey = `${targetMat.uuid}:${entry.spec.seed}:${entry.spec.kind}`;
-      let cloned = clonedMatBySeedKey.get(cloneKey);
-      if (!cloned) {
-        cloned = cloneMaterialPreservingSharedEnvUniforms(targetMat);
-        clonedMatBySeedKey.set(cloneKey, cloned);
-      }
-      if (entry.materialIndex >= 0 && Array.isArray(entry.mesh.material)) {
-        entry.mesh.material[entry.materialIndex] = cloned;
-      } else {
-        entry.mesh.material = cloned;
-      }
-      targetMat = cloned;
-    }
-
-    const stdMat = targetMat as THREE.MeshStandardMaterial;
-    const baseColor = captureBaseColor(targetMat, entry.spec.baseColorHex);
-    const baseEmissive =
-      entry.spec.baseEmissiveHex
-        ? new THREE.Color(entry.spec.baseEmissiveHex)
-        : 'emissive' in stdMat && stdMat.emissive instanceof THREE.Color
-          ? stdMat.emissive.clone()
-          : new THREE.Color('#000000');
-
-    slots.push({
-      spec: entry.spec,
-      material: targetMat,
-      materialKind: classifyMaterial(targetMat),
-      baseColor,
-      baseEmissive,
-      baseEmissiveIntensity:
-        typeof entry.spec.baseEmissiveIntensity === 'number'
-          ? entry.spec.baseEmissiveIntensity
-          : typeof stdMat.emissiveIntensity === 'number'
-            ? stdMat.emissiveIntensity
-            : 0,
-      baseOpacity:
-        typeof entry.spec.baseOpacity === 'number'
-          ? entry.spec.baseOpacity
-          : typeof targetMat.opacity === 'number'
-            ? targetMat.opacity
-            : 1,
-      intensityScale:
-        typeof entry.spec.intensityScale === 'number' && Number.isFinite(entry.spec.intensityScale)
-          ? entry.spec.intensityScale
-          : 1.0,
-      lastAppliedKey: '',
     });
   }
 
-  return {
-    rootChildCount: root.children.length,
-    slots,
-    instancedSlots,
-    glassUniforms,
-  };
+  if (discoveredRaw.length > 0) {
+    // Count distinct seeds sharing each material across all scanned meshes for non-storefront/
+    // non-shared-shader windows so each apartment/civic/dormer window can glow & fade independently.
+    const distinctSeedsPerMat = registry.distinctSeedsPerMat;
+    for (let i = 0; i < discoveredRaw.length; i++) {
+      const entry = discoveredRaw[i];
+      if (
+        entry.spec.kind === 'storefront' ||
+        entry.spec.kind === 'conservatory' ||
+        entry.material.userData?.preserveSharedMaterial === true ||
+        entry.material.userData?.cityGlassNightUniform
+      ) {
+        continue;
+      }
+      let set = distinctSeedsPerMat.get(entry.material);
+      if (!set) {
+        set = new Set<number>();
+        distinctSeedsPerMat.set(entry.material, set);
+      }
+      set.add(entry.spec.seed);
+    }
+
+    const clonedMatBySeedKey = new Map<string, THREE.Material>();
+
+    for (let i = 0; i < discoveredRaw.length; i++) {
+      const entry = discoveredRaw[i];
+      let targetMat = entry.material;
+      const sharedSet = distinctSeedsPerMat.get(targetMat);
+      if (sharedSet && sharedSet.size > 1) {
+        const cloneKey = `${targetMat.uuid}:${entry.spec.seed}:${entry.spec.kind}`;
+        let cloned = clonedMatBySeedKey.get(cloneKey);
+        if (!cloned) {
+          cloned = cloneMaterialPreservingSharedEnvUniforms(targetMat);
+          clonedMatBySeedKey.set(cloneKey, cloned);
+        }
+        if (entry.materialIndex >= 0 && Array.isArray(entry.mesh.material)) {
+          entry.mesh.material[entry.materialIndex] = cloned;
+        } else {
+          entry.mesh.material = cloned;
+        }
+        targetMat = cloned;
+      }
+
+      const stdMat = targetMat as THREE.MeshStandardMaterial;
+      const baseColor = captureBaseColor(targetMat, entry.spec.baseColorHex);
+      const baseEmissive =
+        entry.spec.baseEmissiveHex
+          ? new THREE.Color(entry.spec.baseEmissiveHex)
+          : 'emissive' in stdMat && stdMat.emissive instanceof THREE.Color
+            ? stdMat.emissive.clone()
+            : new THREE.Color('#000000');
+
+      registry.slots.push({
+        spec: entry.spec,
+        material: targetMat,
+        materialKind: classifyMaterial(targetMat),
+        baseColor,
+        baseEmissive,
+        baseEmissiveIntensity:
+          typeof entry.spec.baseEmissiveIntensity === 'number'
+            ? entry.spec.baseEmissiveIntensity
+            : typeof stdMat.emissiveIntensity === 'number'
+              ? stdMat.emissiveIntensity
+              : 0,
+        baseOpacity:
+          typeof entry.spec.baseOpacity === 'number'
+            ? entry.spec.baseOpacity
+            : typeof targetMat.opacity === 'number'
+              ? targetMat.opacity
+              : 1,
+        intensityScale:
+          typeof entry.spec.intensityScale === 'number' && Number.isFinite(entry.spec.intensityScale)
+            ? entry.spec.intensityScale
+            : 1.0,
+        lastAppliedKey: '',
+      });
+    }
+  }
+
+  return (
+    registry.slots.length -
+    startSlots +
+    (registry.instancedSlots.length - startInstanced) +
+    (registry.glassUniforms.length - startUniforms)
+  );
 }
 
-function getOrBuildWindowRegistry(root: THREE.Object3D): CachedWindowRegistry {
-  let registry = REGISTRY_CACHE.get(root);
-  if (!registry || registry.rootChildCount !== root.children.length) {
-    registry = collectWindowRegistry(root);
-    REGISTRY_CACHE.set(root, registry);
+function collectWindowRegistry(root: THREE.Object3D): CachedWindowRegistry {
+  const registry: CachedWindowRegistry = {
+    scannedChildren: new WeakSet<THREE.Object3D>(),
+    seenUniformRefs: new Set<object>(),
+    distinctSeedsPerMat: new Map<THREE.Material, Set<number>>(),
+    fallbackIndex: 0,
+    slots: [],
+    instancedSlots: [],
+    glassUniforms: [],
+    hasAppliedInitial: false,
+    prevWasDay: false,
+    prevNightFactor: -1,
+    prevElapsedSec: -1,
+  };
+  const initialTargets: THREE.Object3D[] = [];
+  if (root instanceof THREE.Mesh) {
+    initialTargets.push(root);
+  }
+  const children = root.children;
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i];
+    registry.scannedChildren.add(child);
+    initialTargets.push(child);
+  }
+  if (initialTargets.length > 0) {
+    scanSubtreesIntoRegistry(initialTargets, registry);
   }
   return registry;
+}
+
+function getOrBuildWindowRegistry(root: THREE.Object3D): {
+  registry: CachedWindowRegistry;
+  grew: boolean;
+} {
+  let registry = REGISTRY_CACHE.get(root);
+  if (!registry) {
+    registry = collectWindowRegistry(root);
+    REGISTRY_CACHE.set(root, registry);
+    return { registry, grew: true };
+  }
+  // Incrementally scan ONLY newly added top-level children so dynamic scene.add/remove
+  // of crates, pickups, or scooters never triggers a full-scene traversal stall.
+  let newChildren: THREE.Object3D[] | null = null;
+  const children = root.children;
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i];
+    if (!registry.scannedChildren.has(child)) {
+      registry.scannedChildren.add(child);
+      if (!newChildren) newChildren = [];
+      newChildren.push(child);
+    }
+  }
+  const added = newChildren ? scanSubtreesIntoRegistry(newChildren, registry) : 0;
+  return { registry, grew: added > 0 };
 }
 
 /**
@@ -849,7 +994,7 @@ export function invalidateCityWindowNightLightingCache(root: THREE.Object3D): vo
  * Returns the cached count of discovered window/glass slots under `root`.
  */
 export function getCityWindowNightLightingRegistrySize(root: THREE.Object3D): number {
-  const registry = getOrBuildWindowRegistry(root);
+  const { registry } = getOrBuildWindowRegistry(root);
   return registry.slots.length + registry.instancedSlots.length + registry.glassUniforms.length;
 }
 
@@ -991,7 +1136,27 @@ export function updateCityWindowNightLighting(
   const safeElapsed = Number.isFinite(elapsedSec) ? elapsedSec : 0;
   const isDay = n <= DAYTIME_CUTOFF_NIGHT_FACTOR;
   const duskBlend = isDay ? 0 : smoothstep(DAYTIME_CUTOFF_NIGHT_FACTOR, 0.75, n);
-  const registry = getOrBuildWindowRegistry(root);
+  const { registry, grew } = getOrBuildWindowRegistry(root);
+
+  if (
+    !shouldRefreshNightLightingFrame({
+      isDay,
+      nightFactor: n,
+      elapsedSec: safeElapsed,
+      hasAppliedInitial: registry.hasAppliedInitial,
+      prevWasDay: registry.prevWasDay,
+      prevNightFactor: registry.prevNightFactor,
+      prevElapsedSec: registry.prevElapsedSec,
+      registryGrew: grew,
+    })
+  ) {
+    return registry.slots.length + registry.instancedSlots.length;
+  }
+
+  registry.hasAppliedInitial = true;
+  registry.prevWasDay = isDay;
+  registry.prevNightFactor = n;
+  registry.prevElapsedSec = safeElapsed;
 
   for (let i = 0; i < registry.glassUniforms.length; i++) {
     registry.glassUniforms[i].uniform.value = n;

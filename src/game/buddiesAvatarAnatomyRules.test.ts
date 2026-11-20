@@ -42,7 +42,7 @@ const REAL_CHARACTER_GLB_CASES = [
   },
   {
     id: 'playerMale',
-    relPath: 'public/assets/aistudio/character_custom_idle_runway_catwalk_stylish_11 (2).glb',
+    relPath: 'public/assets/character_custom_idle_runway_catwalk_stylish_11 (2).glb',
     expectSkinOutlineCulled: true,
   },
   {
@@ -52,7 +52,7 @@ const REAL_CHARACTER_GLB_CASES = [
   },
   {
     id: 'kai',
-    relPath: 'public/assets/aistudio/character_custom_idle_runway_catwalk_stylish_11 (1).glb',
+    relPath: 'public/assets/character_custom_idle_runway_catwalk_stylish_11 (1).glb',
     expectSkinOutlineCulled: true,
   },
   {
@@ -62,7 +62,7 @@ const REAL_CHARACTER_GLB_CASES = [
   },
   {
     id: 'ambientMale',
-    relPath: 'public/assets/aistudio/character_custom_sit_runway_catwalk_stylish_4.glb',
+    relPath: 'public/assets/character_custom_sit_runway_catwalk_stylish_4.glb',
     expectSkinOutlineCulled: true,
   },
 ] as const;

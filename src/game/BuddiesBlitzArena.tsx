@@ -1,6 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import {
+  applyBuddyRigFaceCustomization,
+  type BuddyFaceCustomizationProfile,
+} from './buddiesFaceCompositor';
+import {
   BUDDIES_CONSTANTS,
   LightingPresetKey,
   stepCriticalDampedSpring3D,
@@ -258,8 +262,14 @@ import {
   type AmbientEnvironmentMode,
 } from './buddiesAmbientAudioRules';
 import {
+  computeAdaptiveDprTarget,
+  evaluateShadowMapRefreshDecision,
+} from './buddiesPerfOptimizations';
+import {
   loadAllRealBlitzAssets,
   getCachedLoadedBlitzAssets,
+  bakeBlitzTerrainAccelTexture,
+  setBlitzStylizedCharViewportSize,
   createBlitzInfiniteGrassSystem,
   createCurvedPlanetEnvironment,
   applyPlanetCurvatureToObject,
@@ -284,7 +294,10 @@ import {
   buildProceduralBuddyAvatar,
   upgradeBuddyRigWithCharBuddiesGlb,
   setBuddyRigEquippedTorsoByUrl,
+  setBuddyRigModularOutfitUrls,
+  applyBuddyRigBodyShape,
   applyCitizenClothingTint,
+  type BuddyBodyShapeProfile,
   CharacterGender,
   setDefaultCharacterGender,
   getDefaultCharacterGender,
@@ -622,7 +635,7 @@ export type {
   BuddiesBlitzArenaProps,
 };
 
-export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
+export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
   gameState,
   playMode,
   worldMode = 'warzone',
@@ -728,8 +741,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     let currentAdaptiveDpr = maxAllowedDpr;
     let smoothedFrameMs = 16.67;
     let dprAdjustCooldownFrames = 0;
+    const initViewportW = container.clientWidth || window.innerWidth;
+    const initViewportH = container.clientHeight || window.innerHeight;
     renderer.setPixelRatio(currentAdaptiveDpr);
-    renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
+    renderer.setSize(initViewportW, initViewportH);
+    setBlitzStylizedCharViewportSize(initViewportW, initViewportH);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.08;
@@ -1532,6 +1548,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     const resolveStationIdFromKioskKey = (key: ActiveTransitKioskKey): CityTransitStationId => {
       if (
         key === 'central_plaza' ||
+        key === 'central_park' ||
         key === 'beachfront_harbor' ||
         key === 'kai_fish_market' ||
         key === 'nw_fishing_lake' ||
@@ -2813,6 +2830,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     dirLight.shadow.intensity = 0.88;
     let prevSnappedShadowX = Number.NaN;
     let prevSnappedShadowZ = Number.NaN;
+    let lastShadowUpdateFrame = -999;
     scene.add(dirLight);
     scene.add(dirLight.target);
 
@@ -2975,6 +2993,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
     windUniformsRef = windUniforms;
     applyLightingPreset(lightingPresetRef.current);
 
+    // Pre-bake 1024x1024 GPU terrain acceleration LUT once (~2ms) so ground & grass shaders
+    // skip ~150 lines of SDF math on ~80% of pixels/vertices with zero visual compromise.
+    const terrainAccelBake = bakeBlitzTerrainAccelTexture(
+      renderer,
+      windUniforms,
+      isSoftwareGl ? 512 : 1024,
+    );
     const curvedPlanetEnv = createCurvedPlanetEnvironment(scene, windUniforms, isSoftwareGl);
     const underwaterEcology = buildUnderwaterEcology3D(scene, windUniforms, isSoftwareGl);
 
@@ -18419,6 +18444,46 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           );
         }
       }
+      else if (act.startsWith('setEquippedModularOutfit:')) {
+        const rawJson = act.slice('setEquippedModularOutfit:'.length).trim();
+        try {
+          const parsed = JSON.parse(rawJson) as {
+            costumeUrl?: string | null;
+            torsoUrl?: string | null;
+            legsUrl?: string | null;
+            feetUrl?: string | null;
+            hairUrl?: string | null;
+            clothingTintHex?: string | null;
+            bodyShape?: BuddyBodyShapeProfile | null;
+            faceCustomization?: BuddyFaceCustomizationProfile | null;
+          };
+          const applyToRig = (rig: BuddyCharacterRig | undefined) => {
+            if (!rig) return;
+            void setBuddyRigModularOutfitUrls(rig, {
+              costumeUrl: parsed.costumeUrl ?? null,
+              torsoUrl: parsed.torsoUrl ?? null,
+              legsUrl: parsed.legsUrl ?? null,
+              feetUrl: parsed.feetUrl ?? null,
+              hairUrl: parsed.hairUrl ?? null,
+            }).then(() => {
+              applyBuddyRigBodyShape(rig, parsed.bodyShape ?? null);
+              applyBuddyRigFaceCustomization(rig, parsed.faceCustomization ?? null);
+              if (parsed.clothingTintHex) {
+                applyCitizenClothingTint(rig, parsed.clothingTintHex, 0.45);
+              } else {
+                if (rig.bodyGroupRef) {
+                  rig.bodyGroupRef.userData.citizenClothingTintHex = undefined;
+                }
+                applyCitizenClothingTint(rig, '#ffffff', 0.0);
+              }
+            });
+          };
+          applyToRig(playerUnit?.rig);
+          applyToRig(mountedTank?.riderGroup.userData.riderRig);
+        } catch {
+          // ignore malformed outfit payload
+        }
+      }
       else if (act === 'qcBoardVehicle:tank') handleQcBoardVehicle('tank');
       else if (act === 'qcBoardVehicle:super_tank') handleQcBoardVehicle('super_tank');
       else if (act === 'qcBoardVehicle:truck') handleQcBoardVehicle('truck');
@@ -19672,6 +19737,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
+      setBlitzStylizedCharViewportSize(w, h);
     };
     window.addEventListener('resize', onResize);
 
@@ -22162,8 +22228,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
 
 
+    let isWorldPausedForWardrobe = false;
+    const onWardrobeStudioPause = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ paused?: boolean }>).detail;
+      const nextPaused = Boolean(detail?.paused);
+      if (nextPaused === isWorldPausedForWardrobe) return;
+      isWorldPausedForWardrobe = nextPaused;
+      if (!nextPaused && !isDisposed) {
+        prevTime = performance.now();
+        rafId = requestAnimationFrame(animate);
+      }
+    };
+    window.addEventListener('wardrobe-studio-pause', onWardrobeStudioPause);
+
     const animate = (now: number) => {
-      if (isDisposed) return;
+      if (isDisposed || isWorldPausedForWardrobe) return;
       frameTickCount++;
       aStarRepathsThisFrame = 0;
       const rawDt = (now - prevTime) / 1000;
@@ -22174,28 +22253,28 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const state = gameStateRef.current;
       const currentPlayMode = playModeRef.current;
 
-      if (!isSoftwareGl && state === 'playing' && rawDt > 0.001 && rawDt < 0.25) {
+      if (
+        !isSoftwareGl &&
+        (state === 'playing' || state === 'title') &&
+        rawDt > 0.001 &&
+        rawDt < 0.25
+      ) {
         const frameMs = Math.min(80, Math.max(4, rawDt * 1000));
         smoothedFrameMs = smoothedFrameMs * 0.9 + frameMs * 0.1;
-        if (dprAdjustCooldownFrames > 0) {
-          dprAdjustCooldownFrames--;
-        } else {
-          const capDpr = Math.min(window.devicePixelRatio || 1, 1.25);
-          let nextDpr = currentAdaptiveDpr;
-          if (smoothedFrameMs > 22.0 && currentAdaptiveDpr > 0.85) {
-            nextDpr = currentAdaptiveDpr > 1.05 ? Math.min(1.0, capDpr) : 0.85;
-            dprAdjustCooldownFrames = 45;
-          } else if (smoothedFrameMs < 15.2 && currentAdaptiveDpr < capDpr) {
-            nextDpr = currentAdaptiveDpr < 0.95 ? Math.min(1.0, capDpr) : capDpr;
-            dprAdjustCooldownFrames = 90;
-          }
-          if (Math.abs(nextDpr - currentAdaptiveDpr) > 0.02) {
-            currentAdaptiveDpr = nextDpr;
-            const rw = container?.clientWidth || window.innerWidth;
-            const rh = container?.clientHeight || window.innerHeight;
-            renderer.setPixelRatio(currentAdaptiveDpr);
-            renderer.setSize(rw, rh, false);
-          }
+        const capDpr = Math.min(window.devicePixelRatio || 1, 1.25);
+        const dprDecision = computeAdaptiveDprTarget({
+          smoothedFrameMs,
+          currentDpr: currentAdaptiveDpr,
+          capDpr,
+          cooldownFrames: dprAdjustCooldownFrames,
+        });
+        dprAdjustCooldownFrames = dprDecision.nextCooldownFrames;
+        if (dprDecision.changed) {
+          currentAdaptiveDpr = dprDecision.nextDpr;
+          const rw = container?.clientWidth || window.innerWidth;
+          const rh = container?.clientHeight || window.innerHeight;
+          renderer.setPixelRatio(currentAdaptiveDpr);
+          renderer.setSize(rw, rh, false);
         }
       }
       syncSecondaryLodFrustum();
@@ -22561,94 +22640,96 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
       blitzGrassSystem.setTramplers(reusableGrassTramplers);
 
-      reusableGrassExclusions.length = 0;
-      // Intact Bottom-Left Model Estate Skyshield bastion at (-51.4, 60.0) + Shifted Central Plaza Halte Platform at (-58.90, 0.0)
-      reusableGrassExclusions.push({ x: -51.4, z: 60.0, yaw: 0, halfLen: 2.15, halfWidth: 2.15 });
-      reusableGrassExclusions.push({ x: -58.9, z: 0.0, yaw: 0, halfLen: 3.6, halfWidth: 9.6 });
-      // Public Warzone Crate Pads exclude grass ONLY in Warzone mode (disabled in Safezone / Kota Damai mode)
-      if (cityArenaMode === 'warzone') {
-        for (let pi = 0; pi < PUBLIC_WARZONE_CRATE_PADS.length; pi++) {
-          const p = PUBLIC_WARZONE_CRATE_PADS[pi];
+      if (frameTickCount <= 2 || frameTickCount % 6 === 0) {
+        reusableGrassExclusions.length = 0;
+        // Intact Bottom-Left Model Estate Skyshield bastion at (-51.4, 60.0) + Shifted Central Plaza Halte Platform at (-58.90, 0.0)
+        reusableGrassExclusions.push({ x: -51.4, z: 60.0, yaw: 0, halfLen: 2.15, halfWidth: 2.15 });
+        reusableGrassExclusions.push({ x: -58.9, z: 0.0, yaw: 0, halfLen: 3.6, halfWidth: 9.6 });
+        // Public Warzone Crate Pads exclude grass ONLY in Warzone mode (disabled in Safezone / Kota Damai mode)
+        if (cityArenaMode === 'warzone') {
+          for (let pi = 0; pi < PUBLIC_WARZONE_CRATE_PADS.length; pi++) {
+            const p = PUBLIC_WARZONE_CRATE_PADS[pi];
+            reusableGrassExclusions.push({
+              x: p.worldX,
+              z: p.worldZ,
+              yaw: 0,
+              halfLen: 2.55,
+              halfWidth: 2.55,
+            });
+          }
+        }
+        const plotOffsetsX = [-45.0, -15.0, 15.0, 45.0] as const;
+        const bastionOffsetsLocalZ = [-51.4, -21.4, 8.6, 38.6] as const;
+        const pushActivePlotsGrassExclusions = (
+          plots: ReadonlyArray<IndividualCommanderBaseState>,
+          baseHqX: number,
+          baseHqZ: number,
+          sign: 1 | -1,
+        ) => {
+          for (let pIdx = 0; pIdx < plots.length; pIdx++) {
+            const plot = plots[pIdx];
+            if (!isCommanderBasePlotActive(plot)) continue;
+            const pwx = baseHqX + sign * plotOffsetsX[pIdx];
+            // Exclude grass across the entire 20.4m x 42.4m claimed Base Plot interior + front gate driveway apron
+            reusableGrassExclusions.push({
+              x: pwx,
+              z: baseHqZ - sign * 7.7,
+              yaw: 0,
+              halfLen: 10.2,
+              halfWidth: 21.2,
+            });
+            // Exclude grass underneath the plot's front-yard Skyshield bastion
+            reusableGrassExclusions.push({
+              x: baseHqX + sign * bastionOffsetsLocalZ[pIdx],
+              z: baseHqZ - sign * 26.0,
+              yaw: 0,
+              halfLen: 2.2,
+              halfWidth: 2.2,
+            });
+          }
+        };
+        pushActivePlotsGrassExclusions(blueCommanderBases, blueBase.hqX, blueBase.hqZ, 1);
+        pushActivePlotsGrassExclusions(redCommanderBases, redBase.hqX, redBase.hqZ, -1);
+        for (let i = 0; i < activeMapProps.length; i++) {
+          const mp = activeMapProps[i];
+          if (!mp.alive || (mp.kind !== 'bench' && mp.kind !== 'recycle_bin')) continue;
           reusableGrassExclusions.push({
-            x: p.worldX,
-            z: p.worldZ,
-            yaw: 0,
-            halfLen: 2.55,
-            halfWidth: 2.55,
+            x: mp.x,
+            z: mp.z,
+            yaw: mp.rotY,
+            halfLen: mp.kind === 'bench' ? 1.55 : 1.15,
+            halfWidth: mp.kind === 'bench' ? 2.25 : 1.15,
           });
         }
-      }
-      const plotOffsetsX = [-45.0, -15.0, 15.0, 45.0] as const;
-      const bastionOffsetsLocalZ = [-51.4, -21.4, 8.6, 38.6] as const;
-      const pushActivePlotsGrassExclusions = (
-        plots: ReadonlyArray<IndividualCommanderBaseState>,
-        baseHqX: number,
-        baseHqZ: number,
-        sign: 1 | -1,
-      ) => {
-        for (let pIdx = 0; pIdx < plots.length; pIdx++) {
-          const plot = plots[pIdx];
-          if (!isCommanderBasePlotActive(plot)) continue;
-          const pwx = baseHqX + sign * plotOffsetsX[pIdx];
-          // Exclude grass across the entire 20.4m x 42.4m claimed Base Plot interior + front gate driveway apron
+        for (let i = 0; i < worldCrates.length; i++) {
+          const c = worldCrates[i];
+          if (c.state !== 'grounded') continue;
           reusableGrassExclusions.push({
-            x: pwx,
-            z: baseHqZ - sign * 7.7,
-            yaw: 0,
-            halfLen: 10.2,
-            halfWidth: 21.2,
-          });
-          // Exclude grass underneath the plot's front-yard Skyshield bastion
-          reusableGrassExclusions.push({
-            x: baseHqX + sign * bastionOffsetsLocalZ[pIdx],
-            z: baseHqZ - sign * 26.0,
-            yaw: 0,
-            halfLen: 2.2,
-            halfWidth: 2.2,
+            x: c.x,
+            z: c.z,
+            yaw: c.rotY,
+            halfLen: 0.92,
+            halfWidth: 0.92,
           });
         }
-      };
-      pushActivePlotsGrassExclusions(blueCommanderBases, blueBase.hqX, blueBase.hqZ, 1);
-      pushActivePlotsGrassExclusions(redCommanderBases, redBase.hqX, redBase.hqZ, -1);
-      for (let i = 0; i < activeMapProps.length; i++) {
-        const mp = activeMapProps[i];
-        if (!mp.alive || (mp.kind !== 'bench' && mp.kind !== 'recycle_bin')) continue;
-        reusableGrassExclusions.push({
-          x: mp.x,
-          z: mp.z,
-          yaw: mp.rotY,
-          halfLen: mp.kind === 'bench' ? 1.55 : 1.15,
-          halfWidth: mp.kind === 'bench' ? 2.25 : 1.15,
-        });
-      }
-      for (let i = 0; i < worldCrates.length; i++) {
-        const c = worldCrates[i];
-        if (c.state !== 'grounded') continue;
-        reusableGrassExclusions.push({
-          x: c.x,
-          z: c.z,
-          yaw: c.rotY,
-          halfLen: 0.92,
-          halfWidth: 0.92,
-        });
-      }
-      const centralParkExclusions = getCentralParkGrassExclusionBoxes();
-      for (let i = 0; i < centralParkExclusions.length; i++) {
-        reusableGrassExclusions.push(centralParkExclusions[i]);
-      }
-      // Filter exclusion boxes to those overlapping the 26m grass streaming window around viewCenter
-      filteredGrassExclusions.length = 0;
-      for (let i = 0; i < reusableGrassExclusions.length; i++) {
-        const ex = reusableGrassExclusions[i];
-        const reach = 26.0 + Math.max(ex.halfLen, ex.halfWidth);
-        if (
-          Math.abs(getPlanetShortestDelta(ex.x, viewCenterX)) <= reach &&
-          Math.abs(getPlanetShortestDelta(ex.z, viewCenterZ)) <= reach
-        ) {
-          filteredGrassExclusions.push(ex);
+        const centralParkExclusions = getCentralParkGrassExclusionBoxes();
+        for (let i = 0; i < centralParkExclusions.length; i++) {
+          reusableGrassExclusions.push(centralParkExclusions[i]);
         }
+        // Filter exclusion boxes to those overlapping the 26m grass streaming window around viewCenter
+        filteredGrassExclusions.length = 0;
+        for (let i = 0; i < reusableGrassExclusions.length; i++) {
+          const ex = reusableGrassExclusions[i];
+          const reach = 26.0 + Math.max(ex.halfLen, ex.halfWidth);
+          if (
+            Math.abs(getPlanetShortestDelta(ex.x, viewCenterX)) <= reach &&
+            Math.abs(getPlanetShortestDelta(ex.z, viewCenterZ)) <= reach
+          ) {
+            filteredGrassExclusions.push(ex);
+          }
+        }
+        blitzGrassSystem.setDynamicExclusions(filteredGrassExclusions);
       }
-      blitzGrassSystem.setDynamicExclusions(filteredGrassExclusions);
 
       // 2. Raycast Mouse Crosshair onto Ground Plane (using active camera world matrix)
       camera.updateMatrixWorld();
@@ -32092,38 +32173,39 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
 
       if (!isSoftwareGl && !isFlatIndoorRoomMode && state !== 'paused') {
-        // Snap directional light target in light-space texel increments so stationary tree/building
-        // shadows stay 100% locked to the world grid without sub-texel swimming or 1-frame matrix lag.
-        const projU = finalLookX * shadowLightRight.x + finalLookZ * shadowLightRight.z;
-        const projV = finalLookX * shadowLightUp.x + finalLookZ * shadowLightUp.z;
-        const projW = finalLookX * shadowLightBack.x + finalLookZ * shadowLightBack.z;
-        const snapU = Math.round(projU / shadowTexelWorldSize) * shadowTexelWorldSize;
-        const snapV = Math.round(projV / shadowTexelWorldSize) * shadowTexelWorldSize;
-        const snapW = Math.round(projW / shadowTexelWorldSize) * shadowTexelWorldSize;
-        const snappedLookX =
-          shadowLightRight.x * snapU + shadowLightUp.x * snapV + shadowLightBack.x * snapW;
-        const snappedLookY =
-          shadowLightRight.y * snapU + shadowLightUp.y * snapV + shadowLightBack.y * snapW;
-        const snappedLookZ =
-          shadowLightRight.z * snapU + shadowLightUp.z * snapV + shadowLightBack.z * snapW;
-        const shadowMoved =
-          snappedLookX !== prevSnappedShadowX || snappedLookZ !== prevSnappedShadowZ;
+        // Snap directional light target to an exact integer texel stride (6 texels = ~0.21m)
+        // and throttle shadow depth passes while walking so crisp 2048x2048 shadows stay
+        // rock-steady without re-rendering the entire scene every single frame.
+        const shadowDecision = evaluateShadowMapRefreshDecision({
+          finalLookX,
+          finalLookZ,
+          shadowLightRight,
+          shadowLightUp,
+          shadowLightBack,
+          shadowTexelWorldSize,
+          prevSnappedShadowX,
+          prevSnappedShadowZ,
+          frameTickCount,
+          lastShadowUpdateFrame,
+          maxStationaryIntervalFrames: LIGHTING_HYGIENE_LIMITS.shadowUpdateMaxIntervalFrames,
+          smoothedFrameMs,
+        });
 
-        if (
-          shadowMoved ||
-          (!isSoftwareGl &&
-            frameTickCount % LIGHTING_HYGIENE_LIMITS.shadowUpdateMaxIntervalFrames === 0) ||
-          frameTickCount <= 2
-        ) {
-          prevSnappedShadowX = snappedLookX;
-          prevSnappedShadowZ = snappedLookZ;
+        if (shadowDecision.shouldUpdate) {
+          prevSnappedShadowX = shadowDecision.snappedLookX;
+          prevSnappedShadowZ = shadowDecision.snappedLookZ;
+          lastShadowUpdateFrame = frameTickCount;
           const sunOffsetMult = isFullMapOverview ? 4.8 : 1.0;
           dirLight.position.set(
-            snappedLookX + blitzSunOffset.x * sunOffsetMult,
-            snappedLookY + blitzSunOffset.y * sunOffsetMult,
-            snappedLookZ + blitzSunOffset.z * sunOffsetMult,
+            shadowDecision.snappedLookX + blitzSunOffset.x * sunOffsetMult,
+            shadowDecision.snappedLookY + blitzSunOffset.y * sunOffsetMult,
+            shadowDecision.snappedLookZ + blitzSunOffset.z * sunOffsetMult,
           );
-          dirLight.target.position.set(snappedLookX, snappedLookY, snappedLookZ);
+          dirLight.target.position.set(
+            shadowDecision.snappedLookX,
+            shadowDecision.snappedLookY,
+            shadowDecision.snappedLookZ,
+          );
           dirLight.updateMatrixWorld();
           dirLight.target.updateMatrixWorld();
           dirLight.shadow.updateMatrices(dirLight);
@@ -32132,6 +32214,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       } else if (isFlatIndoorRoomMode) {
         prevSnappedShadowX = Number.NaN;
         prevSnappedShadowZ = Number.NaN;
+        lastShadowUpdateFrame = -999;
       }
 
       syncDirShadowUniforms(!isSoftwareGl && !isFlatIndoorRoomMode);
@@ -32662,14 +32745,56 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       typeof window !== 'undefined' &&
       Boolean(new URLSearchParams(window.location.search).get('buildingview'));
 
+    // Cached DOM state for updateDirectDomPrompts to prevent forced synchronous layout (reflow)
+    // and redundant attribute/style mutations at 60Hz.
+    let prevPromptArenaMode = '';
+    let prevPromptWorldMode = '';
+    let prevPromptWeaponVisible = '';
+    let cachedChatBarEl: Element | null = null;
+    let cachedChatBarRightEdge = 0;
+    let cachedChatRowCentreY = 0;
+    let cachedChatBarViewportW = 0;
+    let cachedChatBarViewportH = 0;
+    let lastChatBarMeasureFrame = -999;
+
     updateDirectDomPrompts = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      // Read chat bar geometry BEFORE any DOM writes (and at most every 30 frames or on viewport resize)
+      // so we never trigger a Forced Synchronous Layout inside requestAnimationFrame.
+      const needChatMeasure =
+        !cachedChatBarEl ||
+        !cachedChatBarEl.isConnected ||
+        w !== cachedChatBarViewportW ||
+        h !== cachedChatBarViewportH ||
+        frameTickCount - lastChatBarMeasureFrame >= 30;
+      if (needChatMeasure) {
+        cachedChatBarEl = document.querySelector('[data-buddies-chat-bar="true"]');
+        const chatRect = cachedChatBarEl?.getBoundingClientRect();
+        cachedChatBarRightEdge =
+          chatRect && chatRect.width > 0 ? chatRect.right : 16 + Math.min(w - 32, 512);
+        cachedChatRowCentreY =
+          chatRect && chatRect.height > 0 ? chatRect.bottom - 24 : h - 35;
+        cachedChatBarViewportW = w;
+        cachedChatBarViewportH = h;
+        lastChatBarMeasureFrame = frameTickCount;
+      }
+
       if (promptOverlay) {
-        promptOverlay.setAttribute('data-city-arena-mode', cityArenaMode);
-        promptOverlay.setAttribute('data-world-mode', worldModeRef.current);
-        promptOverlay.setAttribute(
-          'data-player-weapon-mesh-visible',
-          String(Boolean(playerUnit?.rig?.weaponRigGroup?.visible)),
-        );
+        const nextWorldMode = worldModeRef.current;
+        const nextWeaponVis = String(Boolean(playerUnit?.rig?.weaponRigGroup?.visible));
+        if (prevPromptArenaMode !== cityArenaMode) {
+          promptOverlay.setAttribute('data-city-arena-mode', cityArenaMode);
+          prevPromptArenaMode = cityArenaMode;
+        }
+        if (prevPromptWorldMode !== nextWorldMode) {
+          promptOverlay.setAttribute('data-world-mode', nextWorldMode);
+          prevPromptWorldMode = nextWorldMode;
+        }
+        if (prevPromptWeaponVisible !== nextWeaponVis) {
+          promptOverlay.setAttribute('data-player-weapon-mesh-visible', nextWeaponVis);
+          prevPromptWeaponVisible = nextWeaponVis;
+        }
       }
       if (
         playModeRef.current === 'editor' ||
@@ -32715,22 +32840,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
 
       const actorX = mountedTank ? mountedTank.x : playerUnit.x;
       const actorZ = mountedTank ? mountedTank.z : playerUnit.z;
-      const w = window.innerWidth;
-      const h = window.innerHeight;
 
-      // Single Unified Bottom HUD Dock Slot (zero floating 3D prompt billboards).
-      // Rounded bar aligned with the bottom-left chat bar: on desktop it shares
-      // the chat row, docked right beside the chat bar on the same baseline; on
-      // tablet & mobile it moves one row above the chat bar so the two never
-      // collide. The chat bar is measured live from the App DOM (its
-      // width is set there, currently up to 540px); the old 512px
-      // constant drifted and let the dock overlap the chat bar.
-      const chatBarEl = document.querySelector('[data-buddies-chat-bar="true"]');
-      const chatRect = chatBarEl?.getBoundingClientRect();
-      const chatBarRightEdge =
-        chatRect && chatRect.width > 0 ? chatRect.right : 16 + Math.min(w - 32, 512);
-      const chatRowCentreY =
-        chatRect && chatRect.height > 0 ? chatRect.bottom - 24 : h - 35;
+      const chatBarRightEdge = cachedChatBarRightEdge;
+      const chatRowCentreY = cachedChatRowCentreY;
       const bottomDockTransform =
         w >= 1024
           ? `translate3d(${chatBarRightEdge + 14}px, ${chatRowCentreY}px, 0) translate(0, -50%)`
@@ -32747,12 +32859,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       let casinoSeatMinDist: number | null = null;
       const claimBottomDock = (btn: HTMLButtonElement): boolean => {
         if (bottomDockOccupied || isFullMapOverview || parkViewMode) {
-          btn.style.display = 'none';
+          if (btn.style.display !== 'none') btn.style.display = 'none';
           return false;
         }
         bottomDockOccupied = true;
-        btn.style.display = 'block';
-        btn.style.transform = bottomDockTransform;
+        if (btn.style.display !== 'block') btn.style.display = 'block';
+        if (btn.style.transform !== bottomDockTransform) {
+          btn.style.transform = bottomDockTransform;
+        }
         return true;
       };
 
@@ -32836,9 +32950,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
 
       // Animate Central Plaza Urban Scooter Showroom low 3D interaction triangle ("segitiga interaksi di bawah")
-      const isScooterModalOpenDom = Boolean(
-        document.querySelector('[data-scooter-showroom-modal="true"]'),
-      );
       const distToScooterShop = getPlanetShortestDistance(
         actorX,
         actorZ,
@@ -32852,8 +32963,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const isNearScooterShop =
         showScooterShopChevron &&
         !isKioskModalOpenCanvas &&
-        !isScooterModalOpenDom &&
-        distToScooterShop <= URBAN_SCOOTER_SHOP_TRIGGER.triggerRadius;
+        distToScooterShop <= URBAN_SCOOTER_SHOP_TRIGGER.triggerRadius &&
+        !document.querySelector('[data-scooter-showroom-modal="true"]');
       scooterShopChevron.group.visible = showScooterShopChevron;
       if (showScooterShopChevron) {
         const scooterTerrainY = getTerrainElevation(
@@ -32881,9 +32992,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
 
       // Animate Central Plaza Fashion & Apparel Boutique A-Frame low 3D interaction triangle
-      const isFashionBoutiqueModalOpenDom = Boolean(
-        document.querySelector('[data-fashion-boutique-modal="true"]'),
-      );
       const distToFashionBoutique = getPlanetShortestDistance(
         actorX,
         actorZ,
@@ -32897,8 +33005,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const isNearFashionBoutique =
         showFashionShopChevron &&
         !isKioskModalOpenCanvas &&
-        !isFashionBoutiqueModalOpenDom &&
-        distToFashionBoutique <= FASHION_BOUTIQUE_SHOP_TRIGGER.triggerRadius;
+        distToFashionBoutique <= FASHION_BOUTIQUE_SHOP_TRIGGER.triggerRadius &&
+        !document.querySelector('[data-fashion-boutique-modal="true"]');
       fashionShopChevron.group.visible = showFashionShopChevron;
       if (showFashionShopChevron) {
         const fashionTerrainY = getTerrainElevation(
@@ -32926,9 +33034,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
 
       // Animate Central Plaza Real Estate & Furniture Showroom A-Frame low 3D interaction triangle
-      const isRealEstateCatalogModalOpenDom = Boolean(
-        document.querySelector('[data-realestate-catalog-modal="true"]'),
-      );
       const distToRealEstateCatalog = getPlanetShortestDistance(
         actorX,
         actorZ,
@@ -32939,6 +33044,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
         worldModeRef.current !== 'warzone' &&
         npcCameraMode === 'none' &&
         distToRealEstateCatalog <= 46;
+      const distToModelHouseDoor = getPlanetShortestDistance(
+        actorX,
+        actorZ,
+        PLAZA_MODEL_HOUSE_DOOR_TRIGGER.x,
+        PLAZA_MODEL_HOUSE_DOOR_TRIGGER.z,
+      );
+      const isRealEstateCatalogModalOpenDom =
+        (distToRealEstateCatalog <= REAL_ESTATE_CATALOG_TRIGGER.triggerRadius ||
+          distToModelHouseDoor <= PLAZA_MODEL_HOUSE_DOOR_TRIGGER.triggerRadius) &&
+        Boolean(document.querySelector('[data-realestate-catalog-modal="true"]'));
       const isNearRealEstateCatalog =
         showRealEstateCatalogChevron &&
         !isKioskModalOpenCanvas &&
@@ -32973,12 +33088,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
 
       // Animate Central Plaza Classic Plaza Manor Model House Entrance 3D Triangle ("segitiga untuk memasuki ruangan")
-      const distToModelHouseDoor = getPlanetShortestDistance(
-        actorX,
-        actorZ,
-        PLAZA_MODEL_HOUSE_DOOR_TRIGGER.x,
-        PLAZA_MODEL_HOUSE_DOOR_TRIGGER.z,
-      );
       const showModelHouseDoorChevron =
         worldModeRef.current !== 'warzone' &&
         npcCameraMode === 'none' &&
@@ -33014,9 +33123,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
 
       // Animate Grand Casino Entrance 3D Triangle ("segitiga interaksi untuk masuk ke bangunan casino")
-      const isGrandCasinoModalOpenDom = Boolean(
-        document.querySelector('[data-grand-casino-modal="true"]'),
-      );
+      let grandCasinoModalCache: boolean | null = null;
+      const getIsGrandCasinoModalOpenDom = (): boolean => {
+        if (grandCasinoModalCache === null) {
+          grandCasinoModalCache = Boolean(
+            document.querySelector('[data-grand-casino-modal="true"]'),
+          );
+        }
+        return grandCasinoModalCache;
+      };
       const distToGrandCasinoDoor = getPlanetShortestDistance(
         actorX,
         actorZ,
@@ -33030,8 +33145,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const isNearGrandCasinoDoor =
         showGrandCasinoDoorChevron &&
         !isKioskModalOpenCanvas &&
-        !isGrandCasinoModalOpenDom &&
-        distToGrandCasinoDoor <= GRAND_CASINO_DOOR_TRIGGER.triggerRadius;
+        distToGrandCasinoDoor <= GRAND_CASINO_DOOR_TRIGGER.triggerRadius &&
+        !getIsGrandCasinoModalOpenDom();
       grandCasinoDoorChevron.group.visible = showGrandCasinoDoorChevron;
       if (showGrandCasinoDoorChevron) {
         const casinoDoorTerrainY = getTerrainElevation(
@@ -33076,8 +33191,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       const isNearBeautySalonDoor =
         showBeautySalonDoorChevron &&
         !isKioskModalOpenCanvas &&
-        !isGrandCasinoModalOpenDom &&
-        distToBeautySalonDoor <= SALON_EXTERIOR_DOOR_TRIGGER.triggerRadius;
+        distToBeautySalonDoor <= SALON_EXTERIOR_DOOR_TRIGGER.triggerRadius &&
+        !getIsGrandCasinoModalOpenDom();
       beautySalonDoorChevron.group.visible = showBeautySalonDoorChevron;
       if (showBeautySalonDoorChevron) {
         const salonDoorTerrainY = getTerrainElevation(
@@ -33317,7 +33432,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       }
 
       // Contextual Grand Casino Station & Seat Unified Arbiter inside Luxury Single-Story Casino Hall ('casino_interior')
-      if (npcCameraMode === 'casino_interior' && !isKioskModalOpenCanvas && !isGrandCasinoModalOpenDom) {
+      if (
+        npcCameraMode === 'casino_interior' &&
+        !isKioskModalOpenCanvas &&
+        !getIsGrandCasinoModalOpenDom()
+      ) {
         if (playerUnit.isSitting && activeCasinoSeatedSpot) {
           currentNearestCasinoSeat = null;
           const seatedGameKind = getCasinoGameKindForSeat(activeCasinoSeatedSpot.chairKind);
@@ -35094,6 +35213,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
           [-71.2, 2.4, -2.0],
           46,
         );
+        // 1B. central_park: Scenic view of Central Park Civic Cascade Fountain, Wisteria Pergola Pond, and Plaza Kiosk
+        thumbnails.central_park = renderOutdoorSpot(
+          [40.5, 7.2, 8.8],
+          [28.5, 1.8, -5.5],
+          48,
+        );
 
         // 2. beachfront_harbor: Coastal timber boardwalk pier, Kai Fish Market kiosk, surfboard rack & ocean (100% clean of player & KAI label)
         thumbnails.beachfront_harbor = renderOutdoorSpot(
@@ -35341,6 +35466,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       soundEngine.disposeAmbientSoundscape();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('wardrobe-studio-pause', onWardrobeStudioPause);
       window.removeEventListener('buddy-action', onBuddyActionEvent);
       window.removeEventListener('mobile-joystick-input', onMobileJoystickInput);
       window.removeEventListener('blur', onWindowBlurOrVisibilityReset);
@@ -35432,6 +35558,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       animeSparkleTex.dispose();
       animeSparkleMat.dispose();
       weatherSystem.dispose();
+      terrainAccelBake.dispose();
       curvedPlanetEnv.dispose();
       underwaterEcology.dispose();
       centralPark.dispose();
@@ -35487,4 +35614,5 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = ({
       style={{ cursor: gameState === 'playing' ? 'crosshair' : 'default' }}
     />
   );
-};
+});
+BuddiesBlitzArena.displayName = 'BuddiesBlitzArena';

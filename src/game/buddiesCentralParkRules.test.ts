@@ -19,7 +19,11 @@ import {
   isPointInsideCentralParkPolygon,
 } from './buddiesCentralParkRules';
 import { DEFAULT_ARENA_MAP_LAYOUT } from './buddiesBlitzWorldBuilder';
-import { PUBLIC_WARZONE_CRATE_PADS, pointInObb2D } from './buddiesBlitzRules';
+import {
+  CENTRAL_PARK_TRANSIT_KIOSK_SPEC,
+  PUBLIC_WARZONE_CRATE_PADS,
+  pointInObb2D,
+} from './buddiesBlitzRules';
 import {
   evaluateBlitzGrassMask,
   evaluateHaltePlatformSdf,
@@ -317,6 +321,48 @@ test('Urban Plaza promenade corridors, Fountain step elevation, OBB colliders, g
     [55.5, 5.5],
   ] as const) {
     assert.equal(pointInExclusions(qx, qz), true, `Urban Plaza interior point (${qx}, ${qz}) must be excluded from wild grass`);
+  }
+
+  // Central Park standalone Transit Kiosk & arrival spawn sit cleanly on open plaza terrazzo clear of all obstacles
+  assert.equal(
+    isPointInsideCentralParkPolygon(CENTRAL_PARK_TRANSIT_KIOSK_SPEC.kioskX, CENTRAL_PARK_TRANSIT_KIOSK_SPEC.kioskZ),
+    true,
+    'Central Park Transit Kiosk must sit inside the 12-vertex Central Park plaza polygon',
+  );
+  assert.equal(
+    isPointInsideCentralParkPolygon(CENTRAL_PARK_TRANSIT_KIOSK_SPEC.spawnX, CENTRAL_PARK_TRANSIT_KIOSK_SPEC.spawnZ),
+    true,
+    'Central Park Transit Kiosk arrival spawn must sit inside the 12-vertex Central Park plaza polygon',
+  );
+  for (const obb of obstacles) {
+    assert.equal(
+      pointInObb2D(
+        CENTRAL_PARK_TRANSIT_KIOSK_SPEC.kioskX,
+        CENTRAL_PARK_TRANSIT_KIOSK_SPEC.kioskZ,
+        obb.x,
+        obb.z,
+        obb.halfX,
+        obb.halfZ,
+        obb.rotY,
+        0.95,
+      ),
+      false,
+      `Central Park Transit Kiosk overlaps or sits too close to ${obb.id}`,
+    );
+    assert.equal(
+      pointInObb2D(
+        CENTRAL_PARK_TRANSIT_KIOSK_SPEC.spawnX,
+        CENTRAL_PARK_TRANSIT_KIOSK_SPEC.spawnZ,
+        obb.x,
+        obb.z,
+        obb.halfX,
+        obb.halfZ,
+        obb.rotY,
+        0.55,
+      ),
+      false,
+      `Central Park Transit arrival spawn blocked by ${obb.id}`,
+    );
   }
 });
 

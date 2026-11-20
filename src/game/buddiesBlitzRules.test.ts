@@ -5254,6 +5254,7 @@ test('Halte-Ratio Batch Auto-Calibration synchronizes 3D scales and OBB collider
   // 1. All Kiosk colliders (5 Black Transit Kiosks and 8 White Base Plot Kiosks) match the compact Halte-calibrated Kiosk height (~2.55m)
   for (const kioskId of [
     'halte_teleport_kiosk',
+    'central_park_transit_kiosk',
     'north_residence_transit_kiosk',
     'south_residence_transit_kiosk',
     'beachfront_harbor_transit_kiosk',
@@ -5404,7 +5405,18 @@ test('City Transit Kiosks, Rail-Aligned Halte Shelter Rules, and 3D Tram Ride Cu
     'north_residence',
     'south_residence',
   ]);
-  assert.deepEqual(withoutShelter, ['kai_fish_market', 'nw_fishing_lake', 'warzone_arena']);
+  assert.deepEqual(withoutShelter, [
+    'central_park',
+    'kai_fish_market',
+    'nw_fishing_lake',
+    'warzone_arena',
+  ]);
+
+  const centralParkSpec = getCityTransitDestinationById('central_park');
+  assert.equal(centralParkSpec.name, 'Central Park');
+  assert.equal(centralParkSpec.title, 'CENTRAL PARK');
+  assert.equal(centralParkSpec.category, 'district');
+  assert.equal(centralParkSpec.hasHalteShelter, false);
 
   const beachSpec = getCityTransitDestinationById('beachfront_harbor');
   assert.equal(beachSpec.shelterX, 77.5);
@@ -5420,9 +5432,10 @@ test('City Transit Kiosks, Rail-Aligned Halte Shelter Rules, and 3D Tram Ride Cu
   assert.equal(northSpec.kioskX, 3.5);
   assert.equal(northSpec.kioskZ, -41.15);
 
-  // 2. Proximity evaluation detects each of the 5 City Transit Kiosks within <= 3.5m
+  // 2. Proximity evaluation detects each of the City Transit Kiosks within <= 3.5m
   for (const stationId of [
     'central_plaza',
+    'central_park',
     'beachfront_harbor',
     'nw_fishing_lake',
     'north_residence',

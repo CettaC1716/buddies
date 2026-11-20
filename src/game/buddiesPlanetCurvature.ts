@@ -8,6 +8,7 @@ import { evaluateCentralParkElevation } from './buddiesCentralParkRules';
 import {
   evaluateGrandCasinoHillClear,
   evaluateGrandCasinoPavedPlatformSdf,
+  evaluateGrandCasinoSidewalkElevation,
   evaluateGrandCasinoValetLoopSdf,
   isPointOnGrandCasinoCrosswalk,
 } from './buddiesGrandCasinoRules';
@@ -885,12 +886,89 @@ export function evaluateHarborSeabedDrop(worldX: number, worldZ: number): number
   return quayDrop + (sandySlope - quayDrop) * sandyMask;
 }
 
+export const URBAN_SIDEWALK_TOP_Y = 0.09;
+
+/**
+ * Evaluates exact walkable top elevation (in meters) for all paved urban pedestrian
+ * sidewalks (`trotoar`), courts, and medians across the city:
+ * - `+0.09m` on the 4.40m Outer & Inner Tram Ring Sidewalks
+ * - `+0.09m` on the Central Plaza Roadside Pedestrian Sidewalk (N/Center/S)
+ * - `+0.09m` on the Tennis Club Perimeter Sidewalks and `+0.108m` on the Clay Court
+ * - `+0.09m` on Grand Casino Sidewalk, `+0.14m` on Median Island, `+0.022m` on Valet Apron
+ * All asphalt carriageways, zebra crosswalks, and lawns return `0.0m`.
+ */
+export function evaluateUrbanSidewalkElevation(worldX: number, worldZ: number): number {
+  let elev = 0.0;
+
+  // 1. Central Plaza Roadside Pedestrian Sidewalk (worldX in [-79.15 .. -73.93], worldZ in [-38.10 .. +38.10])
+  if (worldZ >= -38.10 && worldZ <= 38.10 && worldX >= -79.15 && worldX <= -73.85) {
+    const westEdge = Math.abs(worldZ) <= 10.0 ? -79.15 : -78.83;
+    if (worldX >= westEdge) {
+      const curbTaper = 1.0 - smoothstep(-73.93, -73.85, worldX);
+      elev = Math.max(elev, URBAN_SIDEWALK_TOP_Y * curbTaper);
+    }
+  }
+
+  // 2. Tennis Club Perimeter Sidewalks (+0.09m) & Scenic Clay Court (+0.108m)
+  if (worldZ >= 38.10 && worldZ <= 65.78 && worldX >= -104.48 && worldX <= -73.85) {
+    // 2a) Scenic Clay Court inner plateau (0.08m * 1.35 scale = +0.108m)
+    if (worldX >= -98.80 && worldX <= -78.82 && worldZ >= 38.43 && worldZ <= 62.73) {
+      elev = Math.max(elev, 0.108);
+    }
+    // 2b) East Roadside & Spectator Sidewalk
+    if (worldX >= -78.82 && worldX <= -73.85) {
+      const xTaper = 1.0 - smoothstep(-73.93, -73.85, worldX);
+      const zTaper = 1.0 - smoothstep(65.70, 65.78, worldZ);
+      elev = Math.max(elev, URBAN_SIDEWALK_TOP_Y * xTaper * zTaper);
+    }
+    // 2c) South Perimeter Sidewalk
+    if (worldX < -78.82 && worldZ >= 62.73) {
+      const xWestTaper = smoothstep(-104.48, -104.40, worldX);
+      const zSouthTaper = 1.0 - smoothstep(65.70, 65.78, worldZ);
+      elev = Math.max(elev, URBAN_SIDEWALK_TOP_Y * xWestTaper * zSouthTaper);
+    }
+    // 2d) West Perimeter Sidewalk
+    if (worldX < -98.80 && worldZ >= 38.30 && worldZ < 62.73) {
+      const xWestTaper = smoothstep(-104.48, -104.40, worldX);
+      const zNorthTaper = smoothstep(38.30, 38.3625, worldZ);
+      elev = Math.max(elev, URBAN_SIDEWALK_TOP_Y * xWestTaper * zNorthTaper);
+    }
+  }
+
+  // 3. Grand Casino District Sidewalks (+0.09m), Median Island (+0.14m), & Cobble Apron (+0.022m)
+  const casinoElev = evaluateGrandCasinoSidewalkElevation(worldX, worldZ);
+  if (casinoElev > elev) {
+    elev = casinoElev;
+  }
+
+  // 4. Outer Tram Ring 4.40m Pedestrian Sidewalks (+0.09m)
+  const dOuterTramSidewalk = evaluateOuterTramSidewalkSdf(worldX, worldZ);
+  if (dOuterTramSidewalk < 0.06) {
+    elev = Math.max(
+      elev,
+      URBAN_SIDEWALK_TOP_Y * (1.0 - smoothstep(0.0, 0.06, dOuterTramSidewalk)),
+    );
+  }
+
+  // 5. Inner Tram Ring 4.40m Pedestrian Sidewalks (+0.09m)
+  const dInnerTramSidewalk = evaluateInnerTramSidewalkSdf(worldX, worldZ);
+  if (dInnerTramSidewalk < 0.06) {
+    elev = Math.max(
+      elev,
+      URBAN_SIDEWALK_TOP_Y * (1.0 - smoothstep(0.0, 0.06, dInnerTramSidewalk)),
+    );
+  }
+
+  return elev;
+}
+
 /**
  * Base procedural ground elevation:
  * - 0.0m across the flat playable arena, Harbor Dock, and East Coastal Seawall
+ * - +0.09m across all Urban Pedestrian Concrete Sidewalks ("trotoar")
  * - Sloped sandy seabed (0.0m -> -1.65m over 14m) off NE Taman Ria & SE Beachfront, and steep -1.65m drop at Harbor Quay
  * - -1.55m 3-level concave lake basin depression ("level cekungan danau") inside the Oasis Lake (`evaluateNwLakeSdf`)
- * - +1.40m on the West Elevated Concrete Power Plant Platform (`x in [-98.5, -78.5], z in [-35.0, +35.0]`)
+ * - +2.50m on the West Elevated Central Plaza Platform (`x in [-110.75, -78.75], z in [-38.0, +38.0]`)
  * - Rises into a 4-level stepped contour hill embankment ("Tanggul Bukit dengan Lekukan Level", +11.4m)
  *   around the North, West, and South map boundaries
  */
@@ -900,8 +978,8 @@ export function getBaseProceduralGroundElevation(worldX: number, worldZ: number)
   // Urban Plaza to Street Staircase (20m wide: worldZ in [-10.00 .. +10.00], worldX in [-87.55 .. -73.93]):
   // - Upper Flight (worldX in [-87.55 .. -84.05]): descends from +2.50m Plaza Level to +1.32m Mid-Landing
   // - Mid-Landing (worldX in [-84.05 .. -82.65]): flat granite landing at +1.32m
-  // - Lower Flight (worldX in [-82.65 .. -79.15]): descends from +1.32m to +0.08m Urban Sidewalk
-  // - Bottom Widened Urban Sidewalk (worldX in [-79.15 .. -73.93]): +0.08m concrete sidewalk stepping down at -73.93 curb
+  // - Lower Flight (worldX in [-82.65 .. -79.15]): descends from +1.32m to +0.09m Urban Sidewalk
+  // - Bottom Widened Urban Sidewalk (worldX in [-79.15 .. -73.93]): +0.09m concrete sidewalk stepping down at -73.93 curb
   if (worldX >= -87.60 && worldX <= -73.85 && worldZ >= -10.00 && worldZ <= 10.00) {
     if (worldX <= -84.05) {
       const upperT = smoothstep(-87.55, -84.05, worldX);
@@ -910,10 +988,10 @@ export function getBaseProceduralGroundElevation(worldX: number, worldZ: number)
       westPlantElev = 1.32;
     } else if (worldX <= -79.15) {
       const lowerT = smoothstep(-82.65, -79.15, worldX);
-      westPlantElev = 1.32 - lowerT * (1.32 - 0.08);
+      westPlantElev = 1.32 - lowerT * (1.32 - URBAN_SIDEWALK_TOP_Y);
     } else {
-      const curbT = smoothstep(-74.65, -73.93, worldX);
-      westPlantElev = 0.08 * (1.0 - curbT);
+      const curbT = smoothstep(-73.93, -73.85, worldX);
+      westPlantElev = URBAN_SIDEWALK_TOP_Y * (1.0 - curbT);
     }
   }
 
@@ -991,12 +1069,14 @@ export function getBaseProceduralGroundElevation(worldX: number, worldZ: number)
   const neAmusementBoardwalkElev = evaluateAmusementBoardwalkElevation(worldX, worldZ);
   const stiltCabinDeckElev = evaluateBeachfrontStiltCabinElevation(worldX, worldZ);
   const centralParkElev = evaluateCentralParkElevation(worldX, worldZ);
+  const urbanSidewalkElev = evaluateUrbanSidewalkElevation(worldX, worldZ);
   const baseLandElev =
     Math.max(
       westPlantElev,
       seBoardwalkElev,
       haltePlatformElev,
       centralParkElev,
+      urbanSidewalkElev,
     ) -
     lakeBasinDepression +
     harborDrop;
