@@ -1,8 +1,8 @@
 import type { WardrobeCatalogItem } from './buddiesWardrobeStudioRules';
 
 /**
- * Clean Blender-authored modular outfits, full sets, and toon hairstyles exported from
- * REA avakin / buddies_studio (zero old hollow legacy blitz-*-01..04 meshes).
+ * Clean Blender-authored modular outfits, full sets, and toon hairstyles from
+ * Buddies Studio (zero old hollow legacy blitz-*-01..04 meshes).
  */
 export const BLENDER_MODULAR_WARDROBE_ITEMS: readonly WardrobeCatalogItem[] = [
   {

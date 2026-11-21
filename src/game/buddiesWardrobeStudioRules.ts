@@ -478,7 +478,7 @@ export const WARDROBE_STUDIO_ITEMS: readonly WardrobeCatalogItem[] = [
     swatchGradient: ['#a78bfa', '#4c1d95'],
     accentHex: '#8b5cf6',
   },
-  // ── Female Body Shapes (REA Avakin / Buddies Studio Master Morphs) ────────
+  // ── Female Body Shapes (Buddies Studio Master Morphs) ────────
   {
     id: 'body_f_hourglass',
     slot: 'body_shape',
@@ -609,7 +609,7 @@ export const WARDROBE_STUDIO_ITEMS: readonly WardrobeCatalogItem[] = [
     swatchGradient: ['#c084fc', '#581c87'],
     accentHex: '#a855f7',
   },
-  // ── Male Body Shapes (REA Avakin / Buddies Studio Master Morphs) ──────────
+  // ── Male Body Shapes (Buddies Studio Master Morphs) ──────────
   {
     id: 'body_m_vtaper',
     slot: 'body_shape',
