@@ -39,16 +39,44 @@ export interface WardrobeLipStyleSpec {
   widthScale: number;
 }
 
+export interface BeautyUvLayerSpec {
+  url: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface BuddyFaceCustomizationProfile {
   eyeStyle: WardrobeEyeStyleSpec | null;
   browStyle: WardrobeBrowStyleSpec | null;
   lipStyle: WardrobeLipStyleSpec | null;
+  eyeOverlay?: BeautyUvLayerSpec | null;
+  browOverlay?: BeautyUvLayerSpec | null;
+  lipOverlay?: BeautyUvLayerSpec | null;
+  eyeshadowOverlay?: BeautyUvLayerSpec | null;
+  blushOverlay?: BeautyUvLayerSpec | null;
+  facepaintOverlay?: BeautyUvLayerSpec | null;
+  beardOverlay?: BeautyUvLayerSpec | null;
+  faceoverlayOverlay?: BeautyUvLayerSpec | null;
+  underwearOverlay?: BeautyUvLayerSpec | null;
+  corewearOverlay?: BeautyUvLayerSpec | null;
 }
 
 export const DEFAULT_NEUTRAL_FACE_CUSTOMIZATION: BuddyFaceCustomizationProfile = {
   eyeStyle: null,
   browStyle: null,
   lipStyle: null,
+  eyeOverlay: null,
+  browOverlay: null,
+  lipOverlay: null,
+  eyeshadowOverlay: null,
+  blushOverlay: null,
+  facepaintOverlay: null,
+  beardOverlay: null,
+  faceoverlayOverlay: null,
+  underwearOverlay: null,
+  corewearOverlay: null,
 };
 
 export interface BlitzFaceUvCalibration {
@@ -519,7 +547,7 @@ export function drawStylizedLipsOnCanvas(
   ctx.restore();
 }
 
-function findHeadFaceMaterials(glbRoot: THREE.Object3D): THREE.MeshStandardMaterial[] {
+function findBaseSkinMaterials(glbRoot: THREE.Object3D): THREE.MeshStandardMaterial[] {
   const found: THREE.MeshStandardMaterial[] = [];
   const seen = new Set<THREE.Material>();
   glbRoot.traverse((obj) => {
@@ -528,7 +556,7 @@ function findHeadFaceMaterials(glbRoot: THREE.Object3D): THREE.MeshStandardMater
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const rawMat of mats) {
       if (!rawMat || seen.has(rawMat)) continue;
-      if (/blitz_mask_head/i.test(rawMat.name || '')) {
+      if (/blitz_mask_/i.test(rawMat.name || '')) {
         seen.add(rawMat);
         found.push(rawMat as THREE.MeshStandardMaterial);
       }
@@ -548,8 +576,49 @@ function detectGenderFromGlbRoot(glbRoot: THREE.Object3D, hint?: 'male' | 'femal
   return detected;
 }
 
+const beautyOverlayImageCache = new Map<string, HTMLImageElement | null>();
+const beautyOverlayPromiseCache = new Map<string, Promise<HTMLImageElement | null>>();
+
+function loadBeautyOverlayImage(url: string): Promise<HTMLImageElement | null> {
+  if (beautyOverlayImageCache.has(url)) {
+    return Promise.resolve(beautyOverlayImageCache.get(url) ?? null);
+  }
+  const existing = beautyOverlayPromiseCache.get(url);
+  if (existing) return existing;
+  if (typeof Image === 'undefined') {
+    return Promise.resolve(null);
+  }
+  const promise = new Promise<HTMLImageElement | null>((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      beautyOverlayImageCache.set(url, img);
+      resolve(img);
+    };
+    img.onerror = () => {
+      beautyOverlayImageCache.set(url, null);
+      resolve(null);
+    };
+    img.src = url;
+  });
+  beautyOverlayPromiseCache.set(url, promise);
+  return promise;
+}
+
+function drawUvOverlayLayer(
+  ctx: CanvasRenderingContext2D,
+  layer: BeautyUvLayerSpec | null | undefined,
+): boolean {
+  if (!layer || !layer.url) return false;
+  const img = beautyOverlayImageCache.get(layer.url);
+  if (!img) return false;
+  ctx.drawImage(img, layer.x, layer.y, layer.w, layer.h);
+  return true;
+}
+
 /**
- * Composites selected Eyes (Mata), Eyebrows (Alis), and Lips (Bibir) onto the
+ * Composites selected Eyes (Mata), Eyebrows (Alis), Lips (Bibir), and real UV-aligned
+ * Makeup / Eyeshadow / Blush / Face Paint / Beard WebP overlays onto the
  * `Blitz_Mask_Head` texture of a BuddyCharacterRig in real time (zero GLB reload,
  * non-destructive snapshot of the original texture, shared between Wardrobe Studio
  * and the live open-world city avatar).
@@ -564,6 +633,16 @@ export function applyBuddyRigFaceCustomization(
         eyeStyle: profile.eyeStyle ?? null,
         browStyle: profile.browStyle ?? null,
         lipStyle: profile.lipStyle ?? null,
+        eyeOverlay: profile.eyeOverlay ?? null,
+        browOverlay: profile.browOverlay ?? null,
+        lipOverlay: profile.lipOverlay ?? null,
+        eyeshadowOverlay: profile.eyeshadowOverlay ?? null,
+        blushOverlay: profile.blushOverlay ?? null,
+        facepaintOverlay: profile.facepaintOverlay ?? null,
+        beardOverlay: profile.beardOverlay ?? null,
+        faceoverlayOverlay: profile.faceoverlayOverlay ?? null,
+        underwearOverlay: profile.underwearOverlay ?? null,
+        corewearOverlay: profile.corewearOverlay ?? null,
       }
     : DEFAULT_NEUTRAL_FACE_CUSTOMIZATION;
 
@@ -576,118 +655,185 @@ export function applyBuddyRigFaceCustomization(
     return false;
   }
 
-  const headMaterials = findHeadFaceMaterials(glbRoot);
-  if (headMaterials.length === 0) return false;
+  const skinMaterials = findBaseSkinMaterials(glbRoot);
+  if (skinMaterials.length === 0) return false;
 
   const gender = detectGenderFromGlbRoot(glbRoot, genderHint);
   const uv = getBlitzFaceUvCalibration(gender);
-  const isNeutral = !resolved.eyeStyle && !resolved.browStyle && !resolved.lipStyle;
+  const overlayLayers = [
+    resolved.underwearOverlay,
+    resolved.corewearOverlay,
+    resolved.blushOverlay,
+    resolved.eyeshadowOverlay,
+    resolved.faceoverlayOverlay,
+    resolved.facepaintOverlay,
+    resolved.browOverlay,
+    resolved.eyeOverlay,
+    resolved.lipOverlay,
+    resolved.beardOverlay,
+  ].filter((l): l is BeautyUvLayerSpec => Boolean(l && l.url));
 
-  let updated = false;
-  for (const mat of headMaterials) {
-    const currentMap = mat.map;
-    if (!mat.userData.__baseFaceOriginalMap && currentMap) {
-      mat.userData.__baseFaceOriginalMap = currentMap;
+  const isNeutral =
+    !resolved.eyeStyle &&
+    !resolved.browStyle &&
+    !resolved.lipStyle &&
+    overlayLayers.length === 0;
+
+  // Trigger async load for any uncached overlay WebP and re-composite when ready
+  const pendingUrls = overlayLayers
+    .map((l) => l.url)
+    .filter((u) => !beautyOverlayImageCache.has(u));
+  if (pendingUrls.length > 0 && rig.bodyGroupRef) {
+    const seq = ((rig.bodyGroupRef.userData.__faceOverlaySeq as number | undefined) ?? 0) + 1;
+    rig.bodyGroupRef.userData.__faceOverlaySeq = seq;
+    void Promise.all(pendingUrls.map((u) => loadBeautyOverlayImage(u))).then(() => {
+      if (rig.bodyGroupRef?.userData.__faceOverlaySeq !== seq) return;
+      applyBuddyRigFaceCustomization(rig, resolved, genderHint);
+    });
+  }
+
+  // Snapshot original base texture per material so restoring neutral is 100% lossless
+  let primaryOrigMap: THREE.Texture | undefined;
+  for (const mat of skinMaterials) {
+    if (!mat.userData.__baseFaceOriginalMap && mat.map) {
+      mat.userData.__baseFaceOriginalMap = mat.map;
     }
     const origMap = mat.userData.__baseFaceOriginalMap as THREE.Texture | undefined;
-    const srcImage = origMap?.image as HTMLImageElement | HTMLCanvasElement | ImageBitmap | undefined;
-    if (!origMap || !srcImage) continue;
+    if (!primaryOrigMap && origMap?.image) {
+      primaryOrigMap = origMap;
+    }
+  }
 
-    // If all 3 features are default starter, cleanly restore the untouched original texture
-    if (isNeutral) {
+  if (isNeutral) {
+    let restored = false;
+    for (const mat of skinMaterials) {
+      const origMap = mat.userData.__baseFaceOriginalMap as THREE.Texture | undefined;
+      if (!origMap) continue;
       if (mat.map !== origMap) {
         mat.map = origMap;
         mat.needsUpdate = true;
       }
-      updated = true;
-      continue;
+      restored = true;
     }
+    return restored;
+  }
 
-    // Lazily snapshot original source texture & sample exact skin tone RGB
-    if (!mat.userData.__baseFaceSourceCanvas) {
-      const w = (srcImage as { width?: number }).width || 1024;
-      const h = (srcImage as { height?: number }).height || 1024;
-      const srcCanvas = document.createElement('canvas');
-      srcCanvas.width = w;
-      srcCanvas.height = h;
-      const sctx = srcCanvas.getContext('2d', { willReadFrequently: true });
-      if (!sctx) continue;
-      sctx.drawImage(srcImage as CanvasImageSource, 0, 0, w, h);
-      const pixel = sctx.getImageData(16, 16, 1, 1).data;
-      mat.userData.__baseFaceSourceCanvas = srcCanvas;
-      mat.userData.__baseFaceSkinRgb = [pixel[0], pixel[1], pixel[2]] as [number, number, number];
-    }
+  const srcImage = primaryOrigMap?.image as
+    | HTMLImageElement
+    | HTMLCanvasElement
+    | ImageBitmap
+    | undefined;
+  if (!primaryOrigMap || !srcImage) return false;
 
-    const srcCanvas = mat.userData.__baseFaceSourceCanvas as HTMLCanvasElement;
-    const skinRgb = (mat.userData.__baseFaceSkinRgb as [number, number, number]) || [233, 197, 171];
+  // Lazily snapshot original shared 1024x1024 skin atlas & sample exact skin tone RGB once per glbRoot
+  if (!glbRoot.userData.__baseSkinSourceCanvas) {
+    const w = (srcImage as { width?: number }).width || 1024;
+    const h = (srcImage as { height?: number }).height || 1024;
+    const srcCanvas = document.createElement('canvas');
+    srcCanvas.width = w;
+    srcCanvas.height = h;
+    const sctx = srcCanvas.getContext('2d', { willReadFrequently: true });
+    if (!sctx) return false;
+    sctx.drawImage(srcImage as CanvasImageSource, 0, 0, w, h);
+    const pixel = sctx.getImageData(16, 16, 1, 1).data;
+    glbRoot.userData.__baseSkinSourceCanvas = srcCanvas;
+    glbRoot.userData.__baseSkinToneRgb = [pixel[0], pixel[1], pixel[2]] as [number, number, number];
+  }
 
-    // Reuse composite canvas + CanvasTexture per material to prevent GPU memory leaks
-    if (!mat.userData.__composedFaceCanvas) {
-      const compCanvas = document.createElement('canvas');
-      compCanvas.width = srcCanvas.width;
-      compCanvas.height = srcCanvas.height;
-      const compTex = new THREE.CanvasTexture(compCanvas);
-      compTex.flipY = origMap.flipY;
-      compTex.colorSpace = THREE.SRGBColorSpace;
-      compTex.anisotropy = origMap.anisotropy || 4;
-      compTex.wrapS = origMap.wrapS;
-      compTex.wrapT = origMap.wrapT;
-      mat.userData.__composedFaceCanvas = compCanvas;
-      mat.userData.__composedFaceTexture = compTex;
-    }
+  const srcCanvas = glbRoot.userData.__baseSkinSourceCanvas as HTMLCanvasElement;
+  const skinRgb = (glbRoot.userData.__baseSkinToneRgb as [number, number, number]) || [233, 197, 171];
 
-    const compCanvas = mat.userData.__composedFaceCanvas as HTMLCanvasElement;
-    const compTex = mat.userData.__composedFaceTexture as THREE.CanvasTexture;
-    const ctx = compCanvas.getContext('2d');
-    if (!ctx) continue;
+  // Reuse ONE shared composite canvas + CanvasTexture across all 11 blitz_Mask_* materials
+  if (!glbRoot.userData.__composedSkinCanvas) {
+    const compCanvas = document.createElement('canvas');
+    compCanvas.width = srcCanvas.width;
+    compCanvas.height = srcCanvas.height;
+    const compTex = new THREE.CanvasTexture(compCanvas);
+    compTex.flipY = primaryOrigMap.flipY;
+    compTex.colorSpace = THREE.SRGBColorSpace;
+    compTex.anisotropy = primaryOrigMap.anisotropy || 4;
+    compTex.wrapS = primaryOrigMap.wrapS;
+    compTex.wrapT = primaryOrigMap.wrapT;
+    glbRoot.userData.__composedSkinCanvas = compCanvas;
+    glbRoot.userData.__composedSkinTexture = compTex;
+  }
 
-    const scaleX = compCanvas.width / 1024;
-    const scaleY = compCanvas.height / 1024;
+  const compCanvas = glbRoot.userData.__composedSkinCanvas as HTMLCanvasElement;
+  const compTex = glbRoot.userData.__composedSkinTexture as THREE.CanvasTexture;
+  const ctx = compCanvas.getContext('2d');
+  if (!ctx) return false;
 
-    // Start fresh from untouched base face texture (preserves nose, skin tone, untouched features)
-    ctx.clearRect(0, 0, compCanvas.width, compCanvas.height);
-    ctx.drawImage(srcCanvas, 0, 0);
+  const scaleX = compCanvas.width / 1024;
+  const scaleY = compCanvas.height / 1024;
 
-    ctx.save();
-    ctx.scale(scaleX, scaleY);
+  // Start fresh from untouched base skin atlas (preserves nose, body shading, untouched features)
+  ctx.clearRect(0, 0, compCanvas.width, compCanvas.height);
+  ctx.drawImage(srcCanvas, 0, 0);
 
-    // 1. Eyes (Mata) — left & right mirror-symmetric, flipped upright via scale(side, -1)
-    if (resolved.eyeStyle) {
-      clearFeatureRegionWithSkin(ctx, uv.eyeClearRect, skinRgb);
-      for (const side of [-1, 1] as const) {
-        ctx.save();
-        ctx.translate(uv.centerX + side * uv.eyeOffsetX, uv.eyeCenterY);
-        ctx.scale(side, -1);
-        drawStylizedEyeOnCanvas(ctx, uv.eyeHalfW, uv.eyeHalfH, resolved.eyeStyle);
-        ctx.restore();
-      }
-    }
+  ctx.save();
+  ctx.scale(scaleX, scaleY);
 
-    // 2. Eyebrows (Alis) — left & right mirror-symmetric, flipped upright via scale(side, -1)
-    if (resolved.browStyle) {
-      clearFeatureRegionWithSkin(ctx, uv.browClearRect, skinRgb);
-      for (const side of [-1, 1] as const) {
-        ctx.save();
-        ctx.translate(uv.centerX + side * uv.browOffsetX, uv.browCenterY);
-        ctx.scale(side, -1);
-        drawStylizedEyebrowOnCanvas(ctx, uv.browHalfW, uv.browHalfH, resolved.browStyle);
-        ctx.restore();
-      }
-    }
+  // -1. Body 2D Underwear (Bra/Panties/Lingerie/Bikini/Swimsuit/Bodysuit/Boxer/Brief/Trunks) & Corewear (Singlet/Bustier)
+  drawUvOverlayLayer(ctx, resolved.underwearOverlay);
+  drawUvOverlayLayer(ctx, resolved.corewearOverlay);
 
-    // 3. Lips (Bibir) — centered, flipped upright via scale(1, -1)
-    if (resolved.lipStyle) {
-      clearFeatureRegionWithSkin(ctx, uv.lipClearRect, skinRgb);
+  // 0. Skin-layer Makeup (Blush, Eyeshadow, Face Overlay, Face Paint)
+  drawUvOverlayLayer(ctx, resolved.blushOverlay);
+  drawUvOverlayLayer(ctx, resolved.eyeshadowOverlay);
+  drawUvOverlayLayer(ctx, resolved.faceoverlayOverlay);
+  drawUvOverlayLayer(ctx, resolved.facepaintOverlay);
+
+  // 1. Eyes (Mata) — real UV WebP overlay or procedural vector fallback
+  if (resolved.eyeOverlay && beautyOverlayImageCache.get(resolved.eyeOverlay.url)) {
+    clearFeatureRegionWithSkin(ctx, uv.eyeClearRect, skinRgb);
+    drawUvOverlayLayer(ctx, resolved.eyeOverlay);
+  } else if (resolved.eyeStyle) {
+    clearFeatureRegionWithSkin(ctx, uv.eyeClearRect, skinRgb);
+    for (const side of [-1, 1] as const) {
       ctx.save();
-      ctx.translate(uv.centerX, uv.lipCenterY);
-      ctx.scale(1, -1);
-      drawStylizedLipsOnCanvas(ctx, uv.lipHalfW, uv.lipHalfH, resolved.lipStyle);
+      ctx.translate(uv.centerX + side * uv.eyeOffsetX, uv.eyeCenterY);
+      ctx.scale(side, -1);
+      drawStylizedEyeOnCanvas(ctx, uv.eyeHalfW, uv.eyeHalfH, resolved.eyeStyle);
       ctx.restore();
     }
+  }
 
+  // 2. Eyebrows (Alis) — real UV WebP overlay or procedural vector fallback
+  if (resolved.browOverlay && beautyOverlayImageCache.get(resolved.browOverlay.url)) {
+    clearFeatureRegionWithSkin(ctx, uv.browClearRect, skinRgb);
+    drawUvOverlayLayer(ctx, resolved.browOverlay);
+  } else if (resolved.browStyle) {
+    clearFeatureRegionWithSkin(ctx, uv.browClearRect, skinRgb);
+    for (const side of [-1, 1] as const) {
+      ctx.save();
+      ctx.translate(uv.centerX + side * uv.browOffsetX, uv.browCenterY);
+      ctx.scale(side, -1);
+      drawStylizedEyebrowOnCanvas(ctx, uv.browHalfW, uv.browHalfH, resolved.browStyle);
+      ctx.restore();
+    }
+  }
+
+  // 3. Lips (Bibir) — real UV WebP overlay or procedural vector fallback
+  if (resolved.lipOverlay && beautyOverlayImageCache.get(resolved.lipOverlay.url)) {
+    clearFeatureRegionWithSkin(ctx, uv.lipClearRect, skinRgb);
+    drawUvOverlayLayer(ctx, resolved.lipOverlay);
+  } else if (resolved.lipStyle) {
+    clearFeatureRegionWithSkin(ctx, uv.lipClearRect, skinRgb);
+    ctx.save();
+    ctx.translate(uv.centerX, uv.lipCenterY);
+    ctx.scale(1, -1);
+    drawStylizedLipsOnCanvas(ctx, uv.lipHalfW, uv.lipHalfH, resolved.lipStyle);
     ctx.restore();
+  }
 
-    compTex.needsUpdate = true;
+  // 4. Beard (Male facial hair overlay)
+  drawUvOverlayLayer(ctx, resolved.beardOverlay);
+
+  ctx.restore();
+
+  compTex.needsUpdate = true;
+  let updated = false;
+  for (const mat of skinMaterials) {
     if (mat.map !== compTex) {
       mat.map = compTex;
       mat.needsUpdate = true;

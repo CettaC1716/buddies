@@ -2408,3 +2408,49 @@ export function verifyRouteClearOfStructures(
   }
   return { clear: true, violationReason: null };
 }
+
+/**
+ * Click-to-Walk distance threshold (meters) at or beyond which the avatar runs instead of walking.
+ * Short clicks (< 9 m, e.g. a few meters away) always walk; far clicks (>= 9 m) run and ease back
+ * into a walk over the final `CLICK_TO_WALK_WALK_DECEL_DISTANCE_M` before arriving.
+ */
+export const CLICK_TO_WALK_RUN_START_DISTANCE_M = 9.0;
+export const CLICK_TO_WALK_WALK_DECEL_DISTANCE_M = 2.8;
+/** Natural outdoor walking speed ratio relative to base foot speed (~3.25 m/s off-road). */
+export const PLAYER_WALK_SPEED_SCALE = 0.56;
+
+export type PlayerLocomotionGait = 'walk' | 'run';
+
+export function resolvePlayerLocomotionGait(params: {
+  isClickToWalk: boolean;
+  isShiftHeld: boolean;
+  isIndoor: boolean;
+  clickTotalDistanceM: number;
+  clickRemainingDistanceM: number;
+}): { gait: PlayerLocomotionGait; speedMultiplier: number } {
+  // Manual WASD / Arrow / Joystick: walk by default, run ONLY while holding Shift
+  if (!params.isClickToWalk) {
+    if (params.isShiftHeld) {
+      return { gait: 'run', speedMultiplier: 1.0 };
+    }
+    return {
+      gait: 'walk',
+      speedMultiplier: params.isIndoor ? 1.0 : PLAYER_WALK_SPEED_SCALE,
+    };
+  }
+
+  // Click-to-Walk: short/medium clicks walk; far clicks run until nearing destination
+  const wantsRun =
+    params.isShiftHeld ||
+    (!params.isIndoor &&
+      params.clickTotalDistanceM >= CLICK_TO_WALK_RUN_START_DISTANCE_M &&
+      params.clickRemainingDistanceM > CLICK_TO_WALK_WALK_DECEL_DISTANCE_M);
+
+  if (wantsRun) {
+    return { gait: 'run', speedMultiplier: 1.0 };
+  }
+  return {
+    gait: 'walk',
+    speedMultiplier: params.isIndoor ? 1.0 : PLAYER_WALK_SPEED_SCALE,
+  };
+}

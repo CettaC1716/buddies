@@ -2701,3 +2701,98 @@ test('Secondary physics shader hooks persist across frames, Raka ankles never cr
     performance.now = origNow;
   }
 });
+
+test('Blitz BaseDoll stays 100% watertight (zero holes) and recesses only covered skin vertices beneath opaque cloth', async () => {
+  const basePath = 'public/assets/avatars/new-female-player.glb';
+  const halterPath = 'public/assets/outfit/blitz_torso_atasan_halter_hitam_outfit_01_BL_F_O1_TOP.glb';
+  const ringerPath = 'public/assets/outfit/blitz_torso_kaos_ringer_putih_new_player_wanita_BL_F_NP_TOP.glb';
+  if (!fs.existsSync(basePath) || !fs.existsSync(halterPath) || !fs.existsSync(ringerPath)) {
+    return;
+  }
+
+  const [baseGltf, halterGltf, ringerGltf] = await Promise.all([
+    loadRealDracoGlbForTest(basePath),
+    loadRealDracoGlbForTest(halterPath),
+    loadRealDracoGlbForTest(ringerPath),
+  ]);
+
+  const bodyGroup = new THREE.Group();
+  const rig = createMinimalBuddyRig(bodyGroup);
+  upgradeBuddyRigWithCharBuddiesGlb(rig, baseGltf);
+
+  const measureSkinState = (): {
+    totalTris: number;
+    openBackAvgZ: number;
+    frontChestAvgZ: number;
+  } => {
+    let totalTris = 0;
+    let backSumZ = 0;
+    let backCount = 0;
+    let frontSumZ = 0;
+    let frontCount = 0;
+    bodyGroup.traverse((node) => {
+      if (!(node as THREE.Mesh).isMesh) return;
+      const mesh = node as THREE.Mesh;
+      if (!/^blitz_basedoll_female_mesh_(?:3|4)$/i.test(mesh.name)) return;
+      const pos = mesh.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+      const idx = mesh.geometry.getIndex();
+      if (!pos || !idx) return;
+      totalTris += idx.count / 3;
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const y = pos.getY(i);
+        const z = pos.getZ(i);
+        if (z < -0.02 && y >= 1.16 && y <= 1.27 && Math.abs(x) >= 0.035 && Math.abs(x) <= 0.095) {
+          backSumZ += z;
+          backCount++;
+        }
+        if (z > 0.04 && y >= 1.08 && y <= 1.20 && Math.abs(x) <= 0.075) {
+          frontSumZ += z;
+          frontCount++;
+        }
+      }
+    });
+    return {
+      totalTris,
+      openBackAvgZ: backCount > 0 ? backSumZ / backCount : 0,
+      frontChestAvgZ: frontCount > 0 ? frontSumZ / frontCount : 0,
+    };
+  };
+
+  const baseline = measureSkinState();
+  assert.ok(baseline.totalTris >= 2500, `Expected full watertight baseline skin tris, got ${baseline.totalTris}`);
+
+  // Open-back halter: ZERO triangles deleted anywhere, exposed back untouched, covered front chest recessed inward!
+  applyEquippedTorsoToBuddyRig(rig, halterGltf);
+  const withHalter = measureSkinState();
+  assert.equal(
+    withHalter.totalTris,
+    baseline.totalTris,
+    'BaseDoll must stay 100% watertight with zero deleted triangles',
+  );
+  assert.ok(
+    Math.abs(withHalter.openBackAvgZ - baseline.openBackAvgZ) < 0.003,
+    `Exposed open-back skin must stay untouched (delta=${Math.abs(withHalter.openBackAvgZ - baseline.openBackAvgZ).toFixed(4)}m)`,
+  );
+  assert.ok(
+    withHalter.frontChestAvgZ < baseline.frontChestAvgZ - 0.002,
+    `Covered front chest skin should recess smoothly inward under halter (before=${baseline.frontChestAvgZ.toFixed(4)}, after=${withHalter.frontChestAvgZ.toFixed(4)})`,
+  );
+
+  // Full-back t-shirt: ZERO triangles deleted anywhere, BOTH front chest & covered back recess smoothly inward!
+  applyEquippedTorsoToBuddyRig(rig, ringerGltf);
+  const withRinger = measureSkinState();
+  assert.equal(
+    withRinger.totalTris,
+    baseline.totalTris,
+    'BaseDoll must stay 100% watertight on sleeved/full-back tops too',
+  );
+  assert.ok(
+    withRinger.openBackAvgZ > baseline.openBackAvgZ + 0.002,
+    `Covered back skin should recess smoothly inward under full-back tee (before=${baseline.openBackAvgZ.toFixed(4)}, after=${withRinger.openBackAvgZ.toFixed(4)})`,
+  );
+  assert.ok(
+    withRinger.frontChestAvgZ < baseline.frontChestAvgZ - 0.002,
+    `Covered front chest skin should recess smoothly inward under tee (before=${baseline.frontChestAvgZ.toFixed(4)}, after=${withRinger.frontChestAvgZ.toFixed(4)})`,
+  );
+});

@@ -1,0 +1,812 @@
+{
+  "version": 1,
+  "total": 50,
+  "counts": {
+    "underwear": 44,
+    "corewear": 6,
+    "female": 23,
+    "male": 27
+  },
+  "items": [
+    {
+      "id": "uw_underwear_f_5d1ae180",
+      "sourceId": "5D1AE180",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Bra & Celana Dalam Basic Putih",
+      "tag": "Bra Set",
+      "thumbUrl": "/assets/underwear/thumbs/5D1AE180_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/5D1AE180_f.webp",
+        "x": 0,
+        "y": 377,
+        "w": 606,
+        "h": 573
+      }
+    },
+    {
+      "id": "uw_underwear_f_8a5273d",
+      "sourceId": "8A5273D",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Bra & Celana Dalam Klasik Putih",
+      "tag": "Bra Set",
+      "thumbUrl": "/assets/underwear/thumbs/8A5273D_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/8A5273D_f.webp",
+        "x": 0,
+        "y": 377,
+        "w": 606,
+        "h": 574
+      }
+    },
+    {
+      "id": "uw_underwear_f_7287e28e",
+      "sourceId": "7287E28E",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Bra & Celana Dalam Klasik Hitam",
+      "tag": "Bra Set",
+      "thumbUrl": "/assets/underwear/thumbs/7287E28E_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/7287E28E_f.webp",
+        "x": 0,
+        "y": 377,
+        "w": 606,
+        "h": 573
+      }
+    },
+    {
+      "id": "uw_underwear_f_5857ed7f",
+      "sourceId": "5857ED7F",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Set Mini Putih High-Cut",
+      "tag": "Bra Set",
+      "thumbUrl": "/assets/underwear/thumbs/5857ED7F_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/5857ED7F_f.webp",
+        "x": 0,
+        "y": 481,
+        "w": 600,
+        "h": 361
+      }
+    },
+    {
+      "id": "uw_underwear_f_2e0509bf",
+      "sourceId": "2E0509BF",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Lingerie Non-Wired Hitam",
+      "tag": "Lingerie",
+      "thumbUrl": "/assets/underwear/thumbs/2E0509BF_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/2E0509BF_f.webp",
+        "x": 0,
+        "y": 474,
+        "w": 606,
+        "h": 491
+      }
+    },
+    {
+      "id": "uw_underwear_f_4a9ef486",
+      "sourceId": "4A9EF486",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Lingerie Renda Pink",
+      "tag": "Lingerie",
+      "thumbUrl": "/assets/underwear/thumbs/4A9EF486_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/4A9EF486_f.webp",
+        "x": 0,
+        "y": 466,
+        "w": 579,
+        "h": 502
+      }
+    },
+    {
+      "id": "uw_underwear_f_48820038",
+      "sourceId": "48820038",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Lingerie Paris Renda Hitam",
+      "tag": "Lingerie",
+      "thumbUrl": "/assets/underwear/thumbs/48820038_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/48820038_f.webp",
+        "x": 0,
+        "y": 465,
+        "w": 576,
+        "h": 514
+      }
+    },
+    {
+      "id": "uw_underwear_f_4674e119",
+      "sourceId": "4674E119",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Lingerie Paris Strappy Hitam",
+      "tag": "Lingerie",
+      "thumbUrl": "/assets/underwear/thumbs/4674E119_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/4674E119_f.webp",
+        "x": 0,
+        "y": 477,
+        "w": 606,
+        "h": 485
+      }
+    },
+    {
+      "id": "uw_underwear_f_84a495a1",
+      "sourceId": "84A495A1",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Lingerie Paris Renda Putih",
+      "tag": "Lingerie",
+      "thumbUrl": "/assets/underwear/thumbs/84A495A1_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/84A495A1_f.webp",
+        "x": 0,
+        "y": 474,
+        "w": 606,
+        "h": 514
+      }
+    },
+    {
+      "id": "uw_underwear_f_73ce8339",
+      "sourceId": "73CE8339",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Set Bedazzled Emas",
+      "tag": "Lingerie",
+      "thumbUrl": "/assets/underwear/thumbs/73CE8339_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/73CE8339_f.webp",
+        "x": 0,
+        "y": 471,
+        "w": 583,
+        "h": 496
+      }
+    },
+    {
+      "id": "uw_underwear_f_3b06155",
+      "sourceId": "3B06155",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Underwear Renda Mint",
+      "tag": "Lingerie",
+      "thumbUrl": "/assets/underwear/thumbs/3B06155_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/3B06155_f.webp",
+        "x": 0,
+        "y": 479,
+        "w": 602,
+        "h": 362
+      }
+    },
+    {
+      "id": "uw_underwear_f_dea2008e",
+      "sourceId": "DEA2008E",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Modesty Patch Lavender",
+      "tag": "Lingerie",
+      "thumbUrl": "/assets/underwear/thumbs/DEA2008E_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/DEA2008E_f.webp",
+        "x": 0,
+        "y": 479,
+        "w": 602,
+        "h": 370
+      }
+    },
+    {
+      "id": "uw_underwear_f_2b603980",
+      "sourceId": "2B603980",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Stick-On Heart Hitam",
+      "tag": "Lingerie",
+      "thumbUrl": "/assets/underwear/thumbs/2B603980_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/2B603980_f.webp",
+        "x": 0,
+        "y": 481,
+        "w": 606,
+        "h": 365
+      }
+    },
+    {
+      "id": "uw_underwear_f_7be94f01",
+      "sourceId": "7BE94F01",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Underwear Panda (Couple)",
+      "tag": "Bra Set",
+      "thumbUrl": "/assets/underwear/thumbs/7BE94F01_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/7BE94F01_f.webp",
+        "x": 0,
+        "y": 469,
+        "w": 606,
+        "h": 552
+      }
+    },
+    {
+      "id": "uw_underwear_f_35f4a629",
+      "sourceId": "35F4A629",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Bikini Merah",
+      "tag": "Bikini",
+      "thumbUrl": "/assets/underwear/thumbs/35F4A629_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/35F4A629_f.webp",
+        "x": 0,
+        "y": 377,
+        "w": 606,
+        "h": 644
+      }
+    },
+    {
+      "id": "uw_underwear_f_b1ad9954",
+      "sourceId": "B1AD9954",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Bikini Pantai Pink",
+      "tag": "Bikini",
+      "thumbUrl": "/assets/underwear/thumbs/B1AD9954_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/B1AD9954_f.webp",
+        "x": 0,
+        "y": 482,
+        "w": 606,
+        "h": 484
+      }
+    },
+    {
+      "id": "uw_underwear_f_1dda5ed7",
+      "sourceId": "1DDA5ED7",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Swimsuit Dark Ocean",
+      "tag": "Swimsuit",
+      "thumbUrl": "/assets/underwear/thumbs/1DDA5ED7_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/1DDA5ED7_f.webp",
+        "x": 0,
+        "y": 476,
+        "w": 584,
+        "h": 528
+      }
+    },
+    {
+      "id": "uw_underwear_f_fc94cfc6",
+      "sourceId": "FC94CFC6",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Swimsuit Summer Cut-Out",
+      "tag": "Swimsuit",
+      "thumbUrl": "/assets/underwear/thumbs/FC94CFC6_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/FC94CFC6_f.webp",
+        "x": 0,
+        "y": 482,
+        "w": 566,
+        "h": 493
+      }
+    },
+    {
+      "id": "uw_underwear_f_95a98dd",
+      "sourceId": "95A98DD",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Bodysuit Jaring Girlband",
+      "tag": "Bodysuit",
+      "thumbUrl": "/assets/underwear/thumbs/95A98DD_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/95A98DD_f.webp",
+        "x": 0,
+        "y": 485,
+        "w": 582,
+        "h": 519
+      }
+    },
+    {
+      "id": "uw_underwear_f_932f2b82",
+      "sourceId": "932F2B82",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Leotard Balet Hitam",
+      "tag": "Bodysuit",
+      "thumbUrl": "/assets/underwear/thumbs/932F2B82_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/932F2B82_f.webp",
+        "x": 0,
+        "y": 476,
+        "w": 595,
+        "h": 496
+      }
+    },
+    {
+      "id": "uw_underwear_f_6273e7f0",
+      "sourceId": "6273E7F0",
+      "subSlot": "underwear",
+      "gender": "female",
+      "label": "Blitz Bodysuit Hitam Klasik",
+      "tag": "Bodysuit",
+      "thumbUrl": "/assets/underwear/thumbs/6273E7F0_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/6273E7F0_f.webp",
+        "x": 3,
+        "y": 377,
+        "w": 561,
+        "h": 591
+      }
+    },
+    {
+      "id": "uw_underwear_m_6d78c756",
+      "sourceId": "6D78C756",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Boxer Branded Silver",
+      "tag": "Boxer",
+      "thumbUrl": "/assets/underwear/thumbs/6D78C756_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/6D78C756_m.webp",
+        "x": 1,
+        "y": 437,
+        "w": 619,
+        "h": 256
+      }
+    },
+    {
+      "id": "uw_underwear_m_615562d1",
+      "sourceId": "615562D1",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Boxer Merah List Putih",
+      "tag": "Boxer",
+      "thumbUrl": "/assets/underwear/thumbs/615562D1_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/615562D1_m.webp",
+        "x": 11,
+        "y": 390,
+        "w": 572,
+        "h": 239
+      }
+    },
+    {
+      "id": "uw_underwear_m_2002fd4b",
+      "sourceId": "2002FD4B",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Brief Merah Polkadot",
+      "tag": "Brief",
+      "thumbUrl": "/assets/underwear/thumbs/2002FD4B_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/2002FD4B_m.webp",
+        "x": 0,
+        "y": 375,
+        "w": 620,
+        "h": 647
+      }
+    },
+    {
+      "id": "uw_underwear_m_5258957c",
+      "sourceId": "5258957C",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Boxer C9 Putih",
+      "tag": "Boxer",
+      "thumbUrl": "/assets/underwear/thumbs/5258957C_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/5258957C_m.webp",
+        "x": 0,
+        "y": 375,
+        "w": 620,
+        "h": 647
+      }
+    },
+    {
+      "id": "uw_underwear_m_223f5cdd",
+      "sourceId": "223F5CDD",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Boxer C9 Hitam",
+      "tag": "Boxer",
+      "thumbUrl": "/assets/underwear/thumbs/223F5CDD_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/223F5CDD_m.webp",
+        "x": 0,
+        "y": 375,
+        "w": 620,
+        "h": 647
+      }
+    },
+    {
+      "id": "uw_underwear_m_31e3f43d",
+      "sourceId": "31E3F43D",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Boxer Sport Putih",
+      "tag": "Boxer",
+      "thumbUrl": "/assets/underwear/thumbs/31E3F43D_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/31E3F43D_m.webp",
+        "x": 11,
+        "y": 390,
+        "w": 572,
+        "h": 239
+      }
+    },
+    {
+      "id": "uw_underwear_m_e1f1bb36",
+      "sourceId": "E1F1BB36",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Boxer Denim Biru",
+      "tag": "Boxer",
+      "thumbUrl": "/assets/underwear/thumbs/E1F1BB36_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/E1F1BB36_m.webp",
+        "x": 0,
+        "y": 403,
+        "w": 595,
+        "h": 248
+      }
+    },
+    {
+      "id": "uw_underwear_m_bc6acc24",
+      "sourceId": "BC6ACC24",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Boxer Motif Hati",
+      "tag": "Boxer",
+      "thumbUrl": "/assets/underwear/thumbs/BC6ACC24_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/BC6ACC24_m.webp",
+        "x": 0,
+        "y": 408,
+        "w": 614,
+        "h": 216
+      }
+    },
+    {
+      "id": "uw_underwear_m_2058e18a",
+      "sourceId": "2058E18A",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Boxer Valentine Bibir",
+      "tag": "Boxer",
+      "thumbUrl": "/assets/underwear/thumbs/2058E18A_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/2058E18A_m.webp",
+        "x": 2,
+        "y": 410,
+        "w": 594,
+        "h": 222
+      }
+    },
+    {
+      "id": "uw_underwear_m_4caa0ab6",
+      "sourceId": "4CAA0AB6",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Boxer Ombak Jepang",
+      "tag": "Boxer",
+      "thumbUrl": "/assets/underwear/thumbs/4CAA0AB6_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/4CAA0AB6_m.webp",
+        "x": 0,
+        "y": 384,
+        "w": 620,
+        "h": 293
+      }
+    },
+    {
+      "id": "uw_underwear_m_14b185e5",
+      "sourceId": "14B185E5",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Boxer Panda (Couple)",
+      "tag": "Boxer",
+      "thumbUrl": "/assets/underwear/thumbs/14B185E5_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/14B185E5_m.webp",
+        "x": 2,
+        "y": 410,
+        "w": 594,
+        "h": 222
+      }
+    },
+    {
+      "id": "uw_underwear_m_8a2340b9",
+      "sourceId": "8A2340B9",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Boxer Branded Hitam #1",
+      "tag": "Boxer",
+      "thumbUrl": "/assets/underwear/thumbs/8A2340B9_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/8A2340B9_m.webp",
+        "x": 11,
+        "y": 437,
+        "w": 572,
+        "h": 190
+      }
+    },
+    {
+      "id": "uw_underwear_m_1a2ae7c3",
+      "sourceId": "1A2AE7C3",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Boxer Branded Abu #2",
+      "tag": "Boxer",
+      "thumbUrl": "/assets/underwear/thumbs/1A2AE7C3_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/1A2AE7C3_m.webp",
+        "x": 11,
+        "y": 437,
+        "w": 572,
+        "h": 190
+      }
+    },
+    {
+      "id": "uw_underwear_m_802fa75b",
+      "sourceId": "802FA75B",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Boxer Branded Putih #3",
+      "tag": "Boxer",
+      "thumbUrl": "/assets/underwear/thumbs/802FA75B_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/802FA75B_m.webp",
+        "x": 11,
+        "y": 437,
+        "w": 572,
+        "h": 190
+      }
+    },
+    {
+      "id": "uw_underwear_m_8d22b76f",
+      "sourceId": "8D22B76F",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Boxer Branded Hitam Panjang",
+      "tag": "Boxer",
+      "thumbUrl": "/assets/underwear/thumbs/8D22B76F_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/8D22B76F_m.webp",
+        "x": 11,
+        "y": 390,
+        "w": 572,
+        "h": 239
+      }
+    },
+    {
+      "id": "uw_underwear_m_d19e520b",
+      "sourceId": "D19E520B",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Boxer Branded Putih Panjang",
+      "tag": "Boxer",
+      "thumbUrl": "/assets/underwear/thumbs/D19E520B_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/D19E520B_m.webp",
+        "x": 11,
+        "y": 390,
+        "w": 572,
+        "h": 239
+      }
+    },
+    {
+      "id": "uw_underwear_m_34cda476",
+      "sourceId": "34CDA476",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Brief Aztec",
+      "tag": "Brief",
+      "thumbUrl": "/assets/underwear/thumbs/34CDA476_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/34CDA476_m.webp",
+        "x": 0,
+        "y": 375,
+        "w": 620,
+        "h": 647
+      }
+    },
+    {
+      "id": "uw_underwear_m_326b43aa",
+      "sourceId": "326B43AA",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Brief Kotak Merah-Hitam",
+      "tag": "Brief",
+      "thumbUrl": "/assets/underwear/thumbs/326B43AA_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/326B43AA_m.webp",
+        "x": 2,
+        "y": 410,
+        "w": 594,
+        "h": 222
+      }
+    },
+    {
+      "id": "uw_underwear_m_795211a3",
+      "sourceId": "795211A3",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Brief Kotak Merah-Navy",
+      "tag": "Brief",
+      "thumbUrl": "/assets/underwear/thumbs/795211A3_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/795211A3_m.webp",
+        "x": 2,
+        "y": 410,
+        "w": 594,
+        "h": 222
+      }
+    },
+    {
+      "id": "uw_underwear_m_c3955ef4",
+      "sourceId": "C3955EF4",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Brief Kotak Kuning-Merah",
+      "tag": "Brief",
+      "thumbUrl": "/assets/underwear/thumbs/C3955EF4_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/C3955EF4_m.webp",
+        "x": 0,
+        "y": 409,
+        "w": 596,
+        "h": 198
+      }
+    },
+    {
+      "id": "uw_underwear_m_f0193e17",
+      "sourceId": "F0193E17",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Trunks Glitter Emas",
+      "tag": "Trunks",
+      "thumbUrl": "/assets/underwear/thumbs/F0193E17_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/F0193E17_m.webp",
+        "x": 6,
+        "y": 419,
+        "w": 579,
+        "h": 206
+      }
+    },
+    {
+      "id": "uw_underwear_m_a3ba548",
+      "sourceId": "A3BA548",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Trunks Renang Zebra",
+      "tag": "Trunks",
+      "thumbUrl": "/assets/underwear/thumbs/A3BA548_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/A3BA548_m.webp",
+        "x": 11,
+        "y": 417,
+        "w": 574,
+        "h": 214
+      }
+    },
+    {
+      "id": "uw_underwear_m_177d2c1c",
+      "sourceId": "177D2C1C",
+      "subSlot": "underwear",
+      "gender": "male",
+      "label": "Blitz Trunks Palm Summer",
+      "tag": "Trunks",
+      "thumbUrl": "/assets/underwear/thumbs/177D2C1C_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/177D2C1C_m.webp",
+        "x": 11,
+        "y": 437,
+        "w": 572,
+        "h": 190
+      }
+    },
+    {
+      "id": "uw_corewear_m_d7ef523c",
+      "sourceId": "D7EF523C",
+      "subSlot": "corewear",
+      "gender": "male",
+      "label": "Blitz Kutang / Singlet Putih",
+      "tag": "Singlet",
+      "thumbUrl": "/assets/underwear/thumbs/D7EF523C_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/D7EF523C_m.webp",
+        "x": 0,
+        "y": 593,
+        "w": 601,
+        "h": 414
+      }
+    },
+    {
+      "id": "uw_corewear_m_7d0708af",
+      "sourceId": "7D0708AF",
+      "subSlot": "corewear",
+      "gender": "male",
+      "label": "Blitz Kaos Dalam Putih",
+      "tag": "Kaos Dalam",
+      "thumbUrl": "/assets/underwear/thumbs/7D0708AF_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/7D0708AF_m.webp",
+        "x": 0,
+        "y": 560,
+        "w": 1024,
+        "h": 464
+      }
+    },
+    {
+      "id": "uw_corewear_m_3ad8118",
+      "sourceId": "3AD8118",
+      "subSlot": "corewear",
+      "gender": "male",
+      "label": "Blitz Kaos Dalam Hitam",
+      "tag": "Kaos Dalam",
+      "thumbUrl": "/assets/underwear/thumbs/3AD8118_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/3AD8118_m.webp",
+        "x": 0,
+        "y": 560,
+        "w": 1024,
+        "h": 464
+      }
+    },
+    {
+      "id": "uw_corewear_m_22af6893",
+      "sourceId": "22AF6893",
+      "subSlot": "corewear",
+      "gender": "male",
+      "label": "Blitz Kaos Dalam Kompresi Hitam",
+      "tag": "Kaos Dalam",
+      "thumbUrl": "/assets/underwear/thumbs/22AF6893_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/22AF6893_m.webp",
+        "x": 0,
+        "y": 560,
+        "w": 1024,
+        "h": 464
+      }
+    },
+    {
+      "id": "uw_corewear_f_15463e19",
+      "sourceId": "15463E19",
+      "subSlot": "corewear",
+      "gender": "female",
+      "label": "Blitz Bustier Renda Burgundy",
+      "tag": "Bustier",
+      "thumbUrl": "/assets/underwear/thumbs/15463E19_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/15463E19_f.webp",
+        "x": 7,
+        "y": 527,
+        "w": 548,
+        "h": 440
+      }
+    },
+    {
+      "id": "uw_corewear_f_e3943f76",
+      "sourceId": "E3943F76",
+      "subSlot": "corewear",
+      "gender": "female",
+      "label": "Blitz Bustier Renda Floral + Lengan",
+      "tag": "Bustier",
+      "thumbUrl": "/assets/underwear/thumbs/E3943F76_t.webp",
+      "uv": {
+        "url": "/assets/underwear/items/E3943F76_f.webp",
+        "x": 0,
+        "y": 0,
+        "w": 1024,
+        "h": 1024
+      }
+    }
+  ]
+}

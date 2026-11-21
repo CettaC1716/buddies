@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSafePrivy, useSafePrivyLogin } from './lib/privyAuthBridge';
 import {
   User,
@@ -101,6 +101,10 @@ import {
 } from './game/buddiesRemotePresenceSync';
 import { CharacterProfileModal } from './components/CharacterProfileModal';
 import { MobileResponsiveControls } from './components/MobileResponsiveControls';
+import {
+  PairedInteractionOverlay,
+  type PairedInteractionStatusState,
+} from './components/PairedInteractionOverlay';
 import { NearWalletSelectorModal } from './components/NearWalletSelectorModal';
 import { InGameWalletConfirmModal } from './components/InGameWalletConfirmModal';
 import {
@@ -266,6 +270,7 @@ import {
   type DbMarketTransactionRow,
   type DbPropertyListingRow,
   type FishNftMarketSalesStats,
+  type WorldMultiplayerPairedPoseEvent,
 } from './lib/supabaseClient';
 import {
   FISH_SPECIES_CATALOG,
@@ -297,7 +302,11 @@ import {
   EMPTY_WARDROBE_DRAFT,
   WARDROBE_STUDIO_ITEMS,
   getWardrobeDraftStorageKey,
+  getOwnedPairedAnimationItems,
+  getOwnedQuickPoseActionItems,
+  loadExternalWardrobeCatalogs,
   purchaseWardrobeCatalogItem,
+  resolveWardrobeDraftAnimStyle,
   resolveWardrobeDraftBodyShape,
   resolveWardrobeDraftFaceCustomization,
   resolveWardrobeDraftToModularOutfitUrls,
@@ -459,6 +468,23 @@ const EMPTY_NEP171_LEDGER: Nep171GamepassSubAccountLedger = {
   lastTransferTxHash: '',
   ownershipHistory: [],
 };
+
+// Temporary QA/testing toggle: unlocks all purchasable Wardrobe, Fashion Boutique,
+// Urban Scooter, and Merchant/Furniture catalog items locally for testing.
+// Set back to `false` before production release.
+const QA_UNLOCK_ALL_PURCHASABLE_ITEMS = true;
+const QA_ALL_UNLOCKED_APPAREL_IDS: readonly string[] = Array.from(
+  new Set([
+    ...WARDROBE_STUDIO_ITEMS.map((item) => item.id),
+    ...FASHION_APPAREL_CATALOG_ITEMS.map((item) => item.id),
+  ]),
+);
+const QA_ALL_UNLOCKED_SCOOTER_IDS: readonly string[] = URBAN_SCOOTER_CATALOG_ITEMS.map(
+  (item) => item.id,
+);
+const QA_ALL_UNLOCKED_MERCHANT_IDS: readonly string[] = MERCHANT_CATALOG_ITEMS.map(
+  (item) => item.id,
+);
 
 export default function App() {
   const [gameState, setGameState] = useState<GameState>(() => {
@@ -953,15 +979,21 @@ export default function App() {
   const [realEstateCatalogTab, setRealEstateCatalogTab] =
     useState<RealEstateCatalogTabId>('house');
   const loadOwnedScootersFromStorage = useCallback((acctKey: string): string[] => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const raw = window.localStorage.getItem(`bb_owned_scooters_v1:${acctKey}`);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
-    } catch {
-      return [];
+    let stored: string[] = [];
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = window.localStorage.getItem(`bb_owned_scooters_v1:${acctKey}`);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          stored = Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+        }
+      } catch {
+        stored = [];
+      }
     }
+    return QA_UNLOCK_ALL_PURCHASABLE_ITEMS
+      ? Array.from(new Set([...QA_ALL_UNLOCKED_SCOOTER_IDS, ...stored]))
+      : stored;
   }, []);
   const [ownedScooterIds, setOwnedScooterIds] = useState<string[]>(() =>
     loadOwnedScootersFromStorage('guest'),
@@ -1001,15 +1033,21 @@ export default function App() {
   }, [dailyMissionsAccountKey, loadOwnedScootersFromStorage]);
 
   const loadOwnedApparelFromStorage = useCallback((acctKey: string): string[] => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const raw = window.localStorage.getItem(getOwnedApparelStorageKey(acctKey));
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
-    } catch {
-      return [];
+    let stored: string[] = [];
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = window.localStorage.getItem(getOwnedApparelStorageKey(acctKey));
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          stored = Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+        }
+      } catch {
+        stored = [];
+      }
     }
+    return QA_UNLOCK_ALL_PURCHASABLE_ITEMS
+      ? Array.from(new Set([...QA_ALL_UNLOCKED_APPAREL_IDS, ...stored]))
+      : stored;
   }, []);
 
   const loadEquippedTorsoFromStorage = useCallback((acctKey: string): string | null => {
@@ -1040,12 +1078,22 @@ export default function App() {
           shoesId: typeof parsed.shoesId === 'string' ? parsed.shoesId : null,
           hairId: typeof parsed.hairId === 'string' ? parsed.hairId : null,
           setId: typeof parsed.setId === 'string' ? parsed.setId : null,
+          underwearId: typeof parsed.underwearId === 'string' ? parsed.underwearId : null,
+          corewearId: typeof parsed.corewearId === 'string' ? parsed.corewearId : null,
+          hideOuterForUnderwear: Boolean(parsed.hideOuterForUnderwear),
           bodyShapeId: typeof parsed.bodyShapeId === 'string' ? parsed.bodyShapeId : null,
           eyeStyleId: typeof parsed.eyeStyleId === 'string' ? parsed.eyeStyleId : null,
           browStyleId: typeof parsed.browStyleId === 'string' ? parsed.browStyleId : null,
           lipStyleId: typeof parsed.lipStyleId === 'string' ? parsed.lipStyleId : null,
+          eyeshadowId: typeof parsed.eyeshadowId === 'string' ? parsed.eyeshadowId : null,
+          blushId: typeof parsed.blushId === 'string' ? parsed.blushId : null,
+          facepaintId: typeof parsed.facepaintId === 'string' ? parsed.facepaintId : null,
+          beardId: typeof parsed.beardId === 'string' ? parsed.beardId : null,
           animSetId: typeof parsed.animSetId === 'string' ? parsed.animSetId : null,
           dancePoseId: typeof parsed.dancePoseId === 'string' ? parsed.dancePoseId : null,
+          stylePoseId: typeof parsed.stylePoseId === 'string' ? parsed.stylePoseId : null,
+          styleActionId: typeof parsed.styleActionId === 'string' ? parsed.styleActionId : null,
+          stylePairedId: typeof parsed.stylePairedId === 'string' ? parsed.stylePairedId : null,
           clothingTintHex:
             typeof parsed.clothingTintHex === 'string' ? parsed.clothingTintHex : null,
         };
@@ -1055,6 +1103,17 @@ export default function App() {
     },
     [],
   );
+
+  const [externalWardrobeCatalogsReady, setExternalWardrobeCatalogsReady] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void loadExternalWardrobeCatalogs().then(() => {
+      if (active) setExternalWardrobeCatalogsReady(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const [ownedApparelIds, setOwnedApparelIds] = useState<string[]>(() =>
     loadOwnedApparelFromStorage('guest'),
@@ -1066,10 +1125,9 @@ export default function App() {
     const initialOwned = loadOwnedApparelFromStorage('guest');
     const initialTorso = loadEquippedTorsoFromStorage('guest');
     const validTorso = initialTorso && initialOwned.includes(initialTorso) ? initialTorso : null;
-    return sanitizeDraftToOwnedOnly(
-      loadWardrobeDraftFromStorage('guest', validTorso),
-      initialOwned,
-    );
+    // Keep raw stored draft on initial mount until external catalogs finish loading so saved
+    // Anim Sets, Makeup, and Fitted Outfits are never wiped before catalog.json resolves.
+    return loadWardrobeDraftFromStorage('guest', validTorso);
   });
 
   useEffect(() => {
@@ -1077,15 +1135,16 @@ export default function App() {
     const loadedEquipped = loadEquippedTorsoFromStorage(dailyMissionsAccountKey);
     const validTorso =
       loadedEquipped && loadedOwned.includes(loadedEquipped) ? loadedEquipped : null;
-    const loadedDraft = sanitizeDraftToOwnedOnly(
-      loadWardrobeDraftFromStorage(dailyMissionsAccountKey, validTorso),
-      loadedOwned,
-    );
+    const rawDraft = loadWardrobeDraftFromStorage(dailyMissionsAccountKey, validTorso);
+    const loadedDraft = externalWardrobeCatalogsReady
+      ? sanitizeDraftToOwnedOnly(rawDraft, loadedOwned)
+      : rawDraft;
     setOwnedApparelIds(loadedOwned);
     setEquippedTorsoItemId(loadedDraft.setId ? null : loadedDraft.topId);
     setEquippedWardrobeDraft(loadedDraft);
   }, [
     dailyMissionsAccountKey,
+    externalWardrobeCatalogsReady,
     loadOwnedApparelFromStorage,
     loadEquippedTorsoFromStorage,
     loadWardrobeDraftFromStorage,
@@ -1264,7 +1323,9 @@ export default function App() {
   const [recruitedFamilyMembers, setRecruitedFamilyMembers] = useState<
     RecruitedFamilyMemberAgent[]
   >([]);
-  const [ownedMerchantItemIds, setOwnedMerchantItemIds] = useState<string[]>([]);
+  const [ownedMerchantItemIds, setOwnedMerchantItemIds] = useState<string[]>(() =>
+    QA_UNLOCK_ALL_PURCHASABLE_ITEMS ? [...QA_ALL_UNLOCKED_MERCHANT_IDS] : [],
+  );
 
   // 3D house placements persist in bb_house_interiors.placed_furniture as
   // [legacySlotObject, ...placed3dEntries]; these refs track the latest
@@ -2033,6 +2094,66 @@ export default function App() {
   const [selectedTargetUser, setSelectedTargetUser] = useState<NearbyEntityUser | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
   const [profileTargetUser, setProfileTargetUser] = useState<NearbyEntityUser | null>(null);
+  const [activeQuickPoseId, setActiveQuickPoseId] = useState<string | null>(null);
+  const [pairedInteractTarget, setPairedInteractTarget] = useState<NearbyEntityUser | null>(null);
+  const [pairedStatus, setPairedStatus] = useState<PairedInteractionStatusState | null>(null);
+  const [incomingPairedInvite, setIncomingPairedInvite] =
+    useState<WorldMultiplayerPairedPoseEvent | null>(null);
+
+  const ownedQuickPoseItems = useMemo(
+    () => getOwnedQuickPoseActionItems(ownedApparelIds, characterGender),
+    [ownedApparelIds, characterGender, externalWardrobeCatalogsReady],
+  );
+  const ownedPairedItems = useMemo(
+    () => getOwnedPairedAnimationItems(ownedApparelIds, characterGender),
+    [ownedApparelIds, characterGender, externalWardrobeCatalogsReady],
+  );
+
+  useEffect(() => {
+    const onQuickPoseStatus = (e: Event) => {
+      const detail = (e as CustomEvent<{ active?: boolean; id?: string }>).detail;
+      setActiveQuickPoseId(detail?.active && detail.id ? detail.id : null);
+    };
+    const onPairedStatus = (e: Event) => {
+      const detail = (e as CustomEvent<PairedInteractionStatusState>).detail;
+      if (!detail || detail.status === 'stopped') {
+        setPairedStatus(null);
+        return;
+      }
+      setPairedStatus(detail);
+      if (detail.status === 'declined') {
+        window.setTimeout(() => {
+          setPairedStatus((prev) => (prev?.status === 'declined' ? null : prev));
+        }, 3200);
+      }
+    };
+    const onPairedInvite = (e: Event) => {
+      const detail = (e as CustomEvent<WorldMultiplayerPairedPoseEvent>).detail;
+      if (detail?.fromSessionId) {
+        setIncomingPairedInvite(detail);
+      }
+    };
+    window.addEventListener('quick-pose-status', onQuickPoseStatus);
+    window.addEventListener('paired-interaction-status', onPairedStatus);
+    window.addEventListener('paired-interaction-invite', onPairedInvite);
+    return () => {
+      window.removeEventListener('quick-pose-status', onQuickPoseStatus);
+      window.removeEventListener('paired-interaction-status', onPairedStatus);
+      window.removeEventListener('paired-interaction-invite', onPairedInvite);
+    };
+  }, []);
+
+  // Automatically close the left-side Paired Interaction list if the target leaves interaction range
+  useEffect(() => {
+    if (!pairedInteractTarget) return;
+    if (pairedStatus?.active) return;
+    const stillNear = (hud.nearbyRadiusUsers ?? []).some(
+      (u) => String(u.id) === String(pairedInteractTarget.id) && u.distance <= 10.5,
+    );
+    if (!stillNear) {
+      setPairedInteractTarget(null);
+    }
+  }, [pairedInteractTarget, pairedStatus?.active, hud.nearbyRadiusUsers]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const chatMessagesRef = useRef<ChatMessage[]>([]);
   const notifiedPrivateIdsRef = useRef<Set<string>>(new Set());
@@ -2523,14 +2644,28 @@ export default function App() {
       characterGender,
     );
     const modularUrls = resolveWardrobeDraftToModularOutfitUrls(ownedDraft, characterGender);
+    const hasCustomAnimStyle = Boolean(
+      ownedDraft.animSetId ||
+        ownedDraft.dancePoseId ||
+        ownedDraft.stylePoseId ||
+        ownedDraft.styleActionId,
+    );
     const payload = {
       ...modularUrls,
       clothingTintHex: ownedDraft.clothingTintHex,
       bodyShape: resolveWardrobeDraftBodyShape(ownedDraft),
-      faceCustomization: resolveWardrobeDraftFaceCustomization(ownedDraft),
+      faceCustomization: resolveWardrobeDraftFaceCustomization(ownedDraft, characterGender),
+      animStyle: hasCustomAnimStyle ? resolveWardrobeDraftAnimStyle(ownedDraft) : null,
     };
     dispatchBuddyAction(`setEquippedModularOutfit:${JSON.stringify(payload)}`);
-  }, [equippedWardrobeDraft, ownedApparelIds, characterGender, gameState, dispatchBuddyAction]);
+  }, [
+    equippedWardrobeDraft,
+    ownedApparelIds,
+    characterGender,
+    gameState,
+    externalWardrobeCatalogsReady,
+    dispatchBuddyAction,
+  ]);
 
   const handlePurchaseFashionApparelToBag = useCallback(
     (item: FashionApparelCatalogItem): { ok: boolean; errorMessage?: string } => {
@@ -5168,9 +5303,17 @@ export default function App() {
               : undefined,
           });
         }
-        setOwnedMerchantItemIds(reconciledOwnedIds);
+        setOwnedMerchantItemIds(
+          QA_UNLOCK_ALL_PURCHASABLE_ITEMS
+            ? Array.from(new Set([...QA_ALL_UNLOCKED_MERCHANT_IDS, ...reconciledOwnedIds]))
+            : reconciledOwnedIds,
+        );
       } else if (onChainNep245Counts) {
-        setOwnedMerchantItemIds(reconciledOwnedIds);
+        setOwnedMerchantItemIds(
+          QA_UNLOCK_ALL_PURCHASABLE_ITEMS
+            ? Array.from(new Set([...QA_ALL_UNLOCKED_MERCHANT_IDS, ...reconciledOwnedIds]))
+            : reconciledOwnedIds,
+        );
       }
 
       if (entryDecision.isReturningUser) {
@@ -13135,6 +13278,18 @@ export default function App() {
               }
             : null
         }
+        quickPoseItems={ownedQuickPoseItems}
+        activeQuickPoseId={activeQuickPoseId}
+        onTriggerQuickPose={(item) => {
+          const glbUrl = item.dancePose?.animGlbUrl ?? null;
+          if (!glbUrl) return;
+          dispatchBuddyAction(
+            `playQuickPose:${JSON.stringify({ id: item.id, name: item.name, glbUrl })}`,
+          );
+        }}
+        onStopQuickPose={() => {
+          dispatchBuddyAction('stopQuickPose');
+        }}
       />
 
       {/* =====================================================================
@@ -13388,7 +13543,8 @@ export default function App() {
           Boolean(dockEntity) && nearbyCycleList.length > 1;
 
         return (
-          <CafeWorkShiftBottomDock
+          <>
+            <CafeWorkShiftBottomDock
             isVisible={effectiveDockMode !== 'none'}
             actionMode={effectiveDockMode}
             isExpanded={isCafeRotaMenuExpanded}
@@ -13409,6 +13565,7 @@ export default function App() {
             onOpenEntityProfile={(entity) => {
               soundEngine.playUiClick();
               setIsTargetMenuExpanded(false);
+              setPairedInteractTarget(null);
               setIsKioskModalOpen(false);
               setIsSocialChatModalOpen(false);
               setIsPersonalWalletModalOpen(false);
@@ -13417,6 +13574,19 @@ export default function App() {
               window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
               setProfileTargetUser(entity);
               setIsProfileModalOpen(true);
+            }}
+            hasOwnedPairedAnimations={ownedPairedItems.length > 0}
+            onInteractEntity={(entity) => {
+              soundEngine.playUiClick();
+              setIsTargetMenuExpanded(false);
+              setIsKioskModalOpen(false);
+              setIsProfileModalOpen(false);
+              setIsSocialChatModalOpen(false);
+              setIsPersonalWalletModalOpen(false);
+              setActiveSpecialModal('none');
+              setActiveTeleportKioskModal('none');
+              window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+              setPairedInteractTarget(entity);
             }}
             onTalkMerchant={(entity) => {
               soundEngine.playUiClick();
@@ -13483,6 +13653,39 @@ export default function App() {
               setActiveCafeModal('atm');
             }}
           />
+            <PairedInteractionOverlay
+              targetEntity={!isDockBlockedByModal ? pairedInteractTarget : null}
+              ownedPairedItems={ownedPairedItems}
+              pairedStatus={!isDockBlockedByModal ? pairedStatus : null}
+              incomingInvite={!isDockBlockedByModal ? incomingPairedInvite : null}
+              onSelectPairedAnimation={(entity, item) => {
+                if (!item.pairedAnim) return;
+                dispatchBuddyAction(
+                  `requestPairedPose:${JSON.stringify({
+                    targetId: entity.id,
+                    targetName: entity.name.replace(/\s*\((ANDA|YOU|KAMU)\)/gi, '').trim(),
+                    isNpc: entity.isNpc,
+                    animId: item.id,
+                    animLabel: item.name,
+                    initiateGlbUrl: item.pairedAnim.initiateGlbUrl,
+                    receiveGlbUrl: item.pairedAnim.receiveGlbUrl,
+                  })}`,
+                );
+              }}
+              onClosePopup={() => setPairedInteractTarget(null)}
+              onStopPairedPose={() => {
+                dispatchBuddyAction('stopPairedPose');
+              }}
+              onAcceptInvite={(ev) => {
+                setIncomingPairedInvite(null);
+                dispatchBuddyAction(`acceptPairedPose:${JSON.stringify(ev)}`);
+              }}
+              onDeclineInvite={(ev) => {
+                setIncomingPairedInvite(null);
+                dispatchBuddyAction(`declinePairedPose:${JSON.stringify(ev)}`);
+              }}
+            />
+          </>
         );
       })()}
       <GlasshouseCafeRotaModal

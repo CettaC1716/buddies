@@ -1589,6 +1589,22 @@ export interface WorldMultiplayerShotEvent {
   damage: number;
 }
 
+export interface WorldMultiplayerPairedPoseEvent {
+  fromSessionId: string;
+  fromDisplayName: string;
+  targetSessionId: string;
+  zoneKey: MultiplayerZoneKey;
+  kind: 'invite' | 'accept' | 'decline' | 'stop';
+  animId: string;
+  animLabel: string;
+  initiateGlbUrl: string;
+  receiveGlbUrl: string;
+  anchorX: number;
+  anchorZ: number;
+  anchorYaw: number;
+  sentAtMs: number;
+}
+
 export interface WorldMultiplayerController {
   readonly sessionId: string;
   publishLocalPose: (
@@ -1598,6 +1614,7 @@ export interface WorldMultiplayerController {
   broadcastShot: (shot: Omit<WorldMultiplayerShotEvent, 'fromSessionId'>) => void;
   broadcastEmote?: (emote: Omit<WorldMultiplayerEmoteEvent, 'fromSessionId'>) => void;
   broadcastChat?: (chat: Omit<WorldMultiplayerChatEvent, 'fromSessionId'>) => void;
+  broadcastPairedPose?: (ev: Omit<WorldMultiplayerPairedPoseEvent, 'fromSessionId'>) => void;
   unsubscribe: () => void;
 }
 
@@ -1634,6 +1651,7 @@ export function subscribeToWorldMultiplayer(handlers: {
   onRemoteShot?: (shot: WorldMultiplayerShotEvent) => void;
   onRemoteEmote?: (emote: WorldMultiplayerEmoteEvent) => void;
   onRemoteChat?: (chat: WorldMultiplayerChatEvent) => void;
+  onRemotePairedPose?: (ev: WorldMultiplayerPairedPoseEvent) => void;
 }): WorldMultiplayerController {
   const sessionId = getOrCreateTabMultiplayerSessionId();
 
@@ -1645,6 +1663,7 @@ export function subscribeToWorldMultiplayer(handlers: {
       broadcastShot: () => {},
       broadcastEmote: () => {},
       broadcastChat: () => {},
+      broadcastPairedPose: () => {},
       unsubscribe: () => {},
     };
   }
@@ -1873,6 +1892,34 @@ export function subscribeToWorldMultiplayer(handlers: {
           damage: Number(raw.damage) || 18,
         });
       })
+      .on('broadcast', { event: 'peer_paired_pose' }, ({ payload }) => {
+        if (!payload || typeof payload !== 'object' || !handlers.onRemotePairedPose) return;
+        const raw = payload as Partial<WorldMultiplayerPairedPoseEvent>;
+        if (!raw.fromSessionId || raw.fromSessionId === sessionId) return;
+        if (raw.targetSessionId && raw.targetSessionId !== sessionId) return;
+        const kind =
+          raw.kind === 'accept' || raw.kind === 'decline' || raw.kind === 'stop'
+            ? raw.kind
+            : 'invite';
+        handlers.onRemotePairedPose({
+          fromSessionId: raw.fromSessionId,
+          fromDisplayName:
+            typeof raw.fromDisplayName === 'string' && raw.fromDisplayName.trim()
+              ? raw.fromDisplayName.trim().slice(0, 28)
+              : 'PLAYER',
+          targetSessionId: typeof raw.targetSessionId === 'string' ? raw.targetSessionId : sessionId,
+          zoneKey: typeof raw.zoneKey === 'string' ? raw.zoneKey : 'city',
+          kind,
+          animId: typeof raw.animId === 'string' ? raw.animId : '',
+          animLabel: typeof raw.animLabel === 'string' ? raw.animLabel : 'Paired Pose',
+          initiateGlbUrl: typeof raw.initiateGlbUrl === 'string' ? raw.initiateGlbUrl : '',
+          receiveGlbUrl: typeof raw.receiveGlbUrl === 'string' ? raw.receiveGlbUrl : '',
+          anchorX: Number(raw.anchorX) || 0,
+          anchorZ: Number(raw.anchorZ) || 0,
+          anchorYaw: Number(raw.anchorYaw) || 0,
+          sentAtMs: Number(raw.sentAtMs) || Date.now(),
+        });
+      })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           isSubscribed = true;
@@ -2015,6 +2062,19 @@ export function subscribeToWorldMultiplayer(handlers: {
           })
           .catch(() => {});
       },
+      broadcastPairedPose: (ev) => {
+        if (!isSubscribed) return;
+        channel
+          .send({
+            type: 'broadcast',
+            event: 'peer_paired_pose',
+            payload: {
+              fromSessionId: sessionId,
+              ...ev,
+            } satisfies WorldMultiplayerPairedPoseEvent,
+          })
+          .catch(() => {});
+      },
       unsubscribe: () => {
         isSubscribed = false;
         clearInterval(heartbeatTimer);
@@ -2030,6 +2090,7 @@ export function subscribeToWorldMultiplayer(handlers: {
       broadcastShot: () => {},
       broadcastEmote: () => {},
       broadcastChat: () => {},
+      broadcastPairedPose: () => {},
       unsubscribe: () => {},
     };
   }

@@ -783,6 +783,8 @@ export interface CafeWorkShiftBottomDockProps {
   onToggleEntityMenu?: () => void;
   onTriggerSitOrStand?: () => void;
   onOpenEntityProfile?: (entity: NearbyEntityUser) => void;
+  hasOwnedPairedAnimations?: boolean;
+  onInteractEntity?: (entity: NearbyEntityUser) => void;
   onTalkMerchant?: (entity: NearbyEntityUser) => void;
   onTalkCitizen?: (entity: NearbyEntityUser) => void;
   onWhisperEntity?: (entity: NearbyEntityUser) => void;
@@ -805,6 +807,8 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
   onToggleEntityMenu,
   onTriggerSitOrStand,
   onOpenEntityProfile,
+  hasOwnedPairedAnimations = false,
+  onInteractEntity,
   onTalkMerchant,
   onTalkCitizen,
   onWhisperEntity,
@@ -1017,6 +1021,22 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
             </div>
           </button>
 
+          {hasOwnedPairedAnimations && onInteractEntity && (
+            <button
+              type="button"
+              data-nearby-entity-interact-btn="true"
+              onClick={() => onInteractEntity(nearbyEntity)}
+              className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#fb7185] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+            >
+              <div className="flex items-center gap-2.5 w-full">
+                <span className="w-6 h-6 bg-[#fb7185] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
+                  <Users className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                </span>
+                <span className="flex-1 text-left text-[#fb7185]">Interaksi</span>
+              </div>
+            </button>
+          )}
+
           {isMerchantEntity && (
             <button
               type="button"
@@ -1060,7 +1080,7 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
                 <span className="w-6 h-6 bg-[#10b981] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
                   <MessageCircle className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
                 </span>
-                <span className="flex-1 text-left text-[#10b981]">Whisper</span>
+                <span className="flex-1 text-left text-[#10b981]">Talk</span>
               </div>
             </button>
           )}

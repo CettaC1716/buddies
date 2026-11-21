@@ -1505,10 +1505,13 @@ export function sanitizeAvatarAnatomyAndSkinSeams(
 
   // Clean watertight Blender Blitz_* avatars already have welded limbs, clean normals, and pre-culled
   // hidden skin; skip legacy seam culling/tucking so hand/head/outfit geometry stays untouched.
-  if (
-    sceneRoot.getObjectByName('Blitz_BaseDoll_Female_Mesh') ||
-    sceneRoot.getObjectByName('Blitz_BaseDoll_Male_Mesh')
-  ) {
+  let hasBlitzBaseDoll = false;
+  sceneRoot.traverse((obj) => {
+    if (!hasBlitzBaseDoll && /^blitz_basedoll_(?:female|male)_mesh/i.test(obj.name || '')) {
+      hasBlitzBaseDoll = true;
+    }
+  });
+  if (hasBlitzBaseDoll) {
     return report;
   }
 

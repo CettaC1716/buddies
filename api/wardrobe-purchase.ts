@@ -29,57 +29,19 @@ export interface ServerWardrobeCatalogEntry {
     | 'face_eyes'
     | 'face_brows'
     | 'face_lips'
+    | 'face_eyeshadow'
+    | 'face_blush'
+    | 'face_facepaint'
+    | 'face_beard'
     | 'style_anim'
-    | 'style_dance';
+    | 'style_dance'
+    | 'style_pose'
+    | 'style_action';
   priceLul: number;
   active: boolean;
 }
 
 export const WARDROBE_SERVER_CATALOG: Readonly<Record<string, ServerWardrobeCatalogEntry>> = {
-  // Female New-Gen NPC Outfits (blitz-female-01..04.glb)
-  blitz_f01_top: { id: 'blitz_f01_top', slot: 'top', priceLul: 16, active: true },
-  blitz_f02_top: { id: 'blitz_f02_top', slot: 'top', priceLul: 16, active: true },
-  blitz_f03_top: { id: 'blitz_f03_top', slot: 'top', priceLul: 15, active: true },
-  blitz_f04_top: { id: 'blitz_f04_top', slot: 'top', priceLul: 18, active: true },
-  blitz_f01_bottoms: { id: 'blitz_f01_bottoms', slot: 'bottoms', priceLul: 15, active: true },
-  blitz_f02_bottoms: { id: 'blitz_f02_bottoms', slot: 'bottoms', priceLul: 16, active: true },
-  blitz_f03_bottoms: { id: 'blitz_f03_bottoms', slot: 'bottoms', priceLul: 14, active: true },
-  blitz_f04_bottoms: { id: 'blitz_f04_bottoms', slot: 'bottoms', priceLul: 16, active: true },
-  blitz_f01_shoes: { id: 'blitz_f01_shoes', slot: 'shoes', priceLul: 12, active: true },
-  blitz_f02_shoes: { id: 'blitz_f02_shoes', slot: 'shoes', priceLul: 12, active: true },
-  blitz_f03_shoes: { id: 'blitz_f03_shoes', slot: 'shoes', priceLul: 12, active: true },
-  blitz_f04_shoes: { id: 'blitz_f04_shoes', slot: 'shoes', priceLul: 13, active: true },
-  blitz_f01_hair: { id: 'blitz_f01_hair', slot: 'hair', priceLul: 10, active: true },
-  blitz_f02_hair: { id: 'blitz_f02_hair', slot: 'hair', priceLul: 10, active: true },
-  blitz_f03_hair: { id: 'blitz_f03_hair', slot: 'hair', priceLul: 10, active: true },
-  blitz_f04_hair: { id: 'blitz_f04_hair', slot: 'hair', priceLul: 11, active: true },
-  blitz_f01_set: { id: 'blitz_f01_set', slot: 'set', priceLul: 34, active: true },
-  blitz_f02_set: { id: 'blitz_f02_set', slot: 'set', priceLul: 34, active: true },
-  blitz_f03_set: { id: 'blitz_f03_set', slot: 'set', priceLul: 32, active: true },
-  blitz_f04_set: { id: 'blitz_f04_set', slot: 'set', priceLul: 36, active: true },
-
-  // Male New-Gen NPC Outfits (blitz-male-01..04.glb)
-  blitz_m01_top: { id: 'blitz_m01_top', slot: 'top', priceLul: 16, active: true },
-  blitz_m02_top: { id: 'blitz_m02_top', slot: 'top', priceLul: 17, active: true },
-  blitz_m03_top: { id: 'blitz_m03_top', slot: 'top', priceLul: 15, active: true },
-  blitz_m04_top: { id: 'blitz_m04_top', slot: 'top', priceLul: 18, active: true },
-  blitz_m01_bottoms: { id: 'blitz_m01_bottoms', slot: 'bottoms', priceLul: 15, active: true },
-  blitz_m02_bottoms: { id: 'blitz_m02_bottoms', slot: 'bottoms', priceLul: 15, active: true },
-  blitz_m03_bottoms: { id: 'blitz_m03_bottoms', slot: 'bottoms', priceLul: 14, active: true },
-  blitz_m04_bottoms: { id: 'blitz_m04_bottoms', slot: 'bottoms', priceLul: 16, active: true },
-  blitz_m01_shoes: { id: 'blitz_m01_shoes', slot: 'shoes', priceLul: 12, active: true },
-  blitz_m02_shoes: { id: 'blitz_m02_shoes', slot: 'shoes', priceLul: 12, active: true },
-  blitz_m03_shoes: { id: 'blitz_m03_shoes', slot: 'shoes', priceLul: 12, active: true },
-  blitz_m04_shoes: { id: 'blitz_m04_shoes', slot: 'shoes', priceLul: 13, active: true },
-  blitz_m01_hair: { id: 'blitz_m01_hair', slot: 'hair', priceLul: 10, active: true },
-  blitz_m02_hair: { id: 'blitz_m02_hair', slot: 'hair', priceLul: 10, active: true },
-  blitz_m03_hair: { id: 'blitz_m03_hair', slot: 'hair', priceLul: 10, active: true },
-  blitz_m04_hair: { id: 'blitz_m04_hair', slot: 'hair', priceLul: 11, active: true },
-  blitz_m01_set: { id: 'blitz_m01_set', slot: 'set', priceLul: 34, active: true },
-  blitz_m02_set: { id: 'blitz_m02_set', slot: 'set', priceLul: 34, active: true },
-  blitz_m03_set: { id: 'blitz_m03_set', slot: 'set', priceLul: 32, active: true },
-  blitz_m04_set: { id: 'blitz_m04_set', slot: 'set', priceLul: 36, active: true },
-
   // Body Shapes (Unisex)
   apparel_body_slim_runway: { id: 'apparel_body_slim_runway', slot: 'body_shape', priceLul: 20, active: true },
   apparel_body_athletic_sculpt: { id: 'apparel_body_athletic_sculpt', slot: 'body_shape', priceLul: 25, active: true },

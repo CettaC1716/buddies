@@ -28,6 +28,7 @@ import {
   Undo2,
   User,
   UserRound,
+  Users,
   Wind,
   X,
 } from 'lucide-react';
@@ -36,6 +37,7 @@ import {
   applyBuddyRigBodyShape,
   applyCitizenClothingTint,
   getCachedLoadedBlitzAssets,
+  loadAndAttachExternalStyleAnimationClip,
   loadModularApparelGltf,
   setBlitzStylizedCharViewportSize,
   setBuddyRigModularOutfitUrls,
@@ -57,9 +59,12 @@ import {
   collectUnownedItemsInDraft,
   createSavedPresetFromDraft,
   createWardrobeHistory,
+  getExternalWardrobeCatalogCount,
   getVisibleBuiltInWardrobePresets,
+  getWardrobeCatalogItemById,
   isWardrobeItemCompatibleWithGender,
   isWardrobeItemOwned,
+  loadExternalWardrobeCatalogs,
   loadSavedWardrobePresets,
   partitionWardrobeCategoryItems,
   persistSavedWardrobePresets,
@@ -177,6 +182,18 @@ const CAMERA_FRAMING_SPECS: Record<
   face: { dist: 2.0, targetY: 3.04, camY: 3.06, fov: 28 },
 };
 
+const UnderwearGlyphIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+    <path
+      d="M3.5 7.5H20.5V11.2C20.5 13.4 17.8 14.4 15.6 15.6L13.3 18.2C12.6 19 11.4 19 10.7 18.2L8.4 15.6C6.2 14.4 3.5 13.4 3.5 11.2V7.5Z"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinejoin="round"
+    />
+    <path d="M3.5 10.2H20.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+);
+
 const CATEGORY_RAIL_ITEMS: ReadonlyArray<{
   id: WardrobeStudioCategoryId;
   label: string;
@@ -187,6 +204,7 @@ const CATEGORY_RAIL_ITEMS: ReadonlyArray<{
   { id: 'set', label: 'Set', Icon: Crown },
   { id: 'hair', label: 'Hair', Icon: Wind },
   { id: 'shoes', label: 'Shoes', Icon: Footprints },
+  { id: 'underwear', label: 'Underwear', Icon: UnderwearGlyphIcon },
 ];
 
 const STYLE_RAIL_ITEMS: ReadonlyArray<{
@@ -196,6 +214,9 @@ const STYLE_RAIL_ITEMS: ReadonlyArray<{
 }> = [
   { id: 'style_anim', label: 'Anim Set', Icon: Play },
   { id: 'style_dance', label: 'Dance', Icon: Music },
+  { id: 'style_pose', label: 'Pose', Icon: PersonStanding },
+  { id: 'style_action', label: 'Action', Icon: Hand },
+  { id: 'style_paired', label: 'Paired', Icon: Users },
   { id: 'style_tint', label: 'Dye', Icon: Palette },
 ];
 
@@ -226,16 +247,22 @@ const FACE_RAIL_ITEMS: ReadonlyArray<{
   id: WardrobeFaceCategoryId;
   label: string;
   Icon: React.FC<{ className?: string }>;
+  maleOnly?: boolean;
 }> = [
   { id: 'face_eyes', label: 'Eyes', Icon: Eye },
   { id: 'face_brows', label: 'Brows', Icon: BrowGlyphIcon },
   { id: 'face_lips', label: 'Lips', Icon: LipGlyphIcon },
+  { id: 'face_eyeshadow', label: 'Shadow', Icon: Sparkles },
+  { id: 'face_blush', label: 'Blush', Icon: Flame },
+  { id: 'face_facepaint', label: 'Makeup', Icon: Palette },
+  { id: 'face_beard', label: 'Beard', Icon: User, maleOnly: true },
 ];
 
 function FaceFeaturePreviewGlyph({ item }: { item: WardrobeCatalogItem }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
+    if (item.thumbUrl) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -265,6 +292,25 @@ function FaceFeaturePreviewGlyph({ item }: { item: WardrobeCatalogItem }) {
     }
     ctx.restore();
   }, [item]);
+
+  if (item.thumbUrl) {
+    return (
+      <div
+        className="w-full h-full flex items-center justify-center p-1.5"
+        style={{
+          background: 'radial-gradient(circle at 45% 35%, #f3d4be, #d9b196)',
+        }}
+      >
+        <img
+          src={item.thumbUrl}
+          alt={item.name}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          className="w-full h-full object-contain drop-shadow-[0_2px_4px_rgba(0,0,0,0.28)]"
+        />
+      </div>
+    );
+  }
 
   return (
     <canvas
@@ -338,6 +384,32 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
   const [savedPresets, setSavedPresets] = useState<WardrobeSavedPreset[]>([]);
   const [thumbMap, setThumbMap] = useState<Record<string, string>>({});
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
+  const [externalCatalogRevision, setExternalCatalogRevision] = useState<number>(() =>
+    getExternalWardrobeCatalogCount(),
+  );
+  const [outfitSearchQuery, setOutfitSearchQuery] = useState<string>('');
+  const [outfitVisibleLimit, setOutfitVisibleLimit] = useState<number>(36);
+  const [animSetPreviewState, setAnimSetPreviewState] = useState<'idle' | 'walk' | 'run' | 'sit'>('idle');
+  const [pairedPreviewRole, setPairedPreviewRole] = useState<'initiate' | 'receive'>('initiate');
+  const [underwearSubFilter, setUnderwearSubFilter] = useState<'all' | 'underwear' | 'corewear'>('all');
+  const [underwearPreviewBare, setUnderwearPreviewBare] = useState<boolean>(true);
+
+  useEffect(() => {
+    setOutfitVisibleLimit(36);
+  }, [activeCategory, characterGender, outfitSearchQuery]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    void loadExternalWardrobeCatalogs().then((count) => {
+      if (active && count > 0) {
+        setExternalCatalogRevision(count);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [isOpen]);
   const [webglLost, setWebglLost] = useState<boolean>(false);
   const [isAvatarLoading, setIsAvatarLoading] = useState<boolean>(true);
 
@@ -446,13 +518,44 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isOpen, onClose]);
 
-  // Lazily rasterize real circular 3D thumbnails for active-gender GLB apparel items
+  // Lazily rasterize real circular 3D thumbnails ONLY for currently visible active-tab GLB items
+  // (keeps 1,000+ fitted outfits & hairstyles smooth at 60 FPS with zero upfront WebGL spike)
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
-    const targets = WARDROBE_STUDIO_ITEMS.filter(
-      (item) => Boolean(item.glbPath) && isWardrobeItemCompatibleWithGender(item, characterGender),
+    const activeItems =
+      activeCategory !== 'presets'
+        ? partitionWardrobeCategoryItems(
+            activeCategory,
+            ownedApparelIds,
+            filterMode,
+            sortMode,
+            characterGender,
+          ).allVisible
+        : [];
+    const q = outfitSearchQuery.trim().toLowerCase();
+    const filteredActive = q
+      ? activeItems.filter(
+          (item) =>
+            item.name.toLowerCase().includes(q) ||
+            item.subtitle.toLowerCase().includes(q) ||
+            item.collection.toLowerCase().includes(q),
+        )
+      : activeItems;
+    const staticSets = WARDROBE_STUDIO_ITEMS.filter(
+      (item) =>
+        item.slot === 'set' &&
+        Boolean(item.glbPath) &&
+        isWardrobeItemCompatibleWithGender(item, characterGender),
     );
+    const seenIds = new Set<string>();
+    const targets: WardrobeCatalogItem[] = [];
+    for (const item of [...filteredActive.slice(0, outfitVisibleLimit), ...staticSets]) {
+      if (!item.glbPath || seenIds.has(item.id)) continue;
+      seenIds.add(item.id);
+      targets.push(item);
+    }
+
     // Prime cached ones synchronously
     const initial: Record<string, string> = {};
     for (const item of targets) {
@@ -478,7 +581,17 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, characterGender]);
+  }, [
+    isOpen,
+    characterGender,
+    activeCategory,
+    ownedApparelIds,
+    filterMode,
+    sortMode,
+    outfitSearchQuery,
+    outfitVisibleLimit,
+    externalCatalogRevision,
+  ]);
 
   const applyStudioClipCandidates = useCallback((candidates: readonly string[]) => {
     const rig = rigRef.current;
@@ -643,8 +756,8 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       const cached = getCachedLoadedBlitzAssets();
       const baseGlbUrl =
         characterGender === 'female'
-          ? '/assets/avatars/blitz-female-player.glb'
-          : '/assets/avatars/blitz-male-player.glb';
+          ? '/assets/avatars/new-female-player.glb'
+          : '/assets/avatars/new-male-player.glb';
       const baseGltf =
         (characterGender === 'female' ? cached?.playerFemaleGlb : cached?.playerMaleGlb) ??
         (await loadModularApparelGltf(baseGlbUrl));
@@ -664,7 +777,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       applyBuddyRigBodyShape(studioRig, resolveWardrobeDraftBodyShape(currentDraft));
       applyBuddyRigFaceCustomization(
         studioRig,
-        resolveWardrobeDraftFaceCustomization(currentDraft),
+        resolveWardrobeDraftFaceCustomization(currentDraft, characterGender),
         characterGender,
       );
 
@@ -676,7 +789,18 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
 
       const animStyle = resolveWardrobeDraftAnimStyle(currentDraft);
       activeDanceRef.current = { kind: animStyle.danceKind, tempoBpm: animStyle.tempoBpm };
-      if (currentDraft.animSetId) {
+      if (animStyle.externalAnimGlbUrl && animStyle.externalClipKey) {
+        const extClip = await loadAndAttachExternalStyleAnimationClip(
+          studioRig,
+          animStyle.externalAnimGlbUrl,
+          animStyle.externalClipKey,
+        );
+        if (!disposed && extClip) {
+          applyStudioClipCandidates([extClip.name]);
+        } else if (!disposed) {
+          applyStudioPoseClip(activePoseId);
+        }
+      } else if (currentDraft.animSetId) {
         applyStudioClipCandidates(animStyle.clipCandidates);
       } else {
         applyStudioPoseClip(activePoseId);
@@ -898,13 +1022,19 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     if (!rig || !rig.customGlbController) return;
     let cancelled = false;
     (async () => {
-      const urls = resolveWardrobeDraftToModularOutfitUrls(draft, characterGender);
+      const baseUrls = resolveWardrobeDraftToModularOutfitUrls(draft, characterGender);
+      const previewBare =
+        activeBottomTab === 'outfit' && activeCategory === 'underwear' && underwearPreviewBare;
+      const urls = {
+        ...baseUrls,
+        hideOuterClothes: Boolean(baseUrls.hideOuterClothes) || previewBare,
+      };
       await setBuddyRigModularOutfitUrls(rig, urls);
       if (cancelled) return;
       applyBuddyRigBodyShape(rig, resolveWardrobeDraftBodyShape(draft));
       applyBuddyRigFaceCustomization(
         rig,
-        resolveWardrobeDraftFaceCustomization(draft),
+        resolveWardrobeDraftFaceCustomization(draft, characterGender),
         characterGender,
       );
       if (draft.clothingTintHex) {
@@ -916,32 +1046,116 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, draft, characterGender]);
+  }, [
+    isOpen,
+    draft,
+    characterGender,
+    externalCatalogRevision,
+    activeBottomTab,
+    activeCategory,
+    underwearPreviewBare,
+  ]);
 
-  // Animation Set & Dance Pose sync inside the live studio
+  // Animation Set (Idle/Walk/Run/Sit preview), Dance, Pose & Action sync inside the live studio
   useEffect(() => {
     if (!isOpen) return;
+    let cancelled = false;
     const animStyle = resolveWardrobeDraftAnimStyle(draft);
     activeDanceRef.current = { kind: animStyle.danceKind, tempoBpm: animStyle.tempoBpm };
-    if (draft.animSetId) {
-      applyStudioClipCandidates(animStyle.clipCandidates);
+
+    const isPreviewingAnimSetState =
+      activeBottomTab === 'style' &&
+      activeStyleCategory === 'style_anim' &&
+      !draft.dancePoseId &&
+      !draft.stylePoseId &&
+      !draft.styleActionId;
+
+    let targetGlbUrl = animStyle.externalAnimGlbUrl;
+    let targetClipKey = animStyle.externalClipKey;
+    let targetCandidates = animStyle.clipCandidates;
+
+    const pairedItem =
+      activeBottomTab === 'style' && activeStyleCategory === 'style_paired'
+        ? getWardrobeCatalogItemById(draft.stylePairedId)
+        : null;
+
+    if (pairedItem?.pairedAnim) {
+      targetGlbUrl =
+        pairedPreviewRole === 'receive'
+          ? pairedItem.pairedAnim.receiveGlbUrl
+          : pairedItem.pairedAnim.initiateGlbUrl;
+      targetClipKey = `${pairedItem.id}_${pairedPreviewRole}`;
+    } else if (isPreviewingAnimSetState && animSetPreviewState !== 'idle') {
+      if (animSetPreviewState === 'walk') {
+        targetGlbUrl = animStyle.walkGlbUrl;
+        targetClipKey = animStyle.walkClipKey;
+        targetCandidates = animStyle.walkClipCandidates.length > 0 ? animStyle.walkClipCandidates : ['walk.001'];
+      } else if (animSetPreviewState === 'run') {
+        targetGlbUrl = animStyle.runGlbUrl;
+        targetClipKey = animStyle.runClipKey;
+        targetCandidates = animStyle.runClipCandidates.length > 0 ? animStyle.runClipCandidates : ['run.001'];
+      } else if (animSetPreviewState === 'sit') {
+        targetGlbUrl = animStyle.sitGlbUrl;
+        targetClipKey = animStyle.sitClipKey;
+        targetCandidates = animStyle.sitClipCandidates.length > 0 ? animStyle.sitClipCandidates : ['sitting.001'];
+      }
+    }
+
+    if (targetGlbUrl && targetClipKey) {
+      const rig = rigRef.current;
+      if (rig && rig.customGlbController) {
+        void loadAndAttachExternalStyleAnimationClip(rig, targetGlbUrl, targetClipKey).then(
+          (extClip) => {
+            if (!cancelled && extClip) {
+              applyStudioClipCandidates([extClip.name]);
+            }
+          },
+        );
+      }
+    } else if (draft.animSetId || (isPreviewingAnimSetState && animSetPreviewState !== 'idle')) {
+      applyStudioClipCandidates(targetCandidates);
     } else {
       applyStudioPoseClip(activePoseId);
     }
-  }, [isOpen, draft.animSetId, draft.dancePoseId, activePoseId, applyStudioClipCandidates, applyStudioPoseClip, draft]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isOpen,
+    activeBottomTab,
+    activeStyleCategory,
+    animSetPreviewState,
+    pairedPreviewRole,
+    draft.animSetId,
+    draft.dancePoseId,
+    draft.stylePoseId,
+    draft.styleActionId,
+    draft.stylePairedId,
+    activePoseId,
+    applyStudioClipCandidates,
+    applyStudioPoseClip,
+    draft,
+    externalCatalogRevision,
+  ]);
 
   const handleSelectItem = useCallback((item: WardrobeCatalogItem) => {
     soundEngine.playUiClick();
     if (
       item.slot === 'body_shape' ||
       item.slot === 'style_anim' ||
-      item.slot === 'style_dance'
+      item.slot === 'style_dance' ||
+      item.slot === 'style_pose' ||
+      item.slot === 'style_action'
     ) {
       setCameraFraming('full');
     } else if (
       item.slot === 'face_eyes' ||
       item.slot === 'face_brows' ||
-      item.slot === 'face_lips'
+      item.slot === 'face_lips' ||
+      item.slot === 'face_eyeshadow' ||
+      item.slot === 'face_blush' ||
+      item.slot === 'face_facepaint' ||
+      item.slot === 'face_beard'
     ) {
       setCameraFraming('face');
     }
@@ -1170,6 +1384,14 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       if (item.slot === 'hair') {
         return item.isStarterDefault ? draft.hairId === null : draft.hairId === item.id;
       }
+      if (item.slot === 'underwear') {
+        if (item.isStarterDefault) {
+          return (draft.underwearId ?? null) === null && (draft.corewearId ?? null) === null;
+        }
+        return item.underwearSubSlot === 'corewear'
+          ? draft.corewearId === item.id
+          : draft.underwearId === item.id;
+      }
       if (item.slot === 'body_shape') {
         return item.isStarterDefault ? draft.bodyShapeId === null : draft.bodyShapeId === item.id;
       }
@@ -1182,11 +1404,46 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       if (item.slot === 'face_lips') {
         return item.isStarterDefault ? draft.lipStyleId === null : draft.lipStyleId === item.id;
       }
+      if (item.slot === 'face_eyeshadow') {
+        return item.isStarterDefault
+          ? (draft.eyeshadowId ?? null) === null
+          : draft.eyeshadowId === item.id;
+      }
+      if (item.slot === 'face_blush') {
+        return item.isStarterDefault
+          ? (draft.blushId ?? null) === null
+          : draft.blushId === item.id;
+      }
+      if (item.slot === 'face_facepaint') {
+        return item.isStarterDefault
+          ? (draft.facepaintId ?? null) === null
+          : draft.facepaintId === item.id;
+      }
+      if (item.slot === 'face_beard') {
+        return item.isStarterDefault
+          ? (draft.beardId ?? null) === null
+          : draft.beardId === item.id;
+      }
       if (item.slot === 'style_anim') {
         return item.isStarterDefault ? draft.animSetId === null : draft.animSetId === item.id;
       }
       if (item.slot === 'style_dance') {
         return item.isStarterDefault ? draft.dancePoseId === null : draft.dancePoseId === item.id;
+      }
+      if (item.slot === 'style_pose') {
+        return item.isStarterDefault
+          ? (draft.stylePoseId ?? null) === null
+          : draft.stylePoseId === item.id;
+      }
+      if (item.slot === 'style_action') {
+        return item.isStarterDefault
+          ? (draft.styleActionId ?? null) === null
+          : draft.styleActionId === item.id;
+      }
+      if (item.slot === 'style_paired') {
+        return item.isStarterDefault
+          ? (draft.stylePairedId ?? null) === null
+          : draft.stylePairedId === item.id;
       }
       return false;
     },
@@ -1197,14 +1454,40 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     if (activeCategory === 'presets') {
       return { owned: [], shop: [], allVisible: [] };
     }
-    return partitionWardrobeCategoryItems(
+    const base = partitionWardrobeCategoryItems(
       activeCategory,
       ownedApparelIds,
       filterMode,
       sortMode,
       characterGender,
     );
-  }, [activeCategory, ownedApparelIds, filterMode, sortMode, characterGender]);
+    const q = outfitSearchQuery.trim().toLowerCase();
+    const match = (item: WardrobeCatalogItem) => {
+      if (activeCategory === 'underwear' && underwearSubFilter !== 'all' && !item.isStarterDefault) {
+        const sub = item.underwearSubSlot ?? 'underwear';
+        if (sub !== underwearSubFilter) return false;
+      }
+      if (!q) return true;
+      return (
+        item.name.toLowerCase().includes(q) ||
+        item.subtitle.toLowerCase().includes(q) ||
+        item.collection.toLowerCase().includes(q)
+      );
+    };
+    if (!q && (activeCategory !== 'underwear' || underwearSubFilter === 'all')) return base;
+    const owned = base.owned.filter(match);
+    const shop = base.shop.filter(match);
+    return { owned, shop, allVisible: [...owned, ...shop] };
+  }, [
+    activeCategory,
+    ownedApparelIds,
+    filterMode,
+    sortMode,
+    characterGender,
+    externalCatalogRevision,
+    outfitSearchQuery,
+    underwearSubFilter,
+  ]);
 
   const partitionedFaceItems = useMemo(
     () =>
@@ -1215,7 +1498,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
         sortMode,
         characterGender,
       ),
-    [activeFaceCategory, ownedApparelIds, filterMode, sortMode, characterGender],
+    [activeFaceCategory, ownedApparelIds, filterMode, sortMode, characterGender, externalCatalogRevision],
   );
 
   const partitionedBodyShapeItems = useMemo(
@@ -1241,7 +1524,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       sortMode,
       characterGender,
     );
-  }, [activeStyleCategory, ownedApparelIds, filterMode, sortMode, characterGender]);
+  }, [activeStyleCategory, ownedApparelIds, filterMode, sortMode, characterGender, externalCatalogRevision]);
 
   if (!isOpen) return null;
 
@@ -1253,15 +1536,29 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
           ? 'Face · Eyes'
           : activeFaceCategory === 'face_brows'
             ? 'Face · Eyebrows'
-            : 'Face · Lips'
+            : activeFaceCategory === 'face_lips'
+              ? 'Face · Lips'
+              : activeFaceCategory === 'face_eyeshadow'
+                ? 'Face · Eyeshadow'
+                : activeFaceCategory === 'face_blush'
+                  ? 'Face · Blush'
+                  : activeFaceCategory === 'face_beard'
+                    ? 'Face · Beard'
+                    : 'Face · Makeup'
         : activeBottomTab === 'body'
           ? 'Body Shape'
           : activeBottomTab === 'style'
             ? activeStyleCategory === 'style_anim'
               ? 'Style · Animation Set'
               : activeStyleCategory === 'style_dance'
-                ? 'Style · Dance & Emotes'
-                : 'Style · Garment Dye'
+                ? 'Style · Dance'
+                : activeStyleCategory === 'style_pose'
+                  ? 'Style · Poses'
+                  : activeStyleCategory === 'style_action'
+                    ? 'Style · Actions'
+                    : activeStyleCategory === 'style_paired'
+                      ? 'Style · Berpasangan (Duo)'
+                      : 'Style · Garment Dye'
             : activeBottomTab === 'shop'
               ? 'Boutique Shop'
               : activeCategory === 'top'
@@ -1272,13 +1569,23 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                     ? 'Full Set'
                     : activeCategory === 'hair'
                       ? 'Hair'
-                      : 'Shoes';
+                      : activeCategory === 'underwear'
+                        ? 'Underwear'
+                        : 'Shoes';
 
   const renderCircularItemButton = (item: WardrobeCatalogItem, owned: boolean) => {
     const selected = isItemSelectedInDraft(item);
     const thumbUrl = thumbMap[item.id];
     const isFaceItem =
-      item.slot === 'face_eyes' || item.slot === 'face_brows' || item.slot === 'face_lips';
+      item.slot === 'face_eyes' ||
+      item.slot === 'face_brows' ||
+      item.slot === 'face_lips' ||
+      item.slot === 'face_eyeshadow' ||
+      item.slot === 'face_blush' ||
+      item.slot === 'face_facepaint' ||
+      item.slot === 'face_beard';
+    const isStyleDanceOrPose =
+      item.slot === 'style_dance' || item.slot === 'style_pose' || item.slot === 'style_action';
     return (
       <button
         key={item.id}
@@ -1302,6 +1609,28 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
             <BodyShapeSilhouetteGlyph item={item} />
           ) : isFaceItem ? (
             <FaceFeaturePreviewGlyph item={item} />
+          ) : item.slot === 'underwear' ? (
+            item.thumbUrl ? (
+              <img
+                src={item.thumbUrl}
+                alt={item.name}
+                loading="lazy"
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-0.5 text-white/90 drop-shadow-[0_3px_8px_rgba(0,0,0,0.4)]">
+                <UnderwearGlyphIcon className="w-7 h-7" />
+                <span className="text-[9px] font-semibold tracking-wide uppercase">Polos</span>
+              </div>
+            )
+          ) : item.slot === 'style_paired' ? (
+            <div className="flex flex-col items-center justify-center gap-1 text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">
+              <Users className="w-6 h-6 stroke-[2]" />
+              <span className="text-[9px] font-semibold tracking-wide uppercase text-white/90">
+                {item.pairedAnim?.vibeTag ?? 'Duo'}
+              </span>
+            </div>
           ) : item.slot === 'style_anim' ? (
             <div className="flex flex-col items-center justify-center gap-1 text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">
               <Play className="w-6 h-6 fill-white/90 stroke-[1.75]" />
@@ -1309,19 +1638,22 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                 {item.animSet?.vibeTag ?? 'Anim'}
               </span>
             </div>
-          ) : item.slot === 'style_dance' ? (
+          ) : isStyleDanceOrPose ? (
             <div className="flex flex-col items-center justify-center gap-1 text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">
-              {item.dancePose?.danceKind === 'wave' || item.dancePose?.danceKind === 'salute' ? (
+              {item.slot === 'style_action' ||
+              item.dancePose?.danceKind === 'wave' ||
+              item.dancePose?.danceKind === 'salute' ? (
                 <Hand className="w-6 h-6 stroke-[2]" />
               ) : item.dancePose?.danceKind === 'cheer' || item.dancePose?.danceKind === 'hiphop' ? (
                 <Flame className="w-6 h-6 stroke-[2]" />
-              ) : item.dancePose?.danceKind === 'none' ? (
+              ) : item.slot === 'style_pose' ||
+                (item.dancePose?.danceKind === 'none' && !item.dancePose?.animGlbUrl) ? (
                 <PersonStanding className="w-6 h-6 stroke-[2]" />
               ) : (
                 <Music className="w-6 h-6 stroke-[2]" />
               )}
               <span className="text-[9px] font-semibold tracking-wide uppercase text-white/90">
-                {item.dancePose?.vibeTag ?? 'Dance'}
+                {item.dancePose?.vibeTag ?? 'Motion'}
               </span>
             </div>
           ) : thumbUrl ? (
@@ -1777,7 +2109,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
               aria-label="Face features"
               className="w-[74px] shrink-0 py-3 px-1.5 border-r border-white/[0.10] flex flex-col items-center gap-3 overflow-y-auto"
             >
-              {FACE_RAIL_ITEMS.map(({ id, label, Icon }) => {
+              {FACE_RAIL_ITEMS.filter((it) => !it.maleOnly || characterGender === 'male').map(({ id, label, Icon }) => {
                 const isActive = activeFaceCategory === id;
                 return (
                   <button
@@ -2016,18 +2348,78 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                 </section>
               ) : (
                 <>
-                  <div className="flex items-center justify-between text-xs">
-                    <button
-                      type="button"
-                      onClick={handleResetStyle}
-                      className="inline-flex items-center gap-1.5 text-white/75 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Reset Style</span>
-                    </button>
-                    <span className="text-[11px] text-white/50 tabular-nums">
-                      {partitionedStyleItems.owned.length} owned · {partitionedStyleItems.shop.length} shop
-                    </span>
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <button
+                        type="button"
+                        onClick={handleResetStyle}
+                        className="inline-flex items-center gap-1.5 text-white/75 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Reset Style</span>
+                      </button>
+                      <span className="text-[11px] text-white/50 tabular-nums">
+                        {partitionedStyleItems.owned.length} owned · {partitionedStyleItems.shop.length} shop
+                      </span>
+                    </div>
+                    {activeStyleCategory === 'style_anim' && (
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {(['idle', 'walk', 'run', 'sit'] as const).map((st) => {
+                          const active = animSetPreviewState === st;
+                          return (
+                            <button
+                              key={st}
+                              type="button"
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                setAnimSetPreviewState(st);
+                              }}
+                              className={`h-7 rounded-full text-[11px] font-semibold capitalize transition-all cursor-pointer ${
+                                active
+                                  ? 'bg-[#8ad8ff] text-slate-950 shadow'
+                                  : 'bg-white/[0.08] text-white/75 hover:bg-white/[0.15] hover:text-white'
+                              }`}
+                            >
+                              {st}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {activeStyleCategory === 'style_paired' && (
+                      <div className="space-y-1.5">
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {(
+                            [
+                              { id: 'initiate', label: 'Preview: Inisiator' },
+                              { id: 'receive', label: 'Preview: Penerima' },
+                            ] as const
+                          ).map((role) => {
+                            const active = pairedPreviewRole === role.id;
+                            return (
+                              <button
+                                key={role.id}
+                                type="button"
+                                onClick={() => {
+                                  soundEngine.playUiClick();
+                                  setPairedPreviewRole(role.id);
+                                }}
+                                className={`h-7 rounded-full text-[10.5px] font-semibold transition-all cursor-pointer ${
+                                  active
+                                    ? 'bg-[#fb7185] text-slate-950 shadow'
+                                    : 'bg-white/[0.08] text-white/75 hover:bg-white/[0.15] hover:text-white'
+                                }`}
+                              >
+                                {role.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[10px] text-white/55 leading-snug">
+                          Dekati Player / NPC di kota lalu pilih <span className="text-white/85 font-semibold">Interaksi</span> untuk pose berpasangan.
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-5">
@@ -2077,7 +2469,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
           </div>
         ) : (
           <div className="flex-1 flex min-h-0">
-            {/* Left Vertical Garment Rail (Top / Bottoms / Set / Hair / Shoes) */}
+            {/* Left Vertical Garment Rail (Top / Bottoms / Set / Hair / Shoes / Underwear) */}
             <nav
               aria-label="Wardrobe categories"
               className="w-[74px] shrink-0 py-3 px-1.5 border-r border-white/[0.10] flex flex-col items-center gap-3 overflow-y-auto"
@@ -2092,6 +2484,9 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                     onClick={() => {
                       soundEngine.playUiClick();
                       setActiveCategory(id);
+                      if (id === 'underwear') {
+                        setCameraFraming('full');
+                      }
                     }}
                     className="flex flex-col items-center gap-1 w-full cursor-pointer group focus-visible:outline-none"
                   >
@@ -2118,19 +2513,111 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
 
             {/* Right 3-Column Circular Grid */}
             <div className="flex-1 min-w-0 overflow-y-auto px-4 py-3.5 space-y-4">
-              {/* Top sub-action bar: Remove All */}
-              <div className="flex items-center justify-between text-xs">
-                <button
-                  type="button"
-                  onClick={handleRemoveAll}
-                  className="inline-flex items-center gap-1.5 text-white/75 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Remove All</span>
-                </button>
-                <span className="text-[11px] text-white/50 tabular-nums">
-                  {partitionedSlotItems.owned.length} owned · {partitionedSlotItems.shop.length} shop
-                </span>
+              {/* Top sub-action bar: Search + Remove All + Underwear controls */}
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={outfitSearchQuery}
+                  onChange={(e) => setOutfitSearchQuery(e.target.value)}
+                  placeholder={`Search ${panelHeaderTitle.toLowerCase()}...`}
+                  className="w-full h-8 px-3 rounded-full bg-white/[0.08] border border-white/[0.14] text-xs text-white placeholder:text-white/45 focus:outline-none focus:border-[#8ad8ff]/70"
+                />
+                {activeCategory === 'underwear' && (
+                  <div className="space-y-2 pt-0.5">
+                    <div
+                      data-wardrobe-underwear-subfilter="true"
+                      className="grid grid-cols-3 gap-1.5"
+                    >
+                      {(
+                        [
+                          { id: 'all', label: 'Semua' },
+                          { id: 'underwear', label: 'Pakaian Dalam' },
+                          {
+                            id: 'corewear',
+                            label: characterGender === 'female' ? 'Bustier' : 'Singlet',
+                          },
+                        ] as const
+                      ).map((pill) => {
+                        const active = underwearSubFilter === pill.id;
+                        return (
+                          <button
+                            key={pill.id}
+                            type="button"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              setUnderwearSubFilter(pill.id);
+                            }}
+                            className={`h-7 rounded-full text-[10px] font-semibold transition-colors cursor-pointer px-2 truncate ${
+                              active
+                                ? 'bg-[#8ad8ff] text-slate-950 shadow-sm'
+                                : 'bg-white/[0.08] text-white/75 hover:bg-white/[0.15] hover:text-white'
+                            }`}
+                          >
+                            {pill.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        data-wardrobe-underwear-preview-toggle="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setUnderwearPreviewBare((prev) => !prev);
+                        }}
+                        className={`h-7 rounded-full text-[10px] font-medium transition-colors cursor-pointer px-2.5 truncate ${
+                          underwearPreviewBare
+                            ? 'bg-white/20 text-white border border-white/30'
+                            : 'bg-white/[0.06] text-white/65 border border-white/10 hover:bg-white/[0.12]'
+                        }`}
+                        title="Sembunyikan baju luar sementara untuk melihat pakaian dalam"
+                      >
+                        {underwearPreviewBare ? 'Preview: Tanpa Baju' : 'Preview: Pakai Baju'}
+                      </button>
+                      <button
+                        type="button"
+                        data-wardrobe-underwear-save-bare-toggle="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          const nextBare = !Boolean(draft.hideOuterForUnderwear);
+                          setHistory((prev) =>
+                            pushWardrobeDraft(prev, {
+                              ...prev.present,
+                              hideOuterForUnderwear: nextBare,
+                            }),
+                          );
+                          showNotice(
+                            nextBare
+                              ? 'Mode Tanpa Baju Luar aktif (Bikini/Swimsuit/Underwear tampil di kota)'
+                              : 'Baju luar kembali tampil di kota',
+                          );
+                        }}
+                        className={`h-7 rounded-full text-[10px] font-medium transition-colors cursor-pointer px-2.5 truncate ${
+                          draft.hideOuterForUnderwear
+                            ? 'bg-[#8ad8ff] text-slate-950 font-semibold'
+                            : 'bg-white/[0.06] text-white/70 border border-white/10 hover:bg-white/[0.12]'
+                        }`}
+                        title="Simpan tanpa atasan/bawahan luar agar bikini/swimsuit/underwear terlihat saat main di kota"
+                      >
+                        {draft.hideOuterForUnderwear ? 'Di Kota: Tanpa Baju' : 'Di Kota: Pakai Baju'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-xs">
+                  <button
+                    type="button"
+                    onClick={handleRemoveAll}
+                    className="inline-flex items-center gap-1.5 text-white/75 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Remove All</span>
+                  </button>
+                  <span className="text-[11px] text-white/50 tabular-nums">
+                    {partitionedSlotItems.owned.length} owned · {partitionedSlotItems.shop.length} shop
+                  </span>
+                </div>
               </div>
 
               <div className="space-y-5">
@@ -2143,10 +2630,22 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                       <span className="tabular-nums">{partitionedSlotItems.owned.length}</span>
                     </div>
                     <div className="grid grid-cols-3 gap-x-3 gap-y-4">
-                      {partitionedSlotItems.owned.map((item) =>
-                        renderCircularItemButton(item, true),
-                      )}
+                      {partitionedSlotItems.owned
+                        .slice(0, outfitVisibleLimit)
+                        .map((item) => renderCircularItemButton(item, true))}
                     </div>
+                    {partitionedSlotItems.owned.length > outfitVisibleLimit && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setOutfitVisibleLimit((prev) => prev + 36);
+                        }}
+                        className="w-full h-9 rounded-full bg-white/[0.10] hover:bg-white/[0.18] border border-white/[0.16] text-xs font-medium text-white/90 transition-colors cursor-pointer"
+                      >
+                        Load More (+36) · {partitionedSlotItems.owned.length - outfitVisibleLimit} more
+                      </button>
+                    )}
                   </section>
                 )}
 

@@ -6096,7 +6096,7 @@ export async function loadAllRealBlitzAssets(
       return gltf;
     },
   );
-  const playerFemaleGlbPromise = loadOptionalGltf('/assets/avatars/blitz-female-player.glb').then(
+  const playerFemaleGlbPromise = loadOptionalGltf('/assets/avatars/new-female-player.glb').then(
     (gltf) => {
       if (gltf?.scene) {
         gltf.scene.userData.useMixamoLocomotionSuite = true;
@@ -6104,7 +6104,7 @@ export async function loadAllRealBlitzAssets(
       return gltf;
     },
   );
-  const playerMaleGlbPromise = loadOptionalGltf('/assets/avatars/blitz-male-player.glb').then(
+  const playerMaleGlbPromise = loadOptionalGltf('/assets/avatars/new-male-player.glb').then(
     (gltf) => {
       if (gltf?.scene) {
         gltf.scene.userData.useMixamoLocomotionSuite = true;
@@ -9627,6 +9627,10 @@ export interface BuddyCharacterRig {
   walkClipOverrideName?: string;
   runClipOverrideName?: string;
   sitClipOverrideName?: string;
+  /** Optional explicit locomotion gait ('walk' | 'run') driven by player controls (WASD+Shift & Click-to-Walk distance). */
+  forceLocomotionGait?: 'walk' | 'run' | null;
+  /** Temporary social Pose / Action / Dance / Paired animation clip played while stationary without altering the equipped 4-state Anim Set. */
+  activeSocialClipName?: string;
   headMesh: THREE.Mesh;
   leftArmPivot: THREE.Group;
   rightArmPivot: THREE.Group;
@@ -12529,10 +12533,13 @@ function convertToStylizedPlayerCharacterMaterial(
 
 function isBlitzModularModel(root: THREE.Object3D | null | undefined): boolean {
   if (!root) return false;
-  return Boolean(
-    root.getObjectByName('Blitz_BaseDoll_Female_Mesh') ||
-      root.getObjectByName('Blitz_BaseDoll_Male_Mesh'),
-  );
+  let found = false;
+  root.traverse((obj) => {
+    if (!found && /^blitz_basedoll_(?:female|male)_mesh/i.test(obj.name || '')) {
+      found = true;
+    }
+  });
+  return found;
 }
 
 function createSmoothedOutlineGeometry(srcGeo: THREE.BufferGeometry): THREE.BufferGeometry {
@@ -13778,7 +13785,7 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
       if (
         /^head_1\d\d/i.test(node.name) ||
         /(?:1m|2m)(?:highres)?(?:pbr|_|$)/i.test(node.name) ||
-        node.name === 'Blitz_BaseDoll_Male_Mesh'
+        /^blitz_basedoll_male_mesh$/i.test(node.name)
       ) {
         isMaleCustomCharacter = true;
       }
@@ -15903,6 +15910,12 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
   if (isSelfContainedBlitzDoll) {
     glbRoot.userData.isBlitzModularDoll = true;
     bodyGroup.userData.isBlitzModularDoll = true;
+    const desiredModularOutfit = bodyGroup.userData?.desiredModularOutfit as
+      | BuddyModularOutfitUrls
+      | undefined;
+    if (desiredModularOutfit) {
+      void setBuddyRigModularOutfitUrls(rig, desiredModularOutfit);
+    }
     const savedBodyShape = bodyGroup.userData?.desiredBodyShapeProfile as
       | BuddyBodyShapeProfile
       | undefined;
@@ -15914,6 +15927,13 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
       | undefined;
     if (savedFace) {
       applyBuddyRigFaceCustomization(rig, savedFace);
+    }
+    const savedStyleAnim = bodyGroup.userData?.desiredStyleAnim as
+      | BuddyStyleAnimSpec
+      | null
+      | undefined;
+    if (savedStyleAnim) {
+      void applyBuddyRigStyleAnimation(rig, savedStyleAnim);
     }
     return;
   }
@@ -16115,6 +16135,7 @@ function createTrimmedTorsoSkinIndexBuffer(
   frontCollarKeepMinY: number,
   backCollarKeepMinY: number,
   hemCoverMinY: number,
+  coverageMask?: TorsoSurfaceCoverageMask | null,
 ): THREE.BufferAttribute {
   const posAttr = geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
   if (!posAttr) {
@@ -16126,15 +16147,19 @@ function createTrimmedTorsoSkinIndexBuffer(
     const ia = Number(srcArr[i]);
     const ib = Number(srcArr[i + 1]);
     const ic = Number(srcArr[i + 2]);
-    const xa = Math.abs(posAttr.getX(ia));
-    const xb = Math.abs(posAttr.getX(ib));
-    const xc = Math.abs(posAttr.getX(ic));
+    const sxa = posAttr.getX(ia);
+    const sxb = posAttr.getX(ib);
+    const sxc = posAttr.getX(ic);
+    const xa = Math.abs(sxa);
+    const xb = Math.abs(sxb);
+    const xc = Math.abs(sxc);
     const ya = posAttr.getY(ia);
     const yb = posAttr.getY(ib);
     const yc = posAttr.getY(ic);
     const za = posAttr.getZ(ia);
     const zb = posAttr.getZ(ib);
     const zc = posAttr.getZ(ic);
+    const avgX = (sxa + sxb + sxc) / 3;
     const avgAbsX = (xa + xb + xc) / 3;
     const maxAbsX = Math.max(xa, xb, xc);
     const avgY = (ya + yb + yc) / 3;
@@ -16146,8 +16171,17 @@ function createTrimmedTorsoSkinIndexBuffer(
     const isNeckSkin = avgAbsX < neckMaxAbsX && avgY >= collarMinY;
     const isExposedLowerArmSkin = maxAbsX >= sleeveCutoffAbsX;
     const isExposedLowerWaistSkin = avgAbsX < 0.22 && avgY < hemCoverMinY + 0.012;
+    const isExposedByGarmentCutout =
+      Boolean(coverageMask) &&
+      maxAbsX < 0.145 &&
+      !(
+        isTorsoPointCoveredByMask(coverageMask!, sxa, ya, za) &&
+        isTorsoPointCoveredByMask(coverageMask!, sxb, yb, zb) &&
+        isTorsoPointCoveredByMask(coverageMask!, sxc, yc, zc) &&
+        isTorsoPointCoveredByMask(coverageMask!, avgX, avgY, avgZ)
+      );
 
-    if (isNeckSkin || isExposedLowerArmSkin || isExposedLowerWaistSkin) {
+    if (isNeckSkin || isExposedLowerArmSkin || isExposedLowerWaistSkin || isExposedByGarmentCutout) {
       kept.push(ia, ib, ic);
     }
   }
@@ -16843,7 +16877,7 @@ function cloneAndBindModularSkinnedMeshes(
 
     const meshName = srcSm.name || `CustomEquipped_${slotTag}`;
     const isOutlineMesh = meshName.toLowerCase().includes('outline');
-    const isNativeBlitzGarment = /^blitz_/i.test(meshName);
+    const isNativeBlitzGarment = /(?:^|_)blitz_/i.test(meshName);
     const resolvedMat = resolveModularBodySkinFallbackMaterial(
       meshName,
       srcSm.material,
@@ -17154,6 +17188,7 @@ function applyTorsoSkinnedMeshesToBuddyRig(
     ? Math.min(1.30, maxBackCollarY - 0.03)
     : 1.295;
   const hemCoverMinY = Number.isFinite(minY) ? minY : 0.78;
+  const coverageMask = buildTorsoSurfaceCoverageMask(newlyAttached);
 
   // Mask occluded chest/midriff/bicep skin on unified Blitz_BaseDoll_*_BodySkin rigs
   updateBlitzBaseDollBodySkinTrim(glbRoot, 'torso', {
@@ -17162,6 +17197,7 @@ function applyTorsoSkinnedMeshesToBuddyRig(
     backCollarKeepMinY,
     hemCoverMinY,
     isSleeveless: maxAbsX <= 0.25,
+    coverageMask,
   });
 
   // Mask inner occluded chest/midriff/bicep skin triangles on legacy segmented torso_skin rigs
@@ -17181,6 +17217,7 @@ function applyTorsoSkinnedMeshesToBuddyRig(
           frontCollarKeepMinY,
           backCollarKeepMinY,
           hemCoverMinY,
+          coverageMask,
         );
         geo.setIndex(trimmedIdx);
       }
@@ -17279,6 +17316,8 @@ export interface BuddyModularOutfitUrls {
   torsoUrl?: string | null;
   legsUrl?: string | null;
   feetUrl?: string | null;
+  /** When true, hides both default starter & modular outer torso/legs so 2D Underwear / Bikini / Swimsuit / Corewear on the BaseDoll skin is fully visible. */
+  hideOuterClothes?: boolean;
 }
 
 function getDefaultSlotMeshesOnRig(
@@ -17330,6 +17369,133 @@ function getDefaultSlotSkinStates(
   return found;
 }
 
+interface TorsoSurfaceCoverageMask {
+  yMin: number;
+  yMax: number;
+  yBins: number;
+  thetaBins: number;
+  eroded: Uint8Array;
+}
+
+const TORSO_COVERAGE_Y_MIN = 0.72;
+const TORSO_COVERAGE_Y_MAX = 1.42;
+const TORSO_COVERAGE_Y_BINS = 44;
+const TORSO_COVERAGE_THETA_BINS = 48;
+
+function buildTorsoSurfaceCoverageMask(
+  meshes: readonly THREE.Mesh[],
+): TorsoSurfaceCoverageMask | null {
+  const yMin = TORSO_COVERAGE_Y_MIN;
+  const yMax = TORSO_COVERAGE_Y_MAX;
+  const ySpan = yMax - yMin;
+  const yBins = TORSO_COVERAGE_Y_BINS;
+  const thetaBins = TORSO_COVERAGE_THETA_BINS;
+  const raw = new Uint8Array(yBins * thetaBins);
+  let markedAny = false;
+
+  const markPoint = (x: number, y: number, z: number): void => {
+    if (Math.abs(x) >= 0.24 || y < yMin || y >= yMax) return;
+    if (x * x + z * z <= 1e-6) return;
+    const iy = Math.min(yBins - 1, Math.max(0, Math.floor(((y - yMin) / ySpan) * yBins)));
+    const theta = Math.atan2(x, z);
+    const normTheta = (theta + Math.PI) / (2 * Math.PI);
+    const it = ((Math.floor(normTheta * thetaBins) % thetaBins) + thetaBins) % thetaBins;
+    raw[iy * thetaBins + it] = 1;
+    markedAny = true;
+  };
+
+  for (const mesh of meshes) {
+    const lower = (mesh.name || '').toLowerCase();
+    if (lower.includes('_skin') || lower.includes('outline')) continue;
+    const pos = mesh.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+    if (!pos || pos.count < 3) continue;
+    const idx = mesh.geometry.getIndex();
+    const triIndexCount = idx ? idx.count : pos.count;
+    for (let i = 0; i + 2 < triIndexCount; i += 3) {
+      const ia = idx ? idx.getX(i) : i;
+      const ib = idx ? idx.getX(i + 1) : i + 1;
+      const ic = idx ? idx.getX(i + 2) : i + 2;
+      const ax = pos.getX(ia);
+      const ay = pos.getY(ia);
+      const az = pos.getZ(ia);
+      const bx = pos.getX(ib);
+      const by = pos.getY(ib);
+      const bz = pos.getZ(ib);
+      const cx = pos.getX(ic);
+      const cy = pos.getY(ic);
+      const cz = pos.getZ(ic);
+
+      const triMinY = Math.min(ay, by, cy);
+      const triMaxY = Math.max(ay, by, cy);
+      if (triMaxY < yMin || triMinY >= yMax) continue;
+      if (Math.min(Math.abs(ax), Math.abs(bx), Math.abs(cx)) >= 0.24) continue;
+
+      const e1 = Math.hypot(bx - ax, by - ay, bz - az);
+      const e2 = Math.hypot(cx - bx, cy - by, cz - bz);
+      const e3 = Math.hypot(ax - cx, ay - cy, az - cz);
+      const maxEdge = Math.max(e1, e2, e3);
+      const steps = Math.max(2, Math.min(12, Math.ceil(maxEdge / 0.008)));
+      for (let si = 0; si <= steps; si++) {
+        const u = si / steps;
+        for (let sj = 0; sj <= steps - si; sj++) {
+          const v = sj / steps;
+          const w = 1 - u - v;
+          markPoint(
+            ax * w + bx * u + cx * v,
+            ay * w + by * u + cy * v,
+            az * w + bz * u + cz * v,
+          );
+        }
+      }
+    }
+  }
+
+  if (!markedAny) return null;
+
+  // 1-bin 8-neighbor erosion pulls the trim mask safely (~1.6 cm) inside solid garment fabric,
+  // preserving bare skin in open-back cutouts, keyholes, plunging necklines, and under thin straps.
+  const eroded = new Uint8Array(yBins * thetaBins);
+  for (let iy = 1; iy < yBins - 1; iy++) {
+    for (let it = 0; it < thetaBins; it++) {
+      let allSolid = true;
+      for (let dy = -1; dy <= 1 && allSolid; dy++) {
+        const rowOffset = (iy + dy) * thetaBins;
+        for (let dt = -1; dt <= 1; dt++) {
+          const nt = (it + dt + thetaBins) % thetaBins;
+          if (raw[rowOffset + nt] === 0) {
+            allSolid = false;
+            break;
+          }
+        }
+      }
+      if (allSolid) {
+        eroded[iy * thetaBins + it] = 1;
+      }
+    }
+  }
+
+  return { yMin, yMax, yBins, thetaBins, eroded };
+}
+
+function isTorsoPointCoveredByMask(
+  mask: TorsoSurfaceCoverageMask,
+  x: number,
+  y: number,
+  z: number,
+): boolean {
+  if (y < mask.yMin || y >= mask.yMax) return false;
+  if (x * x + z * z <= 1e-6) return false;
+  const iy = Math.min(
+    mask.yBins - 1,
+    Math.max(0, Math.floor(((y - mask.yMin) / (mask.yMax - mask.yMin)) * mask.yBins)),
+  );
+  const theta = Math.atan2(x, z);
+  const normTheta = (theta + Math.PI) / (2 * Math.PI);
+  const it =
+    ((Math.floor(normTheta * mask.thetaBins) % mask.thetaBins) + mask.thetaBins) % mask.thetaBins;
+  return mask.eroded[iy * mask.thetaBins + it] === 1;
+}
+
 interface BlitzBodySkinActiveTrims {
   torso: {
     sleeveCutoffAbsX: number;
@@ -17337,6 +17503,7 @@ interface BlitzBodySkinActiveTrims {
     backCollarKeepMinY: number;
     hemCoverMinY: number;
     isSleeveless: boolean;
+    coverageMask?: TorsoSurfaceCoverageMask | null;
   } | null;
   legs: {
     minGarmentY: number;
@@ -17356,12 +17523,33 @@ function getBlitzBaseDollBodySkinStates(
     | undefined;
   if (cached) return cached;
 
+  const excludedOutlineSuffixes = new Set<string>();
+  glbRoot.traverse((node) => {
+    if (!(node as THREE.Mesh).isMesh) return;
+    const mesh = node as THREE.Mesh;
+    const lower = (mesh.name || '').toLowerCase();
+    const mats = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
+    const isHeadOrNeck = mats.some((m) => /blitz_mask_(?:head|neck)/i.test(m?.name || ''));
+    if (isHeadOrNeck) {
+      const m = lower.match(/_mesh_(\d+)$/i);
+      if (m) excludedOutlineSuffixes.add(m[1]);
+    }
+  });
+
   const found: StoredRigDefaultTorsoState['skinMeshes'] = [];
   glbRoot.traverse((node) => {
     if (!(node as THREE.Mesh).isMesh) return;
     const mesh = node as THREE.Mesh;
     const lower = (mesh.name || '').toLowerCase();
-    if (/^blitz_basedoll_(?:male|female)(?:_mesh)?_bodyskin(?:_outline)?$/i.test(lower)) {
+    const mats = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
+    const isHeadOrNeckMat = mats.some((m) => /blitz_mask_(?:head|neck)/i.test(m?.name || ''));
+    if (isHeadOrNeckMat) return;
+    const outMatch = lower.match(/_mesh_outline_(\d+)$/i);
+    if (outMatch && excludedOutlineSuffixes.has(outMatch[1])) return;
+    if (
+      /^blitz_basedoll_(?:male|female)(?:_mesh)?_bodyskin(?:_outline)?$/i.test(lower) ||
+      /^blitz_basedoll_(?:male|female)_mesh_(?:\d+|outline)(?:_\d+)?$/i.test(lower)
+    ) {
       ensurePerRigUniqueSkinGeometry(mesh);
       found.push({ mesh, originalIndex: getOrCapturePristineSkinIndex(mesh.geometry) });
     }
@@ -17370,6 +17558,24 @@ function getBlitzBaseDollBodySkinStates(
   return found;
 }
 
+const SKIN_RECESS_CELL_M = 0.028;
+const SKIN_RECESS_SEARCH_R = 0.032;
+const SKIN_RECESS_MAX_TANGENTIAL_R = 0.011;
+const SKIN_RECESS_SIGNED_THRESH = -0.0085;
+const SKIN_RECESS_TARGET_CLEARANCE = 0.0115;
+const SKIN_RECESS_MAX_PUSH = 0.036;
+
+function hashSpatialCell(cx: number, cy: number, cz: number): number {
+  return (cx + 512) * 1048576 + (cy + 512) * 1024 + (cz + 512);
+}
+
+/**
+ * Matches Buddies Studio (`l3_builder.py`) 1:1: keeps the Blitz Master BaseDoll body skin
+ * 100% watertight (NEVER deletes body triangles -> zero holes on back, stomach, shoulders,
+ * hips, thighs, or feet on any outfit) and instead smoothly recesses only the exact skin
+ * vertices (+ companion outline vertices) that hug tightly beneath or poke through visible
+ * opaque clothing using a fast 3D spatial hash + 1-ring boundary smoothing.
+ */
 function updateBlitzBaseDollBodySkinTrim<K extends keyof BlitzBodySkinActiveTrims>(
   glbRoot: THREE.Group,
   slot: K,
@@ -17387,83 +17593,297 @@ function updateBlitzBaseDollBodySkinTrim<K extends keyof BlitzBodySkinActiveTrim
   activeTrims[slot] = spec;
   glbRoot.userData.blitzBodySkinActiveTrims = activeTrims;
 
-  const { torso, legs, feet } = activeTrims;
+  // 1. Always restore 100% watertight pristine indices & pristine positions first
   for (const entry of bodySkinEntries) {
     const geo = ensurePerRigUniqueSkinGeometry(entry.mesh);
-    if (!entry.originalIndex) continue;
-    if (!torso && !legs && !feet) {
-      if (geo.getIndex() !== entry.originalIndex) {
-        geo.setIndex(entry.originalIndex);
+    if (entry.originalIndex && geo.getIndex() !== entry.originalIndex) {
+      geo.setIndex(entry.originalIndex);
+    }
+    restorePristineSkinPositions(geo);
+  }
+
+  // 2. Collect all currently visible active garment meshes on the rig
+  const clothGrid = new Map<number, number[]>();
+  const addClothSample = (
+    px: number,
+    py: number,
+    pz: number,
+    nx: number,
+    ny: number,
+    nz: number,
+  ): void => {
+    const nLen = Math.hypot(nx, ny, nz);
+    if (nLen <= 1e-5) return;
+    const inv = 1 / nLen;
+    const cx = Math.floor(px / SKIN_RECESS_CELL_M);
+    const cy = Math.floor(py / SKIN_RECESS_CELL_M);
+    const cz = Math.floor(pz / SKIN_RECESS_CELL_M);
+    const key = hashSpatialCell(cx, cy, cz);
+    let bucket = clothGrid.get(key);
+    if (!bucket) {
+      bucket = [];
+      clothGrid.set(key, bucket);
+    }
+    bucket.push(px, py, pz, nx * inv, ny * inv, nz * inv);
+  };
+
+  let clothSampleCount = 0;
+  glbRoot.traverse((node) => {
+    if (!(node as THREE.Mesh).isMesh) return;
+    const mesh = node as THREE.Mesh;
+    if (!mesh.visible) return;
+    const lower = (mesh.name || '').toLowerCase();
+    if (
+      lower.includes('basedoll') ||
+      lower.includes('_skin') ||
+      lower.includes('outline') ||
+      lower.includes('hair') ||
+      lower.startsWith('head_') ||
+      lower.startsWith('ears_') ||
+      lower.includes('glasses') ||
+      lower.includes('headwear') ||
+      lower.startsWith('hat_')
+    ) {
+      return;
+    }
+    const geo = mesh.geometry;
+    const pos = geo.getAttribute('position') as THREE.BufferAttribute | undefined;
+    if (!pos || pos.count < 3) return;
+    if (!geo.getAttribute('normal')) {
+      geo.computeVertexNormals();
+    }
+    const norm = geo.getAttribute('normal') as THREE.BufferAttribute | undefined;
+    if (!norm) return;
+
+    // Add every garment vertex
+    for (let i = 0; i < pos.count; i++) {
+      addClothSample(
+        pos.getX(i),
+        pos.getY(i),
+        pos.getZ(i),
+        norm.getX(i),
+        norm.getY(i),
+        norm.getZ(i),
+      );
+      clothSampleCount++;
+    }
+    // Add triangle centroids + edge midpoints so wide low-poly cloth quads shield skin without gaps
+    const idx = geo.getIndex();
+    const triCount = idx ? idx.count : pos.count;
+    for (let i = 0; i + 2 < triCount; i += 3) {
+      const ia = idx ? idx.getX(i) : i;
+      const ib = idx ? idx.getX(i + 1) : i + 1;
+      const ic = idx ? idx.getX(i + 2) : i + 2;
+      const ax = pos.getX(ia), ay = pos.getY(ia), az = pos.getZ(ia);
+      const bx = pos.getX(ib), by = pos.getY(ib), bz = pos.getZ(ib);
+      const cx = pos.getX(ic), cy = pos.getY(ic), cz = pos.getZ(ic);
+      const nax = norm.getX(ia), nay = norm.getY(ia), naz = norm.getZ(ia);
+      const nbx = norm.getX(ib), nby = norm.getY(ib), nbz = norm.getZ(ib);
+      const ncx = norm.getX(ic), ncy = norm.getY(ic), ncz = norm.getZ(ic);
+      addClothSample((ax + bx + cx) / 3, (ay + by + cy) / 3, (az + bz + cz) / 3, nax + nbx + ncx, nay + nby + ncy, naz + nbz + ncz);
+      addClothSample((ax + bx) * 0.5, (ay + by) * 0.5, (az + bz) * 0.5, nax + nbx, nay + nby, naz + nbz);
+      addClothSample((bx + cx) * 0.5, (by + cy) * 0.5, (bz + cz) * 0.5, nbx + ncx, nby + ncy, nbz + ncz);
+      addClothSample((cx + ax) * 0.5, (cy + ay) * 0.5, (cz + az) * 0.5, ncx + nax, ncy + nay, ncz + naz);
+    }
+  });
+
+  if (clothSampleCount === 0) return;
+
+  // Pair base skin submeshes with their 1:1 companion outline submeshes
+  const outlineByLowerName = new Map<string, StoredRigDefaultTorsoState['skinMeshes'][number]>();
+  const pairedOutlines = new Set<THREE.Mesh>();
+  for (const entry of bodySkinEntries) {
+    const lower = (entry.mesh.name || '').toLowerCase();
+    if (lower.includes('outline')) {
+      outlineByLowerName.set(lower, entry);
+    }
+  }
+
+  const computeAndApplyRecess = (
+    entry: StoredRigDefaultTorsoState['skinMeshes'][number],
+    invertNormals: boolean,
+  ): Float32Array | null => {
+    const geo = ensurePerRigUniqueSkinGeometry(entry.mesh);
+    const pos = geo.getAttribute('position') as THREE.BufferAttribute | undefined;
+    if (!pos || pos.count === 0) return null;
+    if (!geo.getAttribute('normal')) {
+      geo.computeVertexNormals();
+    }
+    const norm = geo.getAttribute('normal') as THREE.BufferAttribute | undefined;
+    if (!norm) return null;
+
+    const mats = Array.isArray(entry.mesh.material)
+      ? entry.mesh.material
+      : entry.mesh.material
+        ? [entry.mesh.material]
+        : [];
+    const limitWristOnly = mats.some((m) => /blitz_mask_hands/i.test(m?.name || ''));
+    const nv = pos.count;
+    const rawPush = new Float32Array(nv);
+    const maxD2 = SKIN_RECESS_SEARCH_R * SKIN_RECESS_SEARCH_R;
+    const maxTanD2 = SKIN_RECESS_MAX_TANGENTIAL_R * SKIN_RECESS_MAX_TANGENTIAL_R;
+    const nSign = invertNormals ? -1 : 1;
+    let maxPush = 0;
+
+    for (let i = 0; i < nv; i++) {
+      const vx = pos.getX(i);
+      const vy = pos.getY(i);
+      const vz = pos.getZ(i);
+      if (limitWristOnly && Math.abs(vx) > 0.655) continue;
+      if (vy > 1.335) continue; // never recess neck/head boundary
+
+      const nx = norm.getX(i) * nSign;
+      const ny = norm.getY(i) * nSign;
+      const nz = norm.getZ(i) * nSign;
+      const cx = Math.floor(vx / SKIN_RECESS_CELL_M);
+      const cy = Math.floor(vy / SKIN_RECESS_CELL_M);
+      const cz = Math.floor(vz / SKIN_RECESS_CELL_M);
+
+      let bestD2 = maxD2;
+      let bestSigned = -999;
+      for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+          for (let oz = -1; oz <= 1; oz++) {
+            const bucket = clothGrid.get(hashSpatialCell(cx + ox, cy + oy, cz + oz));
+            if (!bucket) continue;
+            for (let bi = 0; bi < bucket.length; bi += 6) {
+              const pnx = bucket[bi + 3];
+              const pny = bucket[bi + 4];
+              const pnz = bucket[bi + 5];
+              if (pnx * nx + pny * ny + pnz * nz <= 0.15) continue;
+              const dx = vx - bucket[bi];
+              const dy = vy - bucket[bi + 1];
+              const dz = vz - bucket[bi + 2];
+              const d2 = dx * dx + dy * dy + dz * dz;
+              if (d2 >= bestD2) continue;
+              const signed = dx * pnx + dy * pny + dz * pnz;
+              const tanD2 = d2 - signed * signed;
+              if (tanD2 > maxTanD2) continue;
+              bestD2 = d2;
+              bestSigned = signed;
+            }
+          }
+        }
       }
-      continue;
+
+      if (bestSigned > SKIN_RECESS_SIGNED_THRESH) {
+        const push = Math.min(
+          SKIN_RECESS_MAX_PUSH,
+          Math.max(0, bestSigned + SKIN_RECESS_TARGET_CLEARANCE),
+        );
+        rawPush[i] = push;
+        if (push > maxPush) maxPush = push;
+      }
     }
 
-    const posAttr = geo.getAttribute('position') as THREE.BufferAttribute | undefined;
-    if (!posAttr) continue;
-    const srcArr = entry.originalIndex.array;
-    const kept: number[] = [];
-    for (let i = 0; i + 2 < entry.originalIndex.count; i += 3) {
-      const ia = Number(srcArr[i]);
-      const ib = Number(srcArr[i + 1]);
-      const ic = Number(srcArr[i + 2]);
-      const xa = Math.abs(posAttr.getX(ia));
-      const xb = Math.abs(posAttr.getX(ib));
-      const xc = Math.abs(posAttr.getX(ic));
-      const ya = posAttr.getY(ia);
-      const yb = posAttr.getY(ib);
-      const yc = posAttr.getY(ic);
-      const za = posAttr.getZ(ia);
-      const zb = posAttr.getZ(ib);
-      const zc = posAttr.getZ(ic);
-      const avgAbsX = (xa + xb + xc) / 3;
-      const maxAbsX = Math.max(xa, xb, xc);
-      const avgY = (ya + yb + yc) / 3;
-      const avgZ = (za + zb + zc) / 3;
+    if (maxPush <= 1e-6) return null;
 
-      let covered = false;
-      if (torso) {
-        if (torso.isSleeveless) {
-          // Sleeveless tank/halter tops expose bare shoulders & deltoids: only trim central covered chest/midriff
-          if (
-            avgY >= torso.hemCoverMinY + 0.025 &&
-            avgY < 1.19 &&
-            maxAbsX < 0.125
-          ) {
-            covered = true;
+    // Weld across UV seams & apply 1-ring boundary smoothing (matching l3_builder.py)
+    const vKeys = new Array<string>(nv);
+    const keyMaxPush = new Map<string, number>();
+    for (let i = 0; i < nv; i++) {
+      const k = `${Math.round(pos.getX(i) * 1e4)},${Math.round(pos.getY(i) * 1e4)},${Math.round(pos.getZ(i) * 1e4)}`;
+      vKeys[i] = k;
+      const prev = keyMaxPush.get(k);
+      if (prev === undefined || rawPush[i] > prev) {
+        keyMaxPush.set(k, rawPush[i]);
+      }
+    }
+
+    const adj = new Map<string, Set<string>>();
+    const idx = entry.originalIndex ?? geo.getIndex();
+    if (idx) {
+      const arr = idx.array;
+      for (let t = 0; t + 2 < idx.count; t += 3) {
+        const ka = vKeys[Number(arr[t])];
+        const kb = vKeys[Number(arr[t + 1])];
+        const kc = vKeys[Number(arr[t + 2])];
+        const link = (u: string, v: string) => {
+          if (u === v) return;
+          let s = adj.get(u);
+          if (!s) {
+            s = new Set<string>();
+            adj.set(u, s);
           }
+          s.add(v);
+        };
+        link(ka, kb);
+        link(kb, ka);
+        link(kb, kc);
+        link(kc, kb);
+        link(kc, ka);
+        link(ka, kc);
+      }
+    }
+
+    const smoothedByKey = new Map<string, number>();
+    for (const [k, p] of keyMaxPush.entries()) {
+      if (p > 0) {
+        smoothedByKey.set(k, p);
+      } else {
+        const nb = adj.get(k);
+        if (nb && nb.size > 0) {
+          let sum = 0;
+          for (const q of nb) sum += keyMaxPush.get(q) ?? 0;
+          smoothedByKey.set(k, 0.45 * (sum / nb.size));
         } else {
-          const collarMinY = avgZ >= -0.015 ? torso.frontCollarKeepMinY : torso.backCollarKeepMinY;
-          const neckMaxAbsX = avgY >= collarMinY + 0.055 ? 0.135 : 0.102;
-          const isNeck = avgAbsX < neckMaxAbsX && avgY >= collarMinY;
-          if (
-            !isNeck &&
-            avgY <= 1.35 &&
-            avgY >= torso.hemCoverMinY + 0.015 &&
-            maxAbsX < torso.sleeveCutoffAbsX
-          ) {
-            covered = true;
-          }
+          smoothedByKey.set(k, 0);
         }
-      }
-      if (!covered && legs && avgAbsX < 0.24) {
-        const bottomKeepMaxY = legs.minGarmentY >= 0.4 ? legs.minGarmentY + 0.065 : legs.minGarmentY + 0.035;
-        const topCoveredMaxY = Math.min(legs.maxGarmentY - 0.015, 0.94);
-        if (avgY >= bottomKeepMaxY && avgY <= topCoveredMaxY) {
-          covered = true;
-        }
-      }
-      if (!covered && feet && avgAbsX < 0.24) {
-        const shoeMaxY = Math.min(feet.maxGarmentY - 0.012, 0.125);
-        if (avgY <= shoeMaxY) {
-          covered = true;
-        }
-      }
-      if (!covered) {
-        kept.push(ia, ib, ic);
       }
     }
-    const IndexCtor = posAttr.count > 65535 ? Uint32Array : Uint16Array;
-    geo.setIndex(new THREE.BufferAttribute(new IndexCtor(kept), 1));
+
+    const disp = new Float32Array(nv * 3);
+    for (let i = 0; i < nv; i++) {
+      const push = smoothedByKey.get(vKeys[i]) ?? 0;
+      if (push <= 1e-6) continue;
+      const dx = -norm.getX(i) * nSign * push;
+      const dy = -norm.getY(i) * nSign * push;
+      const dz = -norm.getZ(i) * nSign * push;
+      disp[i * 3] = dx;
+      disp[i * 3 + 1] = dy;
+      disp[i * 3 + 2] = dz;
+      pos.setXYZ(i, pos.getX(i) + dx, pos.getY(i) + dy, pos.getZ(i) + dz);
+    }
+    pos.needsUpdate = true;
+    return disp;
+  };
+
+  // 3. Apply non-destructive recess to every BaseDoll skin mesh + its 1:1 companion outline
+  for (const entry of bodySkinEntries) {
+    const lower = (entry.mesh.name || '').toLowerCase();
+    if (lower.includes('outline')) continue;
+    const disp = computeAndApplyRecess(entry, false);
+
+    // Find companion outline (`_mesh_3` -> `_mesh_outline_3`, or `_bodyskin` -> `_bodyskin_outline`)
+    const companionKey = /_mesh_\d+$/i.test(lower)
+      ? lower.replace(/_mesh_(\d+)$/i, '_mesh_outline_$1')
+      : `${lower}_outline`;
+    const companion = outlineByLowerName.get(companionKey);
+    if (companion) {
+      pairedOutlines.add(companion.mesh);
+      if (disp) {
+        const outGeo = ensurePerRigUniqueSkinGeometry(companion.mesh);
+        const outPos = outGeo.getAttribute('position') as THREE.BufferAttribute | undefined;
+        if (outPos && outPos.count * 3 === disp.length) {
+          for (let i = 0; i < outPos.count; i++) {
+            const dx = disp[i * 3];
+            const dy = disp[i * 3 + 1];
+            const dz = disp[i * 3 + 2];
+            if (dx !== 0 || dy !== 0 || dz !== 0) {
+              outPos.setXYZ(i, outPos.getX(i) + dx, outPos.getY(i) + dy, outPos.getZ(i) + dz);
+            }
+          }
+          outPos.needsUpdate = true;
+        }
+      }
+    }
+  }
+
+  // Fallback for any unpaired BaseDoll outline mesh (inverted hull normals point inward)
+  for (const entry of bodySkinEntries) {
+    const lower = (entry.mesh.name || '').toLowerCase();
+    if (!lower.includes('outline') || pairedOutlines.has(entry.mesh)) continue;
+    computeAndApplyRecess(entry, true);
   }
 }
 
@@ -17773,17 +18193,24 @@ export async function setBuddyRigModularOutfitUrls(
     rig.bodyGroupRef.userData.modularOutfitSeq = nextSeq;
   }
 
+  const hideOuter = Boolean(outfit.hideOuterClothes);
+  const effectiveCostumeUrl = hideOuter ? null : outfit.costumeUrl;
+  const effectiveTorsoUrl = hideOuter ? null : outfit.torsoUrl;
+  const effectiveLegsUrl = hideOuter ? null : outfit.legsUrl;
+
   const slotEntries: Array<readonly ['hair' | 'legs' | 'feet', string | null | undefined]> = [
     ['hair', outfit.hairUrl],
-    ['legs', outfit.legsUrl],
+    ['legs', effectiveLegsUrl],
     ['feet', outfit.feetUrl],
   ];
 
   const [costumeGltf, torsoGltf, hairGltf, legsGltf, feetGltf] = await Promise.all([
-    outfit.costumeUrl?.trim()
-      ? loadModularApparelGltf(outfit.costumeUrl.trim())
+    effectiveCostumeUrl?.trim()
+      ? loadModularApparelGltf(effectiveCostumeUrl.trim())
       : Promise.resolve(null),
-    outfit.torsoUrl?.trim() ? loadModularApparelGltf(outfit.torsoUrl.trim()) : Promise.resolve(null),
+    effectiveTorsoUrl?.trim()
+      ? loadModularApparelGltf(effectiveTorsoUrl.trim())
+      : Promise.resolve(null),
     ...slotEntries.map(([, u]) =>
       u?.trim() ? loadModularApparelGltf(u.trim()) : Promise.resolve(null),
     ),
@@ -17794,20 +18221,20 @@ export async function setBuddyRigModularOutfitUrls(
   }
 
   let ok = false;
-  if (outfit.costumeUrl !== undefined) {
+  if (effectiveCostumeUrl !== undefined || hideOuter) {
     ok =
       applyEquippedCostumeToBuddyRig(
         rig,
         costumeGltf,
-        parseModularAssetSlotFragment(outfit.costumeUrl),
+        parseModularAssetSlotFragment(effectiveCostumeUrl),
       ) || ok;
   }
-  if (torsoGltf !== null || (outfit.torsoUrl !== undefined && !costumeGltf)) {
+  if (torsoGltf !== null || ((effectiveTorsoUrl !== undefined || hideOuter) && !costumeGltf)) {
     ok =
       applyEquippedTorsoToBuddyRig(
         rig,
         torsoGltf,
-        parseModularAssetSlotFragment(outfit.torsoUrl),
+        parseModularAssetSlotFragment(effectiveTorsoUrl),
       ) || ok;
   }
   const loadedBySlot: Record<'hair' | 'legs' | 'feet', GLTF | null> = {
@@ -17817,7 +18244,10 @@ export async function setBuddyRigModularOutfitUrls(
   };
   for (const [slotName, rawUrl] of slotEntries) {
     const slotGltf = loadedBySlot[slotName];
-    if (slotGltf !== null || (rawUrl !== undefined && !costumeGltf)) {
+    if (
+      slotGltf !== null ||
+      ((rawUrl !== undefined || (hideOuter && slotName === 'legs')) && !costumeGltf)
+    ) {
       ok =
         applyEquippedApparelSlotToBuddyRig(
           rig,
@@ -17826,6 +18256,20 @@ export async function setBuddyRigModularOutfitUrls(
           parseModularAssetSlotFragment(rawUrl),
         ) || ok;
     }
+  }
+
+  // If hideOuterClothes is enabled, hide built-in starter torso & legs meshes on the BaseDoll GLB
+  if (hideOuter && rig.customGlbController?.glbRoot) {
+    const glbRoot = rig.customGlbController.glbRoot;
+    for (const defMesh of getDefaultTorsoStateOnRig(glbRoot).defaultClothingMeshes) {
+      defMesh.visible = false;
+    }
+    for (const defMesh of getDefaultSlotMeshesOnRig(glbRoot, 'legs')) {
+      defMesh.visible = false;
+    }
+    updateBlitzBaseDollBodySkinTrim(glbRoot, 'torso', null);
+    updateBlitzBaseDollBodySkinTrim(glbRoot, 'legs', null);
+    ok = true;
   }
 
   const tintHex = rig.bodyGroupRef?.userData?.citizenClothingTintHex as string | undefined;
@@ -17940,6 +18384,181 @@ export function applyBuddyRigBodyShape(
   glbRoot.userData.activeBodyShapeAppliedMorphs = appliedMorphCount;
   glbRoot.updateMatrixWorld(true);
   return true;
+}
+
+/**
+ * Loads an external PelvisRoot animation `.glb` (Dance, Pose, Action, or Idle Set),
+ * adapts its tracks cleanly onto the rig's skeleton, and registers it under `clipKey`
+ * on `rig.customGlbController.clips`.
+ */
+export async function loadAndAttachExternalStyleAnimationClip(
+  rig: BuddyCharacterRig,
+  glbUrl: string,
+  clipKey: string,
+): Promise<THREE.AnimationClip | null> {
+  const controller = rig.customGlbController;
+  if (!controller || !controller.glbRoot || !glbUrl) return null;
+
+  const existing = controller.clips.get(clipKey);
+  if (existing) return existing;
+
+  const gltf = await loadModularApparelGltf(glbUrl);
+  if (!gltf || !gltf.animations || gltf.animations.length === 0) {
+    return null;
+  }
+  const srcClip = gltf.animations[0];
+  if (!srcClip) return null;
+
+  const glbRoot = controller.glbRoot;
+  const validNodeNames = new Set<string>();
+  glbRoot.traverse((obj) => {
+    if (obj.name) validNodeNames.add(obj.name);
+  });
+
+  const tgtNeedsPreRotRetarget =
+    validNodeNames.has('PelvisRoot') && !validNodeNames.has('Spine_PreRotation');
+
+  let adapted: THREE.AnimationClip | null = null;
+  if (tgtNeedsPreRotRetarget && gltf.scene?.getObjectByName('Spine_PreRotation')) {
+    // CRITICAL: Always retarget against the pristine unscaled (1.0x) rest bind-pose `sourceGltf.scene`
+    // rather than the live scaled/mid-animation `glbRoot`, otherwise live bone angles & world scale
+    // corrupt `tBindW` and multiply root translation by `scale^2`!
+    const cleanRestTargetRoot = controller.sourceGltf?.scene ?? glbRoot;
+    adapted = retargetPelvisPreRotClipToDirectPelvis(
+      srcClip,
+      gltf.scene,
+      cleanRestTargetRoot,
+      clipKey,
+    );
+  }
+  if (!adapted || adapted.tracks.length === 0) {
+    adapted = cloneDirectPelvisClipForNodes(srcClip, clipKey, validNodeNames);
+  }
+  if (!adapted || adapted.tracks.length === 0) {
+    return null;
+  }
+
+  // Pad 1-frame static pose clips (duration === 0) to 1.0s so Three.js AnimationMixer
+  // holds them cleanly at full weight across cross-fades without premature completion or bleed.
+  if (adapted.duration <= 0.001) {
+    const paddedTracks = adapted.tracks.map((tr) => {
+      if (tr.times.length === 1) {
+        const stride = tr.getValueSize();
+        const times = new Float32Array([0, 1.0]);
+        const values = new Float32Array(stride * 2);
+        for (let k = 0; k < stride; k++) {
+          values[k] = tr.values[k];
+          values[stride + k] = tr.values[k];
+        }
+        const Ctor = tr.constructor as new (
+          name: string,
+          t: ArrayLike<number>,
+          v: ArrayLike<number>,
+        ) => THREE.KeyframeTrack;
+        return new Ctor(tr.name, times, values);
+      }
+      return tr;
+    });
+    adapted = new THREE.AnimationClip(adapted.name, 1.0, paddedTracks);
+  }
+
+  controller.clips.set(clipKey, adapted);
+  return adapted;
+}
+
+/**
+ * Resets a clip's AnimationAction clock to t = 0 so solo quick actions and paired
+ * 2-avatar animations start in exact frame-0 synchronization.
+ */
+export function resetBuddyRigActionTime(rig: BuddyCharacterRig, clipName: string): void {
+  const ctrl = rig.customGlbController;
+  if (!ctrl) return;
+  const clip = ctrl.clips.get(clipName);
+  if (!clip) return;
+  let action = ctrl.actions.get(clipName);
+  if (!action) {
+    action = ctrl.mixer.clipAction(clip);
+    action.setLoop(THREE.LoopRepeat, Infinity);
+    ctrl.actions.set(clipName, action);
+  }
+  action.reset();
+  action.time = 0;
+  ctrl.turnInPlaceTimer = 0;
+  ctrl.runToStopTimer = 0;
+}
+
+export interface BuddyStyleAnimSpec {
+  clipCandidates?: readonly string[];
+  walkClipCandidates?: readonly string[];
+  runClipCandidates?: readonly string[];
+  sitClipCandidates?: readonly string[];
+  externalAnimGlbUrl?: string | null;
+  externalClipKey?: string | null;
+  walkGlbUrl?: string | null;
+  walkClipKey?: string | null;
+  runGlbUrl?: string | null;
+  runClipKey?: string | null;
+  sitGlbUrl?: string | null;
+  sitClipKey?: string | null;
+}
+
+/**
+ * Applies & persists a Wardrobe Studio Style animation — including COMPLETE 4-state
+ * Animation Sets (Idle + Walk + Run + Sit) or Dance/Pose/Action overrides — onto a live
+ * open-world BuddyCharacterRig so walking, running, sitting, and idling all use the
+ * chosen set immediately and survive async base-avatar GLB upgrades.
+ */
+export async function applyBuddyRigStyleAnimation(
+  rig: BuddyCharacterRig,
+  animStyle: BuddyStyleAnimSpec | null | undefined,
+): Promise<boolean> {
+  if (rig.bodyGroupRef) {
+    rig.bodyGroupRef.userData.desiredStyleAnim = animStyle ?? null;
+  }
+  const controller = rig.customGlbController;
+  if (!controller || !controller.glbRoot) {
+    return false;
+  }
+  if (!animStyle) {
+    rig.idleClipOverrideName = undefined;
+    rig.walkClipOverrideName = undefined;
+    rig.runClipOverrideName = undefined;
+    rig.sitClipOverrideName = undefined;
+    return true;
+  }
+
+  const resolveStateClip = async (
+    glbUrl: string | null | undefined,
+    clipKey: string | null | undefined,
+    candidates: readonly string[] | undefined,
+  ): Promise<string | undefined> => {
+    if (glbUrl && clipKey) {
+      const extClip = await loadAndAttachExternalStyleAnimationClip(rig, glbUrl, clipKey);
+      if (extClip) return extClip.name;
+    }
+    if (candidates && candidates.length > 0) {
+      const matched = candidates.find((c) => controller.clips.has(c));
+      if (matched) return matched;
+    }
+    return undefined;
+  };
+
+  const [idleClip, walkClip, runClip, sitClip] = await Promise.all([
+    resolveStateClip(
+      animStyle.externalAnimGlbUrl,
+      animStyle.externalClipKey,
+      animStyle.clipCandidates,
+    ),
+    resolveStateClip(animStyle.walkGlbUrl, animStyle.walkClipKey, animStyle.walkClipCandidates),
+    resolveStateClip(animStyle.runGlbUrl, animStyle.runClipKey, animStyle.runClipCandidates),
+    resolveStateClip(animStyle.sitGlbUrl, animStyle.sitClipKey, animStyle.sitClipCandidates),
+  ]);
+
+  rig.idleClipOverrideName = idleClip;
+  rig.walkClipOverrideName = walkClip;
+  rig.runClipOverrideName = runClip;
+  rig.sitClipOverrideName = sitClip;
+  return Boolean(idleClip || walkClip || runClip || sitClip);
 }
 
 const _citizenTintColor = new THREE.Color();
@@ -18659,8 +19278,21 @@ function stepCharBuddiesGlbRigController(
     } else if (!carryingCrate && (weaponId === 'unarmed' || weaponId === 'fishing_rod')) {
       // FEMALE / UNARMED BASIC LOCOMOTION PACK (NON-COMBAT)
       const unarmedWalkSpeedCap = rig.runClipOverrideName ? 3.8 : 6.35;
-      const isUnarmedWalk = moveSpeed > 0 && moveSpeed < unarmedWalkSpeedCap;
-      if (strafeDir < -0.48 && Math.abs(forwardDir) <= 0.45) {
+      const isUnarmedWalk =
+        rig.forceLocomotionGait === 'walk'
+          ? true
+          : rig.forceLocomotionGait === 'run'
+            ? false
+            : moveSpeed > 0 && moveSpeed < unarmedWalkSpeedCap;
+      const hasPersonalLocomotionOverride = Boolean(
+        (isUnarmedWalk && rig.walkClipOverrideName && ctrl.clips.has(rig.walkClipOverrideName)) ||
+          (!isUnarmedWalk && rig.runClipOverrideName && ctrl.clips.has(rig.runClipOverrideName)),
+      );
+      const hasWalkClip =
+        ctrl.clips.has('walk.001') ||
+        Boolean(rig.walkClipOverrideName && ctrl.clips.has(rig.walkClipOverrideName));
+
+      if (!hasPersonalLocomotionOverride && strafeDir < -0.48 && Math.abs(forwardDir) <= 0.45) {
         if (isUnarmedWalk && ctrl.clips.has('unarmed_walk_strafe_left.001')) {
           targetClip = 'unarmed_walk_strafe_left.001';
           timeScale = 1.0;
@@ -18671,7 +19303,7 @@ function stepCharBuddiesGlbRigController(
           targetClip = isUnarmedWalk ? 'walk.001' : 'run.001';
           timeScale = 1.0;
         }
-      } else if (strafeDir > 0.48 && Math.abs(forwardDir) <= 0.45) {
+      } else if (!hasPersonalLocomotionOverride && strafeDir > 0.48 && Math.abs(forwardDir) <= 0.45) {
         if (isUnarmedWalk && ctrl.clips.has('unarmed_walk_strafe_right.001')) {
           targetClip = 'unarmed_walk_strafe_right.001';
           timeScale = 1.0;
@@ -18682,7 +19314,7 @@ function stepCharBuddiesGlbRigController(
           targetClip = isUnarmedWalk ? 'walk.001' : 'run.001';
           timeScale = 1.0;
         }
-      } else if (isUnarmedWalk && ctrl.clips.has('walk.001')) {
+      } else if (isUnarmedWalk && hasWalkClip) {
         targetClip = 'walk.001';
         timeScale = forwardDir < -0.35 ? -1.0 : 1.0;
       } else {
@@ -18696,6 +19328,13 @@ function stepCharBuddiesGlbRigController(
       targetClip = 'run.001';
       timeScale = 1.0;
     }
+  } else if (
+    !carryingCrate &&
+    rig.activeSocialClipName &&
+    ctrl.clips.has(rig.activeSocialClipName)
+  ) {
+    targetClip = rig.activeSocialClipName;
+    timeScale = 1.0;
   } else if (
     !carryingCrate &&
     cafeWorkAction !== 'idle' &&
@@ -18811,7 +19450,17 @@ function stepCharBuddiesGlbRigController(
   ) {
     syncLoadedPersonalClipsIntoTemplate(ctrl.clips, ctrl.validNodeNames);
   }
-  if (targetClip === 'idle.001' && rig.idleClipOverrideName && ctrl.clips.has(rig.idleClipOverrideName)) {
+  if (
+    targetClip === 'idle.001' &&
+    rig.activeSocialClipName &&
+    ctrl.clips.has(rig.activeSocialClipName)
+  ) {
+    targetClip = rig.activeSocialClipName;
+  } else if (
+    targetClip === 'idle.001' &&
+    rig.idleClipOverrideName &&
+    ctrl.clips.has(rig.idleClipOverrideName)
+  ) {
     targetClip = rig.idleClipOverrideName;
   } else if (
     targetClip === 'walk.001' &&
@@ -18897,13 +19546,17 @@ function stepCharBuddiesGlbRigController(
 
   // 2B. Stabilize Hips & Spine pitch/roll in 'YXZ' order so diagonal strafing/turning never pitches the body over;
   // apply subtle turn/strafe banking (<= 3.3 deg) ONLY on Spine/Hips bones, never on the ground root group
+  const isPlayingSocialClip = Boolean(
+    rig.activeSocialClipName && targetClip === rig.activeSocialClipName,
+  );
   const isSeatedOrPiloting =
     Boolean(rig.isSeatedRiderRef) ||
     isDriving ||
     isSitting ||
     isSleeping ||
     Boolean(scooterRidePose) ||
-    isCafeWorkPose;
+    isCafeWorkPose ||
+    isPlayingSocialClip;
   if (!isSeatedOrPiloting && !ctrl.isCustomSkeleton) {
     const yawRateRad = Math.max(-4.5, Math.min(4.5, deltaYaw / Math.max(0.008, stepDt)));
     const bankLeanRad = isMoving

@@ -1,0 +1,912 @@
+{
+  "male": {
+    "malePlayer": "/assets/avatars/new-male-player.glb",
+    "maleShapes": [
+      {
+        "file": "/assets/avatars/male-base.glb",
+        "morphId": null,
+        "label": "Natural Studio",
+        "kb": 1942
+      },
+      {
+        "file": "/assets/avatars/male-vtaper.glb",
+        "morphId": "2614B7D3",
+        "label": "Blitz V-Taper",
+        "kb": 1942
+      },
+      {
+        "file": "/assets/avatars/male-athletic.glb",
+        "morphId": "9719FD2E",
+        "label": "Blitz Atletis Ringan",
+        "kb": 1942
+      },
+      {
+        "file": "/assets/avatars/male-trapezoid.glb",
+        "morphId": "90DAC29C",
+        "label": "Blitz Trapezoid",
+        "kb": 1942
+      },
+      {
+        "file": "/assets/avatars/male-full-trapezoid.glb",
+        "morphId": "A73A6ECD",
+        "label": "Blitz Full Trapezoid",
+        "kb": 1942
+      },
+      {
+        "file": "/assets/avatars/male-rectangle.glb",
+        "morphId": "ED018566",
+        "label": "Blitz Rectangle",
+        "kb": 1942
+      }
+    ]
+  },
+  "blenderPartsCount": 42,
+  "blenderSetsCount": 10,
+  "extraHairsCount": 32,
+  "beautyTotal": 403,
+  "beautyCounts": {
+    "blush": 64,
+    "eyeshadow": 33,
+    "lips": 78,
+    "eyes": 111,
+    "brows": 59,
+    "facepaint": 19,
+    "beard": 17,
+    "faceoverlay": 22
+  },
+  "animationsTotal": 134,
+  "animationsCounts": {
+    "dance": 25,
+    "action": 29,
+    "pose": 48,
+    "idle": 32
+  },
+  "outfits": {
+    "parts": [
+      {
+        "id": "BL_F_NP_HAIR",
+        "setId": "BL_SET_F_NEWPLAYER",
+        "setLabel": "New Player Wanita (Blender)",
+        "gender": "female",
+        "slot": "hair",
+        "label": "Rambut ClipIt (New Player)",
+        "glbPath": "/assets/outfit/blitz_hair_rambut_clipit_new_player_BL_F_NP_HAIR.glb",
+        "kb": 165
+      },
+      {
+        "id": "BL_F_NP_TOP",
+        "setId": "BL_SET_F_NEWPLAYER",
+        "setLabel": "New Player Wanita (Blender)",
+        "gender": "female",
+        "slot": "torso",
+        "label": "Kaos Ringer Putih New Player (Wanita)",
+        "glbPath": "/assets/outfit/blitz_torso_kaos_ringer_putih_new_player_wanita_BL_F_NP_TOP.glb",
+        "kb": 269
+      },
+      {
+        "id": "BL_F_NP_SKIRT",
+        "setId": "BL_SET_F_NEWPLAYER",
+        "setLabel": "New Player Wanita (Blender)",
+        "gender": "female",
+        "slot": "legs",
+        "label": "Rok Mini Hitam Sabuk New Player (Wanita)",
+        "glbPath": "/assets/outfit/blitz_legs_rok_mini_hitam_sabuk_new_player_wanita_BL_F_NP_SKIRT.glb",
+        "kb": 453
+      },
+      {
+        "id": "BL_F_NP_SHOES",
+        "setId": "BL_SET_F_NEWPLAYER",
+        "setLabel": "New Player Wanita (Blender)",
+        "gender": "female",
+        "slot": "feet",
+        "label": "Sneakers Putih New Player (Wanita)",
+        "glbPath": "/assets/outfit/blitz_feet_sneakers_putih_new_player_wanita_BL_F_NP_SHOES.glb",
+        "kb": 69
+      },
+      {
+        "id": "BL_F_O1_HAIR",
+        "setId": "BL_SET_F_OUTFIT01",
+        "setLabel": "Outfit 01 Glam Wanita (Blender)",
+        "gender": "female",
+        "slot": "hair",
+        "label": "Rambut Long Wave (Outfit 01)",
+        "glbPath": "/assets/outfit/blitz_hair_rambut_long_wave_outfit_01_BL_F_O1_HAIR.glb",
+        "kb": 154
+      },
+      {
+        "id": "BL_F_O1_TOP",
+        "setId": "BL_SET_F_OUTFIT01",
+        "setLabel": "Outfit 01 Glam Wanita (Blender)",
+        "gender": "female",
+        "slot": "torso",
+        "label": "Atasan Halter Hitam (Outfit 01)",
+        "glbPath": "/assets/outfit/blitz_torso_atasan_halter_hitam_outfit_01_BL_F_O1_TOP.glb",
+        "kb": 300
+      },
+      {
+        "id": "BL_F_O1_SKIRT",
+        "setId": "BL_SET_F_OUTFIT01",
+        "setLabel": "Outfit 01 Glam Wanita (Blender)",
+        "gender": "female",
+        "slot": "legs",
+        "label": "Rok Rantai Hitam (Outfit 01)",
+        "glbPath": "/assets/outfit/blitz_legs_rok_rantai_hitam_outfit_01_BL_F_O1_SKIRT.glb",
+        "kb": 518
+      },
+      {
+        "id": "BL_F_O1_FEET",
+        "setId": "BL_SET_F_OUTFIT01",
+        "setLabel": "Outfit 01 Glam Wanita (Blender)",
+        "gender": "female",
+        "slot": "feet",
+        "label": "Heels Hitam + Instep (Outfit 01)",
+        "glbPath": "/assets/outfit/blitz_feet_heels_hitam_instep_outfit_01_BL_F_O1_FEET.glb",
+        "kb": 63
+      },
+      {
+        "id": "BL_F_O1_HANDS",
+        "setId": "BL_SET_F_OUTFIT01",
+        "setLabel": "Outfit 01 Glam Wanita (Blender)",
+        "gender": "female",
+        "slot": "hands",
+        "label": "Gelang Tangan (Outfit 01)",
+        "glbPath": "/assets/outfit/blitz_hands_gelang_tangan_outfit_01_BL_F_O1_HANDS.glb",
+        "kb": 69
+      },
+      {
+        "id": "BL_F_O1_NECK",
+        "setId": "BL_SET_F_OUTFIT01",
+        "setLabel": "Outfit 01 Glam Wanita (Blender)",
+        "gender": "female",
+        "slot": "neck",
+        "label": "Kalung Rantai (Outfit 01)",
+        "glbPath": "/assets/outfit/blitz_neck_kalung_rantai_outfit_01_BL_F_O1_NECK.glb",
+        "kb": 89
+      },
+      {
+        "id": "BL_F_O2_HAIR",
+        "setId": "BL_SET_F_OUTFIT02",
+        "setLabel": "Outfit 02 Nadia Biru (Blender)",
+        "gender": "female",
+        "slot": "hair",
+        "label": "Rambut Back Long (Outfit 02)",
+        "glbPath": "/assets/outfit/blitz_hair_rambut_back_long_outfit_02_BL_F_O2_HAIR.glb",
+        "kb": 231
+      },
+      {
+        "id": "BL_F_O2_TOP",
+        "setId": "BL_SET_F_OUTFIT02",
+        "setLabel": "Outfit 02 Nadia Biru (Blender)",
+        "gender": "female",
+        "slot": "torso",
+        "label": "Atasan Biru Nadia (Outfit 02)",
+        "glbPath": "/assets/outfit/blitz_torso_atasan_biru_nadia_outfit_02_BL_F_O2_TOP.glb",
+        "kb": 332
+      },
+      {
+        "id": "BL_F_O2_LEGS",
+        "setId": "BL_SET_F_OUTFIT02",
+        "setLabel": "Outfit 02 Nadia Biru (Blender)",
+        "gender": "female",
+        "slot": "legs",
+        "label": "Celana Panjang Nadia (Outfit 02)",
+        "glbPath": "/assets/outfit/blitz_legs_celana_panjang_nadia_outfit_02_BL_F_O2_LEGS.glb",
+        "kb": 575
+      },
+      {
+        "id": "BL_F_O2_FEET",
+        "setId": "BL_SET_F_OUTFIT02",
+        "setLabel": "Outfit 02 Nadia Biru (Blender)",
+        "gender": "female",
+        "slot": "feet",
+        "label": "Heels Nadia (Outfit 02)",
+        "glbPath": "/assets/outfit/blitz_feet_heels_nadia_outfit_02_BL_F_O2_FEET.glb",
+        "kb": 79
+      },
+      {
+        "id": "BL_F_O3_HAIR",
+        "setId": "BL_SET_F_OUTFIT03",
+        "setLabel": "Outfit 03 Mira Kuning (Blender)",
+        "gender": "female",
+        "slot": "hair",
+        "label": "Rambut Academy (Outfit 03)",
+        "glbPath": "/assets/outfit/blitz_hair_rambut_academy_outfit_03_BL_F_O3_HAIR.glb",
+        "kb": 304
+      },
+      {
+        "id": "BL_F_O3_TOP",
+        "setId": "BL_SET_F_OUTFIT03",
+        "setLabel": "Outfit 03 Mira Kuning (Blender)",
+        "gender": "female",
+        "slot": "torso",
+        "label": "Jaket Kuning Mira (Outfit 03)",
+        "glbPath": "/assets/outfit/blitz_torso_jaket_kuning_mira_outfit_03_BL_F_O3_TOP.glb",
+        "kb": 587
+      },
+      {
+        "id": "BL_F_O3_LEGS",
+        "setId": "BL_SET_F_OUTFIT03",
+        "setLabel": "Outfit 03 Mira Kuning (Blender)",
+        "gender": "female",
+        "slot": "legs",
+        "label": "Celana Pendek Mira (Outfit 03)",
+        "glbPath": "/assets/outfit/blitz_legs_celana_pendek_mira_outfit_03_BL_F_O3_LEGS.glb",
+        "kb": 540
+      },
+      {
+        "id": "BL_F_O3_FEET",
+        "setId": "BL_SET_F_OUTFIT03",
+        "setLabel": "Outfit 03 Mira Kuning (Blender)",
+        "gender": "female",
+        "slot": "feet",
+        "label": "Sneakers Mira (Outfit 03)",
+        "glbPath": "/assets/outfit/blitz_feet_sneakers_mira_outfit_03_BL_F_O3_FEET.glb",
+        "kb": 64
+      },
+      {
+        "id": "BL_F_O4_HAIR",
+        "setId": "BL_SET_F_OUTFIT04",
+        "setLabel": "Outfit 04 Wanita (Blender)",
+        "gender": "female",
+        "slot": "hair",
+        "label": "Rambut Outfit 04 (Wanita)",
+        "glbPath": "/assets/outfit/blitz_hair_rambut_outfit_04_wanita_BL_F_O4_HAIR.glb",
+        "kb": 186
+      },
+      {
+        "id": "BL_F_O4_TOP",
+        "setId": "BL_SET_F_OUTFIT04",
+        "setLabel": "Outfit 04 Wanita (Blender)",
+        "gender": "female",
+        "slot": "torso",
+        "label": "Atasan Turtleneck Hitam (Outfit 04)",
+        "glbPath": "/assets/outfit/blitz_torso_atasan_turtleneck_hitam_outfit_04_BL_F_O4_TOP.glb",
+        "kb": 367
+      },
+      {
+        "id": "BL_F_O4_LEGS",
+        "setId": "BL_SET_F_OUTFIT04",
+        "setLabel": "Outfit 04 Wanita (Blender)",
+        "gender": "female",
+        "slot": "legs",
+        "label": "Jeans Ripped Putih (Outfit 04)",
+        "glbPath": "/assets/outfit/blitz_legs_jeans_ripped_putih_outfit_04_BL_F_O4_LEGS.glb",
+        "kb": 582
+      },
+      {
+        "id": "BL_F_O4_FEET",
+        "setId": "BL_SET_F_OUTFIT04",
+        "setLabel": "Outfit 04 Wanita (Blender)",
+        "gender": "female",
+        "slot": "feet",
+        "label": "Sepatu Outfit 04 (Wanita)",
+        "glbPath": "/assets/outfit/blitz_feet_sepatu_outfit_04_wanita_BL_F_O4_FEET.glb",
+        "kb": 79
+      },
+      {
+        "id": "BL_M_NP_HAIR",
+        "setId": "BL_SET_M_NEWPLAYER",
+        "setLabel": "New Player Pria (Blender)",
+        "gender": "male",
+        "slot": "hair",
+        "label": "Rambut New Player (Pria)",
+        "glbPath": "/assets/outfit/blitz_hair_rambut_new_player_pria_BL_M_NP_HAIR.glb",
+        "kb": 356
+      },
+      {
+        "id": "BL_M_NP_TOP",
+        "setId": "BL_SET_M_NEWPLAYER",
+        "setLabel": "New Player Pria (Blender)",
+        "gender": "male",
+        "slot": "torso",
+        "label": "Kaos Putih New Player (Pria)",
+        "glbPath": "/assets/outfit/blitz_torso_kaos_putih_new_player_pria_BL_M_NP_TOP.glb",
+        "kb": 469
+      },
+      {
+        "id": "BL_M_NP_LEGS",
+        "setId": "BL_SET_M_NEWPLAYER",
+        "setLabel": "New Player Pria (Blender)",
+        "gender": "male",
+        "slot": "legs",
+        "label": "Celana Pendek Hitam New Player (Pria)",
+        "glbPath": "/assets/outfit/blitz_legs_celana_pendek_hitam_new_player_pria_BL_M_NP_LEGS.glb",
+        "kb": 254
+      },
+      {
+        "id": "BL_M_NP_SHOES",
+        "setId": "BL_SET_M_NEWPLAYER",
+        "setLabel": "New Player Pria (Blender)",
+        "gender": "male",
+        "slot": "feet",
+        "label": "Sneakers Putih New Player (Pria)",
+        "glbPath": "/assets/outfit/blitz_feet_sneakers_putih_new_player_pria_BL_M_NP_SHOES.glb",
+        "kb": 72
+      },
+      {
+        "id": "BL_M_O1_HAIR",
+        "setId": "BL_SET_M_OUTFIT01",
+        "setLabel": "Outfit 01 Putih Pria (Blender)",
+        "gender": "male",
+        "slot": "hair",
+        "label": "Rambut Outfit 01 (Pria)",
+        "glbPath": "/assets/outfit/blitz_hair_rambut_outfit_01_pria_BL_M_O1_HAIR.glb",
+        "kb": 342
+      },
+      {
+        "id": "BL_M_O1_TOP",
+        "setId": "BL_SET_M_OUTFIT01",
+        "setLabel": "Outfit 01 Putih Pria (Blender)",
+        "gender": "male",
+        "slot": "torso",
+        "label": "Tanktop Putih Kalung (Outfit 01)",
+        "glbPath": "/assets/outfit/blitz_torso_tanktop_putih_kalung_outfit_01_BL_M_O1_TOP.glb",
+        "kb": 355
+      },
+      {
+        "id": "BL_M_O1_LEGS",
+        "setId": "BL_SET_M_OUTFIT01",
+        "setLabel": "Outfit 01 Putih Pria (Blender)",
+        "gender": "male",
+        "slot": "legs",
+        "label": "Celana Kargo Putih (Outfit 01)",
+        "glbPath": "/assets/outfit/blitz_legs_celana_kargo_putih_outfit_01_BL_M_O1_LEGS.glb",
+        "kb": 172
+      },
+      {
+        "id": "BL_M_O1_SHOES",
+        "setId": "BL_SET_M_OUTFIT01",
+        "setLabel": "Outfit 01 Putih Pria (Blender)",
+        "gender": "male",
+        "slot": "feet",
+        "label": "Sepatu Outfit 01 (Pria)",
+        "glbPath": "/assets/outfit/blitz_feet_sepatu_outfit_01_pria_BL_M_O1_SHOES.glb",
+        "kb": 63
+      },
+      {
+        "id": "BL_M_O2_HAIR",
+        "setId": "BL_SET_M_OUTFIT02",
+        "setLabel": "Outfit 02 Kasual Pria (Blender)",
+        "gender": "male",
+        "slot": "hair",
+        "label": "Rambut Outfit 02 (Pria)",
+        "glbPath": "/assets/outfit/blitz_hair_rambut_outfit_02_pria_BL_M_O2_HAIR.glb",
+        "kb": 450
+      },
+      {
+        "id": "BL_M_O2_TOP",
+        "setId": "BL_SET_M_OUTFIT02",
+        "setLabel": "Outfit 02 Kasual Pria (Blender)",
+        "gender": "male",
+        "slot": "torso",
+        "label": "Hoodie Hitam Kasual (Outfit 02)",
+        "glbPath": "/assets/outfit/blitz_torso_hoodie_hitam_kasual_outfit_02_BL_M_O2_TOP.glb",
+        "kb": 706
+      },
+      {
+        "id": "BL_M_O2_LEGS",
+        "setId": "BL_SET_M_OUTFIT02",
+        "setLabel": "Outfit 02 Kasual Pria (Blender)",
+        "gender": "male",
+        "slot": "legs",
+        "label": "Celana Slim Abu (Outfit 02)",
+        "glbPath": "/assets/outfit/blitz_legs_celana_slim_abu_outfit_02_BL_M_O2_LEGS.glb",
+        "kb": 141
+      },
+      {
+        "id": "BL_M_O2_SHOES",
+        "setId": "BL_SET_M_OUTFIT02",
+        "setLabel": "Outfit 02 Kasual Pria (Blender)",
+        "gender": "male",
+        "slot": "feet",
+        "label": "Sepatu Outfit 02 (Pria)",
+        "glbPath": "/assets/outfit/blitz_feet_sepatu_outfit_02_pria_BL_M_O2_SHOES.glb",
+        "kb": 63
+      },
+      {
+        "id": "BL_M_O3_HAIR",
+        "setId": "BL_SET_M_OUTFIT03",
+        "setLabel": "Outfit 03 Floral Pria (Blender)",
+        "gender": "male",
+        "slot": "hair",
+        "label": "Rambut Outfit 03 (Pria)",
+        "glbPath": "/assets/outfit/blitz_hair_rambut_outfit_03_pria_BL_M_O3_HAIR.glb",
+        "kb": 282
+      },
+      {
+        "id": "BL_M_O3_TOP",
+        "setId": "BL_SET_M_OUTFIT03",
+        "setLabel": "Outfit 03 Floral Pria (Blender)",
+        "gender": "male",
+        "slot": "torso",
+        "label": "Kemeja Floral + Kaos Putih (Outfit 03)",
+        "glbPath": "/assets/outfit/blitz_torso_kemeja_floral_kaos_putih_outfit_03_BL_M_O3_TOP.glb",
+        "kb": 867
+      },
+      {
+        "id": "BL_M_O3_LEGS",
+        "setId": "BL_SET_M_OUTFIT03",
+        "setLabel": "Outfit 03 Floral Pria (Blender)",
+        "gender": "male",
+        "slot": "legs",
+        "label": "Celana Pendek Api Kuning (Outfit 03)",
+        "glbPath": "/assets/outfit/blitz_legs_celana_pendek_api_kuning_outfit_03_BL_M_O3_LEGS.glb",
+        "kb": 560
+      },
+      {
+        "id": "BL_M_O3_SHOES",
+        "setId": "BL_SET_M_OUTFIT03",
+        "setLabel": "Outfit 03 Floral Pria (Blender)",
+        "gender": "male",
+        "slot": "feet",
+        "label": "Sepatu Outfit 03 (Pria)",
+        "glbPath": "/assets/outfit/blitz_feet_sepatu_outfit_03_pria_BL_M_O3_SHOES.glb",
+        "kb": 77
+      },
+      {
+        "id": "BL_M_O4_HAIR",
+        "setId": "BL_SET_M_OUTFIT04",
+        "setLabel": "Outfit 04 Hoodie Pria (Blender)",
+        "gender": "male",
+        "slot": "hair",
+        "label": "Rambut Outfit 04 (Pria)",
+        "glbPath": "/assets/outfit/blitz_hair_rambut_outfit_04_pria_BL_M_O4_HAIR.glb",
+        "kb": 538
+      },
+      {
+        "id": "BL_M_O4_TOP",
+        "setId": "BL_SET_M_OUTFIT04",
+        "setLabel": "Outfit 04 Hoodie Pria (Blender)",
+        "gender": "male",
+        "slot": "torso",
+        "label": "Jaket Hoodie Krem (Outfit 04)",
+        "glbPath": "/assets/outfit/blitz_torso_jaket_hoodie_krem_outfit_04_BL_M_O4_TOP.glb",
+        "kb": 671
+      },
+      {
+        "id": "BL_M_O4_LEGS",
+        "setId": "BL_SET_M_OUTFIT04",
+        "setLabel": "Outfit 04 Hoodie Pria (Blender)",
+        "gender": "male",
+        "slot": "legs",
+        "label": "Celana Pendek Abu (Outfit 04)",
+        "glbPath": "/assets/outfit/blitz_legs_celana_pendek_abu_outfit_04_BL_M_O4_LEGS.glb",
+        "kb": 256
+      },
+      {
+        "id": "BL_M_O4_SHOES",
+        "setId": "BL_SET_M_OUTFIT04",
+        "setLabel": "Outfit 04 Hoodie Pria (Blender)",
+        "gender": "male",
+        "slot": "feet",
+        "label": "Sepatu Outfit 04 (Pria)",
+        "glbPath": "/assets/outfit/blitz_feet_sepatu_outfit_04_pria_BL_M_O4_SHOES.glb",
+        "kb": 77
+      }
+    ],
+    "sets": [
+      {
+        "id": "BL_SET_F_NEWPLAYER",
+        "gender": "female",
+        "label": "New Player Wanita (Blender)",
+        "subtitle": "Rambut ClipIt + Atasan + Rok + Sepatu New Player",
+        "partIds": [
+          "BL_F_NP_TOP",
+          "BL_F_NP_SKIRT",
+          "BL_F_NP_SHOES"
+        ],
+        "glbPath": "/assets/outfit/blitz_set_bl_set_f_newplayer.glb",
+        "kb": 747
+      },
+      {
+        "id": "BL_SET_F_OUTFIT01",
+        "gender": "female",
+        "label": "Outfit 01 Glam Wanita (Blender)",
+        "subtitle": "Long Wave + Halter Top Hitam + Rok Rantai + Heels + Aksesoris",
+        "partIds": [
+          "BL_F_O1_TOP",
+          "BL_F_O1_SKIRT",
+          "BL_F_O1_FEET",
+          "BL_F_O1_HANDS",
+          "BL_F_O1_NECK"
+        ],
+        "glbPath": "/assets/outfit/blitz_set_bl_set_f_outfit01.glb",
+        "kb": 952
+      },
+      {
+        "id": "BL_SET_F_OUTFIT02",
+        "gender": "female",
+        "label": "Outfit 02 Nadia Biru (Blender)",
+        "subtitle": "Rambut Back Long + Atasan Biru Nadia + Celana Panjang + Heels",
+        "partIds": [
+          "BL_F_O2_TOP",
+          "BL_F_O2_LEGS",
+          "BL_F_O2_FEET"
+        ],
+        "glbPath": "/assets/outfit/blitz_set_bl_set_f_outfit02.glb",
+        "kb": 942
+      },
+      {
+        "id": "BL_SET_F_OUTFIT03",
+        "gender": "female",
+        "label": "Outfit 03 Mira Kuning (Blender)",
+        "subtitle": "Rambut Academy + Jaket Kuning Mira + Celana Pendek + Sneakers",
+        "partIds": [
+          "BL_F_O3_TOP",
+          "BL_F_O3_LEGS",
+          "BL_F_O3_FEET"
+        ],
+        "glbPath": "/assets/outfit/blitz_set_bl_set_f_outfit03.glb",
+        "kb": 1148
+      },
+      {
+        "id": "BL_SET_F_OUTFIT04",
+        "gender": "female",
+        "label": "Outfit 04 Wanita (Blender)",
+        "subtitle": "Rambut Outfit 04 + Atasan + Celana Panjang + Sepatu",
+        "partIds": [
+          "BL_F_O4_TOP",
+          "BL_F_O4_LEGS",
+          "BL_F_O4_FEET"
+        ],
+        "glbPath": "/assets/outfit/blitz_set_bl_set_f_outfit04.glb",
+        "kb": 985
+      },
+      {
+        "id": "BL_SET_M_NEWPLAYER",
+        "gender": "male",
+        "label": "New Player Pria (Blender)",
+        "subtitle": "Rambut + Kaos Putih + Celana Pendek Hitam + Sneakers New Player Pria",
+        "partIds": [
+          "BL_M_NP_TOP",
+          "BL_M_NP_LEGS",
+          "BL_M_NP_SHOES"
+        ],
+        "glbPath": "/assets/outfit/blitz_set_bl_set_m_newplayer.glb",
+        "kb": 750
+      },
+      {
+        "id": "BL_SET_M_OUTFIT01",
+        "gender": "male",
+        "label": "Outfit 01 Putih Pria (Blender)",
+        "subtitle": "Rambut + Tanktop Putih Kalung + Celana Kargo Putih + Sepatu (Outfit 01)",
+        "partIds": [
+          "BL_M_O1_TOP",
+          "BL_M_O1_LEGS",
+          "BL_M_O1_SHOES"
+        ],
+        "glbPath": "/assets/outfit/blitz_set_bl_set_m_outfit01.glb",
+        "kb": 547
+      },
+      {
+        "id": "BL_SET_M_OUTFIT02",
+        "gender": "male",
+        "label": "Outfit 02 Kasual Pria (Blender)",
+        "subtitle": "Rambut + Hoodie Hitam + Celana Slim Abu + Sepatu (Outfit 02)",
+        "partIds": [
+          "BL_M_O2_TOP",
+          "BL_M_O2_LEGS",
+          "BL_M_O2_SHOES"
+        ],
+        "glbPath": "/assets/outfit/blitz_set_bl_set_m_outfit02.glb",
+        "kb": 866
+      },
+      {
+        "id": "BL_SET_M_OUTFIT03",
+        "gender": "male",
+        "label": "Outfit 03 Floral Pria (Blender)",
+        "subtitle": "Rambut + Kemeja Floral + Celana Pendek Api Kuning + Sepatu (Outfit 03)",
+        "partIds": [
+          "BL_M_O3_TOP",
+          "BL_M_O3_LEGS",
+          "BL_M_O3_SHOES"
+        ],
+        "glbPath": "/assets/outfit/blitz_set_bl_set_m_outfit03.glb",
+        "kb": 1461
+      },
+      {
+        "id": "BL_SET_M_OUTFIT04",
+        "gender": "male",
+        "label": "Outfit 04 Hoodie Pria (Blender)",
+        "subtitle": "Rambut + Jaket Hoodie Krem + Celana Pendek Abu + Sepatu (Outfit 04)",
+        "partIds": [
+          "BL_M_O4_TOP",
+          "BL_M_O4_LEGS",
+          "BL_M_O4_SHOES"
+        ],
+        "glbPath": "/assets/outfit/blitz_set_bl_set_m_outfit04.glb",
+        "kb": 960
+      }
+    ]
+  },
+  "extraHairs": [
+    {
+      "id": "extra_hair_f_103a59f9",
+      "sourceId": "103A59F9",
+      "gender": "female",
+      "slot": "hair",
+      "label": "Blitz Golden Hour 2",
+      "glbPath": "/assets/outfit/hair_extra/hair_f_blitz_golden_hour_2_103A59F9.glb",
+      "kb": 233
+    },
+    {
+      "id": "extra_hair_f_1129bf91",
+      "sourceId": "1129BF91",
+      "gender": "female",
+      "slot": "hair",
+      "label": "Blitz Urban 2",
+      "glbPath": "/assets/outfit/hair_extra/hair_f_blitz_urban_2_1129BF91.glb",
+      "kb": 389
+    },
+    {
+      "id": "extra_hair_f_11f864b4",
+      "sourceId": "11F864B4",
+      "gender": "female",
+      "slot": "hair",
+      "label": "Blitz Campus Street 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_f_blitz_campus_street_1_11F864B4.glb",
+      "kb": 244
+    },
+    {
+      "id": "extra_hair_f_136df0c8",
+      "sourceId": "136DF0C8",
+      "gender": "female",
+      "slot": "hair",
+      "label": "Blitz Catcafe 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_f_blitz_catcafe_1_136DF0C8.glb",
+      "kb": 342
+    },
+    {
+      "id": "extra_hair_f_16129296",
+      "sourceId": "16129296",
+      "gender": "female",
+      "slot": "hair",
+      "label": "Blitz Iridescent 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_f_blitz_iridescent_1_16129296.glb",
+      "kb": 226
+    },
+    {
+      "id": "extra_hair_f_183108b1",
+      "sourceId": "183108B1",
+      "gender": "female",
+      "slot": "hair",
+      "label": "Blitz Couturetribe Hair 2",
+      "glbPath": "/assets/outfit/hair_extra/hair_f_blitz_couturetribe_hair_2_183108B1.glb",
+      "kb": 332
+    },
+    {
+      "id": "extra_hair_f_191a1aab",
+      "sourceId": "191A1AAB",
+      "gender": "female",
+      "slot": "hair",
+      "label": "Blitz July 23 Sub 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_f_blitz_july_23_sub_1_191A1AAB.glb",
+      "kb": 286
+    },
+    {
+      "id": "extra_hair_f_197d1830",
+      "sourceId": "197D1830",
+      "gender": "female",
+      "slot": "hair",
+      "label": "Blitz Unplugged 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_f_blitz_unplugged_1_197D1830.glb",
+      "kb": 206
+    },
+    {
+      "id": "extra_hair_f_1bde717",
+      "sourceId": "1BDE717",
+      "gender": "female",
+      "slot": "hair",
+      "label": "Blitz Business 2",
+      "glbPath": "/assets/outfit/hair_extra/hair_f_blitz_business_2_1BDE717.glb",
+      "kb": 301
+    },
+    {
+      "id": "extra_hair_f_1c67b8f0",
+      "sourceId": "1C67B8F0",
+      "gender": "female",
+      "slot": "hair",
+      "label": "Blitz Unplugged 2",
+      "glbPath": "/assets/outfit/hair_extra/hair_f_blitz_unplugged_2_1C67B8F0.glb",
+      "kb": 275
+    },
+    {
+      "id": "extra_hair_f_1e4c0d13",
+      "sourceId": "1E4C0D13",
+      "gender": "female",
+      "slot": "hair",
+      "label": "Blitz Y 2 Waves 3",
+      "glbPath": "/assets/outfit/hair_extra/hair_f_blitz_y_2_waves_3_1E4C0D13.glb",
+      "kb": 246
+    },
+    {
+      "id": "extra_hair_f_20815be6",
+      "sourceId": "20815BE6",
+      "gender": "female",
+      "slot": "hair",
+      "label": "Blitz April 239",
+      "glbPath": "/assets/outfit/hair_extra/hair_f_blitz_april_239_20815BE6.glb",
+      "kb": 210
+    },
+    {
+      "id": "extra_hair_f_20af9c85",
+      "sourceId": "20AF9C85",
+      "gender": "female",
+      "slot": "hair",
+      "label": "Blitz Aqua 2",
+      "glbPath": "/assets/outfit/hair_extra/hair_f_blitz_aqua_2_20AF9C85.glb",
+      "kb": 337
+    },
+    {
+      "id": "extra_hair_f_236d6335",
+      "sourceId": "236D6335",
+      "gender": "female",
+      "slot": "hair",
+      "label": "Blitz Galentines 251",
+      "glbPath": "/assets/outfit/hair_extra/hair_f_blitz_galentines_251_236D6335.glb",
+      "kb": 279
+    },
+    {
+      "id": "extra_hair_f_23fba725",
+      "sourceId": "23FBA725",
+      "gender": "female",
+      "slot": "hair",
+      "label": "Blitz Painteddesert Hair 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_f_blitz_painteddesert_hair_1_23FBA725.glb",
+      "kb": 168
+    },
+    {
+      "id": "extra_hair_f_253a7737",
+      "sourceId": "253A7737",
+      "gender": "female",
+      "slot": "hair",
+      "label": "Blitz Aequinox 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_f_blitz_aequinox_1_253A7737.glb",
+      "kb": 223
+    },
+    {
+      "id": "extra_hair_m_10b657bd",
+      "sourceId": "10B657BD",
+      "gender": "male",
+      "slot": "hair",
+      "label": "Blitz Luxe Street 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_m_blitz_luxe_street_1_10B657BD.glb",
+      "kb": 336
+    },
+    {
+      "id": "extra_hair_m_14a2f982",
+      "sourceId": "14A2F982",
+      "gender": "male",
+      "slot": "hair",
+      "label": "Blitz London 2",
+      "glbPath": "/assets/outfit/hair_extra/hair_m_blitz_london_2_14A2F982.glb",
+      "kb": 246
+    },
+    {
+      "id": "extra_hair_m_15023a78",
+      "sourceId": "15023A78",
+      "gender": "male",
+      "slot": "hair",
+      "label": "Blitz Centerstage 4",
+      "glbPath": "/assets/outfit/hair_extra/hair_m_blitz_centerstage_4_15023A78.glb",
+      "kb": 251
+    },
+    {
+      "id": "extra_hair_m_1574f69d",
+      "sourceId": "1574F69D",
+      "gender": "male",
+      "slot": "hair",
+      "label": "Blitz Aqua 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_m_blitz_aqua_1_1574F69D.glb",
+      "kb": 287
+    },
+    {
+      "id": "extra_hair_m_172d4ff2",
+      "sourceId": "172D4FF2",
+      "gender": "male",
+      "slot": "hair",
+      "label": "Blitz Pixelpark 2",
+      "glbPath": "/assets/outfit/hair_extra/hair_m_blitz_pixelpark_2_172D4FF2.glb",
+      "kb": 300
+    },
+    {
+      "id": "extra_hair_m_18181d54",
+      "sourceId": "18181D54",
+      "gender": "male",
+      "slot": "hair",
+      "label": "Blitz Valbotq 12",
+      "glbPath": "/assets/outfit/hair_extra/hair_m_blitz_valbotq_12_18181D54.glb",
+      "kb": 291
+    },
+    {
+      "id": "extra_hair_m_19691530",
+      "sourceId": "19691530",
+      "gender": "male",
+      "slot": "hair",
+      "label": "Blitz Trend 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_m_blitz_trend_1_19691530.glb",
+      "kb": 464
+    },
+    {
+      "id": "extra_hair_m_1a62da52",
+      "sourceId": "1A62DA52",
+      "gender": "male",
+      "slot": "hair",
+      "label": "Blitz Color Coded Hair 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_m_blitz_color_coded_hair_1_1A62DA52.glb",
+      "kb": 170
+    },
+    {
+      "id": "extra_hair_m_1b362893",
+      "sourceId": "1B362893",
+      "gender": "male",
+      "slot": "hair",
+      "label": "Blitz Thursdayevent 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_m_blitz_thursdayevent_1_1B362893.glb",
+      "kb": 408
+    },
+    {
+      "id": "extra_hair_m_1ef4fb56",
+      "sourceId": "1EF4FB56",
+      "gender": "male",
+      "slot": "hair",
+      "label": "Blitz Steamexclusive 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_m_blitz_steamexclusive_1_1EF4FB56.glb",
+      "kb": 245
+    },
+    {
+      "id": "extra_hair_m_206bd226",
+      "sourceId": "206BD226",
+      "gender": "male",
+      "slot": "hair",
+      "label": "Blitz June Cyber Bot Peak 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_m_blitz_june_cyber_bot_peak_1_206BD226.glb",
+      "kb": 376
+    },
+    {
+      "id": "extra_hair_m_209b83da",
+      "sourceId": "209B83DA",
+      "gender": "male",
+      "slot": "hair",
+      "label": "Blitz Veilededge 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_m_blitz_veilededge_1_209B83DA.glb",
+      "kb": 345
+    },
+    {
+      "id": "extra_hair_m_217a2ba1",
+      "sourceId": "217A2BA1",
+      "gender": "male",
+      "slot": "hair",
+      "label": "Blitz Neonpunk 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_m_blitz_neonpunk_1_217A2BA1.glb",
+      "kb": 375
+    },
+    {
+      "id": "extra_hair_m_22343542",
+      "sourceId": "22343542",
+      "gender": "male",
+      "slot": "hair",
+      "label": "Blitz Dark Fantasy 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_m_blitz_dark_fantasy_1_22343542.glb",
+      "kb": 205
+    },
+    {
+      "id": "extra_hair_m_2453766e",
+      "sourceId": "2453766E",
+      "gender": "male",
+      "slot": "hair",
+      "label": "Blitz Veilededge 1 #2",
+      "glbPath": "/assets/outfit/hair_extra/hair_m_blitz_veilededge_1_2_2453766E.glb",
+      "kb": 353
+    },
+    {
+      "id": "extra_hair_m_2ac39dfb",
+      "sourceId": "2AC39DFB",
+      "gender": "male",
+      "slot": "hair",
+      "label": "Blitz Saturdayiap 1",
+      "glbPath": "/assets/outfit/hair_extra/hair_m_blitz_saturdayiap_1_2AC39DFB.glb",
+      "kb": 374
+    }
+  ]
+}

@@ -1,11 +1,13 @@
 import type { BuddyModularOutfitUrls } from './buddiesBlitzShadersAndAssets';
 import {
   DEFAULT_NEUTRAL_FACE_CUSTOMIZATION,
+  type BeautyUvLayerSpec,
   type BuddyFaceCustomizationProfile,
   type WardrobeBrowStyleSpec,
   type WardrobeEyeStyleSpec,
   type WardrobeLipStyleSpec,
 } from './buddiesFaceCompositor';
+import { BLENDER_MODULAR_WARDROBE_ITEMS } from './buddiesBlitzGeneratedWardrobeOutfits';
 
 export type WardrobeStudioCategoryId =
   | 'presets'
@@ -14,14 +16,35 @@ export type WardrobeStudioCategoryId =
   | 'set'
   | 'hair'
   | 'shoes'
+  | 'underwear'
   | 'body_shape'
   | 'face_eyes'
   | 'face_brows'
   | 'face_lips'
+  | 'face_eyeshadow'
+  | 'face_blush'
+  | 'face_facepaint'
+  | 'face_beard'
   | 'style_anim'
-  | 'style_dance';
-export type WardrobeFaceCategoryId = 'face_eyes' | 'face_brows' | 'face_lips';
-export type WardrobeStyleCategoryId = 'style_anim' | 'style_dance' | 'style_tint';
+  | 'style_dance'
+  | 'style_pose'
+  | 'style_action'
+  | 'style_paired';
+export type WardrobeFaceCategoryId =
+  | 'face_eyes'
+  | 'face_brows'
+  | 'face_lips'
+  | 'face_eyeshadow'
+  | 'face_blush'
+  | 'face_facepaint'
+  | 'face_beard';
+export type WardrobeStyleCategoryId =
+  | 'style_anim'
+  | 'style_dance'
+  | 'style_pose'
+  | 'style_action'
+  | 'style_paired'
+  | 'style_tint';
 export type WardrobeItemGender = 'male' | 'female' | 'unisex';
 export type WardrobeBottomTabId = 'character' | 'face' | 'body' | 'style' | 'outfit' | 'shop';
 export type WardrobeFilterMode = 'all' | 'owned' | 'shop';
@@ -68,15 +91,37 @@ export type WardrobeDanceKind =
   | 'hiphop';
 
 export interface WardrobeAnimSetSpec {
-  /** Pre-sanitized clip priority order available on BuddyCharacterRig.customGlbController.clips */
+  /** Pre-sanitized idle clip priority order available on BuddyCharacterRig.customGlbController.clips */
   clipCandidates: readonly string[];
+  walkClipCandidates?: readonly string[];
+  runClipCandidates?: readonly string[];
+  sitClipCandidates?: readonly string[];
+  /** Optional external PelvisRoot 4-state Animation Set `.glb` URLs loaded lazily on select */
+  animGlbUrl?: string | null;
+  walkGlbUrl?: string | null;
+  runGlbUrl?: string | null;
+  sitGlbUrl?: string | null;
   vibeTag: string;
 }
 
 export interface WardrobeDancePoseSpec {
   danceKind: WardrobeDanceKind;
   tempoBpm: number;
+  /** Optional external PelvisRoot Dance/Pose/Action `.glb` URL loaded lazily on select */
+  animGlbUrl?: string | null;
   vibeTag: string;
+}
+
+export interface WardrobePairedAnimSpec {
+  initiateGlbUrl: string;
+  receiveGlbUrl: string;
+  subKind: 'pose' | 'dance';
+  vibeTag: string;
+}
+
+export interface WardrobeBeautyOverlaySpec {
+  f?: BeautyUvLayerSpec | null;
+  m?: BeautyUvLayerSpec | null;
 }
 
 export interface WardrobeCatalogItem {
@@ -89,12 +134,16 @@ export interface WardrobeCatalogItem {
   priceLul: number;
   isStarterDefault: boolean;
   glbPath: string | null;
+  thumbUrl?: string | null;
+  underwearSubSlot?: 'underwear' | 'corewear';
   bodyShape?: WardrobeBodyShapeProfile;
   eyeStyle?: WardrobeEyeStyleSpec;
   browStyle?: WardrobeBrowStyleSpec;
   lipStyle?: WardrobeLipStyleSpec;
+  beautyOverlay?: WardrobeBeautyOverlaySpec;
   animSet?: WardrobeAnimSetSpec;
   dancePose?: WardrobeDancePoseSpec;
+  pairedAnim?: WardrobePairedAnimSpec;
   swatchGradient: [string, string];
   accentHex: string;
 }
@@ -105,12 +154,22 @@ export interface WardrobeOutfitDraft {
   shoesId: string | null;
   hairId: string | null;
   setId: string | null;
+  underwearId?: string | null;
+  corewearId?: string | null;
+  hideOuterForUnderwear?: boolean;
   bodyShapeId: string | null;
   eyeStyleId: string | null;
   browStyleId: string | null;
   lipStyleId: string | null;
+  eyeshadowId?: string | null;
+  blushId?: string | null;
+  facepaintId?: string | null;
+  beardId?: string | null;
   animSetId: string | null;
   dancePoseId: string | null;
+  stylePoseId?: string | null;
+  styleActionId?: string | null;
+  stylePairedId?: string | null;
   clothingTintHex: string | null;
 }
 
@@ -149,12 +208,22 @@ export const EMPTY_WARDROBE_DRAFT: WardrobeOutfitDraft = {
   shoesId: null,
   hairId: null,
   setId: null,
+  underwearId: null,
+  corewearId: null,
+  hideOuterForUnderwear: false,
   bodyShapeId: null,
   eyeStyleId: null,
   browStyleId: null,
   lipStyleId: null,
+  eyeshadowId: null,
+  blushId: null,
+  facepaintId: null,
+  beardId: null,
   animSetId: null,
   dancePoseId: null,
+  stylePoseId: null,
+  styleActionId: null,
+  stylePairedId: null,
   clothingTintHex: null,
 };
 
@@ -253,550 +322,10 @@ export const WARDROBE_STUDIO_ITEMS: readonly WardrobeCatalogItem[] = [
   },
 
   // =========================================================================
-  // FEMALE NEW-GEN NPC OUTFITS (blitz-female-01..04.glb · Full Morph Targets)
+  // CLEAN BLENDER MODULAR OUTFITS, SETS & SALON HAIRSTYLES (Female + Male)
+  // Replaces all legacy broken blitz-female-01..04 / blitz-male-01..04 items.
   // =========================================================================
-  // --- Female Tops ---
-  {
-    id: 'blitz_f01_top',
-    slot: 'top',
-    gender: 'female',
-    name: 'Noir Halter Top',
-    subtitle: 'Morph-Fit Atelier Cut',
-    collection: 'Noir Atelier · 01',
-    priceLul: 16,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-01.glb#slot=torso',
-    swatchGradient: ['#334155', '#09090b'],
-    accentHex: '#94a3b8',
-  },
-  {
-    id: 'blitz_f02_top',
-    slot: 'top',
-    gender: 'female',
-    name: 'Chic Studio Top',
-    subtitle: 'Tailored Modern Fit',
-    collection: 'City Chic · 02',
-    priceLul: 16,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-02.glb#slot=torso',
-    swatchGradient: ['#fda4af', '#be185d'],
-    accentHex: '#fb7185',
-  },
-  {
-    id: 'blitz_f03_top',
-    slot: 'top',
-    gender: 'female',
-    name: 'Academy Street Top',
-    subtitle: 'Crisp Layered Campus Cut',
-    collection: 'Academy Street · 03',
-    priceLul: 15,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-03.glb#slot=torso',
-    swatchGradient: ['#38bdf8', '#1d4ed8'],
-    accentHex: '#38bdf8',
-  },
-  {
-    id: 'blitz_f04_top',
-    slot: 'top',
-    gender: 'female',
-    name: 'Urban Luxe Top',
-    subtitle: 'Signature Runway Silhouette',
-    collection: 'Urban Luxe · 04',
-    priceLul: 18,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-04.glb#slot=torso',
-    swatchGradient: ['#c084fc', '#6b21a8'],
-    accentHex: '#a855f7',
-  },
-
-  // --- Female Bottoms ---
-  {
-    id: 'blitz_f01_bottoms',
-    slot: 'bottoms',
-    gender: 'female',
-    name: 'Chain Mini Skirt',
-    subtitle: 'Noir Belted Chain Fit',
-    collection: 'Noir Atelier · 01',
-    priceLul: 15,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-01.glb#slot=legs',
-    swatchGradient: ['#27272a', '#09090b'],
-    accentHex: '#71717a',
-  },
-  {
-    id: 'blitz_f02_bottoms',
-    slot: 'bottoms',
-    gender: 'female',
-    name: 'Tailored Studio Trousers',
-    subtitle: 'High-Waist Morph-Fit',
-    collection: 'City Chic · 02',
-    priceLul: 16,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-02.glb#slot=legs',
-    swatchGradient: ['#fb7185', '#881337'],
-    accentHex: '#f43f5e',
-  },
-  {
-    id: 'blitz_f03_bottoms',
-    slot: 'bottoms',
-    gender: 'female',
-    name: 'Academy Denim Shorts',
-    subtitle: 'Relaxed Everyday Street Cut',
-    collection: 'Academy Street · 03',
-    priceLul: 14,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-03.glb#slot=legs',
-    swatchGradient: ['#60a5fa', '#1e3a8a'],
-    accentHex: '#3b82f6',
-  },
-  {
-    id: 'blitz_f04_bottoms',
-    slot: 'bottoms',
-    gender: 'female',
-    name: 'Urban Luxe Trousers',
-    subtitle: 'Sculpted Editorial Cut',
-    collection: 'Urban Luxe · 04',
-    priceLul: 16,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-04.glb#slot=legs',
-    swatchGradient: ['#a78bfa', '#4c1d95'],
-    accentHex: '#8b5cf6',
-  },
-
-  // --- Female Shoes ---
-  {
-    id: 'blitz_f01_shoes',
-    slot: 'shoes',
-    gender: 'female',
-    name: 'Noir Stiletto Heels',
-    subtitle: 'Sleek Runway Heels',
-    collection: 'Noir Atelier · 01',
-    priceLul: 12,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-01.glb#slot=feet',
-    swatchGradient: ['#3f3f46', '#09090b'],
-    accentHex: '#a1a1aa',
-  },
-  {
-    id: 'blitz_f02_shoes',
-    slot: 'shoes',
-    gender: 'female',
-    name: 'Atelier Block Heels',
-    subtitle: 'Polished Evening Footwear',
-    collection: 'City Chic · 02',
-    priceLul: 12,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-02.glb#slot=feet',
-    swatchGradient: ['#f9a8d4', '#9d174d'],
-    accentHex: '#ec4899',
-  },
-  {
-    id: 'blitz_f03_shoes',
-    slot: 'shoes',
-    gender: 'female',
-    name: 'Academy Court Sneakers',
-    subtitle: 'Lightweight City Runners',
-    collection: 'Academy Street · 03',
-    priceLul: 12,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-03.glb#slot=feet',
-    swatchGradient: ['#bae6fd', '#0369a1'],
-    accentHex: '#0ea5e9',
-  },
-  {
-    id: 'blitz_f04_shoes',
-    slot: 'shoes',
-    gender: 'female',
-    name: 'Urban Luxe Sneakers',
-    subtitle: 'Sculpted Platform Sole',
-    collection: 'Urban Luxe · 04',
-    priceLul: 13,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-04.glb#slot=feet',
-    swatchGradient: ['#ddd6fe', '#5b21b6'],
-    accentHex: '#8b5cf6',
-  },
-
-  // --- Female Hair ---
-  {
-    id: 'blitz_f01_hair',
-    slot: 'hair',
-    gender: 'female',
-    name: 'Long Wave Hair',
-    subtitle: 'Flowing Shoulder Waves',
-    collection: 'Noir Atelier · 01',
-    priceLul: 10,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-01.glb#slot=hair',
-    swatchGradient: ['#52525b', '#18181b'],
-    accentHex: '#a1a1aa',
-  },
-  {
-    id: 'blitz_f02_hair',
-    slot: 'hair',
-    gender: 'female',
-    name: 'Silky Back-Long Hair',
-    subtitle: 'Sleek Straight Studio Cut',
-    collection: 'City Chic · 02',
-    priceLul: 10,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-02.glb#slot=hair',
-    swatchGradient: ['#92400e', '#451a03'],
-    accentHex: '#d97706',
-  },
-  {
-    id: 'blitz_f03_hair',
-    slot: 'hair',
-    gender: 'female',
-    name: 'Academy Layered Cut',
-    subtitle: 'Soft Framed Bangs',
-    collection: 'Academy Street · 03',
-    priceLul: 10,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-03.glb#slot=hair',
-    swatchGradient: ['#78350f', '#292524'],
-    accentHex: '#f59e0b',
-  },
-  {
-    id: 'blitz_f04_hair',
-    slot: 'hair',
-    gender: 'female',
-    name: 'Urban Luxe Styling',
-    subtitle: 'Modern Editorial Volume',
-    collection: 'Urban Luxe · 04',
-    priceLul: 11,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-04.glb#slot=hair',
-    swatchGradient: ['#6366f1', '#312e81'],
-    accentHex: '#818cf8',
-  },
-
-  // --- Female Full Sets ---
-  {
-    id: 'blitz_f01_set',
-    slot: 'set',
-    gender: 'female',
-    name: 'Noir Atelier Set',
-    subtitle: 'Halter Top · Chain Skirt · Heels · Acc',
-    collection: 'Noir Atelier · 01',
-    priceLul: 34,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-01.glb#slot=costume',
-    swatchGradient: ['#475569', '#09090b'],
-    accentHex: '#e2e8f0',
-  },
-  {
-    id: 'blitz_f02_set',
-    slot: 'set',
-    gender: 'female',
-    name: 'City Chic Ensemble',
-    subtitle: 'Studio Top · Trousers · Block Heels',
-    collection: 'City Chic · 02',
-    priceLul: 34,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-02.glb#slot=costume',
-    swatchGradient: ['#f472b6', '#881337'],
-    accentHex: '#fb7185',
-  },
-  {
-    id: 'blitz_f03_set',
-    slot: 'set',
-    gender: 'female',
-    name: 'Academy Street Set',
-    subtitle: 'Street Top · Denim Shorts · Sneakers',
-    collection: 'Academy Street · 03',
-    priceLul: 32,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-03.glb#slot=costume',
-    swatchGradient: ['#38bdf8', '#1e3a8a'],
-    accentHex: '#38bdf8',
-  },
-  {
-    id: 'blitz_f04_set',
-    slot: 'set',
-    gender: 'female',
-    name: 'Urban Luxe Ensemble',
-    subtitle: 'Luxe Top · Trousers · Sneakers',
-    collection: 'Urban Luxe · 04',
-    priceLul: 36,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-female-04.glb#slot=costume',
-    swatchGradient: ['#c084fc', '#4c1d95'],
-    accentHex: '#a855f7',
-  },
-
-  // =========================================================================
-  // MALE NEW-GEN NPC OUTFITS (blitz-male-01..04.glb · Full Morph Targets)
-  // =========================================================================
-  // --- Male Tops ---
-  {
-    id: 'blitz_m01_top',
-    slot: 'top',
-    gender: 'male',
-    name: 'Plaza Street Top',
-    subtitle: 'Morph-Fit Athletic Cut',
-    collection: 'Plaza Street · 01',
-    priceLul: 16,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-01.glb#slot=torso',
-    swatchGradient: ['#38bdf8', '#1e3a8a'],
-    accentHex: '#38bdf8',
-  },
-  {
-    id: 'blitz_m02_top',
-    slot: 'top',
-    gender: 'male',
-    name: 'Metro Layered Top',
-    subtitle: 'Urban Tailored Layer',
-    collection: 'Metro Layered · 02',
-    priceLul: 17,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-02.glb#slot=torso',
-    swatchGradient: ['#475569', '#0f172a'],
-    accentHex: '#64748b',
-  },
-  {
-    id: 'blitz_m03_top',
-    slot: 'top',
-    gender: 'male',
-    name: 'Studio Casual Top',
-    subtitle: 'Relaxed Modern Fit',
-    collection: 'Studio Casual · 03',
-    priceLul: 15,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-03.glb#slot=torso',
-    swatchGradient: ['#34d399', '#065f46'],
-    accentHex: '#10b981',
-  },
-  {
-    id: 'blitz_m04_top',
-    slot: 'top',
-    gender: 'male',
-    name: 'Vanguard Jacket Top',
-    subtitle: 'Structured Street Outerwear',
-    collection: 'Vanguard Urban · 04',
-    priceLul: 18,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-04.glb#slot=torso',
-    swatchGradient: ['#facc15', '#b45309'],
-    accentHex: '#f59e0b',
-  },
-
-  // --- Male Bottoms ---
-  {
-    id: 'blitz_m01_bottoms',
-    slot: 'bottoms',
-    gender: 'male',
-    name: 'Plaza Street Pants',
-    subtitle: 'Tapered Everyday Cut',
-    collection: 'Plaza Street · 01',
-    priceLul: 15,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-01.glb#slot=legs',
-    swatchGradient: ['#60a5fa', '#1e293b'],
-    accentHex: '#3b82f6',
-  },
-  {
-    id: 'blitz_m02_bottoms',
-    slot: 'bottoms',
-    gender: 'male',
-    name: 'Metro Relaxed Trousers',
-    subtitle: 'Clean City Drape',
-    collection: 'Metro Layered · 02',
-    priceLul: 15,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-02.glb#slot=legs',
-    swatchGradient: ['#64748b', '#0f172a'],
-    accentHex: '#94a3b8',
-  },
-  {
-    id: 'blitz_m03_bottoms',
-    slot: 'bottoms',
-    gender: 'male',
-    name: 'Studio Tapered Pants',
-    subtitle: 'Athletic Morph-Fit Cut',
-    collection: 'Studio Casual · 03',
-    priceLul: 14,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-03.glb#slot=legs',
-    swatchGradient: ['#10b981', '#064e3b'],
-    accentHex: '#34d399',
-  },
-  {
-    id: 'blitz_m04_bottoms',
-    slot: 'bottoms',
-    gender: 'male',
-    name: 'Vanguard Cargo Pants',
-    subtitle: 'Utility Street Silhouette',
-    collection: 'Vanguard Urban · 04',
-    priceLul: 16,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-04.glb#slot=legs',
-    swatchGradient: ['#fb923c', '#7c2d12'],
-    accentHex: '#f97316',
-  },
-
-  // --- Male Shoes ---
-  {
-    id: 'blitz_m01_shoes',
-    slot: 'shoes',
-    gender: 'male',
-    name: 'Plaza Low Runners',
-    subtitle: 'Cushioned Street Sole',
-    collection: 'Plaza Street · 01',
-    priceLul: 12,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-01.glb#slot=feet',
-    swatchGradient: ['#93c5fd', '#1e3a8a'],
-    accentHex: '#38bdf8',
-  },
-  {
-    id: 'blitz_m02_shoes',
-    slot: 'shoes',
-    gender: 'male',
-    name: 'Metro Court Kicks',
-    subtitle: 'Monochrome City Footwear',
-    collection: 'Metro Layered · 02',
-    priceLul: 12,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-02.glb#slot=feet',
-    swatchGradient: ['#cbd5e1', '#334155'],
-    accentHex: '#94a3b8',
-  },
-  {
-    id: 'blitz_m03_shoes',
-    slot: 'shoes',
-    gender: 'male',
-    name: 'Studio Street Sneakers',
-    subtitle: 'Clean Everyday Runner',
-    collection: 'Studio Casual · 03',
-    priceLul: 12,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-03.glb#slot=feet',
-    swatchGradient: ['#6ee7b7', '#065f46'],
-    accentHex: '#10b981',
-  },
-  {
-    id: 'blitz_m04_shoes',
-    slot: 'shoes',
-    gender: 'male',
-    name: 'Vanguard High-Tops',
-    subtitle: 'Heavyweight Street Grip',
-    collection: 'Vanguard Urban · 04',
-    priceLul: 13,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-04.glb#slot=feet',
-    swatchGradient: ['#fde047', '#9a3412'],
-    accentHex: '#f59e0b',
-  },
-
-  // --- Male Hair ---
-  {
-    id: 'blitz_m01_hair',
-    slot: 'hair',
-    gender: 'male',
-    name: 'Plaza Textured Cut',
-    subtitle: 'Natural Street Volume',
-    collection: 'Plaza Street · 01',
-    priceLul: 10,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-01.glb#slot=hair',
-    swatchGradient: ['#52525b', '#18181b'],
-    accentHex: '#a1a1aa',
-  },
-  {
-    id: 'blitz_m02_hair',
-    slot: 'hair',
-    gender: 'male',
-    name: 'Metro Side-Part Cut',
-    subtitle: 'Clean Studio Sweep',
-    collection: 'Metro Layered · 02',
-    priceLul: 10,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-02.glb#slot=hair',
-    swatchGradient: ['#92400e', '#451a03'],
-    accentHex: '#d97706',
-  },
-  {
-    id: 'blitz_m03_hair',
-    slot: 'hair',
-    gender: 'male',
-    name: 'Studio Crop Style',
-    subtitle: 'Modern Short Layers',
-    collection: 'Studio Casual · 03',
-    priceLul: 10,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-03.glb#slot=hair',
-    swatchGradient: ['#78350f', '#292524'],
-    accentHex: '#f59e0b',
-  },
-  {
-    id: 'blitz_m04_hair',
-    slot: 'hair',
-    gender: 'male',
-    name: 'Vanguard Slick Cut',
-    subtitle: 'Sharp Editorial Contour',
-    collection: 'Vanguard Urban · 04',
-    priceLul: 11,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-04.glb#slot=hair',
-    swatchGradient: ['#6366f1', '#312e81'],
-    accentHex: '#818cf8',
-  },
-
-  // --- Male Full Sets ---
-  {
-    id: 'blitz_m01_set',
-    slot: 'set',
-    gender: 'male',
-    name: 'Plaza Street Set',
-    subtitle: 'Street Top · Pants · Low Runners',
-    collection: 'Plaza Street · 01',
-    priceLul: 34,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-01.glb#slot=costume',
-    swatchGradient: ['#38bdf8', '#1e3a8a'],
-    accentHex: '#38bdf8',
-  },
-  {
-    id: 'blitz_m02_set',
-    slot: 'set',
-    gender: 'male',
-    name: 'Metro Layered Set',
-    subtitle: 'Layered Top · Trousers · Court Kicks',
-    collection: 'Metro Layered · 02',
-    priceLul: 34,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-02.glb#slot=costume',
-    swatchGradient: ['#64748b', '#0f172a'],
-    accentHex: '#94a3b8',
-  },
-  {
-    id: 'blitz_m03_set',
-    slot: 'set',
-    gender: 'male',
-    name: 'Studio Casual Set',
-    subtitle: 'Casual Top · Tapered Pants · Sneakers',
-    collection: 'Studio Casual · 03',
-    priceLul: 32,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-03.glb#slot=costume',
-    swatchGradient: ['#34d399', '#065f46'],
-    accentHex: '#10b981',
-  },
-  {
-    id: 'blitz_m04_set',
-    slot: 'set',
-    gender: 'male',
-    name: 'Vanguard Urban Set',
-    subtitle: 'Jacket Top · Cargo Pants · High-Tops',
-    collection: 'Vanguard Urban · 04',
-    priceLul: 36,
-    isStarterDefault: false,
-    glbPath: '/assets/avatars/blitz-male-04.glb#slot=costume',
-    swatchGradient: ['#facc15', '#b45309'],
-    accentHex: '#f59e0b',
-  },
+  ...BLENDER_MODULAR_WARDROBE_ITEMS,
 
   // =========================================================================
   // BODY SHAPE (Unisex · Hybrid Morph Targets + Silhouette Scale)
@@ -948,6 +477,270 @@ export const WARDROBE_STUDIO_ITEMS: readonly WardrobeCatalogItem[] = [
     },
     swatchGradient: ['#a78bfa', '#4c1d95'],
     accentHex: '#8b5cf6',
+  },
+  // ── Female Body Shapes (REA Avakin / Buddies Studio Master Morphs) ────────
+  {
+    id: 'body_f_hourglass',
+    slot: 'body_shape',
+    gender: 'female',
+    name: 'Blitz Hourglass',
+    subtitle: 'Pinggang Ramping & Lekuk Penuh',
+    collection: 'Master Body · Wanita',
+    priceLul: 0,
+    isStarterDefault: false,
+    glbPath: null,
+    bodyShape: {
+      morphWeights: {
+        Bust_Size: 0.72,
+        Waist_Slim: 0.85,
+        Hip_Width: 0.68,
+        Glute_Projection: 0.65,
+        Thigh_Fullness: 0.45,
+      },
+      heightScale: 1.0,
+      widthScale: 1.01,
+      baseDollGlbUrl: '/assets/avatars/female-hourglass.glb',
+      silhouetteTag: 'Hourglass',
+    },
+    swatchGradient: ['#f472b6', '#9d174d'],
+    accentHex: '#ec4899',
+  },
+  {
+    id: 'body_f_athletic',
+    slot: 'body_shape',
+    gender: 'female',
+    name: 'Blitz Athletic',
+    subtitle: 'Siluet Atletis & Bahu Tegas',
+    collection: 'Master Body · Wanita',
+    priceLul: 0,
+    isStarterDefault: false,
+    glbPath: null,
+    bodyShape: {
+      morphWeights: {
+        Bust_Size: 0.42,
+        Shoulder_Width: 0.75,
+        Waist_Slim: 0.55,
+        Hip_Width: 0.35,
+        Thigh_Fullness: 0.55,
+      },
+      heightScale: 1.015,
+      widthScale: 1.02,
+      baseDollGlbUrl: '/assets/avatars/female-athletic.glb',
+      silhouetteTag: 'Athletic',
+    },
+    swatchGradient: ['#34d399', '#065f46'],
+    accentHex: '#10b981',
+  },
+  {
+    id: 'body_f_pear',
+    slot: 'body_shape',
+    gender: 'female',
+    name: 'Blitz Pear',
+    subtitle: 'Pinggul & Paha Lebih Berisi',
+    collection: 'Master Body · Wanita',
+    priceLul: 0,
+    isStarterDefault: false,
+    glbPath: null,
+    bodyShape: {
+      morphWeights: {
+        Bust_Size: 0.25,
+        Waist_Slim: 0.65,
+        Hip_Width: 0.9,
+        Glute_Projection: 0.82,
+        Thigh_Fullness: 0.78,
+      },
+      heightScale: 0.99,
+      widthScale: 1.01,
+      baseDollGlbUrl: '/assets/avatars/female-pearl.glb',
+      silhouetteTag: 'Pear',
+    },
+    swatchGradient: ['#fbbf24', '#b45309'],
+    accentHex: '#f59e0b',
+  },
+  {
+    id: 'body_f_spoon',
+    slot: 'body_shape',
+    gender: 'female',
+    name: 'Blitz Spoon',
+    subtitle: 'Kurva Pinggul Tinggi & Penuh',
+    collection: 'Master Body · Wanita',
+    priceLul: 0,
+    isStarterDefault: false,
+    glbPath: null,
+    bodyShape: {
+      morphWeights: {
+        Bust_Size: 0.45,
+        Waist_Slim: 0.78,
+        Hip_Width: 0.85,
+        Glute_Projection: 0.72,
+        Thigh_Fullness: 0.62,
+      },
+      heightScale: 1.0,
+      widthScale: 1.015,
+      baseDollGlbUrl: '/assets/avatars/female-spoon.glb',
+      silhouetteTag: 'Spoon',
+    },
+    swatchGradient: ['#fb7185', '#881337'],
+    accentHex: '#f43f5e',
+  },
+  {
+    id: 'body_f_triangle',
+    slot: 'body_shape',
+    gender: 'female',
+    name: 'Blitz Triangle',
+    subtitle: 'Siluet A-Line Lembut',
+    collection: 'Master Body · Wanita',
+    priceLul: 0,
+    isStarterDefault: false,
+    glbPath: null,
+    bodyShape: {
+      morphWeights: {
+        Bust_Size: 0.3,
+        Shoulder_Width: 0.1,
+        Waist_Slim: 0.5,
+        Hip_Width: 0.76,
+        Thigh_Fullness: 0.65,
+      },
+      heightScale: 1.0,
+      widthScale: 1.0,
+      baseDollGlbUrl: '/assets/avatars/female-Triangle.glb',
+      silhouetteTag: 'A-Line',
+    },
+    swatchGradient: ['#c084fc', '#581c87'],
+    accentHex: '#a855f7',
+  },
+  // ── Male Body Shapes (REA Avakin / Buddies Studio Master Morphs) ──────────
+  {
+    id: 'body_m_vtaper',
+    slot: 'body_shape',
+    gender: 'male',
+    name: 'Blitz V-Taper',
+    subtitle: 'Dada & Bahu Bidang Atletis',
+    collection: 'Master Body · Pria',
+    priceLul: 0,
+    isStarterDefault: false,
+    glbPath: null,
+    bodyShape: {
+      morphWeights: {
+        Chest_Build: 0.9,
+        Shoulder_Width: 1.0,
+        Arm_Muscle: 0.85,
+        Waist_Slim: 0.72,
+        Thigh_Fullness: 0.35,
+      },
+      heightScale: 1.025,
+      widthScale: 1.055,
+      baseDollGlbUrl: '/assets/avatars/male-vtaper.glb',
+      silhouetteTag: 'V-Taper',
+    },
+    swatchGradient: ['#38bdf8', '#1e3a8a'],
+    accentHex: '#38bdf8',
+  },
+  {
+    id: 'body_m_athletic',
+    slot: 'body_shape',
+    gender: 'male',
+    name: 'Blitz Atletis Ringan',
+    subtitle: 'Bahu & Dada Tegas Proporsional',
+    collection: 'Master Body · Pria',
+    priceLul: 0,
+    isStarterDefault: false,
+    glbPath: null,
+    bodyShape: {
+      morphWeights: {
+        Chest_Build: 0.58,
+        Shoulder_Width: 0.65,
+        Arm_Muscle: 0.62,
+        Waist_Slim: 0.48,
+        Thigh_Fullness: 0.32,
+      },
+      heightScale: 1.015,
+      widthScale: 1.025,
+      baseDollGlbUrl: '/assets/avatars/male-athletic.glb',
+      silhouetteTag: 'Atletis',
+    },
+    swatchGradient: ['#34d399', '#065f46'],
+    accentHex: '#10b981',
+  },
+  {
+    id: 'body_m_trapezoid',
+    slot: 'body_shape',
+    gender: 'male',
+    name: 'Blitz Trapezoid',
+    subtitle: 'Postur Tegap Seimbang',
+    collection: 'Master Body · Pria',
+    priceLul: 0,
+    isStarterDefault: false,
+    glbPath: null,
+    bodyShape: {
+      morphWeights: {
+        Chest_Build: 0.78,
+        Shoulder_Width: 0.8,
+        Arm_Muscle: 0.75,
+        Waist_Slim: 0.35,
+        Hip_Width: 0.25,
+        Thigh_Fullness: 0.48,
+      },
+      heightScale: 1.02,
+      widthScale: 1.045,
+      baseDollGlbUrl: '/assets/avatars/male-trapezoid.glb',
+      silhouetteTag: 'Tegap',
+    },
+    swatchGradient: ['#818cf8', '#312e81'],
+    accentHex: '#6366f1',
+  },
+  {
+    id: 'body_m_full_trapezoid',
+    slot: 'body_shape',
+    gender: 'male',
+    name: 'Blitz Full Trapezoid',
+    subtitle: 'Postur Besar & Berisi Penuh',
+    collection: 'Master Body · Pria',
+    priceLul: 0,
+    isStarterDefault: false,
+    glbPath: null,
+    bodyShape: {
+      morphWeights: {
+        Chest_Build: 1.0,
+        Shoulder_Width: 0.96,
+        Arm_Muscle: 1.0,
+        Hip_Width: 0.48,
+        Glute_Projection: 0.42,
+        Thigh_Fullness: 0.82,
+      },
+      heightScale: 1.04,
+      widthScale: 1.08,
+      baseDollGlbUrl: '/assets/avatars/male-full-trapezoid.glb',
+      silhouetteTag: 'Berisi',
+    },
+    swatchGradient: ['#fb923c', '#9a3412'],
+    accentHex: '#f97316',
+  },
+  {
+    id: 'body_m_rectangle',
+    slot: 'body_shape',
+    gender: 'male',
+    name: 'Blitz Rectangle',
+    subtitle: 'Torso Lurus & Solid Merata',
+    collection: 'Master Body · Pria',
+    priceLul: 0,
+    isStarterDefault: false,
+    glbPath: null,
+    bodyShape: {
+      morphWeights: {
+        Chest_Build: 0.45,
+        Shoulder_Width: 0.38,
+        Arm_Muscle: 0.4,
+        Hip_Width: 0.46,
+        Thigh_Fullness: 0.46,
+      },
+      heightScale: 1.0,
+      widthScale: 1.03,
+      baseDollGlbUrl: '/assets/avatars/male-rectangle.glb',
+      silhouetteTag: 'Solid',
+    },
+    swatchGradient: ['#94a3b8', '#334155'],
+    accentHex: '#64748b',
   },
 
   // ── Face: Eyes (Mata) ─────────────────────────────────────────────────────
@@ -1391,13 +1184,16 @@ export const WARDROBE_STUDIO_ITEMS: readonly WardrobeCatalogItem[] = [
     slot: 'style_anim',
     gender: 'unisex',
     name: 'Runway Chic',
-    subtitle: 'Catwalk Model Stance',
+    subtitle: 'Idle · Walk · Run · Sit (Nadia)',
     collection: 'Motion Essentials',
     priceLul: 0,
     isStarterDefault: false,
     glbPath: null,
     animSet: {
       clipCandidates: ['nadia_idle.001', 'hana_idle.001', 'mira_idle.001', 'idle.001'],
+      walkClipCandidates: ['nadia_walk.001', 'mira_walk.001'],
+      runClipCandidates: ['nadia_run.001', 'mira_run.001'],
+      sitClipCandidates: ['nadia_sit.001', 'mira_sit.001'],
       vibeTag: 'Runway',
     },
     swatchGradient: ['#38bdf8', '#1d4ed8'],
@@ -1408,13 +1204,16 @@ export const WARDROBE_STUDIO_ITEMS: readonly WardrobeCatalogItem[] = [
     slot: 'style_anim',
     gender: 'unisex',
     name: 'Studio Calm',
-    subtitle: 'Poised Relaxed Idle',
+    subtitle: 'Idle · Walk · Run · Sit (Calm)',
     collection: 'Motion Essentials',
     priceLul: 0,
     isStarterDefault: false,
     glbPath: null,
     animSet: {
       clipCandidates: ['hana_idle.001', 'mira_idle.001', 'kai_idle.001', 'idle.001'],
+      walkClipCandidates: ['mira_walk.001', 'nadia_walk.001'],
+      runClipCandidates: ['mira_run.001', 'nadia_run.001'],
+      sitClipCandidates: ['mira_sit.001', 'nadia_sit.001'],
       vibeTag: 'Calm',
     },
     swatchGradient: ['#34d399', '#065f46'],
@@ -1425,13 +1224,16 @@ export const WARDROBE_STUDIO_ITEMS: readonly WardrobeCatalogItem[] = [
     slot: 'style_anim',
     gender: 'unisex',
     name: 'Energetic Idol',
-    subtitle: 'Lively Upbeat Motion Set',
+    subtitle: 'Idle · Walk · Run · Sit (Tari)',
     collection: 'Motion Atelier',
     priceLul: 14,
     isStarterDefault: false,
     glbPath: null,
     animSet: {
       clipCandidates: ['tari_idle.001', 'mira_idle.001', 'hana_idle.001', 'idle.001'],
+      walkClipCandidates: ['tari_walk.001', 'mira_walk.001'],
+      runClipCandidates: ['tari_run.001', 'mira_run.001'],
+      sitClipCandidates: ['tari_sit.001', 'mira_sit.001'],
       vibeTag: 'Energetic',
     },
     swatchGradient: ['#f472b6', '#9d174d'],
@@ -1442,13 +1244,16 @@ export const WARDROBE_STUDIO_ITEMS: readonly WardrobeCatalogItem[] = [
     slot: 'style_anim',
     gender: 'unisex',
     name: 'Sassy Active',
-    subtitle: 'Confident Hand-on-Hip Set',
+    subtitle: 'Idle · Walk · Run · Sit (Mira)',
     collection: 'Motion Atelier',
     priceLul: 14,
     isStarterDefault: false,
     glbPath: null,
     animSet: {
       clipCandidates: ['mira_idle.001', 'nadia_idle.001', 'idle.001'],
+      walkClipCandidates: ['mira_walk.001', 'nadia_walk.001'],
+      runClipCandidates: ['mira_run.001', 'nadia_run.001'],
+      sitClipCandidates: ['mira_sit.001', 'nadia_sit.001'],
       vibeTag: 'Sassy',
     },
     swatchGradient: ['#fb7185', '#881337'],
@@ -1459,13 +1264,16 @@ export const WARDROBE_STUDIO_ITEMS: readonly WardrobeCatalogItem[] = [
     slot: 'style_anim',
     gender: 'unisex',
     name: 'Formal Cool',
-    subtitle: 'Sharp Executive Stance',
+    subtitle: 'Idle · Walk · Run · Sit (Raka)',
     collection: 'Motion Atelier',
     priceLul: 16,
     isStarterDefault: false,
     glbPath: null,
     animSet: {
       clipCandidates: ['raka_idle.001', 'bima_idle.001', 'idle.001'],
+      walkClipCandidates: ['raka_walk.001', 'bima_walk.001'],
+      runClipCandidates: ['raka_run.001', 'bima_run.001'],
+      sitClipCandidates: ['raka_sit.001', 'bima_sit.001'],
       vibeTag: 'Formal',
     },
     swatchGradient: ['#818cf8', '#312e81'],
@@ -1476,13 +1284,16 @@ export const WARDROBE_STUDIO_ITEMS: readonly WardrobeCatalogItem[] = [
     slot: 'style_anim',
     gender: 'unisex',
     name: 'Street Swagger',
-    subtitle: 'Relaxed Urban Attitude',
+    subtitle: 'Idle · Walk · Run · Sit (Bima)',
     collection: 'Motion Atelier',
     priceLul: 14,
     isStarterDefault: false,
     glbPath: null,
     animSet: {
       clipCandidates: ['bima_idle.001', 'kenji_idle.001', 'idle.001'],
+      walkClipCandidates: ['bima_walk.001', 'kenji_walk.001'],
+      runClipCandidates: ['bima_run.001', 'kenji_run.001'],
+      sitClipCandidates: ['bima_sit.001', 'kenji_sit.001'],
       vibeTag: 'Street',
     },
     swatchGradient: ['#fbbf24', '#92400e'],
@@ -1493,13 +1304,16 @@ export const WARDROBE_STUDIO_ITEMS: readonly WardrobeCatalogItem[] = [
     slot: 'style_anim',
     gender: 'unisex',
     name: 'Urban Flow',
-    subtitle: 'Chill Plaza Rhythm Set',
+    subtitle: 'Idle · Walk · Run · Sit (Kenji)',
     collection: 'Motion Atelier',
     priceLul: 12,
     isStarterDefault: false,
     glbPath: null,
     animSet: {
       clipCandidates: ['kenji_idle.001', 'kai_idle.001', 'idle.001'],
+      walkClipCandidates: ['kenji_walk.001', 'bima_walk.001'],
+      runClipCandidates: ['kenji_run.001', 'bima_run.001'],
+      sitClipCandidates: ['kenji_sit.001', 'bima_sit.001'],
       vibeTag: 'Flow',
     },
     swatchGradient: ['#2dd4bf', '#115e59'],
@@ -1633,7 +1447,432 @@ export const WARDROBE_STUDIO_ITEMS: readonly WardrobeCatalogItem[] = [
     swatchGradient: ['#fb923c', '#9a3412'],
     accentHex: '#f97316',
   },
+  // ── Starter Defaults for Extended Face Makeup & Style Animation Tabs ──────
+  {
+    id: 'face_eyeshadow_default',
+    slot: 'face_eyeshadow',
+    gender: 'unisex',
+    name: 'No Eyeshadow',
+    subtitle: 'Clean Natural Eyelids',
+    collection: 'Face Essentials',
+    priceLul: 0,
+    isStarterDefault: true,
+    glbPath: null,
+    swatchGradient: ['#e2e8f0', '#94a3b8'],
+    accentHex: '#cbd5e1',
+  },
+  {
+    id: 'face_blush_default',
+    slot: 'face_blush',
+    gender: 'unisex',
+    name: 'No Blush',
+    subtitle: 'Clean Natural Cheeks',
+    collection: 'Face Essentials',
+    priceLul: 0,
+    isStarterDefault: true,
+    glbPath: null,
+    swatchGradient: ['#fecdd3', '#fda4af'],
+    accentHex: '#fb7185',
+  },
+  {
+    id: 'face_facepaint_default',
+    slot: 'face_facepaint',
+    gender: 'unisex',
+    name: 'No Face Makeup',
+    subtitle: 'Clean Natural Skin',
+    collection: 'Face Essentials',
+    priceLul: 0,
+    isStarterDefault: true,
+    glbPath: null,
+    swatchGradient: ['#fde68a', '#f59e0b'],
+    accentHex: '#fbbf24',
+  },
+  {
+    id: 'face_beard_default',
+    slot: 'face_beard',
+    gender: 'male',
+    name: 'Clean Shaven',
+    subtitle: 'No Facial Hair',
+    collection: 'Face Essentials',
+    priceLul: 0,
+    isStarterDefault: true,
+    glbPath: null,
+    swatchGradient: ['#94a3b8', '#475569'],
+    accentHex: '#94a3b8',
+  },
+  {
+    id: 'style_pose_default',
+    slot: 'style_pose',
+    gender: 'unisex',
+    name: 'Default Stance',
+    subtitle: 'Standard Studio Pose',
+    collection: 'Pose Essentials',
+    priceLul: 0,
+    isStarterDefault: true,
+    glbPath: null,
+    dancePose: { danceKind: 'none', tempoBpm: 0, animGlbUrl: null, vibeTag: 'Base' },
+    swatchGradient: ['#94a3b8', '#334155'],
+    accentHex: '#94a3b8',
+  },
+  {
+    id: 'style_action_default',
+    slot: 'style_action',
+    gender: 'unisex',
+    name: 'No Action',
+    subtitle: 'Standard Idle Motion',
+    collection: 'Action Essentials',
+    priceLul: 0,
+    isStarterDefault: true,
+    glbPath: null,
+    dancePose: { danceKind: 'none', tempoBpm: 0, animGlbUrl: null, vibeTag: 'Base' },
+    swatchGradient: ['#94a3b8', '#334155'],
+    accentHex: '#94a3b8',
+  },
+  {
+    id: 'style_paired_default',
+    slot: 'style_paired',
+    gender: 'unisex',
+    name: 'No Paired Pose',
+    subtitle: 'Preview Mode Off',
+    collection: 'Paired Essentials',
+    priceLul: 0,
+    isStarterDefault: true,
+    glbPath: null,
+    swatchGradient: ['#94a3b8', '#334155'],
+    accentHex: '#94a3b8',
+  },
+  {
+    id: 'underwear_none',
+    slot: 'underwear',
+    gender: 'unisex',
+    name: 'Polos / Lepas',
+    subtitle: 'Tanpa Pakaian Dalam',
+    collection: 'Underwear Essentials',
+    priceLul: 0,
+    isStarterDefault: true,
+    glbPath: null,
+    underwearSubSlot: 'underwear',
+    swatchGradient: ['#e2c0a8', '#b88b6e'],
+    accentHex: '#d4a383',
+  },
 ] as const;
+
+// ---------------------------------------------------------------------------
+// Dynamic External Catalog Registry (Beauty/Makeup + 4-State Animations + Fitted Outfits + Underwear)
+// Loaded lazily from `/assets/{beauty,animations,outfit/fitted,underwear}/catalog.json`
+// ---------------------------------------------------------------------------
+let dynamicExternalWardrobeItems: WardrobeCatalogItem[] = [];
+const dynamicExternalItemsById = new Map<string, WardrobeCatalogItem>();
+let externalCatalogsLoadPromise: Promise<number> | null = null;
+let externalCatalogsLoaded = false;
+
+interface RawBeautyCatalogJson {
+  items?: Array<{
+    id: string;
+    category: string;
+    gender?: string;
+    label: string;
+    thumbUrl?: string | null;
+    f?: BeautyUvLayerSpec;
+    m?: BeautyUvLayerSpec;
+  }>;
+}
+
+interface RawAnimCatalogJson {
+  items?: Array<{
+    id: string;
+    category: string;
+    subKind?: 'pose' | 'dance';
+    gender?: string;
+    label: string;
+    styleTag?: string;
+    glbPath: string;
+    idleGlbPath?: string;
+    walkGlbPath?: string;
+    runGlbPath?: string;
+    sitGlbPath?: string;
+    initiateGlbPath?: string;
+    receiveGlbPath?: string;
+  }>;
+}
+
+interface RawFittedOutfitCatalogJson {
+  items?: Array<{
+    id: string;
+    slot: 'top' | 'bottoms' | 'shoes' | 'hair';
+    gender: 'female' | 'male';
+    name: string;
+    collection?: string;
+    glbPath: string;
+    swatchGradient?: [string, string];
+    accentHex?: string;
+  }>;
+}
+
+interface RawUnderwearCatalogJson {
+  items?: Array<{
+    id: string;
+    sourceId: string;
+    subSlot: 'underwear' | 'corewear';
+    gender: 'female' | 'male';
+    label: string;
+    tag?: string;
+    thumbUrl?: string | null;
+    uv: BeautyUvLayerSpec;
+  }>;
+}
+
+const BEAUTY_CAT_TO_SLOT: Record<string, Exclude<WardrobeStudioCategoryId, 'presets'>> = {
+  eyes: 'face_eyes',
+  brows: 'face_brows',
+  lips: 'face_lips',
+  eyeshadow: 'face_eyeshadow',
+  blush: 'face_blush',
+  facepaint: 'face_facepaint',
+  faceoverlay: 'face_facepaint',
+  beard: 'face_beard',
+};
+
+const BEAUTY_CAT_PALETTE: Record<string, { grad: [string, string]; accent: string; col: string }> = {
+  eyes: { grad: ['#7dd3fc', '#1e3a8a'], accent: '#38bdf8', col: 'Glow Salon · Mata' },
+  brows: { grad: ['#78350f', '#292524'], accent: '#d97706', col: 'Glow Salon · Alis' },
+  lips: { grad: ['#fb7185', '#881337'], accent: '#f43f5e', col: 'Glow Salon · Bibir' },
+  eyeshadow: { grad: ['#c084fc', '#581c87'], accent: '#a855f7', col: 'Glow Salon · Eyeshadow' },
+  blush: { grad: ['#fda4af', '#be123c'], accent: '#fb7185', col: 'Glow Salon · Blush' },
+  facepaint: { grad: ['#fcd34d', '#b45309'], accent: '#f59e0b', col: 'Glow Salon · Makeup' },
+  faceoverlay: { grad: ['#f9a8d4', '#831843'], accent: '#ec4899', col: 'Glow Salon · Face Art' },
+  beard: { grad: ['#64748b', '#1e293b'], accent: '#94a3b8', col: 'Glow Salon · Beard' },
+};
+
+const ANIM_CAT_PALETTE: Record<string, { grad: [string, string]; accent: string; col: string; tag: string }> = {
+  idle: { grad: ['#38bdf8', '#1e3a8a'], accent: '#38bdf8', col: 'Studio Motion · Idle', tag: 'Idle Set' },
+  dance: { grad: ['#e879f9', '#701a75'], accent: '#d946ef', col: 'Studio Motion · Dance', tag: 'Dance' },
+  pose: { grad: ['#34d399', '#065f46'], accent: '#10b981', col: 'Studio Motion · Pose', tag: 'Pose' },
+  action: { grad: ['#fbbf24', '#92400e'], accent: '#f59e0b', col: 'Studio Motion · Action', tag: 'Action' },
+  paired: { grad: ['#fb7185', '#9f1239'], accent: '#f43f5e', col: 'Studio Motion · Berpasangan', tag: 'Duo' },
+};
+
+function registerExternalWardrobeItems(items: readonly WardrobeCatalogItem[]): void {
+  for (const item of items) {
+    if (!dynamicExternalItemsById.has(item.id)) {
+      dynamicExternalItemsById.set(item.id, item);
+      dynamicExternalWardrobeItems.push(item);
+    }
+  }
+}
+
+export function getExternalWardrobeCatalogCount(): number {
+  return dynamicExternalWardrobeItems.length;
+}
+
+/**
+ * Lazily fetches `/assets/beauty/catalog.json` (403 beauty/makeup/beard overlays)
+ * and `/assets/animations/catalog.json` (134 Dance/Pose/Action/Idle animations)
+ * and registers them into the active Wardrobe Studio catalog.
+ */
+export function loadExternalWardrobeCatalogs(): Promise<number> {
+  if (externalCatalogsLoaded) {
+    return Promise.resolve(dynamicExternalWardrobeItems.length);
+  }
+  if (externalCatalogsLoadPromise) {
+    return externalCatalogsLoadPromise;
+  }
+  if (typeof fetch !== 'function') {
+    return Promise.resolve(0);
+  }
+
+  externalCatalogsLoadPromise = (async () => {
+    const collected: WardrobeCatalogItem[] = [];
+    const [beautyRes, animRes, fittedRes, underwearRes] = await Promise.all([
+      fetch('/assets/beauty/catalog.json').then((r) => (r.ok ? (r.json() as Promise<RawBeautyCatalogJson>) : null)).catch(() => null),
+      fetch('/assets/animations/catalog.json').then((r) => (r.ok ? (r.json() as Promise<RawAnimCatalogJson>) : null)).catch(() => null),
+      fetch('/assets/outfit/fitted/catalog.json').then((r) => (r.ok ? (r.json() as Promise<RawFittedOutfitCatalogJson>) : null)).catch(() => null),
+      fetch('/assets/underwear/catalog.json').then((r) => (r.ok ? (r.json() as Promise<RawUnderwearCatalogJson>) : null)).catch(() => null),
+    ]);
+
+    if (underwearRes?.items && Array.isArray(underwearRes.items)) {
+      for (const u of underwearRes.items) {
+        if (!u.id || !u.uv?.url) continue;
+        const gender: WardrobeItemGender = u.gender === 'male' ? 'male' : 'female';
+        const subSlot: 'underwear' | 'corewear' = u.subSlot === 'corewear' ? 'corewear' : 'underwear';
+        const isCore = subSlot === 'corewear';
+        const grad: [string, string] = isCore
+          ? gender === 'female'
+            ? ['#f472b6', '#831843']
+            : ['#60a5fa', '#1e3a8a']
+          : gender === 'female'
+            ? ['#fda4af', '#9f1239']
+            : ['#94a3b8', '#1e293b'];
+        collected.push({
+          id: u.id,
+          slot: 'underwear',
+          underwearSubSlot: subSlot,
+          gender,
+          name: u.label,
+          subtitle: u.tag || (isCore ? 'Corewear' : 'Underwear'),
+          collection: isCore ? 'Corewear · Singlet/Bustier' : 'Underwear · Pakaian Dalam',
+          priceLul: 0,
+          isStarterDefault: false,
+          glbPath: null,
+          thumbUrl: u.thumbUrl ?? null,
+          beautyOverlay: {
+            f: gender === 'female' ? u.uv : null,
+            m: gender === 'male' ? u.uv : null,
+          },
+          swatchGradient: grad,
+          accentHex: grad[0],
+        });
+      }
+    }
+
+    if (fittedRes?.items && Array.isArray(fittedRes.items)) {
+      for (const f of fittedRes.items) {
+        if (
+          f.slot !== 'top' &&
+          f.slot !== 'bottoms' &&
+          f.slot !== 'shoes' &&
+          f.slot !== 'hair'
+        ) {
+          continue;
+        }
+        const grad: [string, string] =
+          Array.isArray(f.swatchGradient) && f.swatchGradient.length === 2
+            ? [f.swatchGradient[0], f.swatchGradient[1]]
+            : ['#64748b', '#1e293b'];
+        collected.push({
+          id: f.id,
+          slot: f.slot,
+          gender: f.gender === 'male' ? 'male' : 'female',
+          name: f.name,
+          subtitle: f.slot === 'hair' ? 'Salon Hairstyle' : 'Morph-Fit Boutique',
+          collection: f.collection || 'Blitz Boutique',
+          priceLul: 0,
+          isStarterDefault: false,
+          glbPath: f.glbPath,
+          swatchGradient: grad,
+          accentHex: f.accentHex || grad[0],
+        });
+      }
+    }
+
+    if (beautyRes?.items && Array.isArray(beautyRes.items)) {
+      for (const b of beautyRes.items) {
+        const slot = BEAUTY_CAT_TO_SLOT[b.category];
+        if (!slot) continue;
+        const pal = BEAUTY_CAT_PALETTE[b.category] ?? BEAUTY_CAT_PALETTE.facepaint;
+        const gender: WardrobeItemGender =
+          b.gender === 'male' ? 'male' : b.gender === 'female' ? 'female' : 'unisex';
+        collected.push({
+          id: b.id,
+          slot,
+          gender,
+          name: b.label,
+          subtitle: pal.col,
+          collection: pal.col,
+          priceLul: 0,
+          isStarterDefault: false,
+          glbPath: null,
+          thumbUrl: b.thumbUrl ?? null,
+          beautyOverlay: {
+            f: b.f ?? null,
+            m: b.m ?? null,
+          },
+          swatchGradient: pal.grad,
+          accentHex: pal.accent,
+        });
+      }
+    }
+
+    if (animRes?.items && Array.isArray(animRes.items)) {
+      for (const a of animRes.items) {
+        const pal = ANIM_CAT_PALETTE[a.category === 'anim_set' ? 'idle' : a.category] ?? ANIM_CAT_PALETTE.action;
+        const gender: WardrobeItemGender =
+          a.gender === 'male' ? 'male' : a.gender === 'female' ? 'female' : 'unisex';
+        if (a.category === 'anim_set' || a.category === 'idle') {
+          collected.push({
+            id: a.id,
+            slot: 'style_anim',
+            gender,
+            name: a.label,
+            subtitle: a.styleTag ? `${a.styleTag} · Idle/Walk/Run/Sit` : 'Idle · Walk · Run · Sit',
+            collection: pal.col,
+            priceLul: 0,
+            isStarterDefault: false,
+            glbPath: null,
+            animSet: {
+              clipCandidates: [`${a.id}_idle`],
+              walkClipCandidates: a.walkGlbPath ? [`${a.id}_walk`] : undefined,
+              runClipCandidates: a.runGlbPath ? [`${a.id}_run`] : undefined,
+              sitClipCandidates: a.sitGlbPath ? [`${a.id}_sit`] : undefined,
+              animGlbUrl: a.idleGlbPath ?? a.glbPath,
+              walkGlbUrl: a.walkGlbPath ?? null,
+              runGlbUrl: a.runGlbPath ?? null,
+              sitGlbUrl: a.sitGlbPath ?? null,
+              vibeTag: '4-State',
+            },
+            swatchGradient: pal.grad,
+            accentHex: pal.accent,
+          });
+        } else if (a.category === 'paired' && a.initiateGlbPath && a.receiveGlbPath) {
+          const subKind: 'pose' | 'dance' = a.subKind === 'dance' ? 'dance' : 'pose';
+          const grad: [string, string] =
+            subKind === 'dance' ? ['#f472b6', '#831843'] : ['#fb7185', '#9f1239'];
+          collected.push({
+            id: a.id,
+            slot: 'style_paired',
+            gender: 'unisex',
+            name: a.label,
+            subtitle: a.styleTag || (subKind === 'dance' ? 'Dance Duo' : 'Pose Duo'),
+            collection: pal.col,
+            priceLul: 0,
+            isStarterDefault: false,
+            glbPath: null,
+            pairedAnim: {
+              initiateGlbUrl: a.initiateGlbPath,
+              receiveGlbUrl: a.receiveGlbPath,
+              subKind,
+              vibeTag: subKind === 'dance' ? 'Dance Duo' : 'Pose Duo',
+            },
+            swatchGradient: grad,
+            accentHex: grad[0],
+          });
+        } else if (a.category === 'dance' || a.category === 'pose' || a.category === 'action') {
+          const slot: 'style_dance' | 'style_pose' | 'style_action' =
+            a.category === 'dance'
+              ? 'style_dance'
+              : a.category === 'pose'
+                ? 'style_pose'
+                : 'style_action';
+          collected.push({
+            id: a.id,
+            slot,
+            gender: 'unisex',
+            name: a.label,
+            subtitle: `${pal.tag} Mocap`,
+            collection: pal.col,
+            priceLul: 0,
+            isStarterDefault: false,
+            glbPath: null,
+            dancePose: {
+              danceKind: 'none',
+              tempoBpm: 0,
+              animGlbUrl: a.glbPath,
+              vibeTag: pal.tag,
+            },
+            swatchGradient: pal.grad,
+            accentHex: pal.accent,
+          });
+        }
+      }
+    }
+
+    registerExternalWardrobeItems(collected);
+    externalCatalogsLoaded = true;
+    return dynamicExternalWardrobeItems.length;
+  })();
+
+  return externalCatalogsLoadPromise;
+}
 
 export const BUILT_IN_WARDROBE_PRESETS: readonly WardrobeSavedPreset[] = [
   {
@@ -1645,111 +1884,111 @@ export const BUILT_IN_WARDROBE_PRESETS: readonly WardrobeSavedPreset[] = [
     draft: { ...EMPTY_WARDROBE_DRAFT },
     accentGradient: ['#94a3b8', '#334155'],
   },
-  // Female Curated Looks
+  // Female Curated Looks (Clean Blender Modular Sets)
   {
     id: 'preset_builtin_f_noir_atelier',
-    name: 'Noir Atelier',
+    name: 'Glam Atelier 01',
     createdAtMs: 1,
     isBuiltIn: true,
     gender: 'female',
     draft: {
       ...EMPTY_WARDROBE_DRAFT,
-      hairId: 'blitz_f01_hair',
-      setId: 'blitz_f01_set',
+      hairId: 'bl_bl_f_o1_hair',
+      setId: 'bl_set_f_outfit01',
     },
     accentGradient: ['#475569', '#09090b'],
   },
   {
     id: 'preset_builtin_f_city_chic',
-    name: 'City Chic',
+    name: 'Nadia Studio 02',
     createdAtMs: 2,
     isBuiltIn: true,
     gender: 'female',
     draft: {
       ...EMPTY_WARDROBE_DRAFT,
-      hairId: 'blitz_f02_hair',
-      setId: 'blitz_f02_set',
+      hairId: 'bl_bl_f_o2_hair',
+      setId: 'bl_set_f_outfit02',
     },
-    accentGradient: ['#fda4af', '#881337'],
+    accentGradient: ['#38bdf8', '#1d4ed8'],
   },
   {
     id: 'preset_builtin_f_academy_street',
-    name: 'Academy Street',
+    name: 'Mira Street 03',
     createdAtMs: 3,
     isBuiltIn: true,
     gender: 'female',
     draft: {
       ...EMPTY_WARDROBE_DRAFT,
-      hairId: 'blitz_f03_hair',
-      setId: 'blitz_f03_set',
+      hairId: 'bl_bl_f_o3_hair',
+      setId: 'bl_set_f_outfit03',
     },
-    accentGradient: ['#38bdf8', '#1e3a8a'],
+    accentGradient: ['#facc15', '#b45309'],
   },
   {
     id: 'preset_builtin_f_urban_luxe',
-    name: 'Urban Luxe',
+    name: 'Urban Chic 04',
     createdAtMs: 4,
     isBuiltIn: true,
     gender: 'female',
     draft: {
       ...EMPTY_WARDROBE_DRAFT,
-      hairId: 'blitz_f04_hair',
-      setId: 'blitz_f04_set',
+      hairId: 'bl_bl_f_o4_hair',
+      setId: 'bl_set_f_outfit04',
     },
-    accentGradient: ['#c084fc', '#4c1d95'],
+    accentGradient: ['#475569', '#0f172a'],
   },
-  // Male Curated Looks
+  // Male Curated Looks (Clean Blender Modular Sets)
   {
     id: 'preset_builtin_m_plaza_street',
-    name: 'Plaza Street',
+    name: 'Pure Street 01',
     createdAtMs: 5,
     isBuiltIn: true,
     gender: 'male',
     draft: {
       ...EMPTY_WARDROBE_DRAFT,
-      hairId: 'blitz_m01_hair',
-      setId: 'blitz_m01_set',
+      hairId: 'bl_bl_m_o1_hair',
+      setId: 'bl_set_m_outfit01',
     },
-    accentGradient: ['#38bdf8', '#1e3a8a'],
+    accentGradient: ['#e2e8f0', '#475569'],
   },
   {
     id: 'preset_builtin_m_metro_layered',
-    name: 'Metro Layered',
+    name: 'Casual Hoodie 02',
     createdAtMs: 6,
     isBuiltIn: true,
     gender: 'male',
     draft: {
       ...EMPTY_WARDROBE_DRAFT,
-      hairId: 'blitz_m02_hair',
-      setId: 'blitz_m02_set',
+      hairId: 'bl_bl_m_o2_hair',
+      setId: 'bl_set_m_outfit02',
     },
-    accentGradient: ['#64748b', '#0f172a'],
+    accentGradient: ['#334155', '#09090b'],
   },
   {
     id: 'preset_builtin_m_studio_casual',
-    name: 'Studio Casual',
+    name: 'Floral Flame 03',
     createdAtMs: 7,
     isBuiltIn: true,
     gender: 'male',
     draft: {
       ...EMPTY_WARDROBE_DRAFT,
-      hairId: 'blitz_m03_hair',
-      setId: 'blitz_m03_set',
+      hairId: 'bl_bl_m_o3_hair',
+      setId: 'bl_set_m_outfit03',
     },
-    accentGradient: ['#34d399', '#065f46'],
+    accentGradient: ['#fb923c', '#9a3412'],
   },
   {
     id: 'preset_builtin_m_vanguard_urban',
-    name: 'Vanguard Urban',
+    name: 'Cream Urban 04',
     createdAtMs: 8,
     isBuiltIn: true,
     gender: 'male',
     draft: {
       ...EMPTY_WARDROBE_DRAFT,
-      hairId: 'blitz_m04_hair',
-      setId: 'blitz_m04_set',
+      hairId: 'bl_bl_m_o4_hair',
+      setId: 'bl_set_m_outfit04',
     },
-    accentGradient: ['#facc15', '#b45309'],
+    accentGradient: ['#fde68a', '#78350f'],
   },
 ] as const;
 
@@ -1771,7 +2010,11 @@ export function getVisibleBuiltInWardrobePresets(
 
 export function getWardrobeCatalogItemById(id: string | null | undefined): WardrobeCatalogItem | null {
   if (!id) return null;
-  return WARDROBE_STUDIO_ITEMS.find((item) => item.id === id) ?? null;
+  return (
+    WARDROBE_STUDIO_ITEMS.find((item) => item.id === id) ??
+    dynamicExternalItemsById.get(id) ??
+    null
+  );
 }
 
 export function isWardrobeItemOwned(
@@ -1792,9 +2035,13 @@ export function partitionWardrobeCategoryItems(
   shop: WardrobeCatalogItem[];
   allVisible: WardrobeCatalogItem[];
 } {
-  const inSlot = WARDROBE_STUDIO_ITEMS.filter(
+  const staticInSlot = WARDROBE_STUDIO_ITEMS.filter(
     (item) => item.slot === slot && isWardrobeItemCompatibleWithGender(item, characterGender),
   );
+  const dynamicInSlot = dynamicExternalWardrobeItems.filter(
+    (item) => item.slot === slot && isWardrobeItemCompatibleWithGender(item, characterGender),
+  );
+  const inSlot = dynamicInSlot.length > 0 ? [...staticInSlot, ...dynamicInSlot] : staticInSlot;
   const sortList = (list: WardrobeCatalogItem[]): WardrobeCatalogItem[] => {
     const copy = [...list];
     if (sortMode === 'price_asc') {
@@ -1824,12 +2071,22 @@ export function areWardrobeDraftsEqual(a: WardrobeOutfitDraft, b: WardrobeOutfit
     a.shoesId === b.shoesId &&
     a.hairId === b.hairId &&
     a.setId === b.setId &&
+    (a.underwearId ?? null) === (b.underwearId ?? null) &&
+    (a.corewearId ?? null) === (b.corewearId ?? null) &&
+    Boolean(a.hideOuterForUnderwear) === Boolean(b.hideOuterForUnderwear) &&
     a.bodyShapeId === b.bodyShapeId &&
     a.eyeStyleId === b.eyeStyleId &&
     a.browStyleId === b.browStyleId &&
     a.lipStyleId === b.lipStyleId &&
+    (a.eyeshadowId ?? null) === (b.eyeshadowId ?? null) &&
+    (a.blushId ?? null) === (b.blushId ?? null) &&
+    (a.facepaintId ?? null) === (b.facepaintId ?? null) &&
+    (a.beardId ?? null) === (b.beardId ?? null) &&
     a.animSetId === b.animSetId &&
     a.dancePoseId === b.dancePoseId &&
+    (a.stylePoseId ?? null) === (b.stylePoseId ?? null) &&
+    (a.styleActionId ?? null) === (b.styleActionId ?? null) &&
+    (a.stylePairedId ?? null) === (b.stylePairedId ?? null) &&
     a.clothingTintHex === b.clothingTintHex
   );
 }
@@ -1877,8 +2134,8 @@ export function redoWardrobeDraft(history: WardrobeHistoryState): WardrobeHistor
 
 /**
  * Applies an item click onto a draft: selecting a full Set clears individual
- * conflicting garment slots cleanly, while Body Shape and Hair remain orthogonal
- * so players can combine any silhouette with any outfit or full set.
+ * conflicting garment slots cleanly, while Body Shape, Face Makeup, Style, and Hair
+ * remain orthogonal so players can combine any silhouette with any outfit or full set.
  */
 export function applyItemSelectionToDraft(
   current: WardrobeOutfitDraft,
@@ -1902,17 +2159,69 @@ export function applyItemSelectionToDraft(
     next.lipStyleId = next.lipStyleId === resolvedId ? null : resolvedId;
     return next;
   }
+  if (item.slot === 'face_eyeshadow') {
+    next.eyeshadowId = (next.eyeshadowId ?? null) === resolvedId ? null : resolvedId;
+    return next;
+  }
+  if (item.slot === 'face_blush') {
+    next.blushId = (next.blushId ?? null) === resolvedId ? null : resolvedId;
+    return next;
+  }
+  if (item.slot === 'face_facepaint') {
+    next.facepaintId = (next.facepaintId ?? null) === resolvedId ? null : resolvedId;
+    return next;
+  }
+  if (item.slot === 'face_beard') {
+    next.beardId = (next.beardId ?? null) === resolvedId ? null : resolvedId;
+    return next;
+  }
   if (item.slot === 'style_anim') {
     next.animSetId = next.animSetId === resolvedId ? null : resolvedId;
+    next.stylePoseId = null;
+    next.styleActionId = null;
     return next;
   }
   if (item.slot === 'style_dance') {
     next.dancePoseId = next.dancePoseId === resolvedId ? null : resolvedId;
+    next.stylePoseId = null;
+    next.styleActionId = null;
+    return next;
+  }
+  if (item.slot === 'style_pose') {
+    next.stylePoseId = (next.stylePoseId ?? null) === resolvedId ? null : resolvedId;
+    next.dancePoseId = null;
+    next.styleActionId = null;
+    return next;
+  }
+  if (item.slot === 'style_action') {
+    next.styleActionId = (next.styleActionId ?? null) === resolvedId ? null : resolvedId;
+    next.dancePoseId = null;
+    next.stylePoseId = null;
+    next.stylePairedId = null;
+    return next;
+  }
+  if (item.slot === 'style_paired') {
+    next.stylePairedId = (next.stylePairedId ?? null) === resolvedId ? null : resolvedId;
+    next.dancePoseId = null;
+    next.stylePoseId = null;
+    next.styleActionId = null;
+    return next;
+  }
+  if (item.slot === 'underwear') {
+    if (item.isStarterDefault) {
+      next.underwearId = null;
+      next.corewearId = null;
+    } else if (item.underwearSubSlot === 'corewear') {
+      next.corewearId = (next.corewearId ?? null) === resolvedId ? null : resolvedId;
+    } else {
+      next.underwearId = (next.underwearId ?? null) === resolvedId ? null : resolvedId;
+    }
     return next;
   }
   if (item.slot === 'set') {
     const isSame = next.setId === resolvedId;
     next.setId = isSame ? null : resolvedId;
+    next.hideOuterForUnderwear = false;
     if (next.setId) {
       next.topId = null;
       next.bottomsId = null;
@@ -1928,8 +2237,10 @@ export function applyItemSelectionToDraft(
 
   if (item.slot === 'top') {
     next.topId = next.topId === resolvedId ? null : resolvedId;
+    next.hideOuterForUnderwear = false;
   } else if (item.slot === 'bottoms') {
     next.bottomsId = next.bottomsId === resolvedId ? null : resolvedId;
+    next.hideOuterForUnderwear = false;
   } else if (item.slot === 'shoes') {
     next.shoesId = next.shoesId === resolvedId ? null : resolvedId;
   } else if (item.slot === 'hair') {
@@ -1952,12 +2263,21 @@ export function collectUnownedItemsInDraft(
     draft.bottomsId,
     draft.shoesId,
     draft.hairId,
+    draft.underwearId,
+    draft.corewearId,
     draft.bodyShapeId,
     draft.eyeStyleId,
     draft.browStyleId,
     draft.lipStyleId,
+    draft.eyeshadowId,
+    draft.blushId,
+    draft.facepaintId,
+    draft.beardId,
     draft.animSetId,
     draft.dancePoseId,
+    draft.stylePoseId,
+    draft.styleActionId,
+    draft.stylePairedId,
   ];
   const locked: WardrobeCatalogItem[] = [];
   for (const id of ids) {
@@ -1998,36 +2318,136 @@ export function sanitizeDraftToOwnedOnly(
     shoesId: keepIfOwned(draft.shoesId),
     hairId: keepIfOwned(draft.hairId),
     setId: keepIfOwned(draft.setId),
+    underwearId: keepIfOwned(draft.underwearId),
+    corewearId: keepIfOwned(draft.corewearId),
+    hideOuterForUnderwear: Boolean(draft.hideOuterForUnderwear),
     bodyShapeId: keepIfOwned(draft.bodyShapeId),
     eyeStyleId: keepIfOwned(draft.eyeStyleId),
     browStyleId: keepIfOwned(draft.browStyleId),
     lipStyleId: keepIfOwned(draft.lipStyleId),
+    eyeshadowId: keepIfOwned(draft.eyeshadowId),
+    blushId: keepIfOwned(draft.blushId),
+    facepaintId: keepIfOwned(draft.facepaintId),
+    beardId: keepIfOwned(draft.beardId),
     animSetId: keepIfOwned(draft.animSetId),
     dancePoseId: keepIfOwned(draft.dancePoseId),
+    stylePoseId: keepIfOwned(draft.stylePoseId),
+    styleActionId: keepIfOwned(draft.styleActionId),
+    stylePairedId: keepIfOwned(draft.stylePairedId),
     clothingTintHex: draft.clothingTintHex,
   };
 }
 
+/**
+ * Returns all owned Pose, Action, and Dance items available for the quick Pose popup
+ * above the movement joystick (excludes "None / Default" reset cards).
+ */
+export function getOwnedQuickPoseActionItems(
+  ownedApparelIds: readonly string[],
+  characterGender?: 'male' | 'female',
+): WardrobeCatalogItem[] {
+  const slots: ReadonlyArray<'style_pose' | 'style_action' | 'style_dance'> = [
+    'style_pose',
+    'style_action',
+    'style_dance',
+  ];
+  const out: WardrobeCatalogItem[] = [];
+  for (const slot of slots) {
+    const part = partitionWardrobeCategoryItems(
+      slot,
+      ownedApparelIds,
+      'owned',
+      'featured',
+      characterGender,
+    );
+    for (const item of part.owned) {
+      if (item.isStarterDefault) continue;
+      if (!item.dancePose?.animGlbUrl && item.dancePose?.danceKind === 'none') continue;
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+/**
+ * Returns all owned Paired (2-person) Pose & Dance animations available when
+ * interacting with a nearby player or NPC.
+ */
+export function getOwnedPairedAnimationItems(
+  ownedApparelIds: readonly string[],
+  characterGender?: 'male' | 'female',
+): WardrobeCatalogItem[] {
+  const part = partitionWardrobeCategoryItems(
+    'style_paired',
+    ownedApparelIds,
+    'owned',
+    'featured',
+    characterGender,
+  );
+  return part.owned.filter((item) => !item.isStarterDefault && Boolean(item.pairedAnim));
+}
+
 export function resolveWardrobeDraftAnimStyle(draft: WardrobeOutfitDraft): {
   clipCandidates: readonly string[];
+  walkClipCandidates: readonly string[];
+  runClipCandidates: readonly string[];
+  sitClipCandidates: readonly string[];
   danceKind: WardrobeDanceKind;
   tempoBpm: number;
+  externalAnimGlbUrl: string | null;
+  externalClipKey: string | null;
+  walkGlbUrl: string | null;
+  walkClipKey: string | null;
+  runGlbUrl: string | null;
+  runClipKey: string | null;
+  sitGlbUrl: string | null;
+  sitClipKey: string | null;
 } {
   const animItem = getWardrobeCatalogItemById(draft.animSetId);
   const danceItem = getWardrobeCatalogItemById(draft.dancePoseId);
+  const poseItem = getWardrobeCatalogItemById(draft.stylePoseId);
+  const actionItem = getWardrobeCatalogItemById(draft.styleActionId);
+  const activeSet = animItem && animItem.slot === 'style_anim' ? animItem.animSet : undefined;
+
+  let externalAnimGlbUrl: string | null = null;
+  let externalClipKey: string | null = null;
+  if (actionItem?.dancePose?.animGlbUrl) {
+    externalAnimGlbUrl = actionItem.dancePose.animGlbUrl;
+    externalClipKey = actionItem.id;
+  } else if (poseItem?.dancePose?.animGlbUrl) {
+    externalAnimGlbUrl = poseItem.dancePose.animGlbUrl;
+    externalClipKey = poseItem.id;
+  } else if (danceItem?.dancePose?.animGlbUrl) {
+    externalAnimGlbUrl = danceItem.dancePose.animGlbUrl;
+    externalClipKey = danceItem.id;
+  } else if (activeSet?.animGlbUrl) {
+    externalAnimGlbUrl = activeSet.animGlbUrl;
+    externalClipKey = `${animItem!.id}_idle`;
+  }
+
   return {
-    clipCandidates:
-      animItem && animItem.slot === 'style_anim' && animItem.animSet
-        ? animItem.animSet.clipCandidates
-        : ['nadia_idle.001', 'hana_idle.001', 'mira_idle.001', 'idle.001'],
+    clipCandidates: activeSet
+      ? activeSet.clipCandidates
+      : ['nadia_idle.001', 'hana_idle.001', 'mira_idle.001', 'idle.001'],
+    walkClipCandidates: activeSet?.walkClipCandidates ?? [],
+    runClipCandidates: activeSet?.runClipCandidates ?? [],
+    sitClipCandidates: activeSet?.sitClipCandidates ?? [],
     danceKind:
-      danceItem && danceItem.slot === 'style_dance' && danceItem.dancePose
+      !externalAnimGlbUrl && danceItem && danceItem.slot === 'style_dance' && danceItem.dancePose
         ? danceItem.dancePose.danceKind
         : 'none',
     tempoBpm:
-      danceItem && danceItem.slot === 'style_dance' && danceItem.dancePose
+      !externalAnimGlbUrl && danceItem && danceItem.slot === 'style_dance' && danceItem.dancePose
         ? danceItem.dancePose.tempoBpm
         : 0,
+    externalAnimGlbUrl,
+    externalClipKey,
+    walkGlbUrl: activeSet?.walkGlbUrl ?? null,
+    walkClipKey: activeSet?.walkGlbUrl && animItem ? `${animItem.id}_walk` : null,
+    runGlbUrl: activeSet?.runGlbUrl ?? null,
+    runClipKey: activeSet?.runGlbUrl && animItem ? `${animItem.id}_run` : null,
+    sitGlbUrl: activeSet?.sitGlbUrl ?? null,
+    sitClipKey: activeSet?.sitGlbUrl && animItem ? `${animItem.id}_sit` : null,
   };
 }
 
@@ -2045,14 +2465,36 @@ export function resolveWardrobeDraftBodyShape(
 }
 
 /**
- * Resolves the active Face customization (Eyes, Eyebrows, Lips) for a draft.
+ * Resolves the active Face & Makeup customization (Eyes, Brows, Lips, Eyeshadow,
+ * Blush, Face Paint/Art, Beard) for a draft, choosing gender-calibrated UV overlays.
  */
 export function resolveWardrobeDraftFaceCustomization(
   draft: WardrobeOutfitDraft,
+  characterGender?: 'male' | 'female',
 ): BuddyFaceCustomizationProfile {
+  const pickOverlay = (item: WardrobeCatalogItem | null): BeautyUvLayerSpec | null => {
+    if (!item || item.isStarterDefault || !item.beautyOverlay) return null;
+    if (characterGender === 'male') {
+      return item.beautyOverlay.m ?? item.beautyOverlay.f ?? null;
+    }
+    return item.beautyOverlay.f ?? item.beautyOverlay.m ?? null;
+  };
+
   const eyeItem = getWardrobeCatalogItemById(draft.eyeStyleId);
   const browItem = getWardrobeCatalogItemById(draft.browStyleId);
   const lipItem = getWardrobeCatalogItemById(draft.lipStyleId);
+  const eyeshadowItem = getWardrobeCatalogItemById(draft.eyeshadowId);
+  const blushItem = getWardrobeCatalogItemById(draft.blushId);
+  const facepaintItem = getWardrobeCatalogItemById(draft.facepaintId);
+  const beardItem = getWardrobeCatalogItemById(draft.beardId);
+  const underwearItem = getWardrobeCatalogItemById(draft.underwearId);
+  const corewearItem = getWardrobeCatalogItemById(draft.corewearId);
+
+  const pickGenderedOverlay = (item: WardrobeCatalogItem | null): BeautyUvLayerSpec | null => {
+    if (!item || !isWardrobeItemCompatibleWithGender(item, characterGender)) return null;
+    return pickOverlay(item);
+  };
+
   return {
     eyeStyle:
       eyeItem && eyeItem.slot === 'face_eyes' && !eyeItem.isStarterDefault && eyeItem.eyeStyle
@@ -2066,6 +2508,17 @@ export function resolveWardrobeDraftFaceCustomization(
       lipItem && lipItem.slot === 'face_lips' && !lipItem.isStarterDefault && lipItem.lipStyle
         ? lipItem.lipStyle
         : DEFAULT_NEUTRAL_FACE_CUSTOMIZATION.lipStyle,
+    eyeOverlay: eyeItem?.slot === 'face_eyes' ? pickOverlay(eyeItem) : null,
+    browOverlay: browItem?.slot === 'face_brows' ? pickOverlay(browItem) : null,
+    lipOverlay: lipItem?.slot === 'face_lips' ? pickOverlay(lipItem) : null,
+    eyeshadowOverlay: eyeshadowItem?.slot === 'face_eyeshadow' ? pickOverlay(eyeshadowItem) : null,
+    blushOverlay: blushItem?.slot === 'face_blush' ? pickOverlay(blushItem) : null,
+    facepaintOverlay: facepaintItem?.slot === 'face_facepaint' ? pickOverlay(facepaintItem) : null,
+    beardOverlay: beardItem?.slot === 'face_beard' ? pickGenderedOverlay(beardItem) : null,
+    underwearOverlay:
+      underwearItem?.slot === 'underwear' ? pickGenderedOverlay(underwearItem) : null,
+    corewearOverlay:
+      corewearItem?.slot === 'underwear' ? pickGenderedOverlay(corewearItem) : null,
   };
 }
 
@@ -2090,6 +2543,7 @@ export function resolveWardrobeDraftToModularOutfitUrls(
     legsUrl: resolveSlotUrl(draft.bottomsId),
     feetUrl: resolveSlotUrl(draft.shoesId),
     hairUrl: resolveSlotUrl(draft.hairId),
+    hideOuterClothes: Boolean(draft.hideOuterForUnderwear),
   };
 }
 

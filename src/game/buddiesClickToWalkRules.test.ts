@@ -21,6 +21,9 @@ import {
   CITY_NAV_MAX_COORD,
   CITY_NAV_MIN_COORD,
   CLICK_TO_WALK_MAX_DRAG_PX,
+  CLICK_TO_WALK_RUN_START_DISTANCE_M,
+  CLICK_TO_WALK_WALK_DECEL_DISTANCE_M,
+  PLAYER_WALK_SPEED_SCALE,
   buildCityNavGrid,
   cancelClickToWalkState,
   createClickToWalkIndicator3D,
@@ -32,6 +35,7 @@ import {
   planCityClickToWalkRoute,
   planInteriorClickToWalkRoute,
   radarPercentToWorldCoord,
+  resolvePlayerLocomotionGait,
   samplePolylineBreadcrumbs,
   snapWorldPointToWalkable,
   startClickToWalkState,
@@ -521,4 +525,61 @@ test('3D aerial City View clicks across Kota and every CITY_VIEW_DISTRICTS focus
       `City View route to ${dist.id} violated clearance: ${clearance.violationReason}`,
     );
   }
+});
+
+test('resolvePlayerLocomotionGait walks on short click & WASD without Shift, runs on far click & WASD+Shift', () => {
+  // 1. WASD without Shift -> ALWAYS walk
+  const wasdNoShift = resolvePlayerLocomotionGait({
+    isClickToWalk: false,
+    isShiftHeld: false,
+    isIndoor: false,
+    clickTotalDistanceM: 0,
+    clickRemainingDistanceM: 0,
+  });
+  assert.equal(wasdNoShift.gait, 'walk');
+  assert.equal(wasdNoShift.speedMultiplier, PLAYER_WALK_SPEED_SCALE);
+
+  // 2. WASD with Shift -> RUN
+  const wasdShift = resolvePlayerLocomotionGait({
+    isClickToWalk: false,
+    isShiftHeld: true,
+    isIndoor: false,
+    clickTotalDistanceM: 0,
+    clickRemainingDistanceM: 0,
+  });
+  assert.equal(wasdShift.gait, 'run');
+  assert.equal(wasdShift.speedMultiplier, 1.0);
+
+  // 3. Click-to-Walk a few meters away (< 9m) -> WALK
+  const shortClick = resolvePlayerLocomotionGait({
+    isClickToWalk: true,
+    isShiftHeld: false,
+    isIndoor: false,
+    clickTotalDistanceM: 5.0,
+    clickRemainingDistanceM: 4.2,
+  });
+  assert.equal(shortClick.gait, 'walk');
+  assert.equal(shortClick.speedMultiplier, PLAYER_WALK_SPEED_SCALE);
+
+  // 4. Click-to-Walk far away (>= 9m) -> RUN until final deceleration band
+  const farClickMid = resolvePlayerLocomotionGait({
+    isClickToWalk: true,
+    isShiftHeld: false,
+    isIndoor: false,
+    clickTotalDistanceM: CLICK_TO_WALK_RUN_START_DISTANCE_M + 8,
+    clickRemainingDistanceM: 12.0,
+  });
+  assert.equal(farClickMid.gait, 'run');
+  assert.equal(farClickMid.speedMultiplier, 1.0);
+
+  // 5. Far Click-to-Walk eases back into WALK on final approach
+  const farClickArriving = resolvePlayerLocomotionGait({
+    isClickToWalk: true,
+    isShiftHeld: false,
+    isIndoor: false,
+    clickTotalDistanceM: CLICK_TO_WALK_RUN_START_DISTANCE_M + 8,
+    clickRemainingDistanceM: CLICK_TO_WALK_WALK_DECEL_DISTANCE_M - 0.5,
+  });
+  assert.equal(farClickArriving.gait, 'walk');
+  assert.equal(farClickArriving.speedMultiplier, PLAYER_WALK_SPEED_SCALE);
 });
