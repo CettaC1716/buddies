@@ -165,6 +165,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
   if (!isOpen) return null;
 
   const isHome = activeApp === 'home';
+  const isDarkShell = isHome || activeApp === 'wallet';
   const clockLabel = formatClock24h(timeOfDayHours);
   const weatherMeta = WEATHER_DISPLAY[weatherCondition] ?? WEATHER_DISPLAY.cerah;
   const phaseLabel = PHASE_DISPLAY[lightingPreset] ?? 'Daytime';
@@ -282,7 +283,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
           }}
           aria-label="Close Smartphone"
           className={`absolute -top-2.5 -right-2.5 z-30 w-8 h-8 rounded-full backdrop-blur-xl border flex items-center justify-center shadow-[0_6px_18px_rgba(0,0,0,0.28)] cursor-pointer transition-all active:scale-95 ${
-            isHome
+            isDarkShell
               ? 'bg-white/25 hover:bg-white/40 border-white/35 text-white'
               : 'bg-white hover:bg-slate-100 border-slate-200/90 text-slate-700'
           }`}
@@ -293,7 +294,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
         {/* Unified Smartphone OS Frame */}
         <div
           className={`w-full h-full rounded-[34px] overflow-hidden flex flex-col backdrop-blur-2xl shadow-[0_24px_70px_rgba(0,0,0,0.52)] border transition-colors duration-200 ${
-            isHome
+            isDarkShell
               ? 'bg-[#141926]/62 border-white/25 text-white'
               : 'bg-[#f4f6f9]/98 border-white/80 text-slate-900'
           }`}
@@ -301,14 +302,14 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
           {/* Persistent Phone Status Bar */}
           <div
             className={`shrink-0 flex items-center justify-between text-[10.5px] font-medium px-5 pt-3 pb-2 transition-colors ${
-              isHome
+              isDarkShell
                 ? 'text-white/90'
                 : 'bg-white/95 text-slate-700 border-b border-slate-200/60'
             }`}
           >
             <div className="flex items-center gap-1.5">
               <Wifi
-                className={`w-3 h-3 ${isHome ? 'text-white/85' : 'text-slate-600'}`}
+                className={`w-3 h-3 ${isDarkShell ? 'text-white/85' : 'text-slate-600'}`}
                 aria-hidden="true"
               />
               <span className="tracking-wide font-semibold">BLITZ OS</span>
@@ -503,7 +504,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
             aria-label="Smartphone Navigation"
             data-smartphone-nav-bar="true"
             className={`h-12 px-10 flex items-center justify-between shrink-0 border-t transition-colors ${
-              isHome
+              isDarkShell
                 ? 'bg-[#0d1118]/45 border-white/15 text-white/85'
                 : 'bg-white/96 border-slate-200/80 text-slate-600'
             }`}
@@ -518,7 +519,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
               aria-label="Back"
               title={canGoBack ? 'Back' : 'Close'}
               className={`w-10 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer active:scale-90 ${
-                isHome
+                isDarkShell
                   ? 'hover:bg-white/12 text-white/75 hover:text-white'
                   : 'hover:bg-slate-100 text-slate-700 hover:text-slate-950'
               }`}
@@ -536,7 +537,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
               aria-label="Home"
               title="Home"
               className={`w-12 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer active:scale-90 ${
-                isHome
+                isDarkShell
                   ? 'bg-white/22 text-white ring-1 ring-white/35'
                   : 'bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-950'
               }`}
@@ -554,7 +555,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
               aria-label="Close Smartphone"
               title="Close"
               className={`w-10 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer active:scale-90 ${
-                isHome
+                isDarkShell
                   ? 'hover:bg-white/12 text-white/75 hover:text-white'
                   : 'hover:bg-slate-100 text-slate-600 hover:text-slate-950'
               }`}

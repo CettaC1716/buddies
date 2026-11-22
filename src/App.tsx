@@ -7632,8 +7632,8 @@ export default function App() {
         data-personal-wallet-modal={embeddedInPhone ? "true" : undefined}
         className={
           embeddedInPhone
-            ? "relative w-full h-full flex-1 flex flex-col bg-[#0a0d16]/55 backdrop-blur-xl backdrop-saturate-150 text-white overflow-hidden min-h-0"
-            : "relative flex-1 flex flex-col rounded-[28px] bg-[#0a0d16]/55 backdrop-blur-2xl backdrop-saturate-150 border border-white/15 shadow-[0_24px_64px_rgba(0,0,0,0.45)] text-white overflow-hidden min-h-0"
+            ? "relative w-full h-full flex-1 flex flex-col bg-transparent text-white overflow-hidden min-h-0"
+            : "relative flex-1 flex flex-col rounded-[28px] bg-[#141926]/80 backdrop-blur-2xl backdrop-saturate-150 border border-white/15 shadow-[0_24px_64px_rgba(0,0,0,0.45)] text-white overflow-hidden min-h-0"
         }
       >
           <div className={`flex items-center justify-between gap-2 bg-white/[0.04] border-b border-white/10 shrink-0 ${embeddedInPhone ? 'px-3.5 py-2.5' : 'px-5 py-3.5'}`}>
