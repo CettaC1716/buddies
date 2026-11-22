@@ -12,6 +12,7 @@ import { formatClock24h } from '../game/buddiesWeatherSystem';
 export interface HudWeatherAndTimeControlProps {
   contextId: 'city' | 'warzone' | 'city_view';
   popoverPlacement?: 'top' | 'bottom';
+  popoverAlign?: 'left' | 'right';
   lightingPreset: LightingPresetKey;
   timeOfDayHours: number;
   weatherCondition: WeatherConditionKey;
@@ -75,6 +76,7 @@ function getWeatherMeta(condition: WeatherConditionKey): { icon: string; label: 
 export function HudWeatherAndTimeControl({
   contextId,
   popoverPlacement = 'top',
+  popoverAlign = 'right',
   lightingPreset,
   timeOfDayHours,
   weatherCondition,
@@ -158,19 +160,19 @@ export function HudWeatherAndTimeControl({
           data-hud-weather-popover="true"
           onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
-          className={`absolute right-0 ${
+          className={`absolute ${popoverAlign === 'left' ? 'left-0' : 'right-0'} ${
             popoverPlacement === 'bottom' ? 'top-full mt-2.5' : 'bottom-full mb-2.5'
-          } z-50 w-[282px] bg-[#14161d] text-white border-3 border-black ring-2 ring-white shadow-[5px_5px_0_#000] p-3 space-y-2.5`}
+          } z-50 w-[286px] rounded-2xl bg-[#0d1118]/86 backdrop-blur-xl text-white border border-white/15 shadow-[0_18px_46px_rgba(0,0,0,0.58)] p-3.5 space-y-3`}
         >
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-white/15 pb-1.5 gap-2">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span className="text-[11px] font-black tracking-wide text-white whitespace-nowrap">
+          <div className="flex items-center justify-between border-b border-white/10 pb-2 gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xs font-semibold tracking-tight text-white whitespace-nowrap">
                 Weather &amp; Time
               </span>
               <span
                 data-weather-clock-label="true"
-                className="px-1.5 py-0.5 bg-[#1f2430] border border-white/20 text-[10px] font-mono tabular-nums font-black text-[#b8ff3c]"
+                className="px-2 py-0.5 rounded-full bg-white/[0.08] border border-white/12 text-[10px] font-mono tabular-nums font-semibold text-amber-200"
               >
                 {clockLabel}
               </span>
@@ -181,7 +183,7 @@ export function HudWeatherAndTimeControl({
                 data-weather-quick-cycle-btn="true"
                 onClick={() => onCycleTimePhase()}
                 title="Cycle Time Phase [L]"
-                className="px-1.5 py-0.5 bg-[#272c3a] hover:bg-[#353c4f] text-[10px] font-black text-[#fde047] border border-white/20 cursor-pointer"
+                className="px-2 py-0.5 rounded-full bg-white/[0.08] hover:bg-white/[0.18] text-[10px] font-medium text-amber-200 border border-white/10 cursor-pointer transition-colors"
               >
                 ↻ Phase
               </button>
@@ -189,7 +191,7 @@ export function HudWeatherAndTimeControl({
                 type="button"
                 onClick={() => setIsOpen(false)}
                 aria-label="Close Weather & Time Menu"
-                className="px-1.5 py-0.5 bg-white/10 hover:bg-white/20 text-[10px] font-black text-slate-200 border border-white/20 cursor-pointer"
+                className="px-2 py-0.5 rounded-full bg-white/[0.08] hover:bg-white/[0.18] text-[10px] font-medium text-white/85 border border-white/10 cursor-pointer transition-colors"
               >
                 Done
               </button>
@@ -197,22 +199,22 @@ export function HudWeatherAndTimeControl({
           </div>
 
           {/* Auto Cycle Toggle */}
-          <label className="flex items-center justify-between gap-2 px-2 py-1.5 bg-[#1f2430] border border-white/20 cursor-pointer">
-            <span className="flex items-center gap-1.5 text-[11px] font-bold text-slate-100">
+          <label className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.05] border border-white/10 cursor-pointer">
+            <span className="flex items-center gap-2 text-[11px] font-medium text-white/90">
               <input
                 type="checkbox"
                 data-weather-autocycle-checkbox="true"
                 checked={autoCycleEnabled}
                 onChange={(e) => onToggleAutoCycle(e.currentTarget.checked)}
-                className="w-3.5 h-3.5 accent-[#b8ff3c] cursor-pointer"
+                className="w-3.5 h-3.5 accent-emerald-300 cursor-pointer"
               />
               <span>Auto Cycle (24h)</span>
             </span>
             <span
-              className={`text-[9.5px] font-black uppercase px-1.5 py-0.5 border ${
+              className={`text-[9.5px] font-semibold uppercase px-2 py-0.5 rounded-full border ${
                 autoCycleEnabled
-                  ? 'bg-[#1c2820] text-[#b8ff3c] border-[#b8ff3c]'
-                  : 'bg-[#14161d] text-slate-400 border-white/15'
+                  ? 'bg-emerald-400/20 text-emerald-200 border-emerald-300/45'
+                  : 'bg-white/[0.05] text-white/45 border-white/10'
               }`}
             >
               {autoCycleEnabled ? 'ON' : 'OFF'}
@@ -221,11 +223,11 @@ export function HudWeatherAndTimeControl({
 
           {/* Time-of-Day Phase Buttons */}
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[10px] font-bold text-slate-300">
+            <div className="flex items-center justify-between text-[10.5px] font-medium text-white/70">
               <span>Time ({timeMeta.label})</span>
-              <span className="font-mono tabular-nums text-[#fde047]">{clockLabel}</span>
+              <span className="font-mono tabular-nums text-amber-200">{clockLabel}</span>
             </div>
-            <div className="grid grid-cols-4 gap-1">
+            <div className="grid grid-cols-4 gap-1.5">
               {TIME_PHASE_ITEMS.map((item) => {
                 const isActive = lightingPreset === item.key;
                 return (
@@ -234,10 +236,10 @@ export function HudWeatherAndTimeControl({
                     type="button"
                     data-weather-time-btn={item.key}
                     onClick={() => onSelectTimePhase(item.key)}
-                    className={`px-1 py-1.5 border text-[10px] font-black flex flex-col items-center gap-0.5 cursor-pointer transition-colors ${
+                    className={`px-1 py-1.5 rounded-xl border text-[10px] font-medium flex flex-col items-center gap-1 cursor-pointer transition-all ${
                       isActive
-                        ? 'bg-[#b8ff3c] text-black border-black shadow-[2px_2px_0_#000]'
-                        : 'bg-[#1f2430] hover:bg-[#2a3142] text-slate-100 border-white/20'
+                        ? 'bg-amber-300/90 text-slate-950 border-amber-200 font-semibold shadow-sm'
+                        : 'bg-white/[0.06] hover:bg-white/[0.14] text-white/85 border-white/10'
                     }`}
                   >
                     <span aria-hidden="true" className="text-xs leading-none">
@@ -257,17 +259,17 @@ export function HudWeatherAndTimeControl({
               data-weather-hour-slider="true"
               value={Number(timeOfDayHours.toFixed(2))}
               onChange={(e) => onChangeTimeOfDayHours(Number(e.currentTarget.value))}
-              className="w-full h-2 accent-[#fde047] bg-[#272c3a] rounded cursor-pointer"
+              className="w-full h-1.5 accent-amber-300 bg-white/15 rounded-full cursor-pointer"
             />
           </div>
 
           {/* Weather Buttons */}
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[10px] font-bold text-slate-300">
+            <div className="flex items-center justify-between text-[10.5px] font-medium text-white/70">
               <span>Weather</span>
-              <span className="text-[#38bdf8] font-black">{weatherMeta.label}</span>
+              <span className="text-sky-300 font-semibold">{weatherMeta.label}</span>
             </div>
-            <div className="grid grid-cols-4 gap-1">
+            <div className="grid grid-cols-4 gap-1.5">
               {WEATHER_ITEMS.map((item) => {
                 const isActive = weatherCondition === item.key;
                 return (
@@ -276,10 +278,10 @@ export function HudWeatherAndTimeControl({
                     type="button"
                     data-weather-cond-btn={item.key}
                     onClick={() => onSelectWeatherCondition(item.key)}
-                    className={`px-1 py-1.5 border text-[10px] font-black flex flex-col items-center gap-0.5 cursor-pointer transition-colors ${
+                    className={`px-1 py-1.5 rounded-xl border text-[10px] font-medium flex flex-col items-center gap-1 cursor-pointer transition-all ${
                       isActive
-                        ? 'bg-[#38bdf8] text-black border-black shadow-[2px_2px_0_#000]'
-                        : 'bg-[#1f2430] hover:bg-[#2a3142] text-slate-100 border-white/20'
+                        ? 'bg-sky-400/90 text-slate-950 border-sky-200 font-semibold shadow-sm'
+                        : 'bg-white/[0.06] hover:bg-white/[0.14] text-white/85 border-white/10'
                     }`}
                   >
                     <span aria-hidden="true" className="text-xs leading-none">
@@ -292,15 +294,15 @@ export function HudWeatherAndTimeControl({
             </div>
 
             {weatherCondition === 'hujan' && (
-              <div className="grid grid-cols-2 gap-1 pt-0.5">
+              <div className="grid grid-cols-2 gap-1.5 pt-0.5">
                 <button
                   type="button"
                   data-weather-rain-tier="ringan"
                   onClick={() => onSelectRainIntensityTier('ringan')}
-                  className={`px-2 py-1 border text-[10px] font-black cursor-pointer ${
+                  className={`px-2 py-1 rounded-xl border text-[10px] font-medium cursor-pointer transition-colors ${
                     rainIntensityTier === 'ringan'
-                      ? 'bg-[#7dd3fc] text-black border-black'
-                      : 'bg-[#1f2430] hover:bg-[#2a3142] text-slate-200 border-white/20'
+                      ? 'bg-sky-300/90 text-slate-950 border-sky-200 font-semibold'
+                      : 'bg-white/[0.06] hover:bg-white/[0.14] text-white/85 border-white/10'
                   }`}
                 >
                   🌦️ Light Rain
@@ -309,10 +311,10 @@ export function HudWeatherAndTimeControl({
                   type="button"
                   data-weather-rain-tier="deras"
                   onClick={() => onSelectRainIntensityTier('deras')}
-                  className={`px-2 py-1 border text-[10px] font-black cursor-pointer ${
+                  className={`px-2 py-1 rounded-xl border text-[10px] font-medium cursor-pointer transition-colors ${
                     rainIntensityTier === 'deras'
-                      ? 'bg-[#38bdf8] text-black border-black'
-                      : 'bg-[#1f2430] hover:bg-[#2a3142] text-slate-200 border-white/20'
+                      ? 'bg-sky-400/90 text-slate-950 border-sky-200 font-semibold'
+                      : 'bg-white/[0.06] hover:bg-white/[0.14] text-white/85 border-white/10'
                   }`}
                 >
                   ⛈️ Heavy Rain
@@ -322,17 +324,17 @@ export function HudWeatherAndTimeControl({
           </div>
 
           {/* City Lights (50% - 250%) */}
-          <div className="space-y-1 pt-0.5 border-t border-white/15">
+          <div className="space-y-1.5 pt-2 border-t border-white/10">
             <div className="flex items-center justify-between gap-2 text-[10.5px]">
               <label
                 htmlFor={`hud-city-lights-${contextId}`}
-                className="font-bold text-slate-100 whitespace-nowrap"
+                className="font-medium text-white/85 whitespace-nowrap"
               >
                 💡 City Lights
               </label>
               <span
                 data-weather-city-lights-label="true"
-                className="font-mono tabular-nums font-black text-[#fde047]"
+                className="font-mono tabular-nums font-semibold text-amber-200"
               >
                 {cityLightsPct}%
               </span>
@@ -347,13 +349,13 @@ export function HudWeatherAndTimeControl({
               data-weather-city-lights-slider="true"
               value={cityLightsPct}
               onChange={(e) => onChangeCityLightsScale(Number(e.currentTarget.value) / 100)}
-              className="w-full h-2 accent-[#fde047] bg-[#272c3a] rounded cursor-pointer"
+              className="w-full h-1.5 accent-amber-300 bg-white/15 rounded-full cursor-pointer"
             />
           </div>
         </div>
       )}
 
-      {/* Compact HUD Pill Button */}
+      {/* inZOI-style Frosted Glass Time & Weather Pill */}
       <button
         type="button"
         data-hud-weather-pill="true"
@@ -367,21 +369,26 @@ export function HudWeatherAndTimeControl({
           }
         }}
         title={`Weather & Time: ${timeMeta.label} (${clockLabel}) · ${weatherMeta.label} (Press [L] to cycle phase)`}
-        className="-skew-x-6 h-10 px-2.5 flex items-center gap-1.5 bg-[#14161d] hover:bg-[#1f2430] text-white border-3 border-black ring-2 ring-white shadow-[3px_3px_0_#000] cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8ff3c]"
+        className={`h-9 px-3 rounded-full flex items-center gap-2 backdrop-blur-xl border shadow-[0_6px_20px_rgba(0,0,0,0.35)] cursor-pointer active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70 ${
+          isOpen
+            ? 'bg-white/18 border-white/35 text-white'
+            : 'bg-[#0d1118]/65 hover:bg-[#171d29]/82 border-white/15 hover:border-white/30 text-white'
+        }`}
       >
-        <span className="skew-x-6 flex items-center gap-1.5 text-[11px] font-black whitespace-nowrap">
-          <span aria-hidden="true">{timeMeta.icon}</span>
-          <span>{timeMeta.label}</span>
-          <span className="hidden md:inline font-mono tabular-nums text-[10px] text-[#fde047]">
+        <span className="flex items-center gap-1.5 text-[11.5px] font-medium whitespace-nowrap">
+          <span className="font-mono tabular-nums font-semibold text-white/95">
             {clockLabel}
           </span>
-          <span className="text-white/40">·</span>
-          <span aria-hidden="true">{weatherMeta.icon}</span>
-          <span className="text-[#7dd3fc]">{weatherMeta.label}</span>
+          <span className="text-white/25">·</span>
+          <span aria-hidden="true" className="text-xs leading-none">{timeMeta.icon}</span>
+          <span className="text-white/80 hidden sm:inline">{timeMeta.label}</span>
+          <span className="text-white/25 hidden sm:inline">·</span>
+          <span aria-hidden="true" className="text-xs leading-none">{weatherMeta.icon}</span>
+          <span className="text-sky-200/95">{weatherMeta.label}</span>
           {autoCycleEnabled && (
             <span
               aria-hidden="true"
-              className="w-1.5 h-1.5 rounded-full bg-[#b8ff3c] animate-pulse"
+              className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"
             />
           )}
         </span>

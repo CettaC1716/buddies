@@ -52,38 +52,38 @@ export const PlayerLevelXpBadge: React.FC<PlayerLevelXpBadgeProps> = ({
       data-player-level-badge="true"
       data-player-level={levelProgress.level}
       data-player-xp={levelProgress.totalXp}
-      className="pointer-events-auto flex flex-col gap-1.5 bg-[#14161d] text-white border-[3px] border-[#14161d] ring-2 ring-white shadow-[4px_4px_0_#14161d] px-2.5 py-2 rounded-xl min-w-[205px] max-w-[245px] select-none"
+      className="pointer-events-auto flex flex-col gap-2 bg-[#f6f4f0]/92 backdrop-blur-xl text-slate-900 border border-white/80 shadow-[0_12px_32px_rgba(15,23,42,0.18)] px-3 py-2.5 rounded-2xl min-w-[210px] max-w-[250px] select-none"
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2.5">
         <div
           data-testid="hud-player-level"
-          className="w-9 h-9 shrink-0 rounded-lg bg-[#38bdf8] border-2 border-black shadow-[2px_2px_0_#000] flex flex-col items-center justify-center text-[#0f172a]"
+          className="w-9 h-9 shrink-0 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 shadow-sm flex flex-col items-center justify-center text-white"
         >
-          <span className="text-[8px] font-black leading-none tracking-wider">LV</span>
-          <span className="text-base font-black font-mono-tabular leading-none">
+          <span className="text-[8px] font-bold leading-none tracking-wider opacity-90">LV</span>
+          <span className="text-base font-extrabold font-mono-tabular leading-none">
             {levelProgress.level}
           </span>
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-1">
-            <span className="text-[11px] font-black uppercase tracking-wide truncate text-white">
+          <div className="flex items-center justify-between gap-1.5">
+            <span className="text-[11px] font-bold uppercase tracking-wide truncate text-slate-900">
               {playerName || 'CITIZEN'}
             </span>
             {isWorkingShift && (
-              <span className="px-1.5 py-0.5 bg-[#b8ff3c] text-[#14161d] border border-black text-[8px] font-black uppercase tracking-wider leading-none shrink-0">
+              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200/80 text-[8.5px] font-bold uppercase tracking-wider leading-none shrink-0">
                 BARISTA
               </span>
             )}
           </div>
 
-          <div className="mt-1 relative w-full h-3 bg-[#090b10] border-2 border-black rounded-sm overflow-hidden">
+          <div className="mt-1.5 relative w-full h-3.5 bg-stone-200/90 rounded-full overflow-hidden">
             <div
               data-testid="hud-player-xp-fill"
-              className="h-full bg-[#b8ff3c] transition-all duration-300"
+              className="h-full bg-gradient-to-r from-emerald-400 to-teal-500 rounded-full transition-all duration-300"
               style={{ width: `${pct}%` }}
             />
-            <span className="absolute inset-0 flex items-center justify-center text-[8.5px] font-black font-mono-tabular text-white drop-shadow-[0_1px_1px_#000]">
+            <span className="absolute inset-0 flex items-center justify-center text-[8.5px] font-bold font-mono-tabular text-slate-800">
               {levelProgress.currentLevelXp}/{levelProgress.xpForNextLevel} XP
             </span>
           </div>
@@ -93,7 +93,7 @@ export const PlayerLevelXpBadge: React.FC<PlayerLevelXpBadgeProps> = ({
       <div className="flex items-center gap-1.5">
         <div
           data-testid="hud-player-lul"
-          className="flex-1 px-2 py-0.5 bg-[#fec83e] text-[#14161d] border-2 border-black rounded font-mono-tabular font-black text-[10px] flex items-center justify-between"
+          className="flex-1 px-2.5 py-1 bg-amber-50 text-amber-900 border border-amber-200/80 rounded-full font-mono-tabular font-bold text-[10.5px] flex items-center justify-between"
         >
           <span>LUL</span>
           <span>{lulBalance}</span>
@@ -127,9 +127,9 @@ export const CafeInteriorTopHudBar: React.FC<CafeInteriorTopHudBarProps> = ({
       data-cafe-interior-hud="true"
       className="fixed top-3 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex flex-col items-center gap-2 select-none"
     >
-      <div className="flex flex-wrap items-center justify-center gap-1.5 bg-[#14161d] text-white border-[3px] border-black ring-2 ring-white shadow-[4px_4px_0_#000] px-3 py-1.5 rounded-xl">
-        <span className="px-2 py-0.5 bg-[#b8ff3c] text-[#14161d] border border-black text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
-          <Coffee className="w-3 h-3 stroke-[2.5]" aria-hidden="true" />
+      <div className="flex flex-wrap items-center justify-center gap-1.5 bg-[#f6f4f0]/92 backdrop-blur-xl text-slate-900 border border-white/80 shadow-[0_12px_32px_rgba(15,23,42,0.18)] px-3 py-1.5 rounded-full">
+        <span className="px-2.5 py-1 rounded-full bg-amber-100/90 text-amber-950 border border-amber-200/80 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+          <Coffee className="w-3 h-3 text-amber-700" aria-hidden="true" />
           GLASSHOUSE CAFE
         </span>
 
@@ -139,7 +139,7 @@ export const CafeInteriorTopHudBar: React.FC<CafeInteriorTopHudBarProps> = ({
               type="button"
               data-cafe-start-shift-btn="true"
               onClick={onStartWorkShift}
-              className="px-2.5 py-1 bg-[#4ade80] hover:bg-[#86efac] text-[#052e16] border-2 border-black text-[10.5px] font-black uppercase cursor-pointer"
+              className="px-3 py-1 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm text-[10.5px] font-bold uppercase tracking-wide cursor-pointer transition-colors"
             >
               WORK SHIFT
             </button>
@@ -147,7 +147,7 @@ export const CafeInteriorTopHudBar: React.FC<CafeInteriorTopHudBarProps> = ({
               type="button"
               data-cafe-open-menu-btn="true"
               onClick={onOpenOrderModal}
-              className="px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#0f172a] border-2 border-black text-[10.5px] font-black uppercase cursor-pointer"
+              className="px-3 py-1 rounded-full bg-white hover:bg-stone-100 text-slate-800 border border-stone-200/90 shadow-sm text-[10.5px] font-bold uppercase tracking-wide cursor-pointer transition-colors"
             >
               ORDER MENU
             </button>
@@ -155,21 +155,21 @@ export const CafeInteriorTopHudBar: React.FC<CafeInteriorTopHudBarProps> = ({
               type="button"
               data-cafe-open-atm-btn="true"
               onClick={onOpenAtmModal}
-              className="px-2.5 py-1 bg-[#facc15] hover:bg-[#fde047] text-[#14161d] border-2 border-black text-[10.5px] font-black uppercase cursor-pointer"
+              className="px-3 py-1 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/90 shadow-sm text-[10.5px] font-bold uppercase tracking-wide cursor-pointer transition-colors"
             >
               ATM
             </button>
           </>
         ) : (
           <>
-            <span className="px-2 py-0.5 bg-[#22c55e] text-white border border-black text-[10px] font-black uppercase">
+            <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold uppercase">
               SHIFT {shiftState.ordersCompletedInShift}/{shiftState.maxOrdersInShift}
             </span>
             <button
               type="button"
               data-cafe-stop-shift-btn="true"
               onClick={onStopWorkShift}
-              className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-white border-2 border-black text-[10px] font-black uppercase cursor-pointer"
+              className="px-3 py-1 rounded-full bg-stone-200 hover:bg-stone-300 text-slate-800 text-[10px] font-bold uppercase cursor-pointer transition-colors"
             >
               END SHIFT
             </button>
@@ -180,9 +180,9 @@ export const CafeInteriorTopHudBar: React.FC<CafeInteriorTopHudBarProps> = ({
           type="button"
           data-cafe-exit-btn="true"
           onClick={onExitCafe}
-          className="px-2.5 py-1 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black text-[10.5px] font-black uppercase flex items-center gap-1 cursor-pointer"
+          className="px-3 py-1 rounded-full bg-rose-500 hover:bg-rose-600 text-white shadow-sm text-[10.5px] font-bold uppercase flex items-center gap-1 cursor-pointer transition-colors"
         >
-          <LogOut className="w-3 h-3 stroke-[2.5]" aria-hidden="true" />
+          <LogOut className="w-3 h-3" aria-hidden="true" />
           EXIT
         </button>
       </div>
@@ -191,19 +191,19 @@ export const CafeInteriorTopHudBar: React.FC<CafeInteriorTopHudBarProps> = ({
       {shiftState.isWorking && shiftState.activeOrder && (
         <div
           data-cafe-active-order-card="true"
-          className="flex items-center gap-2.5 bg-white text-[#14161d] border-[3px] border-black shadow-[4px_4px_0_#000] px-3 py-1.5 rounded-xl"
+          className="flex items-center gap-3 bg-[#f6f4f0]/95 backdrop-blur-xl text-slate-900 border border-white/80 shadow-[0_14px_36px_rgba(15,23,42,0.18)] px-3.5 py-2 rounded-2xl"
         >
-          <div className="w-10 h-10 bg-[#0f172a] border-2 border-black rounded-lg flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 bg-white border border-stone-200/80 shadow-sm rounded-xl flex items-center justify-center shrink-0">
             <CafeMenuItemArtwork itemId={shiftState.activeOrder.item.id} className="w-8 h-8" />
           </div>
           <div className="min-w-[120px]">
-            <div className="text-[9px] font-black uppercase text-emerald-700 tracking-wider leading-none">
+            <div className="text-[9.5px] font-bold uppercase text-emerald-700 tracking-wider leading-none">
               ORDER FOR {shiftState.activeOrder.customerName}
             </div>
-            <div className="text-xs font-black uppercase text-[#14161d] leading-tight mt-0.5">
+            <div className="text-xs font-extrabold uppercase text-slate-900 leading-tight mt-0.5">
               {shiftState.activeOrder.item.name}
             </div>
-            <div className="text-[10px] font-black text-amber-600 font-mono-tabular">
+            <div className="text-[10px] font-bold text-amber-700 font-mono-tabular">
               +{shiftState.activeOrder.item.xpReward + 15} XP
             </div>
           </div>
@@ -214,7 +214,7 @@ export const CafeInteriorTopHudBar: React.FC<CafeInteriorTopHudBarProps> = ({
               soundEngine.playUiConfirm();
               onServeActiveOrder();
             }}
-            className="px-3 py-2 bg-[#b8ff3c] hover:bg-[#d9f99d] text-[#14161d] border-2 border-black shadow-[2px_2px_0_#000] text-xs font-black uppercase cursor-pointer active:translate-y-0.5"
+            className="px-3.5 py-2 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm text-xs font-bold uppercase tracking-wide cursor-pointer active:scale-95 transition-all"
           >
             SERVE [E]
           </button>
@@ -335,23 +335,23 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
       aria-modal="true"
       aria-label="ORDER SOMETHING"
       data-cafe-order-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/65 pointer-events-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/45 backdrop-blur-sm pointer-events-auto"
     >
-      <div className="w-full max-w-[700px] bg-[#14161d] text-white border-[4px] border-[#14161d] ring-3 ring-white shadow-[8px_8px_0_#000] rounded-2xl overflow-hidden">
+      <div className="w-full max-w-[720px] rounded-[26px] bg-[#f6f4f0]/96 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] text-slate-900 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 bg-[#1e212b] border-b-[3px] border-black">
+        <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-amber-50/90 via-[#f6f4f0] to-stone-100/80 border-b border-stone-200/80">
           <div className="flex items-center gap-2.5">
-            <span className="px-2 py-0.5 bg-[#b8ff3c] text-[#14161d] border-2 border-black text-[10px] font-black uppercase">
+            <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-200/80 text-[10.5px] font-bold uppercase tracking-wide">
               LV {levelProgress.level}
             </span>
-            <h2 className="text-base sm:text-lg font-black uppercase tracking-wider text-white">
+            <h2 className="text-base sm:text-lg font-extrabold uppercase tracking-tight text-slate-900">
               ORDER SOMETHING
             </h2>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="px-2.5 py-1 bg-[#fec83e] text-[#14161d] border-2 border-black font-mono-tabular font-black text-xs flex items-center gap-1">
-              <Coins className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+          <div className="flex items-center gap-2.5">
+            <div className="px-3 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-200/80 shadow-xs font-mono-tabular font-bold text-xs flex items-center gap-1.5">
+              <Coins className="w-3.5 h-3.5 text-amber-600" aria-hidden="true" />
               {lulBalance} LUL
             </div>
             <button
@@ -363,9 +363,9 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                 onClose();
               }}
               aria-label="Close Order Menu"
-              className="w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black font-black flex items-center justify-center cursor-pointer"
+              className="w-8 h-8 rounded-full bg-white hover:bg-stone-100 text-slate-600 hover:text-slate-900 border border-stone-200/80 shadow-xs flex items-center justify-center cursor-pointer transition-colors"
             >
-              <X className="w-4 h-4 stroke-[3]" aria-hidden="true" />
+              <X className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -374,17 +374,17 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
         {isConsuming && consumerSummary?.activeItem && (
           <div
             data-cafe-consuming-lock-banner="true"
-            className="px-4 py-2.5 bg-[#fef3c7] text-[#14161d] border-b-[3px] border-black flex items-center justify-between gap-3"
+            className="px-5 py-3 bg-amber-50/95 text-amber-950 border-b border-amber-200/80 flex items-center justify-between gap-3"
           >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-9 h-9 bg-white border-2 border-black rounded-lg flex items-center justify-center shrink-0">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 bg-white border border-amber-200/80 shadow-xs rounded-xl flex items-center justify-center shrink-0">
                 <CafeMenuItemArtwork itemId={consumerSummary.activeItem.id} className="w-7 h-7" />
               </div>
               <div className="min-w-0">
-                <div className="text-xs font-black uppercase truncate">
+                <div className="text-xs font-bold uppercase truncate text-amber-950">
                   Finish the {consumerSummary.activeItem.name} in your hand before ordering again!
                 </div>
-                <div className="text-[11px] font-bold text-amber-900">
+                <div className="text-[11px] font-medium text-amber-800">
                   {Math.max(1, Math.ceil(consumerSummary.remainingActiveMs / 1000))}s left
                   {consumerSummary.queuedCount > 0
                     ? ` • +${consumerSummary.queuedCount} more item${consumerSummary.queuedCount === 1 ? '' : 's'} in batch queue`
@@ -392,15 +392,15 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                 </div>
               </div>
             </div>
-            <span className="px-2 py-1 bg-[#14161d] text-[#fec83e] border border-black font-mono-tabular text-[11px] font-black shrink-0">
+            <span className="px-2.5 py-1 rounded-full bg-amber-900 text-amber-100 font-mono-tabular text-[11px] font-bold shrink-0">
               {Math.max(1, Math.ceil(consumerSummary.totalRemainingMs / 1000))}s
             </span>
           </div>
         )}
 
         {/* 2-Column Layout */}
-        <div className="p-4 bg-white text-[#14161d] grid grid-cols-1 sm:grid-cols-12 gap-3.5">
-          {/* Left 3x3 Visual Grid (Cream Cards) */}
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-12 gap-4">
+          {/* Left 3x3 Visual Grid (Clean White Cafe Cards) */}
           <div className="sm:col-span-7 grid grid-cols-3 gap-2.5">
             {CAFE_MENU_ITEMS.map((item) => {
               const isSelected = item.id === selectedId;
@@ -416,22 +416,22 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                     setFeedback(null);
                   }}
                   aria-label={`${item.name} - ${item.priceLul} LUL`}
-                  className={`relative group flex flex-col items-center justify-between p-2 rounded-xl border-[3px] transition-transform cursor-pointer active:scale-95 ${
+                  className={`relative group flex flex-col items-center justify-between p-2.5 rounded-2xl border transition-all cursor-pointer active:scale-95 ${
                     isSelected
-                      ? 'bg-[#eef8d8] border-[#14161d] ring-2 ring-[#b8ff3c] -translate-y-0.5 shadow-[2px_2px_0_#000]'
-                      : 'bg-[#f7efe0] hover:bg-[#efe3cc] border-black shadow-[2px_2px_0_#000]'
+                      ? 'bg-amber-50/90 border-amber-500 ring-2 ring-amber-400/40 -translate-y-0.5 shadow-md'
+                      : 'bg-white hover:bg-stone-50 border-stone-200/80 shadow-sm hover:shadow'
                   }`}
                 >
                   {qtyInBatch > 0 && (
-                    <span className="absolute -top-2 -right-1.5 px-1.5 py-0.5 bg-[#b8ff3c] text-[#14161d] border-2 border-black rounded-full text-[10px] font-black font-mono-tabular shadow-[1px_1px_0_#000]">
+                    <span className="absolute -top-1.5 -right-1.5 px-2 py-0.5 bg-amber-600 text-white rounded-full text-[10px] font-bold font-mono-tabular shadow-sm">
                       ×{qtyInBatch}
                     </span>
                   )}
                   <div className="w-14 h-14 flex items-center justify-center">
-                    <CafeMenuItemArtwork itemId={item.id} className="w-13 h-13 drop-shadow-[0_2px_2px_rgba(0,0,0,0.28)]" />
+                    <CafeMenuItemArtwork itemId={item.id} className="w-13 h-13 drop-shadow-sm" />
                   </div>
-                  <div className="mt-1 w-full py-0.5 px-1.5 bg-[#0f172a] border border-black rounded text-[10.5px] font-black font-mono-tabular text-[#38bdf8] flex items-center justify-center gap-1">
-                    <span>◆</span>
+                  <div className="mt-1.5 w-full py-1 px-2 bg-stone-100/90 rounded-full text-[10.5px] font-bold font-mono-tabular text-amber-900 flex items-center justify-center gap-1">
+                    <span className="text-amber-600">◆</span>
                     <span>{item.priceLul}</span>
                   </div>
                 </button>
@@ -440,10 +440,10 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
           </div>
 
           {/* Right Detail Panel + Batch Cart */}
-          <div className="sm:col-span-5 bg-[#f7efe0] text-[#14161d] border-[3px] border-black shadow-[3px_3px_0_#000] rounded-xl p-3.5 flex flex-col items-center justify-between text-center min-h-[290px]">
+          <div className="sm:col-span-5 bg-white text-slate-900 border border-stone-200/80 shadow-sm rounded-2xl p-4 flex flex-col items-center justify-between text-center min-h-[296px]">
             {!selectedItem && totalBatchQty === 0 ? (
               <div className="my-auto px-2 space-y-1.5">
-                <p className="text-xs font-extrabold text-[#14161d] leading-relaxed">
+                <p className="text-xs font-semibold text-stone-600 leading-relaxed">
                   Select an item to order immediately or add it to a Batch Order (max {CAFE_MAX_BATCH_ORDER_ITEMS} items)
                 </p>
               </div>
@@ -452,30 +452,30 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                 {selectedItem && (
                   <>
                     <div className="w-full flex items-center justify-between">
-                      <span className="px-2 py-0.5 bg-[#b8ff3c] text-[#14161d] border border-black text-[10px] font-black uppercase">
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-[10px] font-bold uppercase">
                         +{selectedItem.xpReward} XP
                       </span>
-                      <span className="px-2 py-0.5 bg-[#fec83e] text-[#14161d] border border-black text-[10px] font-black font-mono-tabular">
+                      <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200/80 text-[10px] font-bold font-mono-tabular">
                         {selectedItem.priceLul} LUL
                       </span>
                     </div>
 
-                    <div className="my-1.5 p-2 bg-white border-2 border-black rounded-xl shadow-[2px_2px_0_#000]">
+                    <div className="my-2 p-2.5 bg-[#f6f4f0] border border-stone-200/70 rounded-2xl">
                       <CafeMenuItemArtwork itemId={selectedItem.id} className="w-20 h-20" />
                     </div>
 
-                    <div className="space-y-0.5 mb-2">
-                      <div className="text-sm font-black uppercase text-[#14161d]">
+                    <div className="space-y-0.5 mb-2.5">
+                      <div className="text-sm font-extrabold uppercase text-slate-900">
                         {selectedItem.name}
                       </div>
-                      <div className="text-[11px] font-bold text-slate-600">
+                      <div className="text-[11px] font-medium text-stone-500">
                         {selectedItem.prepHint}
                       </div>
                     </div>
 
                     {/* Batch Order Stepper */}
-                    <div className="w-full mb-2 flex items-center justify-between gap-1.5 bg-white border-2 border-black rounded-lg px-2 py-1">
-                      <span className="text-[10px] font-black uppercase text-slate-700">
+                    <div className="w-full mb-2.5 flex items-center justify-between gap-1.5 bg-[#f6f4f0] border border-stone-200/80 rounded-full px-3 py-1.5">
+                      <span className="text-[10px] font-bold uppercase text-stone-600">
                         Batch ({totalBatchQty}/{CAFE_MAX_BATCH_ORDER_ITEMS})
                       </span>
                       <div className="flex items-center gap-1.5">
@@ -487,11 +487,11 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                             updateBatchQty(selectedItem.id, -1);
                           }}
                           data-cafe-batch-minus-btn="true"
-                          className="w-6 h-6 bg-slate-200 hover:bg-slate-300 disabled:opacity-40 border border-black rounded font-black text-xs cursor-pointer"
+                          className="w-6 h-6 bg-white hover:bg-stone-100 disabled:opacity-40 border border-stone-300/80 rounded-full font-bold text-xs text-slate-700 cursor-pointer transition-colors"
                         >
                           -
                         </button>
-                        <span className="w-5 text-center font-mono-tabular font-black text-xs">
+                        <span className="w-5 text-center font-mono-tabular font-bold text-xs text-slate-900">
                           {selectedBatchQty}
                         </span>
                         <button
@@ -502,7 +502,7 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                             updateBatchQty(selectedItem.id, 1);
                           }}
                           data-cafe-batch-plus-btn="true"
-                          className="px-2 h-6 bg-[#38bdf8] hover:bg-[#7dd3fc] disabled:opacity-40 text-[#0f172a] border border-black rounded font-black text-[10px] uppercase cursor-pointer"
+                          className="px-2.5 h-6 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white rounded-full font-bold text-[10px] uppercase cursor-pointer transition-colors"
                         >
                           +Batch
                         </button>
@@ -514,9 +514,9 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                 {totalBatchQty > 0 && (
                   <div
                     data-cafe-batch-summary="true"
-                    className="w-full mb-2 p-2 bg-white border-2 border-black rounded-lg text-left space-y-1 max-h-24 overflow-y-auto"
+                    className="w-full mb-2.5 p-2.5 bg-[#f6f4f0] border border-stone-200/80 rounded-xl text-left space-y-1.5 max-h-24 overflow-y-auto"
                   >
-                    <div className="flex items-center justify-between text-[10px] font-black uppercase text-slate-700">
+                    <div className="flex items-center justify-between text-[10px] font-bold uppercase text-stone-600">
                       <span>Batch Cart ({totalBatchQty} {totalBatchQty === 1 ? 'item' : 'items'})</span>
                       <span className="text-emerald-700">+{totalBatchXp} XP</span>
                     </div>
@@ -526,13 +526,13 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                           key={item.id}
                           type="button"
                           onClick={() => updateBatchQty(item.id, -qty)}
-                          className="px-1.5 py-0.5 bg-[#fef3c7] hover:bg-[#fee2e2] border border-black rounded text-[10px] font-extrabold flex items-center gap-1 cursor-pointer"
+                          className="px-2 py-0.5 bg-white hover:bg-rose-50 border border-stone-200/90 hover:border-rose-200 rounded-full text-[10px] font-semibold text-slate-800 flex items-center gap-1 cursor-pointer transition-colors"
                           title="Remove from batch"
                         >
                           <span>
                             {item.name} ×{qty}
                           </span>
-                          <span className="font-black text-red-700">×</span>
+                          <span className="font-bold text-rose-600">×</span>
                         </button>
                       ))}
                     </div>
@@ -542,10 +542,10 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                 {feedback && (
                   <div
                     data-cafe-order-feedback="true"
-                    className={`w-full mb-2 px-2 py-1 border-2 border-black text-[10.5px] font-black ${
+                    className={`w-full mb-2.5 px-3 py-1.5 rounded-xl border text-[11px] font-semibold ${
                       feedback.ok
-                        ? 'bg-[#dcfce7] text-emerald-950'
-                        : 'bg-[#fee2e2] text-red-900'
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                        : 'bg-rose-50 border-rose-200 text-rose-800'
                     }`}
                   >
                     {feedback.text}
@@ -557,7 +557,7 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                   disabled={isConsuming || (totalBatchQty === 0 && !selectedItem)}
                   data-cafe-buy-selected-btn="true"
                   onClick={handleConfirmOrder}
-                  className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] disabled:bg-slate-300 disabled:text-slate-600 text-[#14161d] border-[3px] border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5"
+                  className="w-full py-2.5 px-4 rounded-full bg-amber-700 hover:bg-amber-800 disabled:bg-stone-200 disabled:text-stone-400 text-white shadow-sm font-bold text-xs uppercase tracking-wider cursor-pointer active:scale-[0.98] transition-all"
                 >
                   {isConsuming
                     ? 'FINISH CURRENT ITEM...'
@@ -624,13 +624,17 @@ export const GlasshouseCafeAtmModal: React.FC<GlasshouseCafeAtmModalProps> = ({
       aria-modal="true"
       aria-label="CAFE ATM EXCHANGE"
       data-cafe-atm-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 pointer-events-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/45 backdrop-blur-sm pointer-events-auto"
     >
-      <div className="w-full max-w-sm bg-[#14161d] text-white border-[4px] border-[#14161d] ring-3 ring-white shadow-[8px_8px_0_#000] rounded-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 bg-[#1e212b] border-b-[3px] border-black">
+      <div className="w-full max-w-sm rounded-[26px] bg-[#f6f4f0]/96 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] text-slate-900 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-amber-50/90 via-[#f6f4f0] to-stone-100/80 border-b border-stone-200/80">
           <div className="flex items-center gap-2">
-            <Banknote className="w-4 h-4 text-[#facc15]" aria-hidden="true" />
-            <h2 className="text-sm font-black uppercase tracking-wider">CAFE ATM · EXCHANGE</h2>
+            <span className="w-7 h-7 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
+              <Banknote className="w-4 h-4" aria-hidden="true" />
+            </span>
+            <h2 className="text-sm font-extrabold uppercase tracking-tight text-slate-900">
+              CAFE ATM · EXCHANGE
+            </h2>
           </div>
           <button
             type="button"
@@ -640,43 +644,43 @@ export const GlasshouseCafeAtmModal: React.FC<GlasshouseCafeAtmModalProps> = ({
               onClose();
             }}
             aria-label="Close ATM"
-            className="w-7 h-7 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black font-black flex items-center justify-center cursor-pointer"
+            className="w-8 h-8 rounded-full bg-white hover:bg-stone-100 text-slate-600 hover:text-slate-900 border border-stone-200/80 shadow-xs flex items-center justify-center cursor-pointer transition-colors"
           >
-            <X className="w-4 h-4 stroke-[3]" aria-hidden="true" />
+            <X className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
           </button>
         </div>
 
-        <div className="p-4 space-y-3 bg-white text-slate-900">
+        <div className="p-5 space-y-3.5 text-slate-900">
           <div className="grid grid-cols-2 gap-2.5">
-            <div className="p-2.5 bg-[#1b1f29] border-2 border-black rounded-xl text-center shadow-[3px_3px_0_#000]">
-              <div className="text-[9.5px] font-black uppercase text-[#fec83e]">LUL BALANCE</div>
+            <div className="p-3 bg-white border border-stone-200/80 rounded-2xl text-center shadow-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-amber-700">LUL BALANCE</div>
               <div
                 data-atm-lul-balance="true"
-                className="text-xl font-black font-mono-tabular text-[#fec83e] mt-0.5"
+                className="text-xl font-extrabold font-mono-tabular text-slate-900 mt-0.5"
               >
                 {lulBalance}
               </div>
             </div>
-            <div className="p-2.5 bg-[#1b1f29] border-2 border-black rounded-xl text-center shadow-[3px_3px_0_#000]">
-              <div className="text-[9.5px] font-black uppercase text-[#38bdf8]">CYON BALANCE</div>
+            <div className="p-3 bg-white border border-stone-200/80 rounded-2xl text-center shadow-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-sky-700">CYON BALANCE</div>
               <div
                 data-atm-cyon-balance="true"
-                className="text-xl font-black font-mono-tabular text-[#38bdf8] mt-0.5"
+                className="text-xl font-extrabold font-mono-tabular text-sky-600 mt-0.5"
               >
                 {cyonBalance}
               </div>
             </div>
           </div>
 
-          <div className="text-center text-[11px] font-bold text-slate-700">
+          <div className="text-center text-[11px] font-medium text-stone-600">
             Exchange Rate:{' '}
-            <span className="inline-block px-1.5 py-0.5 bg-[#b8ff3c] text-black border border-black font-black">
+            <span className="inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 font-bold">
               {rate} LUL = 10 CYON
             </span>{' '}
             · Shop stock: {treasuryCyon} CYON
           </div>
 
-          <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500">
+          <label className="block text-[10.5px] font-bold uppercase tracking-wider text-stone-500">
             You pay (LUL)
           </label>
           <div className="flex gap-2 -mt-1.5">
@@ -689,11 +693,11 @@ export const GlasshouseCafeAtmModal: React.FC<GlasshouseCafeAtmModalProps> = ({
                 setFeedback(null);
               }}
               placeholder="0"
-              className="min-w-0 flex-1 rounded-xl border-2 border-black px-3 py-2 text-lg font-black outline-none"
+              className="min-w-0 flex-1 rounded-2xl bg-white border border-stone-300/90 focus:border-amber-500 focus:ring-2 focus:ring-amber-400/30 px-3.5 py-2 text-lg font-bold outline-none transition-all"
             />
             <button
               type="button"
-              className="shrink-0 px-4 bg-[#14161d] text-white border-2 border-black shadow-[2px_2px_0_#000] font-black text-xs uppercase cursor-pointer"
+              className="shrink-0 px-4 rounded-2xl bg-stone-900 hover:bg-stone-800 text-white shadow-sm font-bold text-xs uppercase cursor-pointer transition-colors"
               onClick={() => {
                 setAmountText(String(maxPackets * rate));
                 setFeedback(null);
@@ -703,13 +707,13 @@ export const GlasshouseCafeAtmModal: React.FC<GlasshouseCafeAtmModalProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center justify-between rounded-xl border-2 border-black px-3 py-2 bg-[#f8fafc]">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+          <div className="flex items-center justify-between rounded-2xl bg-white border border-stone-200/80 shadow-xs px-3.5 py-2.5">
+            <span className="text-[10.5px] font-bold uppercase tracking-wider text-stone-500">
               You receive
             </span>
-            <span className="text-lg font-black text-[#0284c7]">{receiveCyon} CYON</span>
+            <span className="text-lg font-extrabold text-sky-600 font-mono-tabular">{receiveCyon} CYON</span>
           </div>
-          <p className="text-[11px] font-semibold text-slate-500">
+          <p className="text-[11px] font-medium text-stone-500 leading-relaxed">
             {packets > 0
               ? `${packets} packet${packets > 1 ? 's' : ''} × ${rate} LUL — exactly ${costLul} LUL will be charged, the rest stays in your balance.`
               : `Enter at least ${rate} LUL to exchange one packet.`}
@@ -720,14 +724,16 @@ export const GlasshouseCafeAtmModal: React.FC<GlasshouseCafeAtmModalProps> = ({
             disabled={packets < 1}
             data-atm-exchange-btn="true"
             onClick={() => setFeedback(onExchangePackets(packets))}
-            className="w-full py-2.5 bg-[#b8ff3c] disabled:bg-slate-200 disabled:text-slate-400 hover:bg-[#d9f99d] text-[#14161d] border-2 border-black shadow-[2px_2px_0_#000] disabled:shadow-none font-black text-xs uppercase cursor-pointer disabled:cursor-not-allowed"
+            className="w-full py-2.5 rounded-full bg-amber-700 disabled:bg-stone-200 disabled:text-stone-400 hover:bg-amber-800 text-white shadow-sm font-bold text-xs uppercase tracking-wider cursor-pointer disabled:cursor-not-allowed transition-colors"
           >
             EXCHANGE
           </button>
           {feedback ? (
             <div
-              className={`rounded-xl px-3 py-2 text-center text-xs font-bold border-2 border-black ${
-                feedback.ok ? 'bg-[#EAF7EE] text-[#1E7A3C]' : 'bg-[#FDECEA] text-[#B3402A]'
+              className={`rounded-2xl px-3.5 py-2 text-center text-xs font-semibold border ${
+                feedback.ok
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-rose-50 border-rose-200 text-rose-800'
               }`}
             >
               {feedback.message}
@@ -748,13 +754,13 @@ export const XpGainCelebrationBanner: React.FC<{
       data-xp-celebration-banner="true"
       className="fixed top-20 left-1/2 -translate-x-1/2 z-50 pointer-events-none select-none animate-bounce"
     >
-      <div className="flex items-center gap-2 bg-[#14161d] text-white border-[3px] border-[#b8ff3c] ring-2 ring-black shadow-[4px_4px_0_#000] px-4 py-2 rounded-xl">
+      <div className="flex items-center gap-2 bg-[#f6f4f0]/95 backdrop-blur-xl text-slate-900 border border-white/80 shadow-[0_14px_36px_rgba(15,23,42,0.22)] px-4 py-2 rounded-full">
         {banner.leveledUpTo ? (
-          <Star className="w-5 h-5 text-[#facc15] fill-[#facc15]" aria-hidden="true" />
+          <Star className="w-5 h-5 text-amber-500 fill-amber-400" aria-hidden="true" />
         ) : (
-          <CheckCircle2 className="w-4 h-4 text-[#b8ff3c]" aria-hidden="true" />
+          <CheckCircle2 className="w-4 h-4 text-emerald-600" aria-hidden="true" />
         )}
-        <span className="text-xs font-black uppercase tracking-wider">
+        <span className="text-xs font-extrabold uppercase tracking-wide">
           {banner.leveledUpTo
             ? `LEVEL UP! NOW LV ${banner.leveledUpTo} (+${banner.xpGained} XP)`
             : `${banner.label} · +${banner.xpGained} XP`}
@@ -904,12 +910,12 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
         >
           {/* Active Worker Status Strip when someone else is working */}
           {shiftState.otherActiveWorker && (
-            <div className="rounded-[10px] min-w-[228px] px-2.5 py-1 bg-[#0b0d13] border-2 border-[#38bdf8] shadow-[3px_3px_0_#000] text-center">
-              <div className="flex items-center justify-between gap-2 text-[10px] font-black uppercase tracking-wider">
-                <span className="text-[#38bdf8] truncate">
+            <div className="rounded-2xl min-w-[232px] px-3 py-1.5 bg-[#0e121b]/88 backdrop-blur-xl border border-white/15 shadow-lg text-center text-white">
+              <div className="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wider">
+                <span className="text-sky-300 truncate">
                   WORKING: {shiftState.otherActiveWorker.name}
                 </span>
-                <span className="px-1.5 py-0.5 bg-[#38bdf8] text-[#0b0d13] border border-black font-mono-tabular">
+                <span className="px-2 py-0.5 rounded-full bg-sky-400/20 text-sky-200 border border-sky-300/30 font-mono-tabular">
                   {shiftState.otherActiveWorker.ordersServed}/{shiftState.otherActiveWorker.maxOrders}
                 </span>
               </div>
@@ -921,11 +927,11 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
             type="button"
             data-cafe-rota-lihat-giliran-btn="true"
             onClick={onOpenRotaModal}
-            className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-white shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+            className="rounded-2xl min-w-[232px] h-10 px-2.5 bg-[#f6f4f0]/95 hover:bg-white backdrop-blur-xl border border-white/80 shadow-[0_8px_24px_rgba(15,23,42,0.18)] flex items-center text-slate-900 font-bold uppercase text-xs tracking-wide cursor-pointer active:scale-[0.98] transition-all"
           >
             <div className="flex items-center gap-2.5 w-full">
-              <span className="w-6 h-6 bg-white text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
-                <ClipboardList className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+              <span className="w-6 h-6 rounded-full bg-stone-200/80 text-slate-800 flex items-center justify-center shrink-0">
+                <ClipboardList className="w-3.5 h-3.5" aria-hidden="true" />
               </span>
               <span className="flex-1 text-left">View Rota</span>
             </div>
@@ -937,14 +943,14 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
               type="button"
               data-cafe-rota-mulai-kerja-btn="true"
               onClick={onStartOrQueueShift}
-              className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#b8ff3c] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+              className="rounded-2xl min-w-[232px] h-10 px-2.5 bg-[#f6f4f0]/95 hover:bg-white backdrop-blur-xl border border-emerald-300/80 shadow-[0_8px_24px_rgba(15,23,42,0.18)] flex items-center text-emerald-900 font-bold uppercase text-xs tracking-wide cursor-pointer active:scale-[0.98] transition-all"
             >
               <div className="flex items-center gap-2.5 w-full">
-                <span className="w-6 h-6 bg-[#b8ff3c] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
-                  <UserCheck className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                  <UserCheck className="w-3.5 h-3.5" aria-hidden="true" />
                 </span>
-                <span className="flex-1 text-left text-[#b8ff3c]">Start Work</span>
-                <span className="px-1.5 py-0.5 bg-[#b8ff3c] text-[#0b0d13] border border-black text-[9.5px] font-mono-tabular">
+                <span className="flex-1 text-left text-emerald-800">Start Work</span>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9.5px] font-mono-tabular">
                   0/{CAFE_SHIFT_MAX_ORDERS}
                 </span>
               </div>
@@ -954,14 +960,14 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
               type="button"
               data-cafe-rota-ikut-antrian-btn="true"
               onClick={onStartOrQueueShift}
-              className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#38bdf8] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+              className="rounded-2xl min-w-[232px] h-10 px-2.5 bg-[#f6f4f0]/95 hover:bg-white backdrop-blur-xl border border-sky-300/80 shadow-[0_8px_24px_rgba(15,23,42,0.18)] flex items-center text-sky-900 font-bold uppercase text-xs tracking-wide cursor-pointer active:scale-[0.98] transition-all"
             >
               <div className="flex items-center gap-2.5 w-full">
-                <span className="w-6 h-6 bg-[#38bdf8] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
-                  <Users className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                <span className="w-6 h-6 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
+                  <Users className="w-3.5 h-3.5" aria-hidden="true" />
                 </span>
-                <span className="flex-1 text-left text-[#38bdf8]">Join Queue</span>
-                <span className="px-1.5 py-0.5 bg-[#38bdf8] text-[#0b0d13] border border-black text-[9.5px] font-mono-tabular">
+                <span className="flex-1 text-left text-sky-800">Join Queue</span>
+                <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 text-[9.5px] font-mono-tabular">
                   #{queueList.length + 1}
                 </span>
               </div>
@@ -971,13 +977,13 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
               type="button"
               data-cafe-rota-keluar-antrian-btn="true"
               onClick={onLeaveShiftQueue}
-              className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#facc15] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+              className="rounded-2xl min-w-[232px] h-10 px-2.5 bg-[#f6f4f0]/95 hover:bg-white backdrop-blur-xl border border-amber-300/80 shadow-[0_8px_24px_rgba(15,23,42,0.18)] flex items-center text-amber-900 font-bold uppercase text-xs tracking-wide cursor-pointer active:scale-[0.98] transition-all"
             >
               <div className="flex items-center gap-2.5 w-full">
-                <span className="w-6 h-6 bg-[#facc15] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
-                  <Users className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                <span className="w-6 h-6 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                  <Users className="w-3.5 h-3.5" aria-hidden="true" />
                 </span>
-                <span className="flex-1 text-left text-[#facc15]">
+                <span className="flex-1 text-left text-amber-800">
                   Queue #{selfQueueNumber} · Leave
                 </span>
               </div>
@@ -989,11 +995,11 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
             type="button"
             data-cafe-rota-atm-btn="true"
             onClick={onOpenAtmModal}
-            className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-white shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+            className="rounded-2xl min-w-[232px] h-10 px-2.5 bg-[#f6f4f0]/95 hover:bg-white backdrop-blur-xl border border-white/80 shadow-[0_8px_24px_rgba(15,23,42,0.18)] flex items-center text-slate-900 font-bold uppercase text-xs tracking-wide cursor-pointer active:scale-[0.98] transition-all"
           >
             <div className="flex items-center gap-2.5 w-full">
-              <span className="w-6 h-6 bg-[#facc15] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
-                <Zap className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+              <span className="w-6 h-6 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                <Zap className="w-3.5 h-3.5" aria-hidden="true" />
               </span>
               <span className="flex-1 text-left">ATM · Exchange</span>
             </div>
@@ -1011,11 +1017,11 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
             type="button"
             data-nearby-entity-profile-btn="true"
             onClick={() => onOpenEntityProfile?.(nearbyEntity)}
-            className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#38bdf8] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+            className="rounded-2xl min-w-[232px] h-10 px-2.5 bg-[#0e121b]/88 hover:bg-[#171d2a] backdrop-blur-xl border border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.35)] flex items-center text-white font-bold uppercase text-xs tracking-wide cursor-pointer active:scale-[0.98] transition-all"
           >
             <div className="flex items-center gap-2.5 w-full">
-              <span className="w-6 h-6 bg-[#38bdf8] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
-                <User className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+              <span className="w-6 h-6 rounded-full bg-sky-400/20 text-sky-300 flex items-center justify-center shrink-0">
+                <User className="w-3.5 h-3.5" aria-hidden="true" />
               </span>
               <span className="flex-1 text-left">Profile</span>
             </div>
@@ -1026,13 +1032,13 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
               type="button"
               data-nearby-entity-interact-btn="true"
               onClick={() => onInteractEntity(nearbyEntity)}
-              className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#fb7185] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+              className="rounded-2xl min-w-[232px] h-10 px-2.5 bg-[#0e121b]/88 hover:bg-[#171d2a] backdrop-blur-xl border border-rose-400/30 shadow-[0_8px_24px_rgba(0,0,0,0.35)] flex items-center text-white font-bold uppercase text-xs tracking-wide cursor-pointer active:scale-[0.98] transition-all"
             >
               <div className="flex items-center gap-2.5 w-full">
-                <span className="w-6 h-6 bg-[#fb7185] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
-                  <Users className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                <span className="w-6 h-6 rounded-full bg-rose-400/20 text-rose-300 flex items-center justify-center shrink-0">
+                  <Users className="w-3.5 h-3.5" aria-hidden="true" />
                 </span>
-                <span className="flex-1 text-left text-[#fb7185]">Interact</span>
+                <span className="flex-1 text-left text-rose-300">Interact</span>
               </div>
             </button>
           )}
@@ -1042,13 +1048,13 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
               type="button"
               data-nearby-entity-talk-btn="true"
               onClick={() => onTalkMerchant?.(nearbyEntity)}
-              className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#facc15] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+              className="rounded-2xl min-w-[232px] h-10 px-2.5 bg-[#0e121b]/88 hover:bg-[#171d2a] backdrop-blur-xl border border-amber-400/30 shadow-[0_8px_24px_rgba(0,0,0,0.35)] flex items-center text-white font-bold uppercase text-xs tracking-wide cursor-pointer active:scale-[0.98] transition-all"
             >
               <div className="flex items-center gap-2.5 w-full">
-                <span className="w-6 h-6 bg-[#facc15] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
-                  <MessageSquare className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                <span className="w-6 h-6 rounded-full bg-amber-400/20 text-amber-300 flex items-center justify-center shrink-0">
+                  <MessageSquare className="w-3.5 h-3.5" aria-hidden="true" />
                 </span>
-                <span className="flex-1 text-left text-[#facc15]">Talk</span>
+                <span className="flex-1 text-left text-amber-300">Talk</span>
               </div>
             </button>
           )}
@@ -1058,13 +1064,13 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
               type="button"
               data-nearby-citizen-talk-btn="true"
               onClick={() => onTalkCitizen?.(nearbyEntity)}
-              className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#facc15] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+              className="rounded-2xl min-w-[232px] h-10 px-2.5 bg-[#0e121b]/88 hover:bg-[#171d2a] backdrop-blur-xl border border-amber-400/30 shadow-[0_8px_24px_rgba(0,0,0,0.35)] flex items-center text-white font-bold uppercase text-xs tracking-wide cursor-pointer active:scale-[0.98] transition-all"
             >
               <div className="flex items-center gap-2.5 w-full">
-                <span className="w-6 h-6 bg-[#facc15] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
-                  <MessageSquare className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                <span className="w-6 h-6 rounded-full bg-amber-400/20 text-amber-300 flex items-center justify-center shrink-0">
+                  <MessageSquare className="w-3.5 h-3.5" aria-hidden="true" />
                 </span>
-                <span className="flex-1 text-left text-[#facc15]">Talk</span>
+                <span className="flex-1 text-left text-amber-300">Talk</span>
               </div>
             </button>
           )}
@@ -1074,13 +1080,13 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
               type="button"
               data-nearby-entity-whisper-btn="true"
               onClick={() => onWhisperEntity?.(nearbyEntity)}
-              className="rounded-[10px] min-w-[228px] h-10 px-2 bg-[#14161d] hover:bg-[#1e222d] border-2 border-[#10b981] shadow-[3px_3px_0_#000] flex items-center text-white font-black uppercase text-xs tracking-wider cursor-pointer active:translate-y-0.5"
+              className="rounded-2xl min-w-[232px] h-10 px-2.5 bg-[#0e121b]/88 hover:bg-[#171d2a] backdrop-blur-xl border border-emerald-400/30 shadow-[0_8px_24px_rgba(0,0,0,0.35)] flex items-center text-white font-bold uppercase text-xs tracking-wide cursor-pointer active:scale-[0.98] transition-all"
             >
               <div className="flex items-center gap-2.5 w-full">
-                <span className="w-6 h-6 bg-[#10b981] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
-                  <MessageCircle className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+                <span className="w-6 h-6 rounded-full bg-emerald-400/20 text-emerald-300 flex items-center justify-center shrink-0">
+                  <MessageCircle className="w-3.5 h-3.5" aria-hidden="true" />
                 </span>
-                <span className="flex-1 text-left text-[#10b981]">Talk</span>
+                <span className="flex-1 text-left text-emerald-300">Talk</span>
               </div>
             </button>
           )}
@@ -1105,10 +1111,10 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
               onToggleEntityMenu?.();
             }
           }}
-          className="rounded-[10px] inline-flex items-center h-11 min-w-[228px] max-w-[300px] bg-[#14161d] border-[3px] border-[#14161d] ring-2 ring-white shadow-[4px_4px_0_#14161d] px-2 text-white cursor-pointer hover:brightness-110 active:scale-95 transition-transform"
+          className="rounded-full inline-flex items-center h-11 min-w-[232px] max-w-[300px] bg-[#0e121b]/88 backdrop-blur-xl border border-white/15 shadow-[0_12px_32px_rgba(0,0,0,0.4)] px-2 text-white cursor-pointer hover:bg-[#171d2a] active:scale-95 transition-all"
         >
           <div className="flex items-center justify-between gap-2.5 w-full min-w-0">
-            <span className="w-7 h-7 bg-[#38bdf8] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center overflow-hidden shrink-0 font-black text-xs">
+            <span className="w-7 h-7 bg-sky-400/20 text-sky-300 border border-white/15 rounded-full flex items-center justify-center overflow-hidden shrink-0 font-bold text-xs">
               {isFemaleNpcPortrait ? (
                 <img
                   src="/assets/avatar_nadia.jpg"
@@ -1126,7 +1132,7 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
               )}
             </span>
 
-            <span className="flex-1 text-center font-black text-[13px] tracking-wider uppercase text-white truncate whitespace-nowrap px-1">
+            <span className="flex-1 text-center font-bold text-[13px] tracking-wide uppercase text-white truncate whitespace-nowrap px-1">
               {cleanEntityName}
             </span>
 
@@ -1140,12 +1146,12 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
                 }}
                 title="Switch Target"
                 aria-label="Next Target"
-                className="min-w-[24px] h-6 px-1.5 bg-[#facc15] hover:bg-[#fde047] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center font-black text-xs shrink-0 cursor-pointer"
+                className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-amber-300 flex items-center justify-center font-bold text-xs shrink-0 cursor-pointer transition-colors"
               >
                 &gt;
               </button>
             ) : (
-              <span className="min-w-[24px] h-6 px-1.5 bg-[#facc15] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center font-black text-xs shrink-0">
+              <span className="w-7 h-7 rounded-full bg-white/10 text-amber-300 flex items-center justify-center font-bold text-xs shrink-0">
                 {isEntityMenuExpanded ? '▾' : '▸'}
               </span>
             )}
@@ -1157,34 +1163,34 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
           data-cafe-giliran-kerja-bar={isWorkShiftMode ? 'true' : undefined}
           data-bottom-sit-action-btn={!isWorkShiftMode ? 'true' : undefined}
           onClick={isWorkShiftMode ? onToggleExpand : onTriggerSitOrStand}
-          className="rounded-[10px] inline-flex items-center h-11 min-w-[228px] bg-[#14161d] border-[3px] border-[#14161d] ring-2 ring-white shadow-[4px_4px_0_#14161d] px-2 text-white cursor-pointer hover:brightness-110 active:scale-95 transition-transform"
+          className="rounded-full inline-flex items-center h-11 min-w-[232px] bg-[#f6f4f0]/95 hover:bg-white backdrop-blur-xl border border-white/80 shadow-[0_12px_32px_rgba(15,23,42,0.2)] px-2 text-slate-900 cursor-pointer active:scale-95 transition-all"
         >
           <div className="flex items-center justify-between gap-2.5 w-full">
             {isWorkShiftMode ? (
               <>
-                <span className="w-7 h-7 bg-[#38bdf8] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center shrink-0">
-                  <ClipboardList className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
+                <span className="w-7 h-7 bg-amber-100 text-amber-800 rounded-full flex items-center justify-center shrink-0">
+                  <ClipboardList className="w-4 h-4" aria-hidden="true" />
                 </span>
 
-                <span className="flex-1 text-center font-black text-[13px] tracking-wider uppercase text-white whitespace-nowrap">
+                <span className="flex-1 text-center font-bold text-[13px] tracking-wide uppercase text-slate-900 whitespace-nowrap">
                   Work Shift
                   {isSelfInQueue ? ` (#${selfQueueNumber})` : ''}
                 </span>
 
-                <span className="min-w-[24px] h-6 px-1.5 bg-[#facc15] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center font-black text-xs shrink-0">
+                <span className="w-7 h-7 rounded-full bg-stone-200/80 text-slate-700 flex items-center justify-center font-bold text-xs shrink-0">
                   {isExpanded ? '▾' : '▸'}
                 </span>
               </>
             ) : (
               <>
-                <span className="w-7 h-7 bg-[#b8ff3c] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center shrink-0">
+                <span className="w-7 h-7 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center shrink-0">
                   <svg
-                    width="16"
-                    height="16"
+                    width="15"
+                    height="15"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="2.6"
+                    strokeWidth="2.4"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     aria-hidden="true"
@@ -1196,11 +1202,11 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
                   </svg>
                 </span>
 
-                <span className="flex-1 text-center font-black text-[13px] tracking-wider uppercase text-white whitespace-nowrap">
+                <span className="flex-1 text-center font-bold text-[13px] tracking-wide uppercase text-slate-900 whitespace-nowrap">
                   {resolvedMode === 'stand_up' ? 'Stand Up' : 'Sit'}
                 </span>
 
-                <span className="min-w-[24px] h-6 px-1.5 bg-[#b8ff3c] text-[#0b0d13] border-2 border-[#0b0d13] rounded-[6px] shadow-[2px_2px_0_#0b0d13] flex items-center justify-center font-black text-xs shrink-0">
+                <span className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0">
                   ▸
                 </span>
               </>
@@ -1255,20 +1261,20 @@ export const GlasshouseCafeRotaModal: React.FC<GlasshouseCafeRotaModalProps> = (
       aria-modal="true"
       aria-label="CAFE WORK ROTA"
       data-cafe-rota-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 pointer-events-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/45 backdrop-blur-sm pointer-events-auto"
     >
-      <div className="w-full max-w-md bg-[#14161d] text-white border-[4px] border-[#14161d] ring-3 ring-white shadow-[8px_8px_0_#000] rounded-2xl overflow-hidden select-none">
+      <div className="w-full max-w-md rounded-[26px] bg-[#f6f4f0]/96 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] text-slate-900 overflow-hidden select-none">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 bg-[#1e212b] border-b-[3px] border-black">
-          <div className="flex items-center gap-2">
-            <span className="w-7 h-7 bg-[#38bdf8] text-[#0b0d13] border-2 border-black flex items-center justify-center">
-              <ClipboardList className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
+        <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-amber-50/90 via-[#f6f4f0] to-stone-100/80 border-b border-stone-200/80">
+          <div className="flex items-center gap-2.5">
+            <span className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center">
+              <ClipboardList className="w-4 h-4" aria-hidden="true" />
             </span>
             <div>
-              <h2 className="text-sm font-black uppercase tracking-wider leading-tight">
+              <h2 className="text-sm font-extrabold uppercase tracking-tight leading-tight text-slate-900">
                 CAFE WORK ROTA
               </h2>
-              <p className="text-[10px] font-bold text-slate-300">
+              <p className="text-[11px] font-medium text-stone-500">
                 1 Round = {CAFE_SHIFT_MAX_ORDERS}x Serves · Re-register After Shift
               </p>
             </div>
@@ -1281,46 +1287,46 @@ export const GlasshouseCafeRotaModal: React.FC<GlasshouseCafeRotaModalProps> = (
               onClose();
             }}
             aria-label="Close Work Rota"
-            className="w-7 h-7 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black font-black flex items-center justify-center cursor-pointer"
+            className="w-8 h-8 rounded-full bg-white hover:bg-stone-100 text-slate-600 hover:text-slate-900 border border-stone-200/80 shadow-xs flex items-center justify-center cursor-pointer transition-colors"
           >
-            <X className="w-4 h-4 stroke-[3]" aria-hidden="true" />
+            <X className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
           </button>
         </div>
 
-        <div className="p-4 space-y-3.5">
+        <div className="p-5 space-y-3.5">
           {/* Active Worker Card (1 Round = 3 Serves) */}
-          <div className="p-3 bg-[#1b1f29] border-2 border-black rounded-xl space-y-2">
+          <div className="p-3.5 bg-white border border-stone-200/80 shadow-sm rounded-2xl space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-[#38bdf8]">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-amber-800">
                 CURRENT ACTIVE BARISTA
               </span>
-              <span className="px-2 py-0.5 bg-[#0b0d13] border border-black text-[10px] font-mono-tabular font-black text-[#b8ff3c]">
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200/80 text-[10px] font-mono-tabular font-bold text-emerald-700">
                 ROUND {activeOrdersServed}/{CAFE_SHIFT_MAX_ORDERS} SERVES
               </span>
             </div>
 
             {activeWorkerName ? (
-              <div className="flex items-center justify-between gap-2 bg-[#12151d] border-2 border-black px-3 py-2 rounded-lg">
+              <div className="flex items-center justify-between gap-2 bg-[#f6f4f0] border border-stone-200/70 px-3 py-2 rounded-xl">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-6 h-6 bg-[#b8ff3c] text-[#0b0d13] border border-black flex items-center justify-center font-black text-[10px] shrink-0">
+                  <span className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-[9.5px] shrink-0">
                     ON
                   </span>
-                  <span className="text-xs font-black uppercase text-white truncate">
+                  <span className="text-xs font-bold uppercase text-slate-900 truncate">
                     {activeWorkerName}
                   </span>
                 </div>
 
                 {/* 3-Serve Round Progress Indicators */}
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0">
                   {[1, 2, 3].map((step) => {
                     const done = activeOrdersServed >= step;
                     return (
                       <span
                         key={step}
-                        className={`w-6 h-6 border-2 border-black font-mono-tabular font-black text-[10px] flex items-center justify-center ${
+                        className={`w-6 h-6 rounded-full font-mono-tabular font-bold text-[10px] flex items-center justify-center ${
                           done
-                            ? 'bg-[#b8ff3c] text-[#0b0d13]'
-                            : 'bg-[#1e222d] text-slate-400'
+                            ? 'bg-emerald-500 text-white shadow-xs'
+                            : 'bg-stone-200/90 text-stone-500'
                         }`}
                       >
                         {step}
@@ -1330,16 +1336,16 @@ export const GlasshouseCafeRotaModal: React.FC<GlasshouseCafeRotaModalProps> = (
                 </div>
               </div>
             ) : (
-              <div className="px-3 py-2.5 bg-[#12151d] border-2 border-dashed border-slate-600 rounded-lg text-center text-xs font-bold text-slate-300">
+              <div className="px-3 py-2.5 bg-[#f6f4f0] border border-dashed border-stone-300 rounded-xl text-center text-xs font-medium text-stone-500">
                 No barista currently working. Shift slot is open!
               </div>
             )}
           </div>
 
           {/* Queue List */}
-          <div className="p-3 bg-[#1b1f29] border-2 border-black rounded-xl space-y-2">
+          <div className="p-3.5 bg-white border border-stone-200/80 shadow-sm rounded-2xl space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-[#facc15]">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-amber-800">
                 UPCOMING SHIFT QUEUE ({queueList.length})
               </span>
               {!shiftState.isWorking && (
@@ -1347,7 +1353,7 @@ export const GlasshouseCafeRotaModal: React.FC<GlasshouseCafeRotaModalProps> = (
                   type="button"
                   data-cafe-rota-simulate-worker-btn="true"
                   onClick={onToggleSimulatedWorker}
-                  className="px-2 py-0.5 bg-[#262b38] hover:bg-[#323846] text-slate-200 border border-black text-[9.5px] font-black uppercase cursor-pointer"
+                  className="px-2.5 py-1 rounded-full bg-stone-100 hover:bg-stone-200 text-slate-700 border border-stone-200/80 text-[9.5px] font-bold uppercase cursor-pointer transition-colors"
                 >
                   {hasOtherActiveWorker ? 'Clear Active Worker' : 'Simulate Busy Shift'}
                 </button>
@@ -1355,7 +1361,7 @@ export const GlasshouseCafeRotaModal: React.FC<GlasshouseCafeRotaModalProps> = (
             </div>
 
             {queueList.length === 0 ? (
-              <div className="px-3 py-2 bg-[#12151d] border border-black rounded-lg text-center text-[11px] font-bold text-slate-400">
+              <div className="px-3 py-2.5 bg-[#f6f4f0] rounded-xl text-center text-[11px] font-medium text-stone-500">
                 No one waiting in the queue.
               </div>
             ) : (
@@ -1363,19 +1369,19 @@ export const GlasshouseCafeRotaModal: React.FC<GlasshouseCafeRotaModalProps> = (
                 {queueList.map((entry, idx) => (
                   <div
                     key={entry.id}
-                    className={`flex items-center justify-between px-3 py-1.5 border-2 border-black rounded-lg ${
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl border ${
                       entry.isSelf
-                        ? 'bg-[#172554] text-[#7dd3fc]'
-                        : 'bg-[#12151d] text-white'
+                        ? 'bg-sky-50 border-sky-200 text-sky-900'
+                        : 'bg-[#f6f4f0] border-stone-200/70 text-slate-800'
                     }`}
                   >
                     <div className="flex items-center gap-2">
-                      <span className="px-1.5 py-0.5 bg-[#facc15] text-[#0b0d13] border border-black font-mono-tabular font-black text-[10px]">
+                      <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 font-mono-tabular font-bold text-[10px]">
                         #{idx + 1}
                       </span>
-                      <span className="text-xs font-black uppercase">{entry.name}</span>
+                      <span className="text-xs font-bold uppercase">{entry.name}</span>
                     </div>
-                    <span className="text-[10px] font-black uppercase text-slate-300">
+                    <span className="text-[10px] font-bold uppercase text-stone-500">
                       {entry.isSelf ? 'IN QUEUE' : 'READY'}
                     </span>
                   </div>
@@ -1395,7 +1401,7 @@ export const GlasshouseCafeRotaModal: React.FC<GlasshouseCafeRotaModalProps> = (
                     onStartOrQueueShift();
                     onClose();
                   }}
-                  className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-[#0b0d13] border-[3px] border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5"
+                  className="w-full py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm font-bold text-xs uppercase tracking-wider cursor-pointer active:scale-[0.98] transition-all"
                 >
                   START WORK (1 ROUND = {CAFE_SHIFT_MAX_ORDERS} SERVES)
                 </button>
@@ -1404,7 +1410,7 @@ export const GlasshouseCafeRotaModal: React.FC<GlasshouseCafeRotaModalProps> = (
                   type="button"
                   data-cafe-rota-modal-queue-btn="true"
                   onClick={onStartOrQueueShift}
-                  className="w-full py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#0b0d13] border-[3px] border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5"
+                  className="w-full py-2.5 rounded-full bg-sky-600 hover:bg-sky-700 text-white shadow-sm font-bold text-xs uppercase tracking-wider cursor-pointer active:scale-[0.98] transition-all"
                 >
                   JOIN SHIFT QUEUE (#{queueList.length + 1})
                 </button>
@@ -1413,7 +1419,7 @@ export const GlasshouseCafeRotaModal: React.FC<GlasshouseCafeRotaModalProps> = (
                   type="button"
                   data-cafe-rota-modal-leave-queue-btn="true"
                   onClick={onLeaveShiftQueue}
-                  className="w-full py-2.5 bg-[#facc15] hover:bg-[#fde047] text-[#0b0d13] border-[3px] border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5"
+                  className="w-full py-2.5 rounded-full bg-amber-500 hover:bg-amber-600 text-white shadow-sm font-bold text-xs uppercase tracking-wider cursor-pointer active:scale-[0.98] transition-all"
                 >
                   QUEUED AT #{selfQueueIndex + 1} · CLICK TO LEAVE
                 </button>
@@ -1452,17 +1458,17 @@ export const CafeOrderSlideBanner: React.FC<CafeOrderSlideBannerProps> = ({
       <button
         type="button"
         onClick={onOpenOrderDetails}
-        className="flex items-center gap-3 bg-[#14161d]/95 hover:bg-[#1e222d] text-white border-[3px] border-[#14161d] ring-2 ring-white shadow-[5px_5px_0_#0b0d13] px-3.5 py-2.5 rounded-r-xl rounded-bl-xl max-w-[330px] text-left cursor-pointer active:scale-95 transition-transform"
+        className="flex items-center gap-3 bg-[#f6f4f0]/95 hover:bg-white backdrop-blur-xl text-slate-900 border border-white/80 shadow-[0_14px_36px_rgba(15,23,42,0.2)] px-4 py-2.5 rounded-2xl max-w-[330px] text-left cursor-pointer active:scale-95 transition-all"
       >
-        <span className="w-10 h-10 bg-[#38bdf8] text-[#0b0d13] border-2 border-black shadow-[2px_2px_0_#000] rounded-lg flex items-center justify-center shrink-0">
-          <Coffee className="w-5 h-5 stroke-[2.5]" aria-hidden="true" />
+        <span className="w-10 h-10 bg-amber-100 text-amber-800 rounded-xl flex items-center justify-center shrink-0">
+          <Coffee className="w-5 h-5" aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-xs sm:text-[13px] font-black leading-snug text-white">
+          <p className="text-xs sm:text-[13px] font-bold leading-snug text-slate-900">
             You received an order from{' '}
-            <span className="text-[#b8ff3c]">{activeOrder.customerName}</span>!
+            <span className="text-emerald-700 font-extrabold">{activeOrder.customerName}</span>!
           </p>
-          <p className="text-[10px] font-bold text-slate-300 truncate mt-0.5">
+          <p className="text-[10.5px] font-medium text-stone-500 truncate mt-0.5">
             Click to view order details ({activeOrder.orderNumber}/{activeOrder.maxOrdersInShift})
           </p>
         </div>
@@ -1500,31 +1506,27 @@ export const CafeOrderNotificationBellButton: React.FC<CafeOrderNotificationBell
         data-cafe-shift-top-pills="true"
         className="fixed top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 pointer-events-none select-none"
       >
-        <div className="-skew-x-6 px-3 py-1 bg-[#14161d]/95 text-white border-2 border-white shadow-[3px_3px_0_#000] flex items-center gap-1.5">
-          <div className="skew-x-6 flex items-center gap-1.5 text-xs font-black font-mono-tabular">
-            <Coffee className="w-3.5 h-3.5 text-[#b8ff3c] stroke-[2.5]" aria-hidden="true" />
-            <span>
-              {shiftState.ordersCompletedInShift}/{shiftState.maxOrdersInShift}
-            </span>
-          </div>
+        <div className="px-3.5 py-1.5 rounded-full bg-[#f6f4f0]/95 backdrop-blur-xl text-slate-900 border border-white/80 shadow-[0_8px_24px_rgba(15,23,42,0.16)] flex items-center gap-1.5 text-xs font-bold font-mono-tabular">
+          <Coffee className="w-3.5 h-3.5 text-amber-700" aria-hidden="true" />
+          <span>
+            {shiftState.ordersCompletedInShift}/{shiftState.maxOrdersInShift}
+          </span>
         </div>
         <div
           data-cafe-shift-countdown="true"
-          className={`-skew-x-6 px-3 py-1 bg-[#14161d]/95 border-2 ${
-            isLowTime ? 'border-[#ff3b30] text-[#ff3b30]' : 'border-white text-white'
-          } shadow-[3px_3px_0_#000] flex items-center gap-1.5`}
+          className={`px-3.5 py-1.5 rounded-full backdrop-blur-xl border shadow-[0_8px_24px_rgba(15,23,42,0.16)] flex items-center gap-1.5 text-xs font-bold font-mono-tabular ${
+            isLowTime
+              ? 'bg-rose-50/95 border-rose-300 text-rose-700'
+              : 'bg-[#f6f4f0]/95 border-white/80 text-slate-900'
+          }`}
         >
-          <div className="skew-x-6 flex items-center gap-1.5 text-xs font-black font-mono-tabular">
-            <Clock
-              className={`w-3.5 h-3.5 stroke-[2.5] ${
-                isLowTime ? 'text-[#ff3b30]' : 'text-[#38bdf8]'
-              }`}
-              aria-hidden="true"
-            />
-            <span>
-              {mm}:{ss}
-            </span>
-          </div>
+          <Clock
+            className={`w-3.5 h-3.5 ${isLowTime ? 'text-rose-600' : 'text-sky-600'}`}
+            aria-hidden="true"
+          />
+          <span>
+            {mm}:{ss}
+          </span>
         </div>
       </div>
 
@@ -1536,17 +1538,17 @@ export const CafeOrderNotificationBellButton: React.FC<CafeOrderNotificationBell
           onClick={onOpenOrderDetails}
           title="View Customer Order"
           aria-label="View Customer Order"
-          className={`relative w-11 h-11 bg-[#14161d] hover:bg-[#1e222d] text-white border-[3px] border-[#14161d] ring-2 ${
-            hasUnread ? 'ring-[#b8ff3c] animate-pulse' : 'ring-white'
-          } shadow-[4px_4px_0_#0b0d13] rounded-xl flex items-center justify-center cursor-pointer active:scale-95 transition-transform`}
+          className={`relative w-11 h-11 bg-[#f6f4f0]/95 hover:bg-white backdrop-blur-xl text-slate-900 border ${
+            hasUnread ? 'border-emerald-400 ring-2 ring-emerald-400/40' : 'border-white/80'
+          } shadow-[0_12px_28px_rgba(15,23,42,0.2)] rounded-full flex items-center justify-center cursor-pointer active:scale-95 transition-all`}
         >
           <Bell
-            className={`w-5 h-5 text-white fill-white/90 stroke-[2.2] ${hasUnread ? 'bb-bell-ring' : ''}`}
+            className={`w-5 h-5 text-amber-800 ${hasUnread ? 'bb-bell-ring' : ''}`}
             aria-hidden="true"
           />
           <span
             data-cafe-order-notif-badge="true"
-            className={`absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-[#38bdf8] text-[#0b0d13] border-2 border-[#0b0d13] rounded-full font-mono-tabular font-black text-[10px] flex items-center justify-center shadow-[1px_1px_0_#000] ${hasUnread ? 'animate-pulse' : ''}`}
+            className={`absolute -top-1 -right-1 min-w-[20px] h-5 px-1 bg-emerald-500 text-white rounded-full font-mono-tabular font-bold text-[10px] flex items-center justify-center shadow-sm ${hasUnread ? 'animate-pulse' : ''}`}
           >
             1
           </span>
@@ -1578,9 +1580,9 @@ export const GlasshouseCafeOrderNotificationModal: React.FC<
       aria-modal="true"
       aria-label="Customer Order Details"
       data-cafe-order-notification-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 pointer-events-auto select-none"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/45 backdrop-blur-sm pointer-events-auto select-none"
     >
-      <div className="relative w-full max-w-md bg-[#14161d] text-white border-[4px] border-[#14161d] ring-3 ring-white shadow-[8px_8px_0_#000] rounded-2xl overflow-hidden px-5 py-6 text-center">
+      <div className="relative w-full max-w-md rounded-[26px] bg-[#f6f4f0]/96 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] text-slate-900 overflow-hidden px-6 py-6 text-center">
         {/* Close Button (Top Right) */}
         <button
           type="button"
@@ -1590,48 +1592,48 @@ export const GlasshouseCafeOrderNotificationModal: React.FC<
             onClose();
           }}
           aria-label="Close Order Details"
-          className="absolute top-3.5 right-3.5 w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black shadow-[2px_2px_0_#000] font-black flex items-center justify-center rounded-full cursor-pointer active:scale-95"
+          className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white hover:bg-stone-100 text-slate-600 hover:text-slate-900 border border-stone-200/80 shadow-xs flex items-center justify-center cursor-pointer active:scale-95 transition-all"
         >
-          <X className="w-4 h-4 stroke-[3]" aria-hidden="true" />
+          <X className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
         </button>
 
         {/* Header Title */}
-        <h2 className="text-sm sm:text-base font-black uppercase tracking-wider text-[#4ade80]">
+        <h2 className="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-emerald-700">
           YOU RECEIVED AN ORDER FROM
         </h2>
 
         {/* Centered Framed Item Card with Customer Name */}
-        <div className="mt-3 mx-auto w-40 h-40 bg-[#1b1f29] border-2 border-white/85 shadow-[4px_4px_0_#000] rounded-xl flex flex-col items-center justify-between p-3">
-          <span className="text-xs font-black text-white tracking-wide truncate max-w-full">
+        <div className="mt-3.5 mx-auto w-42 h-42 bg-white border border-stone-200/80 shadow-sm rounded-2xl flex flex-col items-center justify-between p-3.5">
+          <span className="text-xs font-bold text-slate-900 tracking-wide truncate max-w-full">
             {activeOrder.customerName}
           </span>
           <div className="my-auto flex items-center justify-center">
             <CafeMenuItemArtwork
               itemId={activeOrder.item.id}
-              className="w-24 h-24 drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)]"
+              className="w-24 h-24 drop-shadow-sm"
             />
           </div>
         </div>
 
         {/* Item Name */}
-        <div className="mt-4 text-base sm:text-lg font-black uppercase tracking-wider text-white">
+        <div className="mt-4 text-base sm:text-lg font-extrabold uppercase tracking-tight text-slate-900">
           {activeOrder.item.name}
         </div>
 
-        {/* Green Accent Divider Line */}
-        <div className="mt-2.5 mx-auto w-56 h-[3px] bg-[#4ade80] rounded-full" />
+        {/* Subtle Accent Divider Line */}
+        <div className="mt-2.5 mx-auto w-32 h-[2px] bg-gradient-to-r from-transparent via-amber-400 to-transparent rounded-full" />
 
         {/* Item Description & Station Hint */}
-        <p className="mt-3 text-xs font-bold text-slate-200 leading-relaxed">
+        <p className="mt-3 text-xs font-medium text-stone-600 leading-relaxed">
           {activeOrder.item.prepHint}
         </p>
 
-        <div className="mt-2.5 inline-flex items-center gap-2 px-3 py-1 bg-[#1b1f29] border-2 border-black rounded-lg text-[10.5px] font-black uppercase text-[#b8ff3c]">
+        <div className="mt-3 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-50 border border-amber-200/80 text-[10.5px] font-bold uppercase text-amber-900">
           <span>Prepare at: {stationLabel}</span>
         </div>
 
         {/* Bottom Counter (e.g. (1/3)) */}
-        <div className="mt-4 text-xs font-black font-mono-tabular text-slate-300">
+        <div className="mt-4 text-xs font-bold font-mono-tabular text-stone-500">
           ({activeOrder.orderNumber}/{activeOrder.maxOrdersInShift})
         </div>
       </div>
@@ -1667,12 +1669,12 @@ export const GlasshouseCafePrepModal: React.FC<GlasshouseCafePrepModalProps> = (
       aria-label="SELECT AN ITEM"
       data-cafe-prep-modal="true"
       data-cafe-prep-category={category}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/65 pointer-events-auto select-none"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/45 backdrop-blur-sm pointer-events-auto select-none"
     >
-      <div className="w-full max-w-[660px] bg-[#14161d] text-white border-[4px] border-[#14161d] ring-3 ring-white shadow-[8px_8px_0_#000] rounded-2xl overflow-hidden">
+      <div className="w-full max-w-[680px] rounded-[26px] bg-[#f6f4f0]/96 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] text-slate-900 overflow-hidden">
         {/* Header */}
-        <div className="relative flex items-center justify-center px-4 py-3.5 bg-[#1e212b] border-b-[3px] border-black">
-          <h2 className="text-base sm:text-lg font-black uppercase tracking-wider text-white text-center">
+        <div className="relative flex items-center justify-center px-5 py-4 bg-gradient-to-r from-amber-50/90 via-[#f6f4f0] to-stone-100/80 border-b border-stone-200/80">
+          <h2 className="text-base sm:text-lg font-extrabold uppercase tracking-tight text-slate-900 text-center">
             SELECT AN ITEM
           </h2>
           <button
@@ -1685,14 +1687,14 @@ export const GlasshouseCafePrepModal: React.FC<GlasshouseCafePrepModalProps> = (
               onClose();
             }}
             aria-label="Close"
-            className="absolute right-3.5 w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black font-black flex items-center justify-center cursor-pointer"
+            className="absolute right-4 w-8 h-8 rounded-full bg-white hover:bg-stone-100 text-slate-600 hover:text-slate-900 border border-stone-200/80 shadow-xs flex items-center justify-center cursor-pointer transition-colors"
           >
-            <X className="w-4 h-4 stroke-[3]" aria-hidden="true" />
+            <X className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
           </button>
         </div>
 
-        {/* 2-Column Layout: White Body Background + Cream Cards (Header Preserved) */}
-        <div className="p-4 bg-white text-[#14161d] grid grid-cols-1 sm:grid-cols-12 gap-3.5">
+        {/* 2-Column Layout */}
+        <div className="p-5 grid grid-cols-1 sm:grid-cols-12 gap-4">
           {/* Left Item Grid (Filtered by Pastry Display 'pastry' or Drink Machine 'drink') */}
           <div className="sm:col-span-7 flex flex-col justify-between min-h-[250px]">
             <div className="grid grid-cols-4 gap-2.5 content-start">
@@ -1709,15 +1711,15 @@ export const GlasshouseCafePrepModal: React.FC<GlasshouseCafePrepModalProps> = (
                       setFeedback(null);
                     }}
                     aria-label={item.name}
-                    className={`aspect-square flex items-center justify-center p-2 rounded-xl border-[3px] transition-transform cursor-pointer active:scale-95 ${
+                    className={`aspect-square flex items-center justify-center p-2 rounded-2xl border transition-all cursor-pointer active:scale-95 ${
                       isSelected
-                        ? 'bg-[#eef8d8] border-[#14161d] ring-2 ring-[#b8ff3c] -translate-y-0.5 shadow-[2px_2px_0_#000]'
-                        : 'bg-[#f7efe0] hover:bg-[#efe3cc] border-black shadow-[2px_2px_0_#000]'
+                        ? 'bg-amber-50 border-amber-500 ring-2 ring-amber-400/40 -translate-y-0.5 shadow-md'
+                        : 'bg-white hover:bg-stone-50 border-stone-200/80 shadow-sm hover:shadow'
                     }`}
                   >
                     <CafeMenuItemArtwork
                       itemId={item.id}
-                      className="w-13 h-13 drop-shadow-[0_2px_2px_rgba(0,0,0,0.28)]"
+                      className="w-13 h-13 drop-shadow-sm"
                     />
                   </button>
                 );
@@ -1726,33 +1728,33 @@ export const GlasshouseCafePrepModal: React.FC<GlasshouseCafePrepModalProps> = (
 
             {/* Bottom Page Dot Indicator */}
             <div className="pt-3 flex items-center justify-center">
-              <span className="w-2 h-2 rounded-full bg-[#14161d]" />
+              <span className="w-2 h-2 rounded-full bg-amber-600" />
             </div>
           </div>
 
-          {/* Right Detail Panel (Cream Card) */}
-          <div className="sm:col-span-5 bg-[#f7efe0] text-[#14161d] border-[3px] border-black shadow-[3px_3px_0_#000] rounded-xl p-4 flex flex-col items-center justify-between text-center min-h-[250px]">
+          {/* Right Detail Panel */}
+          <div className="sm:col-span-5 bg-white text-slate-900 border border-stone-200/80 shadow-sm rounded-2xl p-4 flex flex-col items-center justify-between text-center min-h-[250px]">
             {!selectedItem ? (
               <div className="my-auto px-3">
-                <p className="text-xs sm:text-sm font-extrabold text-[#14161d] leading-relaxed">
+                <p className="text-xs sm:text-sm font-semibold text-stone-500 leading-relaxed">
                   Select an item to view its details
                 </p>
               </div>
             ) : (
               <>
-                <div className="text-[11px] font-black uppercase tracking-wider text-slate-600">
+                <div className="text-[10.5px] font-bold uppercase tracking-wider text-amber-700">
                   {category === 'pastry' ? 'PASTRY DISPLAY' : 'DRINK MACHINE'}
                 </div>
 
-                <div className="my-2 p-3 bg-white border-2 border-black rounded-xl shadow-[2px_2px_0_#000]">
+                <div className="my-2 p-3 bg-[#f6f4f0] border border-stone-200/70 rounded-2xl">
                   <CafeMenuItemArtwork itemId={selectedItem.id} className="w-24 h-24" />
                 </div>
 
-                <div className="space-y-1 mb-2">
-                  <div className="text-sm font-black uppercase text-[#14161d]">
+                <div className="space-y-1 mb-2.5">
+                  <div className="text-sm font-extrabold uppercase text-slate-900">
                     {selectedItem.name}
                   </div>
-                  <div className="text-xs font-bold text-slate-600">
+                  <div className="text-xs font-medium text-stone-500">
                     {selectedItem.prepHint}
                   </div>
                 </div>
@@ -1760,10 +1762,10 @@ export const GlasshouseCafePrepModal: React.FC<GlasshouseCafePrepModalProps> = (
                 {feedback && (
                   <div
                     data-cafe-prep-feedback="true"
-                    className={`w-full mb-2 px-2 py-1 border-2 border-black text-[10.5px] font-black ${
+                    className={`w-full mb-2.5 px-3 py-1.5 rounded-xl border text-[11px] font-semibold ${
                       feedback.ok
-                        ? 'bg-[#dcfce7] text-emerald-950'
-                        : 'bg-[#fee2e2] text-red-900'
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                        : 'bg-rose-50 border-rose-200 text-rose-800'
                     }`}
                   >
                     {feedback.text}
@@ -1783,7 +1785,7 @@ export const GlasshouseCafePrepModal: React.FC<GlasshouseCafePrepModalProps> = (
                       setFeedback(null);
                     }
                   }}
-                  className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-[#14161d] border-[3px] border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5"
+                  className="w-full py-2.5 rounded-full bg-amber-700 hover:bg-amber-800 text-white shadow-sm font-bold text-xs uppercase tracking-wider cursor-pointer active:scale-[0.98] transition-all"
                 >
                   PREPARE
                 </button>

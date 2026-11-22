@@ -993,28 +993,19 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
       )}
 
       {/* =====================================================================
-          2. SHORELINE TRANSLUCENT GLASS `.gm-fight` GAUGE & `.tw-prompt` PILL
-          Exact port of `GameHUD.js` lines 25-41 & `ui.css` lines 442-472, 782-805
+          2. SHORELINE TRANSLUCENT DARK FROSTED GLASS TOAST & GAUGE HUD
          ===================================================================== */}
       <div
         data-fishing-hud-bar="true"
         className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex flex-col items-center gap-1.5 select-none"
       >
-        {/* Top transient toast pill (`.tw-toast`) if line snapped or early nibble */}
+        {/* Top transient toast pill if line snapped or early nibble */}
         {fishingHintMessage && (
-          <div
-            style={{
-              background: 'rgba(12, 18, 26, 0.92)',
-              border: '1px solid rgba(170, 215, 235, 0.24)',
-              boxShadow:
-                'inset 0 1px 0 rgba(255,255,255,0.08), 0 12px 32px -12px rgba(0,0,0,0.55)',
-            }}
-            className="flex items-center gap-2.5 px-4 py-2 rounded-full text-[13px] font-medium text-[#eef6f8]"
-          >
+          <div className="flex items-center gap-2.5 px-4 py-2 rounded-full bg-[#0d1118]/78 backdrop-blur-xl border border-white/15 shadow-[0_12px_32px_rgba(0,0,0,0.4)] text-[13px] font-medium text-slate-100">
             <span
               style={{
                 background: '#5fe3d4',
-                boxShadow: '0 0 8px rgba(95, 227, 212, 0.9)',
+                boxShadow: '0 0 8px rgba(95, 227, 212, 0.85)',
               }}
               className="w-1.5 h-1.5 rounded-full shrink-0"
             />
@@ -1023,18 +1014,17 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
         )}
 
         {/* Fishing action lives on the round button (CAST / STRIKE / REEL) and the [F] / Space keys - no pill bar */}
-
       </div>
 
-      {/* Fishing gauge stack - vertical capsule docked on the right, above the round action button */}
+      {/* Fishing gauge stack - compact Dark Frosted Glass capsule docked on the right, above the round action button */}
       {nearbyWaterZone.canFish &&
         ((fishingPhase === 'fighting' && fishingMinigame) || fishingPhase === 'charging') && (
           <div
             data-fishing-gauge-stack="true"
-            className="fixed right-4 sm:right-6 bottom-[166px] sm:bottom-[174px] z-40 pointer-events-none select-none flex flex-col items-center gap-1.5 w-20"
+            className="fixed right-4 sm:right-6 bottom-[166px] sm:bottom-[174px] z-40 pointer-events-none select-none flex flex-col items-center gap-2 w-[84px] px-2 py-3 rounded-2xl bg-[#0d1118]/78 backdrop-blur-xl border border-white/15 shadow-[0_12px_32px_rgba(0,0,0,0.42)]"
           >
             {fishingPhase === 'fighting' && fishingMinigame && (
-              <>
+              <div className="flex flex-col items-center gap-0.5 text-center">
                 <span
                   style={{
                     color:
@@ -1042,24 +1032,20 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
                         ? '#ff7a85'
                         : fightCallTone === 'good'
                           ? '#5fe3d4'
-                          : '#ffffff',
-                    textShadow: '0 1px 6px rgba(0,0,0,0.6)',
+                          : '#f8fafc',
                   }}
-                  className="font-bold tracking-wide text-[10.5px] leading-tight text-center"
+                  className="font-semibold tracking-tight text-[10.5px] leading-tight"
                 >
                   {fightCallText}
                 </span>
-                <span
-                  style={{ textShadow: '0 1px 6px rgba(0,0,0,0.6)' }}
-                  className="font-mono text-[10px] text-white/90"
-                >
+                <span className="font-mono tabular-nums text-[10px] text-white/75">
                   {fishingMinigame.distanceM.toFixed(1)} m
                 </span>
-              </>
+              </div>
             )}
 
             {/* Vertical capsule gauge: slack / low power at the bottom, danger at the top */}
-            <div className="relative w-[26px] h-[168px] rounded-full border-2 border-white/85 bg-[#0f172a]/70 shadow-[0_4px_14px_rgba(0,0,0,0.35)]">
+            <div className="relative w-[22px] h-[160px] rounded-full border border-white/30 bg-white/[0.08] shadow-inner">
               <div className="absolute inset-0 rounded-full overflow-hidden">
                 {fishingPhase === 'charging' ? (
                   <span
@@ -1082,7 +1068,7 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
                     <span
                       style={{
                         height: '12%',
-                        background: 'rgba(255, 122, 133, 0.45)',
+                        background: 'rgba(255, 122, 133, 0.48)',
                       }}
                       className="absolute top-0 left-0 right-0"
                     />
@@ -1096,8 +1082,8 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
                     background:
                       fishingMinigame.tension > fishingMinigame.greenBand[1]
                         ? '#ff7a85'
-                        : '#0f172a',
-                    boxShadow: '0 0 0 2px rgba(255,255,255,0.85), 0 0 8px rgba(0,0,0,0.35)',
+                        : '#ffffff',
+                    boxShadow: '0 0 0 2px rgba(13,17,24,0.65), 0 0 8px rgba(0,0,0,0.45)',
                   }}
                   className="absolute -left-1.5 -right-1.5 h-[4px] -mb-[2px] rounded-full transition-[bottom] duration-75"
                 />
@@ -1105,18 +1091,12 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
             </div>
 
             {fishingPhase === 'charging' ? (
-              <span
-                style={{ textShadow: '0 1px 6px rgba(0,0,0,0.6)' }}
-                className="font-mono font-bold text-[11px] text-white"
-              >
+              <span className="font-mono tabular-nums font-semibold text-[11px] text-white">
                 {Math.round(fishingCastPower * 100)}%
               </span>
             ) : fishingMinigame ? (
-              <div className="w-[52px] flex flex-col items-center gap-1">
-                <span
-                  style={{ background: 'rgba(15, 23, 42, 0.35)' }}
-                  className="block w-full h-1.5 rounded-full overflow-hidden"
-                >
+              <div className="w-[56px] flex flex-col items-center gap-1">
+                <span className="block w-full h-1.5 rounded-full bg-white/15 overflow-hidden">
                   <span
                     style={{
                       width: `${Math.max(0, Math.round(fishingMinigame.stamina * 100))}%`,
@@ -1125,10 +1105,7 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
                     className="block h-full rounded-full transition-all duration-75"
                   />
                 </span>
-                <span
-                  style={{ textShadow: '0 1px 6px rgba(0,0,0,0.6)' }}
-                  className="text-[8.5px] font-bold uppercase tracking-wider text-white/85"
-                >
+                <span className="text-[9px] font-semibold uppercase tracking-wider text-white/75">
                   Fish
                 </span>
               </div>
@@ -1137,175 +1114,120 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
         )}
 
       {/* =====================================================================
-          3. SHORELINE FULL-SCREEN `.gm-catch-scrim` & `.gm-catch` STUDIO SHOWCASE
-          Exact port of `GameHUD.js` lines 84-143 (No boxy borders!)
+          3. SHORELINE CATCH SHOWCASE MODAL (Clean Rounded Frosted Card)
          ===================================================================== */}
       {lastCaughtFishToast && (
         <div
           data-caught-fish-toast="true"
-          style={{
-            background:
-              'radial-gradient(70% 60% at 50% 50%, rgba(10, 22, 34, 0.84) 0%, rgba(4, 9, 15, 0.94) 100%)',
-          }}
-          className="fixed inset-0 z-[120] flex flex-col items-center justify-center px-6 py-8 text-center text-[#f4ead6] pointer-events-auto select-none"
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 sm:p-6 bg-slate-950/65 backdrop-blur-md pointer-events-auto select-none"
         >
-          {/* `.gm-catch-top` */}
-          <div className="flex flex-col items-center">
-            <div className="flex items-center justify-center gap-2 mb-2">
-              {lastCaughtFishToast.isTrophy ? (
-                <span
-                  style={{
-                    color: '#2a1604',
-                    background:
-                      'linear-gradient(100deg, #f3cf8a 0%, #d9a441 40%, #fff0cf 50%, #d9a441 60%, #f3cf8a 100%)',
-                    boxShadow:
-                      '0 0 0 2px rgba(42, 22, 4, 0.35) inset, 0 0 26px rgba(217, 164, 65, 0.55)',
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded text-[11px] font-extrabold uppercase tracking-[0.22em] -rotate-2"
-                >
-                  ★ Trophy Record
-                </span>
-              ) : (
-                <span
-                  style={{
-                    color: '#062420',
-                    background: '#6fd6c6',
-                    boxShadow:
-                      '0 0 0 2px rgba(6, 36, 32, 0.3) inset, 0 0 22px rgba(111, 214, 198, 0.45)',
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded text-[11px] font-extrabold uppercase tracking-[0.22em] -rotate-2"
-                >
-                  {lastCaughtFishToast.rarity} Catch
-                </span>
-              )}
+          <div className="w-full max-w-2xl rounded-[24px] bg-[#0d1118]/88 backdrop-blur-2xl border border-white/15 shadow-[0_24px_64px_rgba(0,0,0,0.55)] px-5 py-6 sm:px-7 sm:py-7 flex flex-col items-center text-center text-white">
+            {/* Header & Rarity Pill */}
+            <div className="flex flex-col items-center">
+              <div className="flex items-center justify-center gap-2 mb-2.5">
+                {lastCaughtFishToast.isTrophy ? (
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-amber-400/20 border border-amber-300/45 text-amber-200 text-[11px] font-semibold uppercase tracking-[0.16em]">
+                    ★ Trophy Record
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-teal-400/20 border border-teal-300/40 text-teal-200 text-[11px] font-semibold uppercase tracking-[0.16em]">
+                    {lastCaughtFishToast.rarity} Catch
+                  </span>
+                )}
+              </div>
+
+              <h2 className="text-3xl sm:text-5xl font-bold tracking-tight leading-none text-white m-0">
+                {lastCaughtFishToast.speciesName}
+              </h2>
+              <div className="mt-1.5 text-slate-300/80 text-sm">
+                {lastCaughtFishToast.waterZoneLabel}
+              </div>
             </div>
 
-            <h2
-              style={{
-                color: '#fbf1dc',
-                textShadow: '0 2px 0 rgba(0, 0, 0, 0.35), 0 8px 30px rgba(0, 0, 0, 0.45)',
-              }}
-              className="text-4xl sm:text-6xl font-bold tracking-tight leading-none m-0"
-            >
-              {lastCaughtFishToast.speciesName}
-            </h2>
-            <div className="mt-1.5 italic text-[#f4ead6]/65 text-sm sm:text-base">
-              {lastCaughtFishToast.waterZoneLabel}
-            </div>
-          </div>
-
-          {/* `.gm-catch-stage`: Live 3D Studio Fish Portrait floating in softbox light */}
-          <div className="relative w-full max-w-[760px] h-[220px] sm:h-[260px] my-2 flex items-center justify-center">
-            <div
-              style={{
-                background: 'radial-gradient(closest-side, rgba(0, 0, 0, 0.5), transparent)',
-              }}
-              className="absolute inset-x-[12%] bottom-[6%] h-[16%] rounded-full pointer-events-none"
-            />
-            <canvas
-              ref={studioCanvasRef}
-              width={760}
-              height={310}
-              style={{
-                WebkitMaskImage:
-                  'linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%)',
-                maskImage:
-                  'linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%)',
-              }}
-              className="w-full h-full object-contain pointer-events-none"
-            />
-          </div>
-
-          {/* `.gm-catch-bottom`: 3 Warm Translucent Stat Cards (`Length`, `Weight`, `Value`) */}
-          <div className="flex flex-col items-center">
-            <div className="flex flex-wrap justify-center gap-3 sm:gap-5 mt-1">
+            {/* Live 3D Studio Fish Portrait Stage */}
+            <div className="relative w-full h-[200px] sm:h-[240px] my-4 rounded-2xl bg-gradient-to-b from-slate-800/45 via-slate-900/55 to-slate-950/70 border border-white/10 overflow-hidden flex items-center justify-center">
               <div
                 style={{
-                  background:
-                    'linear-gradient(180deg, rgba(232, 220, 192, 0.12), rgba(232, 220, 192, 0.05))',
-                  boxShadow:
-                    'inset 0 0 0 1px rgba(214, 180, 110, 0.38), 0 10px 30px rgba(0, 0, 0, 0.25)',
+                  background: 'radial-gradient(closest-side, rgba(0, 0, 0, 0.45), transparent)',
                 }}
-                className="min-w-[110px] sm:min-w-[136px] px-4 py-2.5 rounded-md"
-              >
-                <span className="block text-[10.5px] font-bold uppercase tracking-[0.22em] text-[#debe7d]/90">
+                className="absolute inset-x-[12%] bottom-[6%] h-[16%] rounded-full pointer-events-none"
+              />
+              <canvas
+                ref={studioCanvasRef}
+                width={760}
+                height={310}
+                style={{
+                  WebkitMaskImage:
+                    'linear-gradient(90deg, transparent 0%, #000 10%, #000 90%, transparent 100%)',
+                  maskImage:
+                    'linear-gradient(90deg, transparent 0%, #000 10%, #000 90%, transparent 100%)',
+                }}
+                className="w-full h-full object-contain pointer-events-none"
+              />
+            </div>
+
+            {/* 3 Frosted Stat Cards (`Length`, `Weight`, `Kai Sell Value`) */}
+            <div className="w-full grid grid-cols-3 gap-2.5 sm:gap-3">
+              <div className="px-3.5 py-3 rounded-2xl bg-white/[0.06] border border-white/12">
+                <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                   Length
                 </span>
-                <b className="block mt-1 font-mono text-2xl sm:text-3xl font-semibold text-[#fbf1dc]">
+                <b className="block mt-1 font-mono tabular-nums text-xl sm:text-2xl font-bold text-white">
                   {lengthCm}
-                  <small className="text-sm font-medium text-[#f4ead6]/70 ml-1">cm</small>
+                  <small className="text-xs font-medium text-slate-400 ml-1">cm</small>
                 </b>
-                <i className="block not-italic font-mono text-xs text-[#f4ead6]/50 mt-0.5">
+                <i className="block not-italic font-mono tabular-nums text-[11px] text-slate-400 mt-0.5">
                   {lengthInches} in
                 </i>
               </div>
 
-              <div
-                style={{
-                  background:
-                    'linear-gradient(180deg, rgba(232, 220, 192, 0.12), rgba(232, 220, 192, 0.05))',
-                  boxShadow:
-                    'inset 0 0 0 1px rgba(214, 180, 110, 0.38), 0 10px 30px rgba(0, 0, 0, 0.25)',
-                }}
-                className="min-w-[110px] sm:min-w-[136px] px-4 py-2.5 rounded-md"
-              >
-                <span className="block text-[10.5px] font-bold uppercase tracking-[0.22em] text-[#debe7d]/90">
+              <div className="px-3.5 py-3 rounded-2xl bg-white/[0.06] border border-white/12">
+                <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                   Weight
                 </span>
-                <b className="block mt-1 font-mono text-2xl sm:text-3xl font-semibold text-[#fbf1dc]">
+                <b className="block mt-1 font-mono tabular-nums text-xl sm:text-2xl font-bold text-white">
                   {lastCaughtFishToast.weightKg.toFixed(2)}
-                  <small className="text-sm font-medium text-[#f4ead6]/70 ml-1">kg</small>
+                  <small className="text-xs font-medium text-slate-400 ml-1">kg</small>
                 </b>
-                <i className="block not-italic font-mono text-xs text-[#f4ead6]/50 mt-0.5">
+                <i className="block not-italic font-mono tabular-nums text-[11px] text-slate-400 mt-0.5">
                   {weightLb} lb
                 </i>
               </div>
 
-              <div
-                style={{
-                  background:
-                    'linear-gradient(180deg, rgba(232, 220, 192, 0.12), rgba(232, 220, 192, 0.05))',
-                  boxShadow:
-                    'inset 0 0 0 1px rgba(214, 180, 110, 0.38), 0 10px 30px rgba(0, 0, 0, 0.25)',
-                }}
-                className="min-w-[110px] sm:min-w-[136px] px-4 py-2.5 rounded-md"
-              >
-                <span className="block text-[10.5px] font-bold uppercase tracking-[0.22em] text-[#debe7d]/90">
+              <div className="px-3.5 py-3 rounded-2xl bg-white/[0.06] border border-white/12">
+                <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                   Kai Sell Value
                 </span>
-                <b className="block mt-1 font-mono text-2xl sm:text-3xl font-semibold text-[#facc15]">
+                <b className="block mt-1 font-mono tabular-nums text-xl sm:text-2xl font-bold text-amber-300">
                   +{lastCaughtFishToast.sellValueLul || lastCaughtFishToast.sellValueCyon}
-                  <small className="text-sm font-medium text-[#f4ead6]/70 ml-1">LUL</small>
+                  <small className="text-xs font-medium text-slate-400 ml-1">LUL</small>
                 </b>
-                <i className="block not-italic font-mono text-xs text-[#f4ead6]/50 mt-0.5">
+                <i className="block not-italic text-[10.5px] text-slate-400 mt-0.5 truncate">
                   Sell to Kai (Swap LUL &rarr; CYON)
                 </i>
               </div>
             </div>
 
-            {/* Rounded Pill Action Buttons (`.gm-btn`). Catch screen rule:
-                Keep in Bag or Release ONLY \u2014 selling and minting happen
-                at Kai's fish market, never from the catch showcase. */}
+            {/* Rounded Pill Action Buttons */}
             <div className="flex flex-wrap items-center justify-center gap-2.5 mt-5">
               <button
                 type="button"
                 data-keep-fish-btn="true"
                 onClick={onKeepCaughtFish}
-                style={{ background: '#5fe3d4', color: '#0b1418' }}
-                className="px-5 py-2 rounded-full text-[13px] font-semibold cursor-pointer hover:brightness-110 transition-all"
+                className="px-6 py-2.5 rounded-full bg-teal-400 hover:bg-teal-300 text-slate-950 text-[13px] font-semibold cursor-pointer transition-colors shadow-sm"
               >
                 Keep in Bag
               </button>
 
               {lastCaughtFishToast.isMintedNft && (
-                <span className="px-4 py-2 rounded-full text-[12px] font-mono font-bold bg-emerald-500/25 border border-emerald-400/70 text-emerald-200">
+                <span className="px-4 py-2 rounded-full text-[12px] font-mono font-semibold bg-emerald-500/20 border border-emerald-400/50 text-emerald-200">
                   Minted NFT{' '}
                   {lastCaughtFishToast.nearTxHash && (
                     <a
                       href={`https://testnet.nearblocks.io/txns/${lastCaughtFishToast.nearTxHash}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="underline ml-1 text-[#5fe3d4]"
+                      className="underline ml-1 text-teal-300"
                     >
                       Receipt
                     </a>
@@ -1317,12 +1239,7 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
                 type="button"
                 data-toast-release-fish-btn="true"
                 onClick={() => onReleaseCaughtFish(lastCaughtFishToast)}
-                style={{
-                  background: 'rgba(170, 215, 235, 0.08)',
-                  border: '1px solid rgba(170, 215, 235, 0.18)',
-                  color: 'rgba(222, 236, 242, 0.76)',
-                }}
-                className="px-4 py-2 rounded-full text-[13px] font-medium cursor-pointer hover:text-white hover:bg-white/15 transition-all"
+                className="px-5 py-2.5 rounded-full bg-white/[0.08] hover:bg-white/[0.15] border border-white/15 text-slate-200 hover:text-white text-[13px] font-medium cursor-pointer transition-colors"
               >
                 Release
               </button>

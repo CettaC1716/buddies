@@ -42,9 +42,9 @@ function createContactShadowTexture(): THREE.CanvasTexture {
   const ctx = canvas.getContext('2d');
   if (ctx) {
     const grad = ctx.createRadialGradient(64, 64, 8, 64, 64, 60);
-    grad.addColorStop(0, 'rgba(2, 6, 23, 0.58)');
-    grad.addColorStop(0.55, 'rgba(2, 6, 23, 0.24)');
-    grad.addColorStop(1, 'rgba(2, 6, 23, 0)');
+    grad.addColorStop(0, 'rgba(15, 23, 42, 0.28)');
+    grad.addColorStop(0.55, 'rgba(15, 23, 42, 0.11)');
+    grad.addColorStop(1, 'rgba(15, 23, 42, 0)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 128, 128);
   }
@@ -85,7 +85,7 @@ const Garment3DPreviewCanvas: React.FC<{
     const height = Math.max(240, host.clientHeight || 340);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#0c1322');
+    scene.background = new THREE.Color('#eef1f6');
 
     const camera = new THREE.PerspectiveCamera(34, width / height, 0.05, 30);
     camera.position.set(0, 1.08, 2.15);
@@ -105,7 +105,7 @@ const Garment3DPreviewCanvas: React.FC<{
     renderer.setSize(width, height, false);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.08;
+    renderer.toneMappingExposure = 1.06;
     renderer.domElement.className = 'w-full h-full block cursor-grab active:cursor-grabbing touch-none';
 
     host.innerHTML = '';
@@ -116,26 +116,26 @@ const Garment3DPreviewCanvas: React.FC<{
     scene.environment = envTarget.texture;
     pmremGen.dispose();
 
-    const hemi = new THREE.HemisphereLight('#f0f9ff', '#1e293b', 1.15);
+    const hemi = new THREE.HemisphereLight('#ffffff', '#cbd5e1', 1.3);
     scene.add(hemi);
 
-    const keyLight = new THREE.DirectionalLight('#fffbeb', 1.85);
+    const keyLight = new THREE.DirectionalLight('#fffdf8', 1.75);
     keyLight.position.set(2.4, 3.6, 2.8);
     scene.add(keyLight);
 
-    const rimLight = new THREE.DirectionalLight('#38bdf8', 0.95);
+    const rimLight = new THREE.DirectionalLight('#bae6fd', 0.8);
     rimLight.position.set(-2.6, 2.2, -2.2);
     scene.add(rimLight);
 
-    // Subtle boutique display plinth + contact shadow + brushed brass mannequin post
+    // Subtle boutique display plinth + contact shadow + brushed satin mannequin post
     const turntableGroup = new THREE.Group();
     scene.add(turntableGroup);
 
     const plinthGeo = new THREE.CylinderGeometry(0.62, 0.66, 0.05, 40);
     const plinthMat = new THREE.MeshStandardMaterial({
-      color: '#162033',
-      roughness: 0.42,
-      metalness: 0.25,
+      color: '#dce3ee',
+      roughness: 0.38,
+      metalness: 0.12,
     });
     const plinthMesh = new THREE.Mesh(plinthGeo, plinthMat);
     plinthMesh.position.y = 0.46;
@@ -143,9 +143,9 @@ const Garment3DPreviewCanvas: React.FC<{
 
     const rimGeo = new THREE.TorusGeometry(0.625, 0.008, 12, 48);
     const rimMat = new THREE.MeshStandardMaterial({
-      color: fitPreviewGender === 'female' ? '#7dd3fc' : '#38bdf8',
-      roughness: 0.28,
-      metalness: 0.72,
+      color: fitPreviewGender === 'female' ? '#38bdf8' : '#0ea5e9',
+      roughness: 0.3,
+      metalness: 0.55,
     });
     const rimMesh = new THREE.Mesh(rimGeo, rimMat);
     rimMesh.rotation.x = Math.PI / 2;
@@ -155,8 +155,8 @@ const Garment3DPreviewCanvas: React.FC<{
     const standRodGeo = new THREE.CylinderGeometry(0.018, 0.022, 0.56, 18);
     const standRodMat = new THREE.MeshStandardMaterial({
       color: '#94a3b8',
-      roughness: 0.3,
-      metalness: 0.82,
+      roughness: 0.28,
+      metalness: 0.72,
     });
     const standRod = new THREE.Mesh(standRodGeo, standRodMat);
     standRod.position.y = 0.76;
@@ -164,9 +164,9 @@ const Garment3DPreviewCanvas: React.FC<{
 
     const neckCapGeo = new THREE.CylinderGeometry(0.048, 0.056, 0.08, 20);
     const neckCapMat = new THREE.MeshStandardMaterial({
-      color: '#334155',
-      roughness: 0.55,
-      metalness: 0.2,
+      color: '#64748b',
+      roughness: 0.48,
+      metalness: 0.18,
     });
     const neckCap = new THREE.Mesh(neckCapGeo, neckCapMat);
     neckCap.position.y = 1.33;
@@ -337,10 +337,10 @@ const Garment3DPreviewCanvas: React.FC<{
   }, [glbPath, fitPreviewGender]);
 
   return (
-    <div className="relative w-full h-full min-h-[270px] sm:min-h-[330px] bg-[#0c1322] overflow-hidden">
+    <div className="relative w-full h-full min-h-[270px] sm:min-h-[330px] bg-[#eef1f6] rounded-xl overflow-hidden">
       <div ref={mountRef} className="w-full h-full min-h-[270px] sm:min-h-[330px]" />
       {!isModelReady && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-[#0c1322]/75 text-xs font-semibold text-slate-300">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-[#eef1f6]/80 text-xs font-medium text-slate-500">
           Loading 3D Garment Mesh...
         </div>
       )}
@@ -436,29 +436,29 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
           onClose();
         }
       }}
-      className="fixed inset-0 z-[130] flex items-center justify-center p-3 sm:p-5 bg-black/78 pointer-events-auto select-none"
+      className="fixed inset-0 z-[130] flex items-center justify-center p-3 sm:p-5 bg-slate-950/55 backdrop-blur-sm pointer-events-auto select-none"
     >
-      <div className="relative w-full max-w-4xl bg-[#0f172a] border-2 border-slate-700/80 shadow-[0_24px_60px_rgba(0,0,0,0.75)] text-slate-100 overflow-hidden flex flex-col max-h-[92vh]">
+      <div className="relative w-full max-w-4xl rounded-[26px] bg-[#edf0f5]/95 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.3)] text-slate-900 overflow-hidden flex flex-col max-h-[92vh]">
         {/* Top Storefront Bar */}
-        <header className="flex items-center justify-between gap-4 px-5 py-3.5 bg-[#14161d] border-b border-slate-800 shrink-0">
+        <header className="flex items-center justify-between gap-4 px-5 py-3.5 bg-white/95 border-b border-slate-200/80 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 bg-[#38bdf8] text-slate-950 flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-2xl bg-sky-50 text-sky-600 border border-sky-200/70 flex items-center justify-center shrink-0">
               <Shirt className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-sm sm:text-base font-extrabold tracking-tight text-white truncate">
+              <h2 className="text-sm sm:text-base font-bold tracking-tight text-slate-900 truncate">
                 Fashion &amp; Apparel Boutique
               </h2>
-              <p className="text-[11px] text-slate-400 truncate">
+              <p className="text-[11px] text-slate-500 truncate">
                 Central Plaza Promenade · Modular Avatar Wardrobe
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
-            <div className="px-3 py-1.5 bg-slate-900 border border-slate-700/80 text-xs font-semibold flex items-center gap-2">
-              <span className="text-slate-400">Balance</span>
-              <span className="font-mono font-bold tabular-nums text-[#facc15]">
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="px-3.5 py-1.5 rounded-full bg-slate-100 border border-slate-200/80 text-xs font-semibold flex items-center gap-2 text-slate-800">
+              <span className="text-slate-500 font-medium">Balance</span>
+              <span className="font-mono font-bold tabular-nums text-slate-900">
                 {lulBalance.toLocaleString()} LUL
               </span>
             </div>
@@ -471,9 +471,9 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
                 onClose();
                 onOpenPersonalBag();
               }}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-600 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              className="px-3.5 py-1.5 rounded-full bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 shadow-xs text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
             >
-              <Backpack className="w-3.5 h-3.5 text-[#b8ff3c]" />
+              <Backpack className="w-3.5 h-3.5 text-emerald-600" />
               <span>Bag ({ownedApparelIds.length})</span>
             </button>
 
@@ -485,7 +485,7 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
                 onClose();
               }}
               aria-label="Close Fashion Boutique"
-              className="w-8 h-8 bg-slate-800 hover:bg-rose-600 text-slate-200 hover:text-white border border-slate-700 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+              className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center transition-colors cursor-pointer shrink-0"
             >
               <X className="w-4 h-4" />
             </button>
@@ -493,17 +493,17 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
         </header>
 
         {/* Sub-Bar: Category Filter & Bag Notice */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-2.5 bg-[#111827] border-b border-slate-800/90 shrink-0">
-          <div className="flex items-center gap-1 p-1 bg-slate-900 border border-slate-800">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-2.5 bg-white/70 border-b border-slate-200/75 shrink-0">
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
-              className="px-3 py-1 text-xs font-bold bg-[#38bdf8] text-slate-950 whitespace-nowrap shrink-0 cursor-pointer"
+              className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-slate-900 text-white shadow-xs whitespace-nowrap shrink-0 cursor-pointer"
             >
               Tops &amp; Jackets ({FASHION_APPAREL_CATALOG_ITEMS.length})
             </button>
           </div>
 
-          <div className="text-xs text-slate-400">
+          <div className="text-xs text-slate-500">
             <span>Purchases are stored in your Personal Bag first</span>
             <span aria-hidden="true"> · </span>
             <span>Equip anytime from Bag</span>
@@ -511,9 +511,9 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
         </div>
 
         {/* Main 2-Column Showcase */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 items-stretch overflow-y-auto min-h-0 flex-1">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 p-4 sm:p-5 items-stretch overflow-y-auto min-h-0 flex-1">
           {/* Left: Interactive 360° 3D Garment Studio */}
-          <div className="lg:col-span-7 relative flex flex-col border-b lg:border-b-0 lg:border-r border-slate-800 bg-[#0c1322]">
+          <div className="lg:col-span-7 relative rounded-2xl bg-white border border-slate-200/75 shadow-sm p-2.5 flex flex-col gap-2.5">
             <div className="flex-1 min-h-[270px] sm:min-h-[340px]">
               <Garment3DPreviewCanvas
                 glbPath={previewGlbPath}
@@ -522,18 +522,18 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
             </div>
 
             {/* Bottom Studio Controls Strip */}
-            <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-[#0f172a] border-t border-slate-800/90 text-xs">
-              <div className="flex items-center gap-1 p-0.5 bg-slate-900 border border-slate-700/80">
+            <div className="flex items-center justify-between gap-3 px-1.5 py-1 text-xs">
+              <div className="flex items-center gap-1 p-0.5 rounded-full bg-slate-100 border border-slate-200/80">
                 <button
                   type="button"
                   onClick={() => {
                     soundEngine.playSoftTap();
                     setPreviewGender('male');
                   }}
-                  className={`px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                     previewGender === 'male'
-                      ? 'bg-[#38bdf8] text-slate-950'
-                      : 'text-slate-300 hover:text-white'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   Male Fit
@@ -544,33 +544,41 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
                     soundEngine.playSoftTap();
                     setPreviewGender('female');
                   }}
-                  className={`px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                     previewGender === 'female'
-                      ? 'bg-[#38bdf8] text-slate-950'
-                      : 'text-slate-300 hover:text-white'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   Female Fit
                 </button>
               </div>
 
-              <div className="flex items-center gap-1.5 text-slate-400">
+              <div className="flex items-center gap-1.5 text-slate-500">
                 <RotateCw className="w-3.5 h-3.5 text-slate-400" />
                 <span>Drag to rotate 360°</span>
               </div>
             </div>
           </div>
 
-          {/* Right: Contiguous Product Specification & Purchase Column */}
-          <div className="lg:col-span-5 p-5 sm:p-6 flex flex-col justify-between gap-5 bg-[#0f172a]">
+          {/* Right: Bento Product Specification & Purchase Column */}
+          <div className="lg:col-span-5 rounded-2xl bg-white border border-slate-200/75 shadow-sm p-5 flex flex-col justify-between gap-5">
             <div className="space-y-4">
-              {/* Unboxed Metadata Line */}
-              <div className="flex items-center flex-wrap gap-1.5 text-xs text-slate-400">
-                <span>{selectedItem.collectionLabel}</span>
-                <span aria-hidden="true">·</span>
-                <span>Torso Slot</span>
-                <span aria-hidden="true">·</span>
-                <span>
+              {/* Metadata Pills */}
+              <div className="flex items-center flex-wrap gap-1.5 text-[11px]">
+                <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium">
+                  {selectedItem.collectionLabel}
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium">
+                  Torso Slot
+                </span>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full font-semibold ${
+                    isCurrentlyWearing || isOwnedInBag
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-sky-50 text-sky-700 border border-sky-200/80'
+                  }`}
+                >
                   {isCurrentlyWearing
                     ? 'Wearing Now'
                     : isOwnedInBag
@@ -580,24 +588,27 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
               </div>
 
               <div>
-                <h3 className="text-xl font-extrabold tracking-tight text-white">
+                <h3 className="text-xl font-bold tracking-tight text-slate-900">
                   {selectedItem.name}
                 </h3>
-                <p className="text-xs font-medium text-[#38bdf8] mt-0.5">
+                <p className="text-xs font-medium text-sky-600 mt-0.5">
                   {selectedItem.subtitle}
                 </p>
               </div>
 
-              <p className="text-sm leading-relaxed text-slate-300">
+              <p className="text-sm leading-relaxed text-slate-500">
                 {selectedItem.description}
               </p>
 
               {/* Spec Grid */}
-              <div className="grid grid-cols-2 gap-px bg-slate-800 border border-slate-800">
+              <div className="grid grid-cols-2 gap-2">
                 {selectedItem.specs.map((spec) => (
-                  <div key={spec.label} className="bg-[#131c31] px-3 py-2.5">
-                    <div className="text-[11px] text-slate-400">{spec.label}</div>
-                    <div className="text-xs font-bold text-slate-100 mt-0.5 tabular-nums">
+                  <div
+                    key={spec.label}
+                    className="rounded-xl bg-[#f3f5f9] border border-slate-200/60 px-3 py-2"
+                  >
+                    <div className="text-[11px] text-slate-500">{spec.label}</div>
+                    <div className="text-xs font-semibold text-slate-900 mt-0.5 tabular-nums">
                       {spec.value}
                     </div>
                   </div>
@@ -606,10 +617,10 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
             </div>
 
             {/* Price & Primary Action */}
-            <div className="space-y-3 pt-4 border-t border-slate-800">
+            <div className="space-y-3 pt-4 border-t border-slate-100">
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-xs text-slate-400">Boutique Price</span>
-                <span className="text-xl font-black font-mono tabular-nums text-[#facc15]">
+                <span className="text-xs text-slate-500 font-medium">Boutique Price</span>
+                <span className="text-xl font-bold font-mono tabular-nums text-slate-900">
                   {selectedItem.priceLul} LUL
                 </span>
               </div>
@@ -617,10 +628,10 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
               {feedbackMsg && (
                 <div
                   role="status"
-                  className={`px-3 py-2 text-xs font-medium border ${
+                  className={`px-3.5 py-2.5 rounded-xl text-xs font-medium border ${
                     feedbackMsg.tone === 'ok'
-                      ? 'bg-emerald-950/60 border-emerald-700/70 text-emerald-200'
-                      : 'bg-rose-950/60 border-rose-700/70 text-rose-200'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-rose-50 border-rose-200 text-rose-700'
                   }`}
                 >
                   {feedbackMsg.text}
@@ -632,10 +643,10 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
                   type="button"
                   data-buy-fashion-item-btn={selectedItem.id}
                   onClick={handleBuyClick}
-                  className={`w-full py-3 px-4 text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap ${
+                  className={`w-full py-3 px-4 rounded-full text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap ${
                     canAfford
-                      ? 'bg-[#38bdf8] hover:bg-[#7dd3fc] text-slate-950'
-                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                      ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-sm'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-500 border border-slate-200/80'
                   }`}
                 >
                   <ShoppingBag className="w-4 h-4 shrink-0" />
@@ -647,8 +658,8 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
                 </button>
               ) : (
                 <div className="space-y-2">
-                  <div className="px-3 py-2 bg-slate-900 border border-slate-700/80 text-xs text-slate-200 flex items-center gap-2">
-                    <Check className="w-4 h-4 text-[#b8ff3c] shrink-0" />
+                  <div className="px-3.5 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-800 flex items-center gap-2">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span>
                       {isCurrentlyWearing
                         ? 'Currently equipped on your 3D avatar.'
@@ -663,7 +674,7 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
                       onClose();
                       onOpenPersonalBag();
                     }}
-                    className="w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-slate-950 text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap"
+                    className="w-full py-3 px-4 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap"
                   >
                     <Backpack className="w-4 h-4 shrink-0" />
                     <span>Open Personal Bag to Wear / Swap</span>
@@ -675,7 +686,7 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
         </div>
 
         {/* Bottom Item Selector Strip */}
-        <footer className="px-5 py-3 bg-[#14161d] border-t border-slate-800 flex items-center gap-3 overflow-x-auto shrink-0">
+        <footer className="px-5 py-3 bg-white/85 border-t border-slate-200/80 flex items-center gap-2.5 overflow-x-auto shrink-0">
           {FASHION_APPAREL_CATALOG_ITEMS.map((item) => {
             const active = item.id === selectedItem.id;
             const itemOwned = ownedApparelIds.includes(item.id);
@@ -689,16 +700,26 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
                   setSelectedId(item.id);
                   setFeedbackMsg(null);
                 }}
-                className={`px-3.5 py-2 border text-left transition-colors cursor-pointer shrink-0 flex items-center gap-3 ${
+                className={`px-3.5 py-2 rounded-2xl border text-left transition-all cursor-pointer shrink-0 flex items-center gap-3 ${
                   active
-                    ? 'bg-slate-800/90 border-[#38bdf8] text-white'
-                    : 'bg-slate-900/80 border-slate-800 text-slate-300 hover:border-slate-600'
+                    ? 'bg-slate-900 border-slate-900 text-white shadow-sm'
+                    : 'bg-white border-slate-200/80 text-slate-800 hover:bg-slate-50 hover:border-slate-300'
                 }`}
               >
-                <Shirt className="w-4 h-4 text-[#38bdf8] shrink-0" />
+                <div
+                  className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${
+                    active ? 'bg-white/15 text-sky-300' : 'bg-sky-50 text-sky-600'
+                  }`}
+                >
+                  <Shirt className="w-4 h-4 shrink-0" />
+                </div>
                 <div>
-                  <div className="text-xs font-bold whitespace-nowrap">{item.name}</div>
-                  <div className="text-[11px] text-slate-400 font-mono tabular-nums whitespace-nowrap">
+                  <div className="text-xs font-semibold whitespace-nowrap">{item.name}</div>
+                  <div
+                    className={`text-[11px] font-mono tabular-nums whitespace-nowrap ${
+                      active ? 'text-slate-300' : 'text-slate-500'
+                    }`}
+                  >
                     {itemWearing
                       ? 'Wearing'
                       : itemOwned

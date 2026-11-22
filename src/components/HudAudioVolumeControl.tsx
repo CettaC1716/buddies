@@ -137,54 +137,54 @@ export function HudAudioVolumeControl({
           onKeyDown={(e) => e.stopPropagation()}
           className={`absolute right-0 ${
             popoverPlacement === 'bottom' ? 'top-full mt-2.5' : 'bottom-full mb-2.5'
-          } z-50 w-[236px] bg-[#14161d] text-white border-3 border-black ring-2 ring-white shadow-[5px_5px_0_#000] p-3 space-y-2.5`}
+          } z-50 w-[238px] rounded-2xl bg-[#0d1118]/86 backdrop-blur-xl text-white border border-white/15 shadow-[0_18px_46px_rgba(0,0,0,0.58)] p-3.5 space-y-3`}
         >
-          <div className="flex items-center justify-between border-b border-white/15 pb-1.5">
-            <span className="text-[11px] font-black tracking-wide text-white whitespace-nowrap">
+          <div className="flex items-center justify-between border-b border-white/10 pb-2">
+            <span className="text-xs font-semibold tracking-tight text-white whitespace-nowrap">
               Audio Volume
             </span>
             <button
               type="button"
               onClick={() => setIsMixerOpen(false)}
               aria-label="Close Audio Volume Mixer"
-              className="px-1.5 py-0.5 bg-white/10 hover:bg-white/20 text-[10px] font-black text-slate-200 border border-white/20 cursor-pointer whitespace-nowrap shrink-0"
+              className="px-2 py-0.5 rounded-full bg-white/[0.08] hover:bg-white/[0.18] text-[10px] font-medium text-white/85 border border-white/10 cursor-pointer whitespace-nowrap shrink-0 transition-colors"
             >
               Done
             </button>
           </div>
 
           {/* Channel 1: Music Volume (0% - 100%) */}
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
                 <button
                   type="button"
                   data-mixer-music-mute-btn="true"
                   onClick={onToggleMusicMute}
                   aria-label={isMusicMuted ? 'Unmute Music Channel' : 'Mute Music Channel'}
-                  className="w-6 h-6 flex items-center justify-center bg-[#1f2430] hover:bg-[#2b3242] border border-white/25 cursor-pointer shrink-0"
+                  className="w-6 h-6 rounded-full flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.16] border border-white/12 cursor-pointer shrink-0 transition-colors"
                 >
                   <span className="relative flex items-center justify-center">
                     <Music
                       className={`w-3.5 h-3.5 ${
-                        effectiveMusicPct === 0 ? 'text-slate-400' : 'text-[#b8ff3c]'
+                        effectiveMusicPct === 0 ? 'text-white/40' : 'text-emerald-300'
                       }`}
                     />
                     {effectiveMusicPct === 0 && (
-                      <span className="absolute w-4 h-[2px] bg-red-400 rotate-[-45deg]" />
+                      <span className="absolute w-4 h-[1.5px] bg-rose-400 rotate-[-45deg]" />
                     )}
                   </span>
                 </button>
                 <label
                   htmlFor={`hud-music-vol-${contextId}`}
-                  className="text-xs font-bold text-slate-100 whitespace-nowrap"
+                  className="text-xs font-medium text-white/90 whitespace-nowrap"
                 >
                   Music
                 </label>
               </div>
               <span
                 data-hud-music-pct-label="true"
-                className="text-xs font-mono tabular-nums font-black text-[#b8ff3c] whitespace-nowrap"
+                className="text-[11px] font-mono tabular-nums font-semibold text-emerald-300 whitespace-nowrap"
               >
                 {effectiveMusicPct}%
               </span>
@@ -199,37 +199,37 @@ export function HudAudioVolumeControl({
               data-hud-music-slider="true"
               value={effectiveMusicPct}
               onChange={(e) => onChangeMusicVolumePct(Number(e.currentTarget.value))}
-              className="w-full h-2 accent-[#b8ff3c] bg-[#272c3a] rounded cursor-pointer"
+              className="w-full h-1.5 accent-emerald-300 bg-white/15 rounded-full cursor-pointer"
             />
           </div>
 
           {/* Channel 2: Sound FX Volume (0% - 100%) */}
-          <div className="space-y-1 pt-0.5">
+          <div className="space-y-1.5 pt-0.5">
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
                 <button
                   type="button"
                   data-mixer-sfx-mute-btn="true"
                   onClick={onToggleSfxMute}
                   aria-label={isSfxMuted ? 'Unmute Sound FX Channel' : 'Mute Sound FX Channel'}
-                  className="w-6 h-6 flex items-center justify-center bg-[#1f2430] hover:bg-[#2b3242] border border-white/25 cursor-pointer shrink-0"
+                  className="w-6 h-6 rounded-full flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.16] border border-white/12 cursor-pointer shrink-0 transition-colors"
                 >
                   <SfxIcon
                     className={`w-3.5 h-3.5 ${
-                      effectiveSfxPct === 0 ? 'text-slate-400' : 'text-[#38bdf8]'
+                      effectiveSfxPct === 0 ? 'text-white/40' : 'text-sky-300'
                     }`}
                   />
                 </button>
                 <label
                   htmlFor={`hud-sfx-vol-${contextId}`}
-                  className="text-xs font-bold text-slate-100 whitespace-nowrap"
+                  className="text-xs font-medium text-white/90 whitespace-nowrap"
                 >
                   Sound FX
                 </label>
               </div>
               <span
                 data-hud-sfx-pct-label="true"
-                className="text-xs font-mono tabular-nums font-black text-[#38bdf8] whitespace-nowrap"
+                className="text-[11px] font-mono tabular-nums font-semibold text-sky-300 whitespace-nowrap"
               >
                 {effectiveSfxPct}%
               </span>
@@ -244,13 +244,13 @@ export function HudAudioVolumeControl({
               data-hud-sfx-slider="true"
               value={effectiveSfxPct}
               onChange={(e) => onChangeSfxVolumePct(Number(e.currentTarget.value))}
-              className="w-full h-2 accent-[#38bdf8] bg-[#272c3a] rounded cursor-pointer"
+              className="w-full h-1.5 accent-sky-300 bg-white/15 rounded-full cursor-pointer"
             />
           </div>
         </div>
       )}
 
-      {/* Compact Neo-Brutalist Music Button `[🎵]` */}
+      {/* Frosted Glass Music Button */}
       {!hideMusicButton && (
         <button
           type="button"
@@ -277,32 +277,22 @@ export function HudAudioVolumeControl({
               : `Adjust Music Volume (${effectiveMusicPct}%)`
           }
           title={`Music: ${effectiveMusicPct}% (Click to adjust / mute)`}
-          className="-skew-x-6 relative w-10 h-10 flex items-center justify-center bg-[#14161d] hover:bg-[#1f2430] text-white border-3 border-black ring-2 ring-white shadow-[3px_3px_0_#000] cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8ff3c]"
+          className="relative w-9 h-9 rounded-full flex items-center justify-center bg-[#0d1118]/65 hover:bg-[#171d29]/82 backdrop-blur-xl text-white border border-white/15 hover:border-white/30 shadow-[0_6px_20px_rgba(0,0,0,0.35)] cursor-pointer active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70"
         >
-          <span className="skew-x-6 relative flex items-center justify-center">
+          <span className="relative flex items-center justify-center">
             <Music
-              className={`w-4 h-4 ${
-                effectiveMusicPct === 0 ? 'text-slate-300' : 'text-[#b8ff3c]'
+              className={`w-4 h-4 stroke-[1.75] ${
+                effectiveMusicPct === 0 ? 'text-white/45' : 'text-white/92'
               }`}
             />
             {effectiveMusicPct === 0 && (
-              <span className="absolute w-5 h-[2px] bg-red-400 rotate-[-45deg] rounded" />
+              <span className="absolute w-4 h-[1.5px] bg-rose-400 rotate-[-45deg] rounded" />
             )}
-          </span>
-          {/* Bottom miniature level bar inside button */}
-          <span
-            aria-hidden="true"
-            className="absolute bottom-[2px] left-1 right-1 h-[2.5px] bg-white/15 overflow-hidden"
-          >
-            <span
-              className="block h-full bg-[#b8ff3c]"
-              style={{ width: `${effectiveMusicPct}%` }}
-            />
           </span>
         </button>
       )}
 
-      {/* Compact Neo-Brutalist Sound FX Button `[🔊]` */}
+      {/* Frosted Glass Sound FX Button */}
       <button
         type="button"
         data-hud-sound-toggle="true"
@@ -328,25 +318,28 @@ export function HudAudioVolumeControl({
             : `Adjust Sound FX Volume (${effectiveSfxPct}%)`
         }
         title={`Sound FX: ${effectiveSfxPct}% (Click to adjust / mute · M)`}
-        className="-skew-x-6 relative w-10 h-10 flex items-center justify-center bg-[#14161d] hover:bg-[#1f2430] text-white border-3 border-black ring-2 ring-white shadow-[3px_3px_0_#000] cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8ff3c]"
+        className={`relative w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-xl border shadow-[0_6px_20px_rgba(0,0,0,0.35)] cursor-pointer active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70 ${
+          isMixerOpen
+            ? 'bg-white/18 border-white/35 text-white'
+            : 'bg-[#0d1118]/65 hover:bg-[#171d29]/82 border-white/15 hover:border-white/30 text-white'
+        }`}
       >
-        <span className="skew-x-6 flex items-center justify-center">
-          <SfxIcon
-            className={`w-4 h-4 ${
-              effectiveSfxPct === 0 ? 'text-slate-300' : 'text-[#b8ff3c]'
-            }`}
-          />
-        </span>
-        {/* Bottom miniature level bar inside button */}
-        <span
-          aria-hidden="true"
-          className="absolute bottom-[2px] left-1 right-1 h-[2.5px] bg-white/15 overflow-hidden"
-        >
+        <SfxIcon
+          className={`w-4 h-4 stroke-[1.75] ${
+            effectiveSfxPct === 0 ? 'text-white/45' : 'text-white/92'
+          }`}
+        />
+        {effectiveSfxPct > 0 && (
           <span
-            className="block h-full bg-[#38bdf8]"
-            style={{ width: `${effectiveSfxPct}%` }}
-          />
-        </span>
+            aria-hidden="true"
+            className="absolute bottom-1 w-3 h-[2px] rounded-full bg-white/15 overflow-hidden"
+          >
+            <span
+              className="block h-full bg-sky-300"
+              style={{ width: `${effectiveSfxPct}%` }}
+            />
+          </span>
+        )}
       </button>
     </div>
   );

@@ -91,9 +91,9 @@ export interface ChatTxSharedProps {
 
 function GuestSignInStrip({ onConnectWallet }: { onConnectWallet?: () => void }) {
   return (
-    <div className="px-2.5 py-2 bg-[#1e293b] border border-white/25 flex items-center justify-between gap-2">
-      <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-200 truncate">
-        <LogIn className="w-3.5 h-3.5 text-[#b8ff3c] shrink-0" aria-hidden="true" />
+    <div className="px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-2">
+      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-600 truncate">
+        <LogIn className="w-3.5 h-3.5 text-emerald-500 shrink-0" aria-hidden="true" />
         <span>Sign in required to transact</span>
       </span>
       {onConnectWallet && (
@@ -103,9 +103,9 @@ function GuestSignInStrip({ onConnectWallet }: { onConnectWallet?: () => void })
             soundEngine.playUiClick();
             onConnectWallet();
           }}
-          className="px-2.5 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black text-[9.5px] font-black uppercase cursor-pointer shrink-0"
+          className="px-3 py-1 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs text-[10.5px] font-semibold cursor-pointer transition-colors shrink-0"
         >
-          SIGN IN
+          Sign in
         </button>
       )}
     </div>
@@ -158,10 +158,10 @@ export function InlineExchangePanel({
     cyonOut > 0;
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2 text-[10px] font-bold text-slate-300 flex-wrap">
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-slate-500 flex-wrap">
         <span>
-          Rate: <strong className="text-[#38bdf8]">{rateLul} LUL = {rateCyon} CYON</strong>
+          Rate: <strong className="text-sky-600">{rateLul} LUL = {rateCyon} CYON</strong>
         </span>
         <span>Balance: {lulBalance.toLocaleString()} LUL</span>
       </div>
@@ -182,7 +182,7 @@ export function InlineExchangePanel({
                     setLulInputStr(String(presetVal));
                     setDoneMsg(null);
                   }}
-                  className="px-2 py-0.5 bg-[#1e293b] hover:bg-[#334155] text-[#38bdf8] border border-white/30 text-[9.5px] font-black cursor-pointer"
+                  className="px-2.5 py-1 rounded-full bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200/80 text-[10px] font-semibold cursor-pointer transition-colors"
                 >
                   {presetVal} LUL
                 </button>
@@ -196,13 +196,13 @@ export function InlineExchangePanel({
                 setLulInputStr(String(Math.max(rateLul, maxPackets * rateLul)));
                 setDoneMsg(null);
               }}
-              className="px-2 py-0.5 bg-[#1e293b] hover:bg-[#334155] text-[#b8ff3c] border border-white/30 text-[9.5px] font-black cursor-pointer"
+              className="px-2.5 py-1 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 text-[10px] font-semibold cursor-pointer transition-colors"
             >
-              MAX
+              Max
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <input
               type="number"
               min={rateLul}
@@ -214,9 +214,9 @@ export function InlineExchangePanel({
               }}
               onKeyDown={(e) => e.stopPropagation()}
               aria-label="LUL amount to exchange"
-              className="w-28 px-2.5 py-1.5 bg-[#1e293b] text-white border-2 border-white/70 text-xs font-black focus:outline-none focus:border-[#38bdf8]"
+              className="w-28 px-3 py-1.5 rounded-xl bg-slate-50 text-slate-900 border border-slate-200/90 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-sky-400 focus:bg-white"
             />
-            <span className="text-[11px] font-black text-[#10b981]">
+            <span className="text-xs font-semibold text-emerald-600">
               -&gt; +{cyonOut} CYON
             </span>
             <button
@@ -231,22 +231,22 @@ export function InlineExchangePanel({
                 setDoneMsg(msg);
                 onNotifySpeech(msg);
               }}
-              className={`ml-auto px-3 py-1.5 border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase ${
+              className={`ml-auto px-3.5 py-1.5 rounded-full text-[11px] font-semibold shadow-xs transition-colors ${
                 canExchange
-                  ? 'bg-[#10b981] hover:bg-[#34d399] text-black cursor-pointer'
-                  : 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                  ? 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer'
+                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
               }`}
             >
-              CONFIRM EXCHANGE
+              Confirm exchange
             </button>
           </div>
           {!quote.canExchange && (
-            <div className="text-[10px] font-bold text-amber-300">
+            <div className="text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200/80 rounded-xl px-3 py-1.5">
               Shop CYON reserve is too low ({marketState.treasuryCyon} CYON). Support shop with 300 LUL to refill.
             </div>
           )}
           {doneMsg && (
-            <div className="px-2 py-1 bg-[#064e3b] border border-[#10b981] text-[10px] font-bold text-[#a7f3d0]">
+            <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200/80 text-[11px] font-medium text-emerald-800">
               {doneMsg}
             </div>
           )}
@@ -308,10 +308,10 @@ export function InlineSwapNearPanel({
     !exceedsBalance;
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2 text-[10px] font-bold text-slate-300 flex-wrap">
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-slate-500 flex-wrap">
         <span>
-          Rate: <strong className="text-[#d8b4fe]">1 NEAR = {ratePerNear} RESPITE</strong>
+          Rate: <strong className="text-violet-600">1 NEAR = {ratePerNear} RESPITE</strong>
         </span>
         <span>
           {nearTestnetBalance.toFixed(2)} NEAR · {respiteBalance.toLocaleString()} R
@@ -332,14 +332,14 @@ export function InlineSwapNearPanel({
                   setNearInputStr(preset);
                   setErrMsg(null);
                 }}
-                className="px-2 py-0.5 bg-[#1e293b] hover:bg-[#334155] text-[#d8b4fe] border border-white/30 text-[9.5px] font-black cursor-pointer"
+                className="px-2.5 py-1 rounded-full bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200/80 text-[10px] font-semibold cursor-pointer transition-colors"
               >
                 {preset} NEAR
               </button>
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <input
               type="number"
               min={0.0025}
@@ -351,9 +351,9 @@ export function InlineSwapNearPanel({
               }}
               onKeyDown={(e) => e.stopPropagation()}
               aria-label="NEAR amount to swap"
-              className="w-28 px-2.5 py-1.5 bg-[#1e293b] text-white border-2 border-white/70 text-xs font-black focus:outline-none focus:border-[#d8b4fe]"
+              className="w-28 px-3 py-1.5 rounded-xl bg-slate-50 text-slate-900 border border-slate-200/90 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-violet-400 focus:bg-white"
             />
-            <span className="text-[11px] font-black text-[#d8b4fe]">
+            <span className="text-xs font-semibold text-violet-600">
               -&gt; +{respiteOut} R
             </span>
             <button
@@ -382,33 +382,33 @@ export function InlineSwapNearPanel({
                   setBusy(false);
                 }
               }}
-              className={`ml-auto px-3 py-1.5 border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase ${
+              className={`ml-auto px-3.5 py-1.5 rounded-full text-[11px] font-semibold shadow-xs transition-colors ${
                 canSwap
-                  ? 'bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black cursor-pointer'
-                  : 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                  ? 'bg-violet-500 hover:bg-violet-600 text-white cursor-pointer'
+                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
               }`}
             >
-              {busy ? 'SWAPPING...' : 'SWAP NOW'}
+              {busy ? 'Swapping...' : 'Swap now'}
             </button>
           </div>
 
           {isReadOnlyWallet && (
-            <div className="text-[10px] font-bold text-amber-300">
+            <div className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200/80 text-[11px] font-medium text-amber-800">
               View-only wallet mode is active ({playerNearAccount}). Switch to your own account to swap.
             </div>
           )}
           {exceedsBalance && (
-            <div className="text-[10px] font-bold text-rose-300">
+            <div className="px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-200/80 text-[11px] font-medium text-rose-700">
               Not enough NEAR ({nearTestnetBalance.toFixed(2)} NEAR available).
             </div>
           )}
           {errMsg && (
-            <div className="px-2 py-1 bg-[#7f1d1d] border border-[#f87171] text-[10px] font-bold text-rose-100">
+            <div className="px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-200/80 text-[11px] font-medium text-rose-700">
               {errMsg}
             </div>
           )}
           {receipt && (
-            <div className="px-2 py-1 bg-[#064e3b] border border-[#10b981] text-[10px] font-bold text-[#a7f3d0] flex items-center justify-between gap-2">
+            <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200/80 text-[11px] font-medium text-emerald-800 flex items-center justify-between gap-2">
               <span>
                 Swapped {receipt.nearAmount} NEAR -&gt; +{receipt.respiteAmount} RESPITE
               </span>
@@ -417,7 +417,7 @@ export function InlineSwapNearPanel({
                   href={getNearBlocksTxUrl(receipt.txHash, 'testnet')}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[#38bdf8] underline font-mono shrink-0"
+                  className="text-sky-600 hover:text-sky-700 underline font-mono shrink-0"
                 >
                   Receipt
                 </a>
@@ -490,12 +490,12 @@ export function InlineHouseDealPanel({
   );
 
   return (
-    <div className="space-y-2">
-      <div className="grid grid-cols-2 gap-1.5">
+    <div className="space-y-2.5">
+      <div className="grid grid-cols-2 gap-2">
         {(
           [
-            { id: 'plaza_manor', label: 'PLAZA MANOR' },
-            { id: 'japanese_pavilion', label: 'JAPANESE PAVILION' },
+            { id: 'plaza_manor', label: 'Plaza Manor' },
+            { id: 'japanese_pavilion', label: 'Japanese Pavilion' },
           ] as const
         ).map((opt) => (
           <button
@@ -508,20 +508,20 @@ export function InlineHouseDealPanel({
                 onSelectHouseArchitectureStyle?.(opt.id);
               }
             }}
-            className={`px-2 py-1 border-2 border-black text-[9.5px] font-black uppercase cursor-pointer ${
+            className={`px-3 py-1.5 rounded-xl border text-[11px] font-semibold cursor-pointer transition-all ${
               selectedStyle === opt.id
-                ? 'bg-[#38bdf8] text-black shadow-[2px_2px_0px_#000]'
-                : 'bg-[#1e293b] text-slate-300 hover:text-white'
+                ? 'bg-sky-500 text-white border-sky-500 shadow-xs'
+                : 'bg-slate-50 text-slate-600 border-slate-200/80 hover:bg-sky-50 hover:text-sky-700'
             }`}
           >
-            {isOwned && effectiveOwnedStyle === opt.id ? `${opt.label} · DEED` : opt.label}
+            {isOwned && effectiveOwnedStyle === opt.id ? `${opt.label} · Deed` : opt.label}
           </button>
         ))}
       </div>
 
-      <div className="flex items-center justify-between gap-2 text-[10px] font-bold text-slate-300">
+      <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-slate-500">
         <span>
-          Price: <strong className="text-[#d8b4fe]">{HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE</strong>
+          Price: <strong className="text-violet-600">{HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE</strong>
         </span>
         <span>Your balance: {respiteBalance.toLocaleString()} R</span>
       </div>
@@ -537,10 +537,10 @@ export function InlineHouseDealPanel({
                 soundEngine.playUiClick();
                 onViewModelHouse(selectedStyle);
               }}
-              className="px-2.5 py-1.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black text-[10px] font-black uppercase cursor-pointer inline-flex items-center gap-1"
+              className="px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80 text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-colors"
             >
-              <Eye className="w-3 h-3" aria-hidden="true" />
-              <span>PREVIEW</span>
+              <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Preview</span>
             </button>
           )}
           {!isOwned && !canAfford && (
@@ -550,10 +550,10 @@ export function InlineHouseDealPanel({
                 soundEngine.playUiClick();
                 onSwitchToSwapNear(neededNear);
               }}
-              className="px-2.5 py-1.5 bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black border-2 border-black text-[10px] font-black uppercase cursor-pointer inline-flex items-center gap-1"
+              className="px-3 py-1.5 rounded-full bg-violet-100 hover:bg-violet-200 text-violet-800 border border-violet-200/80 text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-colors"
             >
-              <ArrowRightLeft className="w-3 h-3" aria-hidden="true" />
-              <span>SWAP {neededNear} NEAR</span>
+              <ArrowRightLeft className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Swap {neededNear} NEAR</span>
             </button>
           )}
           {isOwned ? (
@@ -569,10 +569,10 @@ export function InlineHouseDealPanel({
                       : selectedStyle,
                   );
                 }}
-                className="ml-auto px-3 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase cursor-pointer inline-flex items-center gap-1"
+                className="ml-auto px-3.5 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-colors"
               >
-                <Check className="w-3 h-3" aria-hidden="true" />
-                <span>ENTER YOUR HOUSE</span>
+                <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Enter your house</span>
               </button>
             ) : (
               onEnterOwnHouse &&
@@ -583,12 +583,12 @@ export function InlineHouseDealPanel({
                     soundEngine.playUiClick();
                     onEnterOwnHouse(effectiveOwnedStyle);
                   }}
-                  className="ml-auto px-3 py-1.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase cursor-pointer inline-flex items-center gap-1"
+                  className="ml-auto px-3.5 py-1.5 rounded-full bg-sky-500 hover:bg-sky-600 text-white shadow-xs text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-colors"
                 >
-                  <Check className="w-3 h-3" aria-hidden="true" />
+                  <Check className="w-3.5 h-3.5" aria-hidden="true" />
                   <span>
-                    ENTER OWNED{' '}
-                    {effectiveOwnedStyle === 'japanese_pavilion' ? 'PAVILION' : 'MANOR'}
+                    Enter owned{' '}
+                    {effectiveOwnedStyle === 'japanese_pavilion' ? 'Pavilion' : 'Manor'}
                   </span>
                 </button>
               )
@@ -624,24 +624,24 @@ export function InlineHouseDealPanel({
                   setBusy(false);
                 }
               }}
-              className={`ml-auto px-3 py-1.5 border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase inline-flex items-center gap-1 ${
+              className={`ml-auto px-3.5 py-1.5 rounded-full text-[11px] font-semibold shadow-xs inline-flex items-center gap-1.5 transition-colors ${
                 canAfford && !busy
-                  ? 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer'
-                  : 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                  ? 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer'
+                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
               }`}
             >
-              <Home className="w-3 h-3" aria-hidden="true" />
-              <span>{busy ? 'SIGNING...' : `BUY HOUSE (${HOUSE_OWNERSHIP_PRICE_RESPITE} R)`}</span>
+              <Home className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>{busy ? 'Signing...' : `Buy house (${HOUSE_OWNERSHIP_PRICE_RESPITE} R)`}</span>
             </button>
           )}
         </div>
       )}
       {feedback && (
         <div
-          className={`px-2 py-1 border text-[10px] font-bold ${
+          className={`px-3 py-1.5 rounded-xl border text-[11px] font-medium ${
             feedback.ok
-              ? 'bg-[#064e3b] border-[#10b981] text-[#a7f3d0]'
-              : 'bg-[#7f1d1d] border-[#f87171] text-rose-100'
+              ? 'bg-emerald-50 border-emerald-200/80 text-emerald-800'
+              : 'bg-rose-50 border-rose-200/80 text-rose-700'
           }`}
         >
           {feedback.text}
@@ -702,10 +702,10 @@ function InlineCatalogItemPanel({
   } | null>(null);
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-start gap-2.5">
+    <div className="space-y-2.5">
+      <div className="flex items-start gap-3">
         {item.category !== 'fishing_gear' ? (
-          <div className="w-20 shrink-0 border-2 border-black overflow-hidden">
+          <div className="w-20 shrink-0 rounded-xl border border-slate-200/80 overflow-hidden bg-slate-50">
             <Furniture3dThumbnail
               catalogId={item.id}
               name={item.name}
@@ -715,23 +715,23 @@ function InlineCatalogItemPanel({
             />
           </div>
         ) : (
-          <div className="w-12 h-12 shrink-0 bg-[#1e293b] border-2 border-black flex items-center justify-center">
-            <ShoppingBag className="w-5 h-5 text-[#38bdf8]" aria-hidden="true" />
+          <div className="w-12 h-12 shrink-0 rounded-xl bg-sky-50 border border-sky-200/80 flex items-center justify-center">
+            <ShoppingBag className="w-5 h-5 text-sky-500" aria-hidden="true" />
           </div>
         )}
         <div className="min-w-0 flex-1 space-y-1">
-          <div className="text-[11px] font-black uppercase text-white truncate">
+          <div className="text-xs font-semibold text-slate-900 truncate">
             {item.name}
           </div>
-          <div className="text-[9.5px] font-bold text-slate-300 leading-snug">
+          <div className="text-[11px] text-slate-500 leading-snug">
             {item.description}
           </div>
-          <div className="flex items-center gap-2 text-[10px] font-black flex-wrap">
-            <span className={item.currency === 'CYON' ? 'text-[#38bdf8]' : 'text-[#d8b4fe]'}>
+          <div className="flex items-center gap-2 text-[11px] font-semibold flex-wrap">
+            <span className={item.currency === 'CYON' ? 'text-sky-600' : 'text-violet-600'}>
               {quote.buyPrice} {item.currency}
             </span>
-            <span className="text-slate-400">Stock {quote.stock}</span>
-            <span className="text-slate-400">
+            <span className="text-slate-400 font-medium">Stock {quote.stock}</span>
+            <span className="text-slate-400 font-medium">
               Balance: {balance.toLocaleString()} {item.currency}
             </span>
           </div>
@@ -748,9 +748,9 @@ function InlineCatalogItemPanel({
               soundEngine.playUiClick();
               onOpenModal();
             }}
-            className="px-2.5 py-1.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black text-[9.5px] font-black uppercase cursor-pointer"
+            className="px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80 text-[10.5px] font-semibold cursor-pointer transition-colors"
           >
-            BROWSE ALL
+            Browse all
           </button>
 
           {balance < quote.buyPrice && (
@@ -760,9 +760,9 @@ function InlineCatalogItemPanel({
                 soundEngine.playUiClick();
                 onNeedFundsSwitch(item.currency, quote.buyPrice - balance);
               }}
-              className="px-2.5 py-1.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black text-[9.5px] font-black uppercase cursor-pointer"
+              className="px-3 py-1.5 rounded-full bg-sky-100 hover:bg-sky-200 text-sky-800 border border-sky-200/80 text-[10.5px] font-semibold cursor-pointer transition-colors"
             >
-              GET {item.currency} HERE
+              Get {item.currency} here
             </button>
           )}
 
@@ -784,9 +784,9 @@ function InlineCatalogItemPanel({
                   setBusy(false);
                 }
               }}
-              className="ml-auto px-3 py-1.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase cursor-pointer"
+              className="ml-auto px-3.5 py-1.5 rounded-full bg-amber-400 hover:bg-amber-500 text-slate-900 shadow-xs text-[11px] font-semibold cursor-pointer transition-colors"
             >
-              SELL (+{quote.sellbackPrice} {item.currency})
+              Sell (+{quote.sellbackPrice} {item.currency})
             </button>
           ) : (
             <button
@@ -814,19 +814,19 @@ function InlineCatalogItemPanel({
                   setBusy(false);
                 }
               }}
-              className={`ml-auto px-3 py-1.5 border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase ${
+              className={`ml-auto px-3.5 py-1.5 rounded-full text-[11px] font-semibold shadow-xs transition-colors ${
                 canBuy && !busy
-                  ? 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer'
-                  : 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                  ? 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer'
+                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
               }`}
             >
               {busy
-                ? 'BUYING...'
+                ? 'Buying...'
                 : needsHouse
-                  ? 'OWN HOUSE FIRST'
+                  ? 'Own house first'
                   : quote.stock <= 0
-                    ? 'OUT OF STOCK'
-                    : `BUY (${quote.buyPrice} ${item.currency})`}
+                    ? 'Out of stock'
+                    : `Buy (${quote.buyPrice} ${item.currency})`}
             </button>
           )}
         </div>
@@ -834,10 +834,10 @@ function InlineCatalogItemPanel({
 
       {feedback && (
         <div
-          className={`px-2 py-1 border text-[10px] font-bold flex items-center justify-between gap-2 ${
+          className={`px-3 py-1.5 rounded-xl border text-[11px] font-medium flex items-center justify-between gap-2 ${
             feedback.ok
-              ? 'bg-[#064e3b] border-[#10b981] text-[#a7f3d0]'
-              : 'bg-[#7f1d1d] border-[#f87171] text-rose-100'
+              ? 'bg-emerald-50 border-emerald-200/80 text-emerald-800'
+              : 'bg-rose-50 border-rose-200/80 text-rose-700'
           }`}
         >
           <span>{feedback.text}</span>
@@ -846,7 +846,7 @@ function InlineCatalogItemPanel({
               href={feedback.explorerUrl || getNearBlocksTxUrl(feedback.txHash, 'testnet')}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[#38bdf8] underline font-mono shrink-0"
+              className="text-sky-600 hover:text-sky-700 underline font-mono shrink-0"
             >
               Receipt
             </a>
@@ -926,13 +926,13 @@ export function InlineTeleportPlacesPanel({
   }, [currentStationId, focusStationId]);
 
   return (
-    <div className="space-y-1.5">
-      <div className="text-[10px] font-bold text-slate-300">
+    <div className="space-y-2">
+      <div className="text-[11px] font-medium text-slate-500">
         Click any location box below to teleport straight there.
       </div>
       <div
         data-chat-teleport-list="true"
-        className="p-2 bg-[#f1f5f9] border-[2px] border-black space-y-2 max-h-[252px] overflow-y-auto"
+        className="p-2.5 rounded-2xl bg-[#f2f4f8] border border-slate-200/80 space-y-2 max-h-[252px] overflow-y-auto"
       >
         {orderedDestinations.map((dest) => {
           const isHere = dest.id === currentStationId;
@@ -945,18 +945,18 @@ export function InlineTeleportPlacesPanel({
               <div
                 key={dest.id}
                 data-chat-teleport-confirm={dest.id}
-                className="w-full p-2.5 bg-[#facc15] border-[2.5px] border-black shadow-[3px_3px_0px_#000] flex items-center gap-2.5 transition-all duration-150"
+                className="w-full p-2.5 rounded-xl bg-sky-50 border border-sky-300 shadow-sm flex items-center gap-2.5 transition-all duration-150"
               >
                 <img
                   src={thumbSrc}
                   alt={dest.shortTitle}
-                  className="w-11 h-11 object-cover border-[2px] border-black shrink-0 bg-slate-900"
+                  className="w-11 h-11 rounded-lg object-cover border border-slate-200 shrink-0 bg-slate-100"
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="text-[11px] font-black uppercase tracking-tight text-black leading-tight truncate">
+                  <div className="text-xs font-semibold text-slate-900 leading-tight truncate">
                     {isHere
-                      ? `RE-CENTER AT ${dest.title}?`
-                      : `TELEPORT TO ${dest.title}?`}
+                      ? `Re-center at ${dest.title}?`
+                      : `Teleport to ${dest.title}?`}
                   </div>
                   <div className="mt-1.5 flex items-center gap-2">
                     <button
@@ -967,9 +967,9 @@ export function InlineTeleportPlacesPanel({
                         setConfirmingDestId(null);
                         onTeleportToDestination?.(dest, currentStationId);
                       }}
-                      className="px-3.5 py-1 bg-[#a3e635] hover:bg-[#bef264] text-black border-[2px] border-black shadow-[2px_2px_0px_#000] active:translate-y-0.5 text-[10px] font-black uppercase tracking-wider cursor-pointer transition-all"
+                      className="px-3.5 py-1 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs active:scale-95 text-[10.5px] font-semibold cursor-pointer transition-all"
                     >
-                      YES
+                      Yes
                     </button>
                     <button
                       type="button"
@@ -978,9 +978,9 @@ export function InlineTeleportPlacesPanel({
                         soundEngine.playUiClick();
                         setConfirmingDestId(null);
                       }}
-                      className="px-3.5 py-1 bg-white hover:bg-slate-200 text-black border-[2px] border-black shadow-[2px_2px_0px_#000] active:translate-y-0.5 text-[10px] font-black uppercase tracking-wider cursor-pointer transition-all"
+                      className="px-3.5 py-1 rounded-full bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/90 shadow-xs active:scale-95 text-[10.5px] font-semibold cursor-pointer transition-all"
                     >
-                      NO
+                      No
                     </button>
                   </div>
                 </div>
@@ -997,30 +997,32 @@ export function InlineTeleportPlacesPanel({
                 soundEngine.playUiClick();
                 setConfirmingDestId(dest.id);
               }}
-              className={`w-full p-2.5 flex items-center gap-2.5 text-left transition-all duration-150 cursor-pointer hover:-translate-y-0.5 ${
+              className={`w-full p-2.5 rounded-xl flex items-center gap-2.5 text-left transition-all duration-150 cursor-pointer border shadow-xs ${
                 isFocused
-                  ? 'bg-[#facc15] hover:bg-[#fde047] border-[2.5px] border-black shadow-[3px_3px_0px_#000]'
-                  : 'bg-white hover:bg-[#fef9c3] border-[2.5px] border-black shadow-[3px_3px_0px_#000]'
+                  ? 'bg-sky-50 hover:bg-sky-100/80 border-sky-300 ring-1 ring-sky-200'
+                  : 'bg-white hover:bg-sky-50/60 border-slate-200/80 hover:border-sky-200'
               }`}
             >
               <img
                 src={thumbSrc}
                 alt={dest.shortTitle}
-                className="w-11 h-11 object-cover border-[2px] border-black shrink-0 bg-slate-900"
+                className="w-11 h-11 rounded-lg object-cover border border-slate-200/80 shrink-0 bg-slate-100"
               />
               <div className="min-w-0 flex-1">
-                <div className="text-xs font-black uppercase tracking-tight text-black truncate">
+                <div className="text-xs font-semibold text-slate-900 truncate">
                   {dest.title}
                 </div>
                 <div className="mt-1 flex items-center gap-1.5">
                   {isHere ? (
-                    <span className="px-1.5 py-0.5 bg-[#a3e635] text-black border-[1.5px] border-black text-[9px] font-black uppercase">
-                      HERE
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200/80 text-[9.5px] font-semibold">
+                      Here
                     </span>
                   ) : (
                     <span
-                      className={`px-1.5 py-0.5 text-black border-[1.5px] border-black text-[9px] font-black uppercase ${
-                        dest.id === 'warzone_arena' ? 'bg-[#f87171]' : 'bg-[#00f0ff]'
+                      className={`px-2 py-0.5 rounded-full border text-[9.5px] font-semibold ${
+                        dest.id === 'warzone_arena'
+                          ? 'bg-rose-100 text-rose-700 border-rose-200/80'
+                          : 'bg-sky-100 text-sky-700 border-sky-200/80'
                       }`}
                     >
                       {dest.tag}
@@ -1057,14 +1059,14 @@ export const ChatActionCard: React.FC<
       : null;
 
   const titleByKind: Record<NpcChatTransactionIntent['kind'], string> = {
-    exchange_lul_cyon: 'IN-CHAT EXCHANGE · LUL -> CYON',
-    swap_near_respite: 'IN-CHAT SWAP · NEAR -> RESPITE',
-    buy_house: 'IN-CHAT HOUSE DEAL',
-    buy_catalog_item: matchedItem ? `QUICK BUY · ${matchedItem.name}` : 'QUICK ITEM DEAL',
-    browse_catalog: 'QUICK SHOP READY',
-    invest_shop: 'SUPPORT SHOP RESERVE',
-    claim_welcome: 'STARTER PACK BONUS',
-    teleport_places: 'CITY TELEPORT · SELECT LOCATION',
+    exchange_lul_cyon: 'In-chat exchange · LUL -> CYON',
+    swap_near_respite: 'In-chat swap · NEAR -> RESPITE',
+    buy_house: 'In-chat house deal',
+    buy_catalog_item: matchedItem ? `Quick buy · ${matchedItem.name}` : 'Quick item deal',
+    browse_catalog: 'Quick shop ready',
+    invest_shop: 'Support shop reserve',
+    claim_welcome: 'Starter pack bonus',
+    teleport_places: 'City teleport · Select location',
   };
 
   const modalTabForIntent: 'exchange' | 'house' | 'items' =
@@ -1083,14 +1085,14 @@ export const ChatActionCard: React.FC<
     <div
       data-chat-tx-card="true"
       data-chat-tx-kind={intent.kind}
-      className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2.5"
+      className="p-3.5 rounded-2xl bg-white/95 text-slate-900 border border-slate-200/80 shadow-sm space-y-2.5"
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase text-[#facc15] truncate">
+      <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-800 truncate">
           {intent.kind === 'teleport_places' ? (
-            <MapPin className="w-3.5 h-3.5 shrink-0 text-[#00f0ff]" aria-hidden="true" />
+            <MapPin className="w-3.5 h-3.5 shrink-0 text-sky-500" aria-hidden="true" />
           ) : (
-            <Sparkles className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            <Sparkles className="w-3.5 h-3.5 shrink-0 text-amber-500" aria-hidden="true" />
           )}
           <span className="truncate">{titleByKind[intent.kind]}</span>
         </span>
@@ -1103,10 +1105,10 @@ export const ChatActionCard: React.FC<
                 soundEngine.playUiClick();
                 onOpenQuickModal(modalTabForIntent);
               }}
-              className="px-2 py-0.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border border-black text-[9px] font-black uppercase cursor-pointer inline-flex items-center gap-1"
+              className="px-2.5 py-1 rounded-full bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200/80 text-[10px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-colors"
             >
               <Store className="w-3 h-3" aria-hidden="true" />
-              <span>OPEN MODAL</span>
+              <span>Open modal</span>
             </button>
           )}
           <button
@@ -1116,9 +1118,9 @@ export const ChatActionCard: React.FC<
               soundEngine.playUiClick();
               onChangeIntent(null);
             }}
-            className="w-5 h-5 bg-[#1e293b] hover:bg-[#334155] text-white border border-black flex items-center justify-center cursor-pointer"
+            className="w-6 h-6 rounded-full bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 flex items-center justify-center cursor-pointer transition-colors"
           >
-            <X className="w-3 h-3" aria-hidden="true" />
+            <X className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -1205,8 +1207,8 @@ export const ChatActionCard: React.FC<
       )}
 
       {intent.kind === 'browse_catalog' && (
-        <div className="space-y-2">
-          <div className="text-[10.5px] font-bold text-slate-300">
+        <div className="space-y-2.5">
+          <div className="text-[11px] font-medium text-slate-600">
             Browse items, swap currencies, or buy directly inside the Chat Quick Shop without leaving this conversation.
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -1216,10 +1218,10 @@ export const ChatActionCard: React.FC<
                 soundEngine.playUiClick();
                 onOpenQuickModal(modalTabForIntent);
               }}
-              className="px-3 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase cursor-pointer inline-flex items-center gap-1.5"
+              className="px-3.5 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1.5 transition-colors"
             >
               <Store className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>OPEN QUICK SHOP</span>
+              <span>Open quick shop</span>
             </button>
             <button
               type="button"
@@ -1227,19 +1229,19 @@ export const ChatActionCard: React.FC<
                 soundEngine.playUiClick();
                 onOpenQuickModal('exchange');
               }}
-              className="px-3 py-1.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase cursor-pointer inline-flex items-center gap-1.5"
+              className="px-3.5 py-1.5 rounded-full bg-sky-500 hover:bg-sky-600 text-white shadow-xs text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1.5 transition-colors"
             >
               <ArrowRightLeft className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>OPEN EXCHANGE</span>
+              <span>Open exchange</span>
             </button>
           </div>
         </div>
       )}
 
       {intent.kind === 'invest_shop' && (
-        <div className="space-y-2">
-          <div className="text-[10.5px] font-bold text-slate-300">
-            The shop holds <strong className="text-[#38bdf8]">{props.marketState.treasuryCyon} CYON</strong>. Back the shop with 300 LUL to receive +45 CYON and a 15% catalog discount.
+        <div className="space-y-2.5">
+          <div className="text-[11px] font-medium text-slate-600">
+            The shop holds <strong className="text-sky-600">{props.marketState.treasuryCyon} CYON</strong>. Back the shop with 300 LUL to receive +45 CYON and a 15% catalog discount.
           </div>
           {!props.walletConnected ? (
             <GuestSignInStrip onConnectWallet={props.onConnectWallet} />
@@ -1255,25 +1257,25 @@ export const ChatActionCard: React.FC<
                   'Thank you! Shop reserves refilled, +45 CYON added, and your 15% catalog discount is active.',
                 );
               }}
-              className={`px-3 py-1.5 border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase ${
+              className={`px-3.5 py-1.5 rounded-full text-[11px] font-semibold shadow-xs transition-colors ${
                 props.lulBalance >= 300
-                  ? 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer'
-                  : 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                  ? 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer'
+                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
               }`}
             >
-              SUPPORT SHOP (300 LUL)
+              Support shop (300 LUL)
             </button>
           )}
         </div>
       )}
 
       {intent.kind === 'claim_welcome' && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-2 text-[10.5px] font-bold text-slate-300">
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-slate-600">
             <span>Starter Pack: 0.30 NEAR + 100 LUL + 20 CYON</span>
             {props.hanaWelcomeNearClaimed && (
-              <span className="px-2 py-0.5 bg-[#10b981] text-black border border-black text-[9px] font-black uppercase">
-                CLAIMED
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200/80 text-[10px] font-semibold">
+                Claimed
               </span>
             )}
           </div>
@@ -1298,14 +1300,14 @@ export const ChatActionCard: React.FC<
                   setClaimingBonus(false);
                 }
               }}
-              className="px-3 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase cursor-pointer inline-flex items-center gap-1.5"
+              className="px-3.5 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1.5 transition-colors"
             >
               <Gift className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>{claimingBonus ? 'CLAIMING...' : 'CLAIM STARTER PACK'}</span>
+              <span>{claimingBonus ? 'Claiming...' : 'Claim starter pack'}</span>
             </button>
           ) : null}
           {bonusResult && (
-            <div className="text-[10px] font-bold text-[#a7f3d0]">{bonusResult}</div>
+            <div className="text-[11px] font-medium text-emerald-700">{bonusResult}</div>
           )}
         </div>
       )}
@@ -1346,10 +1348,10 @@ export const QuickShopItemsPanel: React.FC<ChatTxSharedProps> = (props) => {
       {!props.walletConnected && <GuestSignInStrip onConnectWallet={props.onConnectWallet} />}
       {itemFeedback && (
         <div
-          className={`p-2 border-2 border-black text-[10px] font-bold flex items-center justify-between gap-2 ${
+          className={`p-2.5 rounded-xl border text-[11px] font-medium flex items-center justify-between gap-2 ${
             itemFeedback.ok
-              ? 'bg-[#ecfdf5] text-[#065f46]'
-              : 'bg-[#fef2f2] text-[#991b1b]'
+              ? 'bg-emerald-50 border-emerald-200/80 text-emerald-800'
+              : 'bg-rose-50 border-rose-200/80 text-rose-700'
           }`}
         >
           <span>{itemFeedback.text}</span>
@@ -1361,7 +1363,7 @@ export const QuickShopItemsPanel: React.FC<ChatTxSharedProps> = (props) => {
               }
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[#0369a1] underline font-mono shrink-0"
+              className="text-sky-600 hover:text-sky-700 underline font-mono shrink-0"
             >
               Receipt
             </a>
@@ -1386,11 +1388,11 @@ export const QuickShopItemsPanel: React.FC<ChatTxSharedProps> = (props) => {
             <div
               key={item.id}
               data-quick-modal-item={item.id}
-              className="p-2.5 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex flex-col gap-2"
+              className="p-3 rounded-2xl bg-slate-50/90 text-slate-900 border border-slate-200/80 shadow-xs flex flex-col gap-2.5"
             >
-              <div className="flex items-start gap-2">
+              <div className="flex items-start gap-2.5">
                 {item.category !== 'fishing_gear' ? (
-                  <div className="w-16 shrink-0 border border-white/30 overflow-hidden">
+                  <div className="w-16 shrink-0 rounded-xl border border-slate-200/80 overflow-hidden bg-white">
                     <Furniture3dThumbnail
                       catalogId={item.id}
                       name={item.name}
@@ -1404,15 +1406,15 @@ export const QuickShopItemsPanel: React.FC<ChatTxSharedProps> = (props) => {
                     />
                   </div>
                 ) : (
-                  <div className="w-10 h-10 shrink-0 bg-[#1e293b] border border-white/30 flex items-center justify-center">
-                    <ShoppingBag className="w-4 h-4 text-[#38bdf8]" aria-hidden="true" />
+                  <div className="w-10 h-10 shrink-0 rounded-xl bg-sky-50 border border-sky-200/80 flex items-center justify-center">
+                    <ShoppingBag className="w-4 h-4 text-sky-500" aria-hidden="true" />
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <div className="text-[10.5px] font-black uppercase text-white truncate">
+                  <div className="text-xs font-semibold text-slate-900 truncate">
                     {item.name}
                   </div>
-                  <div className="text-[9.5px] font-bold text-slate-300 mt-0.5">
+                  <div className="text-[10.5px] font-medium text-slate-500 mt-0.5">
                     {quote.buyPrice} {item.currency} · Stock {quote.stock}
                   </div>
                 </div>
@@ -1426,9 +1428,9 @@ export const QuickShopItemsPanel: React.FC<ChatTxSharedProps> = (props) => {
                       soundEngine.playUiClick();
                       props.onInspectFurniture!(item);
                     }}
-                    className="px-2 py-1 bg-[#1e293b] hover:bg-[#334155] text-white border border-white/30 text-[9px] font-black uppercase cursor-pointer"
+                    className="px-2.5 py-1 rounded-full bg-white hover:bg-sky-50 text-slate-700 border border-slate-200/80 text-[10px] font-semibold cursor-pointer transition-colors"
                   >
-                    3D VIEW
+                    3D view
                   </button>
                 )}
                 <button
@@ -1455,19 +1457,19 @@ export const QuickShopItemsPanel: React.FC<ChatTxSharedProps> = (props) => {
                       setBusyItemId(null);
                     }
                   }}
-                  className={`ml-auto px-2.5 py-1 border-2 border-black text-[9.5px] font-black uppercase ${
+                  className={`ml-auto px-3 py-1 rounded-full text-[10.5px] font-semibold shadow-xs transition-colors ${
                     canBuy && busyItemId !== item.id
-                      ? 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer'
-                      : 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                      ? 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer'
+                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                   }`}
                 >
                   {busyItemId === item.id
-                    ? 'BUYING...'
+                    ? 'Buying...'
                     : needsHouse
-                      ? 'NEEDS HOUSE'
+                      ? 'Needs house'
                       : isOwned && !item.interiorSlot
-                        ? 'OWNED'
-                        : `BUY ${quote.buyPrice} ${item.currency === 'RESPITE' ? 'R' : item.currency}`}
+                        ? 'Owned'
+                        : `Buy ${quote.buyPrice} ${item.currency === 'RESPITE' ? 'R' : item.currency}`}
                 </button>
               </div>
             </div>
@@ -1518,20 +1520,22 @@ export const QuickShopChatModal: React.FC<
   return (
     <div
       data-chat-quick-tx-modal="true"
-      className="fixed inset-0 z-[75] bg-black/65 p-3 sm:p-5 flex items-center justify-center"
+      className="fixed inset-0 z-[75] bg-slate-900/45 backdrop-blur-sm p-3 sm:p-5 flex items-center justify-center"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-xl max-h-[86vh] bg-white text-black border-[3.5px] border-black shadow-[6px_6px_0px_#000] flex flex-col overflow-hidden"
+        className="w-full max-w-xl max-h-[86vh] rounded-[24px] bg-[#e8ecf2]/96 backdrop-blur-2xl text-slate-900 border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-4 py-3 bg-[#0f172a] text-white border-b-[3px] border-black flex items-center justify-between gap-2 shrink-0">
+        <div className="px-5 py-3.5 bg-white/90 border-b border-slate-200/80 flex items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
-            <Store className="w-4 h-4 text-[#b8ff3c] shrink-0" aria-hidden="true" />
-            <span className="text-xs font-black uppercase tracking-wider truncate">
+            <span className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+              <Store className="w-4 h-4" aria-hidden="true" />
+            </span>
+            <span className="text-sm font-bold text-slate-900 truncate">
               {merchantLocation === 'lobby_cafe'
-                ? "HANA'S CHAT CHECKOUT"
-                : "KAI'S CHAT CHECKOUT"}
+                ? "Hana's Chat Checkout"
+                : "Kai's Chat Checkout"}
             </span>
           </div>
           <button
@@ -1541,13 +1545,13 @@ export const QuickShopChatModal: React.FC<
               soundEngine.playUiClick();
               onClose();
             }}
-            className="w-7 h-7 bg-[#ef4444] hover:bg-[#f87171] text-white border-2 border-black font-black flex items-center justify-center cursor-pointer"
+            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200/80 flex items-center justify-center cursor-pointer transition-colors shrink-0"
           >
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
 
-        <div className="px-4 py-2 bg-slate-100 border-b-2 border-black flex items-center justify-between gap-2 flex-wrap shrink-0">
+        <div className="px-5 py-2.5 bg-white/60 border-b border-slate-200/70 flex items-center justify-between gap-2 flex-wrap shrink-0">
           <div className="flex items-center gap-1.5">
             <button
               type="button"
@@ -1555,12 +1559,14 @@ export const QuickShopChatModal: React.FC<
                 soundEngine.playUiClick();
                 setModalTab('exchange');
               }}
-              className={`px-2.5 py-1 border-2 border-black text-[10px] font-black uppercase cursor-pointer inline-flex items-center gap-1 ${
-                modalTab === 'exchange' ? 'bg-[#10b981] text-black' : 'bg-white text-black'
+              className={`px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1.5 transition-all ${
+                modalTab === 'exchange'
+                  ? 'bg-emerald-500 text-white shadow-sm'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
               }`}
             >
               <ArrowRightLeft className="w-3 h-3" aria-hidden="true" />
-              <span>EXCHANGE</span>
+              <span>Exchange</span>
             </button>
             {merchantLocation === 'lobby_cafe' && (
               <button
@@ -1569,12 +1575,14 @@ export const QuickShopChatModal: React.FC<
                   soundEngine.playUiClick();
                   setModalTab('house');
                 }}
-                className={`px-2.5 py-1 border-2 border-black text-[10px] font-black uppercase cursor-pointer inline-flex items-center gap-1 ${
-                  modalTab === 'house' ? 'bg-[#38bdf8] text-black' : 'bg-white text-black'
+                className={`px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1.5 transition-all ${
+                  modalTab === 'house'
+                    ? 'bg-sky-500 text-white shadow-sm'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
                 }`}
               >
                 <Home className="w-3 h-3" aria-hidden="true" />
-                <span>HOUSE</span>
+                <span>House</span>
               </button>
             )}
             <button
@@ -1583,15 +1591,17 @@ export const QuickShopChatModal: React.FC<
                 soundEngine.playUiClick();
                 setModalTab('items');
               }}
-              className={`px-2.5 py-1 border-2 border-black text-[10px] font-black uppercase cursor-pointer inline-flex items-center gap-1 ${
-                modalTab === 'items' ? 'bg-[#facc15] text-black' : 'bg-white text-black'
+              className={`px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1.5 transition-all ${
+                modalTab === 'items'
+                  ? 'bg-sky-500 text-white shadow-sm'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200/80'
               }`}
             >
               <Sofa className="w-3 h-3" aria-hidden="true" />
-              <span>{merchantLocation === 'beach_house' ? 'FISHING GEAR' : 'ITEMS & THEMES'}</span>
+              <span>{merchantLocation === 'beach_house' ? 'Fishing Gear' : 'Items & Themes'}</span>
             </button>
           </div>
-          <div className="text-[9.5px] font-black uppercase text-slate-700 flex items-center gap-2">
+          <div className="text-[10.5px] font-semibold text-slate-600 flex items-center gap-2">
             <span>{props.lulBalance.toLocaleString()} LUL</span>
             <span>{props.cyonBalance.toLocaleString()} CYON</span>
             <span>{props.respiteBalance.toLocaleString()} R</span>
@@ -1601,10 +1611,10 @@ export const QuickShopChatModal: React.FC<
         <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
           {modalTab === 'exchange' && (
             <>
-              <div className="p-3 bg-[#141c2e] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-2">
-                <div className="text-[10.5px] font-black uppercase text-[#38bdf8] flex items-center gap-1.5">
-                  <Coins className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>EXCHANGE LUL -&gt; CYON</span>
+              <div className="p-4 rounded-2xl bg-white text-slate-900 border border-slate-200/70 shadow-sm space-y-2.5">
+                <div className="text-xs font-semibold text-sky-600 flex items-center gap-1.5">
+                  <Coins className="w-4 h-4" aria-hidden="true" />
+                  <span>Exchange LUL -&gt; CYON</span>
                 </div>
                 <InlineExchangePanel
                   marketState={props.marketState}
@@ -1616,10 +1626,10 @@ export const QuickShopChatModal: React.FC<
                 />
               </div>
 
-              <div className="p-3 bg-[#141c2e] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-2">
-                <div className="text-[10.5px] font-black uppercase text-[#d8b4fe] flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>SWAP NEAR -&gt; RESPITE</span>
+              <div className="p-4 rounded-2xl bg-white text-slate-900 border border-slate-200/70 shadow-sm space-y-2.5">
+                <div className="text-xs font-semibold text-violet-600 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4" aria-hidden="true" />
+                  <span>Swap NEAR -&gt; RESPITE</span>
                 </div>
                 <InlineSwapNearPanel
                   nearTestnetBalance={props.nearTestnetBalance}
@@ -1636,10 +1646,10 @@ export const QuickShopChatModal: React.FC<
           )}
 
           {modalTab === 'house' && merchantLocation === 'lobby_cafe' && (
-            <div className="p-3 bg-[#141c2e] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-2">
-              <div className="text-[10.5px] font-black uppercase text-[#38bdf8] flex items-center gap-1.5">
-                <Home className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>PRIVATE HOUSE OWNERSHIP</span>
+            <div className="p-4 rounded-2xl bg-white text-slate-900 border border-slate-200/70 shadow-sm space-y-2.5">
+              <div className="text-xs font-semibold text-sky-600 flex items-center gap-1.5">
+                <Home className="w-4 h-4" aria-hidden="true" />
+                <span>Private House Ownership</span>
               </div>
               <InlineHouseDealPanel
                 walletConnected={props.walletConnected}
@@ -1662,7 +1672,11 @@ export const QuickShopChatModal: React.FC<
             </div>
           )}
 
-          {modalTab === 'items' && <QuickShopItemsPanel {...props} />}
+          {modalTab === 'items' && (
+            <div className="p-4 rounded-2xl bg-white border border-slate-200/70 shadow-sm">
+              <QuickShopItemsPanel {...props} />
+            </div>
+          )}
         </div>
       </div>
     </div>

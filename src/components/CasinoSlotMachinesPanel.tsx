@@ -1646,7 +1646,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
 
   return (
     <>
-      {/* Full-Viewport Coin & Gem Particle Shower Canvas (outside 3D perspective stage) */}
+      {/* Full-Viewport Coin & Gem Particle Shower Canvas */}
       <canvas
         ref={particleCanvasRef}
         className="pointer-events-none fixed inset-0 w-screen h-screen z-[80]"
@@ -1655,14 +1655,21 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
 
       <div
         data-slot-bank={variant}
-        className="w-full max-w-[1160px] mx-auto slot-perspective-stage flex flex-col items-center relative text-slate-100 px-1 sm:px-3"
+        className="w-full max-w-[1140px] mx-auto rounded-[26px] bg-[#0e121b]/88 backdrop-blur-2xl border border-white/15 shadow-[0_24px_70px_rgba(0,0,0,0.62)] text-white overflow-hidden relative"
       >
-        {/* =====================================================================
-            UPPER 3D BEVELED TITANIUM CHASSIS & CURVED METALLIC GLASS SCREEN
-            ===================================================================== */}
-        <div className="w-full slot-cabinet-outer-3d">
-          <div className="w-full slot-cabinet-screen p-3 sm:p-4">
-            {/* Integrated 3D Steel Close Button Pinned to Top-Right Bezel */}
+        {/* TOP JACKPOT HEADER */}
+        <header className="relative px-4 sm:px-6 py-4 bg-white/[0.03] border-b border-white/10">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-300/15 border border-amber-300/30 text-amber-300 text-[10px] font-bold font-cinzel uppercase tracking-widest shrink-0">
+                <Crown className="w-3.5 h-3.5 text-amber-300" />
+                {variantMeta.title}
+              </span>
+              <span className="hidden sm:inline-block text-xs font-medium text-slate-400 truncate">
+                {variantMeta.bankLabel} · {modeSubtitle}
+              </span>
+            </div>
+
             {onClose && (
               <button
                 type="button"
@@ -1673,538 +1680,497 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                   onClose();
                 }}
                 aria-label="Exit Slot Machine"
-                className="slot-tactile-btn slot-btn-steel absolute top-2.5 right-2.5 z-50 w-9 h-9 rounded-xl flex items-center justify-center text-cyan-200 hover:text-white"
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white flex items-center justify-center active:scale-95 transition-all cursor-pointer shrink-0"
               >
-                <X className="w-4 h-4 stroke-[2.8]" />
+                <X className="w-4 h-4 stroke-[2.5]" />
               </button>
             )}
+          </div>
 
-            {/* TOP JACKPOT MARQUEE */}
-            <header className="relative mb-2.5 slot-marquee-frame rounded-2xl p-2 sm:p-2.5 sm:pr-12">
-              {/* 19 Chasing 3D Incandescent / Neon Dome Lamps */}
-              <div className="flex justify-between items-center px-3 sm:px-6 mb-2" aria-hidden="true">
-                {Array.from({ length: 19 }).map((_, idx) => (
-                  <div key={idx} className="slot-lamp-3d" />
-                ))}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-center">
+            {/* MAJOR JACKPOT */}
+            <div className="lg:col-span-3 flex items-center justify-between lg:justify-center gap-2 bg-white/[0.05] border border-white/10 px-4 py-2 rounded-2xl">
+              <span className="text-xs font-bold text-amber-300/90 font-cinzel tracking-widest">
+                MAJOR:
+              </span>
+              <span className="font-mono-tabular text-base sm:text-lg font-extrabold text-white tracking-wide">
+                {formatRespiteReadout(jackpots.major)} R
+              </span>
+            </div>
+
+            {/* GRAND JACKPOT CENTERPIECE */}
+            <div className="lg:col-span-6 text-center px-4 py-2 rounded-2xl border border-amber-300/35 bg-gradient-to-r from-amber-300/10 via-amber-400/15 to-amber-300/10">
+              <div className="flex items-center justify-center gap-1.5">
+                <Gem className="w-3.5 h-3.5 text-amber-300" />
+                <span className="text-xs font-bold tracking-widest text-amber-200 font-cinzel">
+                  GRAND JACKPOT
+                </span>
+                <Gem className="w-3.5 h-3.5 text-amber-300" />
               </div>
 
-              <div className="flex flex-col lg:flex-row items-center justify-between gap-2.5 px-1 sm:px-2">
-                {/* MAJOR JACKPOT */}
-                <div className="flex items-center gap-2 bg-gradient-to-b from-[#3b0c54] to-[#1a0629] border-2 border-fuchsia-400/80 px-3.5 py-1.5 rounded-xl shadow-[0_4px_10px_rgba(0,0,0,0.75),0_0_15px_rgba(217,70,239,0.35),inset_0_1px_2px_rgba(255,255,255,0.25)] w-full lg:w-auto justify-center">
-                  <span className="text-xs font-black text-fuchsia-300 font-cinzel tracking-widest">
-                    MAJOR:
-                  </span>
-                  <span className="font-mono-tabular text-base sm:text-xl font-extrabold text-fuchsia-100 tracking-wide">
-                    {formatRespiteReadout(jackpots.major)} R
-                  </span>
+              <svg
+                viewBox="0 0 460 40"
+                className="w-full max-w-[400px] h-8 sm:h-9 mx-auto overflow-visible"
+                role="img"
+                aria-label={`Grand Jackpot ${formatRespiteReadout(jackpots.grand)} RESPITE`}
+              >
+                <defs>
+                  <linearGradient id={`${jackpotGradId}-jp`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#ffffff" />
+                    <stop offset="45%" stopColor="#fef08a" />
+                    <stop offset="100%" stopColor="#f59e0b" />
+                  </linearGradient>
+                </defs>
+                <text
+                  x="230"
+                  y="31"
+                  textAnchor="middle"
+                  className="font-mono-tabular"
+                  fontWeight="900"
+                  fontSize="30"
+                  fill={`url(#${jackpotGradId}-jp)`}
+                >
+                  {formatRespiteReadout(jackpots.grand)} RESPITE
+                </text>
+              </svg>
+            </div>
+
+            {/* MINI JACKPOT */}
+            <div className="lg:col-span-3 flex items-center justify-between lg:justify-center gap-2 bg-white/[0.05] border border-white/10 px-4 py-2 rounded-2xl">
+              <span className="text-xs font-bold text-emerald-400 font-cinzel tracking-widest">
+                MINI:
+              </span>
+              <span className="font-mono-tabular text-base sm:text-lg font-extrabold text-white tracking-wide">
+                {formatRespiteReadout(jackpots.mini)} R
+              </span>
+            </div>
+          </div>
+        </header>
+
+        {/* BODY CONTENT */}
+        <div className="p-4 sm:p-5 space-y-3.5">
+          {/* CENTER INTERACTIVE 3-COLUMN STAGE */}
+          <section className="grid grid-cols-12 gap-3 items-stretch relative">
+            {/* LEFT STATUS & UTILITY PANEL */}
+            <aside className="col-span-12 lg:col-span-2 flex lg:flex-col justify-between gap-2.5 rounded-2xl bg-white/[0.05] border border-white/10 p-3">
+              <div className="flex-1 lg:flex-initial text-center bg-amber-300/10 border border-amber-300/30 rounded-xl p-2.5 flex flex-col items-center justify-center">
+                <span className="text-[10px] font-bold text-amber-300 uppercase tracking-widest font-cinzel">
+                  Multiplier
+                </span>
+                <div className="text-2xl sm:text-3xl font-black text-white font-cinzel my-0.5 tracking-tight">
+                  {activeMultiplier}X
                 </div>
-
-                {/* GRAND JACKPOT CENTERPIECE (Rendered via crisp SVG Gradient — immune to Force-Dark box bugs) */}
-                <div className="text-center px-4 sm:px-6 py-1.5 rounded-2xl border-2 border-fuchsia-300 bg-gradient-to-b from-[#450a75] via-[#22083b] to-[#140426] shadow-[0_6px_18px_rgba(0,0,0,0.85),0_0_32px_rgba(217,70,239,0.65),inset_0_2px_4px_rgba(255,255,255,0.28)] flex-1 max-w-xl relative">
-                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 flex items-center justify-center">
-                    <div className="px-3 py-0.5 bg-gradient-to-b from-fuchsia-400 via-purple-600 to-indigo-950 rounded-full border border-fuchsia-200 shadow-[0_4px_12px_rgba(0,0,0,0.9)] flex items-center gap-1.5 whitespace-nowrap">
-                      <Crown className="w-3.5 h-3.5 text-yellow-300 fill-yellow-300" />
-                      <span className="text-[9px] font-black tracking-widest text-fuchsia-50 font-cinzel uppercase">
-                        {variantMeta.title}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-center gap-1.5 pt-1">
-                    <Gem className="w-3.5 h-3.5 text-cyan-300" />
-                    <span className="text-xs sm:text-sm font-black tracking-widest text-fuchsia-100 font-cinzel">
-                      GRAND JACKPOT
-                    </span>
-                    <Gem className="w-3.5 h-3.5 text-cyan-300" />
-                  </div>
-
-                  <svg
-                    viewBox="0 0 460 46"
-                    className="w-full max-w-[420px] h-9 sm:h-11 mx-auto overflow-visible"
-                    role="img"
-                    aria-label={`Grand Jackpot ${formatRespiteReadout(jackpots.grand)} RESPITE`}
-                  >
-                    <defs>
-                      <linearGradient id={`${jackpotGradId}-jp`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#ffffff" />
-                        <stop offset="32%" stopColor="#fae8ff" />
-                        <stop offset="68%" stopColor="#f0abfc" />
-                        <stop offset="100%" stopColor="#d946ef" />
-                      </linearGradient>
-                    </defs>
-                    <text
-                      x="232"
-                      y="37"
-                      textAnchor="middle"
-                      className="font-mono-tabular"
-                      fontWeight="900"
-                      fontSize="33"
-                      fill="#1a032b"
-                    >
-                      {formatRespiteReadout(jackpots.grand)} RESPITE
-                    </text>
-                    <text
-                      x="230"
-                      y="35"
-                      textAnchor="middle"
-                      className="font-mono-tabular"
-                      fontWeight="900"
-                      fontSize="33"
-                      fill={`url(#${jackpotGradId}-jp)`}
-                      stroke="#f5d0fe"
-                      strokeWidth="0.6"
-                    >
-                      {formatRespiteReadout(jackpots.grand)} RESPITE
-                    </text>
-                  </svg>
-                </div>
-
-                {/* MINI JACKPOT */}
-                <div className="flex items-center gap-2 bg-gradient-to-b from-[#083344] to-[#041b26] border-2 border-cyan-400/80 px-3.5 py-1.5 rounded-xl shadow-[0_4px_10px_rgba(0,0,0,0.75),0_0_15px_rgba(6,182,212,0.35),inset_0_1px_2px_rgba(255,255,255,0.25)] w-full lg:w-auto justify-center">
-                  <span className="text-xs font-black text-cyan-300 font-cinzel tracking-widest">
-                    MINI:
-                  </span>
-                  <span className="font-mono-tabular text-base sm:text-xl font-extrabold text-cyan-100 tracking-wide">
-                    {formatRespiteReadout(jackpots.mini)} R
-                  </span>
-                </div>
+                <span className="text-[9px] text-emerald-400 font-bold tracking-wider uppercase whitespace-nowrap">
+                  {freeSpinsLeft > 0 ? 'SUPER BOOST' : 'ACTIVE BOOST'}
+                </span>
               </div>
-            </header>
 
-            {/* CENTER INTERACTIVE 3-COLUMN STAGE */}
-            <section className="grid grid-cols-12 gap-2 sm:gap-3 items-stretch relative">
-              {/* LEFT STATUS & UTILITY PANEL */}
-              <aside className="col-span-12 lg:col-span-2 flex lg:flex-col justify-between gap-2 slot-gilded-frame rounded-2xl p-2.5">
-                <div className="flex-1 lg:flex-initial text-center bg-gradient-to-b from-[#222b40] to-[#0f1420] border-2 border-cyan-400/70 rounded-xl p-2.5 shadow-[0_4px_10px_rgba(0,0,0,0.7),0_0_15px_rgba(6,182,212,0.22),inset_0_1px_2px_rgba(255,255,255,0.2)] flex flex-col items-center justify-center">
-                  <span className="text-[10px] font-bold text-cyan-300 uppercase tracking-widest font-cinzel">
-                    Multiplier
-                  </span>
-                  <div className="text-2xl sm:text-3xl font-black text-cyan-100 font-cinzel my-0.5 tracking-tight drop-shadow-[0_2px_10px_rgba(6,182,212,0.75)]">
-                    {activeMultiplier}X
-                  </div>
-                  <span className="text-[9px] text-fuchsia-300 font-bold tracking-wider uppercase whitespace-nowrap">
-                    {freeSpinsLeft > 0 ? 'SUPER BOOST' : 'ACTIVE BOOST'}
-                  </span>
-                </div>
+              <button
+                type="button"
+                onClick={() => {
+                  playCabinetClick();
+                  setIsPaytableOpen(true);
+                }}
+                className="flex-1 lg:flex-initial w-full rounded-full bg-white/[0.07] hover:bg-white/[0.14] border border-white/15 py-2 px-3 flex items-center justify-center gap-1.5 text-[11px] font-bold text-slate-100 uppercase tracking-wider font-cinzel whitespace-nowrap cursor-pointer transition-colors"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                <span>Paytable</span>
+              </button>
 
-                <div className="slot-btn-socket-3d flex-1 lg:flex-initial">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playCabinetClick();
-                      setIsPaytableOpen(true);
-                    }}
-                    className="w-full slot-tactile-btn slot-btn-steel rounded-xl py-2 px-2.5 flex items-center justify-center gap-1.5 text-[11px] font-bold text-slate-100 uppercase tracking-wider font-cinzel whitespace-nowrap"
-                  >
-                    <BookOpen className="w-3.5 h-3.5 text-cyan-300 shrink-0" />
-                    <span>Paytable</span>
-                  </button>
-                </div>
-
-                <div className="slot-btn-socket-3d flex-1 lg:flex-initial">
-                  <button
-                    type="button"
-                    data-active={soundEnabled}
-                    onClick={() => {
-                      const next = !soundEnabled;
-                      setSoundEnabled(next);
-                      if (next) soundEngine.playUiClick();
-                    }}
-                    className="w-full slot-tactile-btn slot-btn-steel rounded-xl py-2 px-2.5 flex items-center justify-center gap-1.5 text-[11px] font-bold text-slate-100 uppercase tracking-wider font-cinzel whitespace-nowrap"
-                  >
-                    {soundEnabled ? (
-                      <Volume2 className="w-3.5 h-3.5 text-cyan-300 shrink-0" />
-                    ) : (
-                      <VolumeX className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    )}
-                    <span>{soundEnabled ? 'Sound: On' : 'Sound: Off'}</span>
-                  </button>
-                </div>
-
-                <div className="hidden lg:flex flex-col items-center justify-center text-slate-300 pt-1.5 border-t border-slate-700/60 text-center">
-                  <Gem className="w-4 h-4 text-fuchsia-400 drop-shadow-[0_0_8px_rgba(217,70,239,0.7)]" />
-                  <span className="text-[8.5px] font-bold tracking-widest text-slate-300 mt-1 uppercase font-cinzel">
-                    {variantMeta.bankLabel}
-                  </span>
-                </div>
-              </aside>
-
-              {/* CENTER 3D CURVED CYLINDRICAL VIEWPORT (No Flat Black Box!) */}
-              <div className="col-span-12 lg:col-span-8 relative rounded-2xl overflow-hidden slot-gilded-frame slot-reels-viewport h-[336px]">
-                {/* BANK 3 & BANK 2: 3D CYLINDRICAL REEL DRUMS */}
-                {isReelMatrixVariant && (
-                  <>
-                    <canvas
-                      ref={paylineCanvasRef}
-                      className="pointer-events-none absolute inset-0 w-full h-full z-30"
-                    />
-
-                    {/* Center Payline Illuminated Guide Bar for Classic 3-Reel Bank */}
-                    {variant === 'classic_reels' && (
-                      <div
-                        aria-hidden="true"
-                        className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-[112px] border-y-2 border-rose-400/45 bg-gradient-to-r from-rose-500/10 via-amber-400/10 to-rose-500/10 z-10"
-                      />
-                    )}
-
-                    <div className="grid grid-cols-3 h-[336px] relative divide-x-2 divide-cyan-300/45">
-                      {([0, 1, 2] as const).map((colIdx) => {
-                        const colSpinning = spinningCols[colIdx];
-                        const tape = reelTapes[colIdx];
-                        const rowClass = variant === 'multi_line_3x3' ? 'h-[84px]' : 'h-[112px]';
-
-                        return (
-                          <div
-                            key={colIdx}
-                            className={`relative overflow-hidden h-[336px] slot-reel-drum-3d ${
-                              colSpinning ? 'shadow-[inset_0_0_28px_rgba(0,240,255,0.22)]' : ''
-                            }`}
-                          >
-                            <div
-                              ref={(el) => {
-                                stripDomRefs.current[colIdx] = el;
-                              }}
-                              className={`will-change-transform absolute top-0 left-0 w-full ${
-                                colSpinning ? 'slot-spinning-blur' : ''
-                              }`}
-                            >
-                              {tape.map((symId, rowIdx) => {
-                                const isHighlighted =
-                                  !colSpinning && winningCellKeys.has(`${colIdx}-${rowIdx}`);
-                                return (
-                                  <div
-                                    key={`${colIdx}-${rowIdx}-${symId}`}
-                                    className={`${rowClass} flex items-center justify-center px-2 border-b border-white/[0.04] select-none`}
-                                  >
-                                    <GrandRoyaleSymbolTile
-                                      symbolId={symId}
-                                      highlighted={isHighlighted}
-                                    />
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
+              <button
+                type="button"
+                data-active={soundEnabled}
+                onClick={() => {
+                  const next = !soundEnabled;
+                  setSoundEnabled(next);
+                  if (next) soundEngine.playUiClick();
+                }}
+                className={`flex-1 lg:flex-initial w-full rounded-full border py-2 px-3 flex items-center justify-center gap-1.5 text-[11px] font-bold uppercase tracking-wider font-cinzel whitespace-nowrap cursor-pointer transition-colors ${
+                  soundEnabled
+                    ? 'bg-emerald-400/15 border-emerald-400/35 text-emerald-300 hover:bg-emerald-400/25'
+                    : 'bg-white/[0.05] border-white/10 text-slate-400 hover:bg-white/[0.1]'
+                }`}
+              >
+                {soundEnabled ? (
+                  <Volume2 className="w-3.5 h-3.5 shrink-0" />
+                ) : (
+                  <VolumeX className="w-3.5 h-3.5 shrink-0" />
                 )}
+                <span>{soundEnabled ? 'Sound: On' : 'Sound: Off'}</span>
+              </button>
 
-                {/* BANK 1: LUCKY DRAW 4x4 CHASE + x777 RESPITE VAULT */}
-                {variant === 'lucky_draw' && (
-                  <div className="relative z-20 h-full grid grid-cols-4 grid-rows-4 gap-2 p-3 bg-gradient-to-b from-[#171d32] via-[#101526] to-[#0b0e1a]">
-                    {Array.from({ length: 16 }).map((_, flatIdx) => {
-                      const r = Math.floor(flatIdx / 4);
-                      const c = flatIdx % 4;
-                      if ((r === 1 || r === 2) && (c === 1 || c === 2)) {
-                        if (r === 1 && c === 1) {
-                          return (
-                            <div
-                              key="vault-core"
-                              className="col-span-2 row-span-2 rounded-2xl border-2 border-fuchsia-400/85 bg-gradient-to-b from-[#341654] via-[#1c0c33] to-[#0e061b] shadow-[0_8px_20px_rgba(0,0,0,0.8),0_0_25px_rgba(217,70,239,0.45),inset_0_2px_4px_rgba(255,255,255,0.25)] p-3 flex flex-col items-center justify-between"
-                            >
-                              <div className="w-full flex items-center justify-between text-[10px] font-cinzel font-black tracking-widest">
-                                <span className="text-fuchsia-200">VAULT REACTOR</span>
-                                <span className="text-yellow-300 font-mono-tabular">x777</span>
-                              </div>
+              <div className="hidden lg:flex flex-col items-center justify-center text-slate-400 pt-2 border-t border-white/10 text-center">
+                <Gem className="w-4 h-4 text-amber-300" />
+                <span className="text-[8.5px] font-bold tracking-widest text-slate-300 mt-1 uppercase font-cinzel">
+                  {variantMeta.bankLabel}
+                </span>
+              </div>
+            </aside>
 
-                              <div className="flex flex-col items-center my-0.5">
-                                <CasinoSlotSymbolArtwork id="vault" sizeClass="w-12 h-12" />
-                                <div className="font-mono-tabular text-base sm:text-lg font-black text-cyan-200 mt-0.5">
-                                  {(currentBet * 777).toLocaleString()} RESPITE
-                                </div>
-                              </div>
+            {/* CENTER VIEWPORT */}
+            <div className="col-span-12 lg:col-span-8 relative rounded-2xl overflow-hidden bg-[#070a12]/90 border border-white/15 shadow-inner h-[336px]">
+              {/* BANK 3 & BANK 2: REEL DRUMS */}
+              {isReelMatrixVariant && (
+                <>
+                  <canvas
+                    ref={paylineCanvasRef}
+                    className="pointer-events-none absolute inset-0 w-full h-full z-30"
+                  />
 
-                              <div className="w-full space-y-1">
-                                <div className="flex items-center justify-between text-[9.5px] font-bold">
-                                  <span className="text-slate-300 uppercase font-cinzel">Charge</span>
-                                  <span className="font-mono-tabular text-emerald-300">
-                                    {ldVaultPct}%
-                                  </span>
-                                </div>
-                                <svg
-                                  viewBox="0 0 200 10"
-                                  className="w-full h-2.5 rounded-full overflow-hidden bg-slate-950 border border-cyan-500/50"
-                                  aria-hidden="true"
-                                >
-                                  <rect
-                                    x="0"
-                                    y="0"
-                                    width={Math.max(4, Math.round(ldVaultPct * 2))}
-                                    height="10"
-                                    rx="5"
-                                    fill="#22d3ee"
-                                  />
-                                </svg>
-                              </div>
-                            </div>
-                          );
-                        }
-                        return null;
-                      }
+                  {/* Center Payline Illuminated Guide Bar for Classic 3-Reel Bank */}
+                  {variant === 'classic_reels' && (
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-[112px] border-y border-amber-300/45 bg-amber-300/[0.06] z-10"
+                    />
+                  )}
 
-                      const tile = LUCKY_DRAW_TILES.find((t) => t.gridRow === r && t.gridCol === c)!;
-                      const active = ldActiveTileIdx === tile.index;
+                  <div className="grid grid-cols-3 h-[336px] relative divide-x divide-white/10">
+                    {([0, 1, 2] as const).map((colIdx) => {
+                      const colSpinning = spinningCols[colIdx];
+                      const tape = reelTapes[colIdx];
+                      const rowClass = variant === 'multi_line_3x3' ? 'h-[84px]' : 'h-[112px]';
+
                       return (
                         <div
-                          key={tile.index}
-                          className={`rounded-xl border-2 flex flex-col items-center justify-center px-1.5 py-1 transition-transform duration-75 ${
-                            active
-                              ? 'bg-gradient-to-b from-fuchsia-500/50 to-cyan-500/40 border-cyan-200 scale-[1.05] shadow-[0_0_22px_rgba(0,240,255,0.75)] z-10'
-                              : 'bg-gradient-to-b from-[#222a42] to-[#131828] border-slate-600/80 shadow-[0_4px_8px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.18)]'
+                          key={colIdx}
+                          className={`relative overflow-hidden h-[336px] bg-gradient-to-b from-black/35 via-white/[0.02] to-black/35 ${
+                            colSpinning ? 'shadow-[inset_0_0_24px_rgba(252,211,77,0.14)]' : ''
                           }`}
                         >
-                          <CasinoSlotSymbolArtwork id={tile.iconKey} sizeClass="w-7 h-7" />
-                          <span className="font-mono-tabular text-xs font-black text-white leading-tight">
-                            {tile.label}
-                          </span>
-                          <span className="text-[8.5px] font-cinzel font-bold text-cyan-300 tracking-wider uppercase truncate max-w-full">
-                            {tile.sublabel}
-                          </span>
+                          <div
+                            ref={(el) => {
+                              stripDomRefs.current[colIdx] = el;
+                            }}
+                            className={`will-change-transform absolute top-0 left-0 w-full ${
+                              colSpinning ? 'slot-spinning-blur' : ''
+                            }`}
+                          >
+                            {tape.map((symId, rowIdx) => {
+                              const isHighlighted =
+                                !colSpinning && winningCellKeys.has(`${colIdx}-${rowIdx}`);
+                              return (
+                                <div
+                                  key={`${colIdx}-${rowIdx}-${symId}`}
+                                  className={`${rowClass} flex items-center justify-center px-2 border-b border-white/[0.04] select-none`}
+                                >
+                                  <GrandRoyaleSymbolTile
+                                    symbolId={symId}
+                                    highlighted={isHighlighted}
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       );
                     })}
                   </div>
-                )}
+                </>
+              )}
 
-                {/* BANK 4: EMERALD 50X FORTUNE WHEEL */}
-                {variant === 'fortune_wheel' && (
-                  <div className="relative z-20 h-full flex items-center justify-center bg-gradient-to-b from-[#13242b] via-[#0d1822] to-[#080e16] px-4">
-                    <div className="hidden sm:flex flex-col gap-2 mr-6 text-left">
-                      <div className="px-3 py-2 rounded-xl bg-emerald-950/80 border border-emerald-400/60 shadow-lg">
-                        <div className="text-[9px] font-cinzel text-emerald-300 uppercase tracking-widest">
-                          Top Wedge Prize
-                        </div>
-                        <div className="font-mono-tabular text-lg font-black text-yellow-300">
-                          {(currentBet * 50 * (activeMultiplier / 3)).toFixed(0)} RESPITE
-                        </div>
+              {/* BANK 1: LUCKY DRAW 4x4 CHASE + x777 RESPITE VAULT */}
+              {variant === 'lucky_draw' && (
+                <div className="relative z-20 h-full grid grid-cols-4 grid-rows-4 gap-2 p-3 bg-[#090d17]">
+                  {Array.from({ length: 16 }).map((_, flatIdx) => {
+                    const r = Math.floor(flatIdx / 4);
+                    const c = flatIdx % 4;
+                    if ((r === 1 || r === 2) && (c === 1 || c === 2)) {
+                      if (r === 1 && c === 1) {
+                        return (
+                          <div
+                            key="vault-core"
+                            className="col-span-2 row-span-2 rounded-2xl border border-amber-300/45 bg-gradient-to-b from-amber-300/15 via-white/[0.04] to-black/40 p-3 flex flex-col items-center justify-between"
+                          >
+                            <div className="w-full flex items-center justify-between text-[10px] font-cinzel font-bold tracking-widest">
+                              <span className="text-amber-200">VAULT REACTOR</span>
+                              <span className="text-amber-300 font-mono-tabular">x777</span>
+                            </div>
+
+                            <div className="flex flex-col items-center my-0.5">
+                              <CasinoSlotSymbolArtwork id="vault" sizeClass="w-12 h-12" />
+                              <div className="font-mono-tabular text-base sm:text-lg font-extrabold text-emerald-300 mt-0.5">
+                                {(currentBet * 777).toLocaleString()} RESPITE
+                              </div>
+                            </div>
+
+                            <div className="w-full space-y-1">
+                              <div className="flex items-center justify-between text-[9.5px] font-bold">
+                                <span className="text-slate-300 uppercase font-cinzel">Charge</span>
+                                <span className="font-mono-tabular text-emerald-400">
+                                  {ldVaultPct}%
+                                </span>
+                              </div>
+                              <svg
+                                viewBox="0 0 200 10"
+                                className="w-full h-2.5 rounded-full overflow-hidden bg-white/10"
+                                aria-hidden="true"
+                              >
+                                <rect
+                                  x="0"
+                                  y="0"
+                                  width={Math.max(4, Math.round(ldVaultPct * 2))}
+                                  height="10"
+                                  rx="5"
+                                  fill="#34d399"
+                                />
+                              </svg>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }
+
+                    const tile = LUCKY_DRAW_TILES.find((t) => t.gridRow === r && t.gridCol === c)!;
+                    const active = ldActiveTileIdx === tile.index;
+                    return (
+                      <div
+                        key={tile.index}
+                        className={`rounded-xl border flex flex-col items-center justify-center px-1.5 py-1 transition-all duration-75 ${
+                          active
+                            ? 'bg-amber-300/25 border-amber-300 scale-[1.04] shadow-[0_0_20px_rgba(252,211,77,0.4)] z-10'
+                            : 'bg-white/[0.05] border-white/10'
+                        }`}
+                      >
+                        <CasinoSlotSymbolArtwork id={tile.iconKey} sizeClass="w-7 h-7" />
+                        <span className="font-mono-tabular text-xs font-extrabold text-white leading-tight">
+                          {tile.label}
+                        </span>
+                        <span className="text-[8.5px] font-cinzel font-bold text-amber-300/90 tracking-wider uppercase truncate max-w-full">
+                          {tile.sublabel}
+                        </span>
                       </div>
-                      <div className="px-3 py-2 rounded-xl bg-slate-900/90 border border-cyan-500/50 shadow-lg">
-                        <div className="text-[9px] font-cinzel text-cyan-300 uppercase tracking-widest">
-                          50x Wedge Bonus
-                        </div>
-                        <div className="text-xs font-bold text-fuchsia-200">+3 Free Spins</div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* BANK 4: EMERALD 50X FORTUNE WHEEL */}
+              {variant === 'fortune_wheel' && (
+                <div className="relative z-20 h-full flex items-center justify-center bg-gradient-to-b from-[#0b1f1c] via-[#091419] to-[#070a12] px-4">
+                  <div className="hidden sm:flex flex-col gap-2.5 mr-6 text-left">
+                    <div className="px-3.5 py-2.5 rounded-2xl bg-white/[0.05] border border-emerald-400/35">
+                      <div className="text-[9px] font-cinzel text-emerald-300 uppercase tracking-widest">
+                        Top Wedge Prize
+                      </div>
+                      <div className="font-mono-tabular text-lg font-extrabold text-amber-300">
+                        {(currentBet * 50 * (activeMultiplier / 3)).toFixed(0)} RESPITE
                       </div>
                     </div>
-
-                    <svg
-                      viewBox="0 0 260 272"
-                      className="w-[270px] h-[282px] drop-shadow-[0_10px_25px_rgba(0,0,0,0.85)]"
-                      aria-label="Emerald Fortune Spin Wheel"
-                    >
-                      <circle cx="130" cy="142" r="118" fill="#090d16" stroke="#34d399" strokeWidth="3.5" />
-                      <circle cx="130" cy="142" r="111" fill="#0f172a" stroke="#facc15" strokeWidth="2.5" />
-
-                      <g transform={`rotate(${wheelAngleDeg.toFixed(2)} 130 142)`}>
-                        {FORTUNE_WHEEL_SECTORS.map((sec, idx) => {
-                          const sliceAngle = 360 / FORTUNE_WHEEL_SECTORS.length;
-                          const startRad = ((idx * sliceAngle - 90) * Math.PI) / 180;
-                          const endRad = (((idx + 1) * sliceAngle - 90) * Math.PI) / 180;
-                          const r = 104;
-                          const x1 = 130 + r * Math.cos(startRad);
-                          const y1 = 142 + r * Math.sin(startRad);
-                          const x2 = 130 + r * Math.cos(endRad);
-                          const y2 = 142 + r * Math.sin(endRad);
-                          const midDeg = idx * sliceAngle + sliceAngle * 0.5;
-                          const pegX = 130 + 106 * Math.cos(startRad);
-                          const pegY = 142 + 106 * Math.sin(startRad);
-                          const wedgeFill =
-                            sec.multiplier >= 50
-                              ? '#eab308'
-                              : sec.multiplier >= 15
-                                ? '#be123c'
-                                : sec.multiplier >= 8
-                                  ? '#7e22ce'
-                                  : sec.multiplier >= 5
-                                    ? '#047857'
-                                    : sec.multiplier >= 3
-                                      ? '#0369a1'
-                                      : sec.multiplier >= 2
-                                        ? '#0f766e'
-                                        : '#1e293b';
-
-                          return (
-                            <g key={sec.index}>
-                              <path
-                                d={`M130,142 L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 0,1 ${x2.toFixed(2)},${y2.toFixed(2)} Z`}
-                                fill={wedgeFill}
-                                stroke="#38bdf8"
-                                strokeWidth="1.8"
-                              />
-                              <text
-                                x="130"
-                                y="62"
-                                textAnchor="middle"
-                                fontWeight="900"
-                                fontSize="12.5"
-                                fill={sec.multiplier >= 50 ? '#0f172a' : '#f8fafc'}
-                                transform={`rotate(${midDeg} 130 142)`}
-                              >
-                                {sec.label}
-                              </text>
-                              <circle
-                                cx={pegX}
-                                cy={pegY}
-                                r="3.8"
-                                fill="#fef08a"
-                                stroke="#0f172a"
-                                strokeWidth="1.6"
-                              />
-                            </g>
-                          );
-                        })}
-                        <circle cx="130" cy="142" r="22" fill="#0f172a" stroke="#facc15" strokeWidth="3.5" />
-                        <circle cx="130" cy="142" r="9" fill="#34d399" />
-                      </g>
-
-                      <g transform={`rotate(${flapperTiltDeg.toFixed(1)} 130 18)`}>
-                        <circle cx="130" cy="18" r="6" fill="#facc15" stroke="#0f172a" strokeWidth="2" />
-                        <polygon
-                          points="130,44 119,19 141,19"
-                          fill="#f43f5e"
-                          stroke="#fef08a"
-                          strokeWidth="2"
-                          strokeLinejoin="round"
-                        />
-                      </g>
-                    </svg>
-                  </div>
-                )}
-
-                {/* Curved Glass Specular Sheen */}
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-transparent via-cyan-300/[0.05] to-white/[0.06] z-30"
-                />
-              </div>
-
-              {/* RIGHT STATUS PANEL */}
-              <aside className="col-span-12 lg:col-span-2 flex lg:flex-col justify-between gap-2 slot-gilded-frame rounded-2xl p-2.5">
-                <div className="flex-1 lg:flex-initial bg-[#0b0f18] border border-slate-700/80 rounded-xl p-2 shadow-[inset_0_3px_8px_rgba(0,0,0,0.9)]">
-                  <h4 className="text-[9.5px] font-black tracking-widest text-cyan-300 uppercase text-center border-b border-slate-700/70 pb-1 mb-1.5 font-cinzel">
-                    Recent Winners
-                  </h4>
-                  <div className="text-[11px] space-y-1 font-mono-tabular text-slate-200 leading-tight">
-                    {recentWinners.map((w, idx) => (
-                      <div key={`${w.initials}-${idx}`} className="flex justify-between gap-1">
-                        <span className={w.initials === 'YOU' ? 'text-yellow-300 font-bold' : ''}>
-                          {w.initials}
-                        </span>
-                        <span className="text-emerald-400 font-bold">+{w.amountRespite} R</span>
+                    <div className="px-3.5 py-2.5 rounded-2xl bg-white/[0.05] border border-white/10">
+                      <div className="text-[9px] font-cinzel text-slate-300 uppercase tracking-widest">
+                        50x Wedge Bonus
                       </div>
-                    ))}
+                      <div className="text-xs font-bold text-emerald-300">+3 Free Spins</div>
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex-1 lg:flex-initial text-center bg-gradient-to-b from-[#361252] to-[#140724] border-2 border-fuchsia-400/75 rounded-xl p-2.5 shadow-[0_4px_10px_rgba(0,0,0,0.7),0_0_15px_rgba(217,70,239,0.28),inset_0_1px_2px_rgba(255,255,255,0.2)] flex flex-col items-center justify-center">
-                  <span className="text-[10px] font-bold text-fuchsia-200 uppercase tracking-widest font-cinzel">
-                    Free Spins
-                  </span>
-                  <div className="flex items-center gap-1 my-0.5">
-                    <Zap className="w-4 h-4 text-yellow-300 fill-yellow-300" />
-                    <span className="text-2xl sm:text-3xl font-black text-fuchsia-50 font-cinzel">
-                      {freeSpinsLeft}
-                    </span>
-                  </div>
-                  <span className="text-[9px] text-cyan-200 font-bold tracking-wider uppercase">
-                    Remaining
-                  </span>
-                </div>
+                  <svg
+                    viewBox="0 0 260 272"
+                    className="w-[270px] h-[282px] drop-shadow-[0_10px_25px_rgba(0,0,0,0.75)]"
+                    aria-label="Emerald Fortune Spin Wheel"
+                  >
+                    <circle cx="130" cy="142" r="118" fill="#090d16" stroke="#34d399" strokeWidth="3.5" />
+                    <circle cx="130" cy="142" r="111" fill="#0f172a" stroke="#fcd34d" strokeWidth="2.5" />
 
-                <div className="flex-1 lg:flex-initial bg-[#090d16] border border-cyan-400/50 rounded-xl px-2 py-2 text-center text-[10.5px] font-bold text-cyan-200 font-cinzel flex items-center justify-center leading-tight shadow-[inset_0_2px_6px_rgba(0,0,0,0.85)]">
-                  {statusMessage}
-                </div>
-              </aside>
-            </section>
+                    <g transform={`rotate(${wheelAngleDeg.toFixed(2)} 130 142)`}>
+                      {FORTUNE_WHEEL_SECTORS.map((sec, idx) => {
+                        const sliceAngle = 360 / FORTUNE_WHEEL_SECTORS.length;
+                        const startRad = ((idx * sliceAngle - 90) * Math.PI) / 180;
+                        const endRad = (((idx + 1) * sliceAngle - 90) * Math.PI) / 180;
+                        const r = 104;
+                        const x1 = 130 + r * Math.cos(startRad);
+                        const y1 = 142 + r * Math.sin(startRad);
+                        const x2 = 130 + r * Math.cos(endRad);
+                        const y2 = 142 + r * Math.sin(endRad);
+                        const midDeg = idx * sliceAngle + sliceAngle * 0.5;
+                        const pegX = 130 + 106 * Math.cos(startRad);
+                        const pegY = 142 + 106 * Math.sin(startRad);
+                        const wedgeFill =
+                          sec.multiplier >= 50
+                            ? '#eab308'
+                            : sec.multiplier >= 15
+                              ? '#be123c'
+                              : sec.multiplier >= 8
+                                ? '#7e22ce'
+                                : sec.multiplier >= 5
+                                  ? '#047857'
+                                  : sec.multiplier >= 3
+                                    ? '#0369a1'
+                                    : sec.multiplier >= 2
+                                      ? '#0f766e'
+                                      : '#1e293b';
 
-            {/* DIGITAL LED READOUTS: CREDITS (RESPITE + QUICK TOP-UP) & WIN */}
-            <section className="mt-2.5 grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              <div className="flex items-center justify-between gap-2 px-4 py-2 slot-led-box rounded-xl">
-                <div className="flex items-center gap-2">
-                  <span className="font-cinzel text-xs sm:text-sm font-bold text-cyan-400 tracking-widest uppercase">
-                    CREDITS:
-                  </span>
-                  {onQuickTopUpRespite && lulBalance >= 50 && (
-                    <button
-                      type="button"
-                      onClick={onQuickTopUpRespite}
-                      title="Exchange 50 LUL for +5 RESPITE Slot Credits"
-                      className="slot-tactile-btn slot-btn-gold px-2 py-0.5 rounded-lg text-[10px] font-black font-cinzel text-amber-950 whitespace-nowrap"
-                    >
-                      +5 R (50 LUL)
-                    </button>
-                  )}
+                        return (
+                          <g key={sec.index}>
+                            <path
+                              d={`M130,142 L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 0,1 ${x2.toFixed(2)},${y2.toFixed(2)} Z`}
+                              fill={wedgeFill}
+                              stroke="#94a3b8"
+                              strokeWidth="1.2"
+                            />
+                            <text
+                              x="130"
+                              y="62"
+                              textAnchor="middle"
+                              fontWeight="900"
+                              fontSize="12.5"
+                              fill={sec.multiplier >= 50 ? '#0f172a' : '#f8fafc'}
+                              transform={`rotate(${midDeg} 130 142)`}
+                            >
+                              {sec.label}
+                            </text>
+                            <circle
+                              cx={pegX}
+                              cy={pegY}
+                              r="3.8"
+                              fill="#fef08a"
+                              stroke="#0f172a"
+                              strokeWidth="1.6"
+                            />
+                          </g>
+                        );
+                      })}
+                      <circle cx="130" cy="142" r="22" fill="#0f172a" stroke="#fcd34d" strokeWidth="3.5" />
+                      <circle cx="130" cy="142" r="9" fill="#34d399" />
+                    </g>
+
+                    <g transform={`rotate(${flapperTiltDeg.toFixed(1)} 130 18)`}>
+                      <circle cx="130" cy="18" r="6" fill="#fcd34d" stroke="#0f172a" strokeWidth="2" />
+                      <polygon
+                        points="130,44 119,19 141,19"
+                        fill="#f43f5e"
+                        stroke="#fef08a"
+                        strokeWidth="2"
+                        strokeLinejoin="round"
+                      />
+                    </g>
+                  </svg>
                 </div>
-                <span className="font-mono-tabular text-xl sm:text-2xl font-black text-cyan-300 tracking-wider">
-                  {formatRespiteReadout(respiteBalance)} RESPITE
+              )}
+            </div>
+
+            {/* RIGHT STATUS PANEL */}
+            <aside className="col-span-12 lg:col-span-2 flex lg:flex-col justify-between gap-2.5 rounded-2xl bg-white/[0.05] border border-white/10 p-3">
+              <div className="flex-1 lg:flex-initial bg-white/[0.04] border border-white/10 rounded-xl p-2.5">
+                <h4 className="text-[9.5px] font-bold tracking-widest text-amber-300 uppercase text-center border-b border-white/10 pb-1 mb-1.5 font-cinzel">
+                  Recent Winners
+                </h4>
+                <div className="text-[11px] space-y-1 font-mono-tabular text-slate-300 leading-tight">
+                  {recentWinners.map((w, idx) => (
+                    <div key={`${w.initials}-${idx}`} className="flex justify-between gap-1">
+                      <span className={w.initials === 'YOU' ? 'text-amber-300 font-bold' : ''}>
+                        {w.initials}
+                      </span>
+                      <span className="text-emerald-400 font-bold">+{w.amountRespite} R</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex-1 lg:flex-initial text-center bg-emerald-400/10 border border-emerald-400/25 rounded-xl p-2.5 flex flex-col items-center justify-center">
+                <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-widest font-cinzel">
+                  Free Spins
+                </span>
+                <div className="flex items-center gap-1 my-0.5">
+                  <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
+                  <span className="text-2xl sm:text-3xl font-black text-white font-cinzel">
+                    {freeSpinsLeft}
+                  </span>
+                </div>
+                <span className="text-[9px] text-slate-300 font-bold tracking-wider uppercase">
+                  Remaining
                 </span>
               </div>
 
-              <div className="flex items-center justify-between px-4 py-2 slot-led-box rounded-xl">
-                <span className="font-cinzel text-xs sm:text-sm font-bold text-emerald-400 tracking-widest uppercase">
-                  WIN:
-                </span>
-                <span className="font-mono-tabular text-xl sm:text-2xl font-black text-emerald-300 tracking-wider">
-                  {formatRespiteReadout(lastWinRespite)} RESPITE
-                </span>
+              <div className="flex-1 lg:flex-initial bg-white/[0.04] border border-white/10 rounded-xl px-2.5 py-2 text-center text-[10.5px] font-bold text-amber-200 font-cinzel flex items-center justify-center leading-tight">
+                {statusMessage}
               </div>
-            </section>
-          </div>
-        </div>
+            </aside>
+          </section>
 
-        {/* =====================================================================
-            3D MECHANICAL RECESSED HINGE SEAM
-            ===================================================================== */}
-        <div className="slot-hinge-neck-3d" aria-hidden="true" />
-
-        {/* =====================================================================
-            LOWER 3D FORWARD-JUTTING TRAPEZOID CONSOLE DECK + 3D FRONT LIP
-            ===================================================================== */}
-        <div className="w-[99%] sm:w-[102%] flex flex-col items-center">
-          <footer className="w-full slot-tactile-console-3d px-3.5 py-3 sm:px-6 sm:py-3.5">
-            <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-2.5 sm:gap-3">
-              {/* Left Auxiliary Controls in Recessed 3D Sockets: TURBO & AUTO SPIN */}
+          {/* READOUTS: CREDITS & WIN */}
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="flex items-center justify-between gap-2 px-4 py-2.5 rounded-2xl bg-white/[0.05] border border-white/10">
               <div className="flex items-center gap-2">
-                <div className="slot-btn-socket-3d">
+                <span className="font-cinzel text-xs sm:text-sm font-bold text-amber-300 tracking-widest uppercase">
+                  CREDITS:
+                </span>
+                {onQuickTopUpRespite && lulBalance >= 50 && (
                   <button
                     type="button"
-                    data-active={isTurbo}
-                    onClick={() => {
-                      playCabinetClick();
-                      setIsTurbo((prev) => !prev);
-                    }}
-                    className="slot-tactile-btn slot-btn-steel px-3.5 py-2.5 rounded-xl text-xs font-black font-cinzel text-cyan-100 tracking-wider flex items-center gap-1.5 whitespace-nowrap"
+                    onClick={onQuickTopUpRespite}
+                    title="Exchange 50 LUL for +5 RESPITE Slot Credits"
+                    className="px-3 py-1 rounded-full bg-amber-300 hover:bg-amber-200 text-slate-950 text-[10px] font-bold font-cinzel whitespace-nowrap cursor-pointer transition-colors"
                   >
-                    <FastForward className="w-3.5 h-3.5 text-cyan-300 shrink-0" />
-                    <span>Turbo</span>
+                    +5 R (50 LUL)
                   </button>
-                </div>
+                )}
+              </div>
+              <span className="font-mono-tabular text-xl sm:text-2xl font-extrabold text-white tracking-tight">
+                {formatRespiteReadout(respiteBalance)} RESPITE
+              </span>
+            </div>
 
-                <div className="slot-btn-socket-3d">
-                  <button
-                    type="button"
-                    data-active={isAutoSpin}
-                    onClick={() => {
-                      playCabinetClick();
-                      const next = !isAutoSpin;
-                      setIsAutoSpin(next);
-                      if (next && !isSpinning) {
-                        executeSpin();
-                      }
-                    }}
-                    className="slot-tactile-btn slot-btn-gold px-3.5 py-2.5 rounded-xl text-xs font-black font-cinzel text-amber-950 tracking-wider flex items-center gap-1.5 whitespace-nowrap"
-                  >
-                    <RotateCw
-                      className={`w-3.5 h-3.5 text-amber-950 shrink-0 ${isAutoSpin ? 'animate-spin' : ''}`}
-                    />
-                    <span>{isAutoSpin ? 'Stop Auto' : 'Auto Spin'}</span>
-                  </button>
-                </div>
+            <div className="flex items-center justify-between px-4 py-2.5 rounded-2xl bg-white/[0.05] border border-white/10">
+              <span className="font-cinzel text-xs sm:text-sm font-bold text-emerald-400 tracking-widest uppercase">
+                WIN:
+              </span>
+              <span className="font-mono-tabular text-xl sm:text-2xl font-extrabold text-emerald-400 tracking-tight">
+                {formatRespiteReadout(lastWinRespite)} RESPITE
+              </span>
+            </div>
+          </section>
+
+          {/* BOTTOM CONTROL DECK */}
+          <footer className="w-full rounded-2xl bg-white/[0.05] border border-white/10 px-4 py-3">
+            <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-2.5 sm:gap-3">
+              {/* Left Auxiliary Controls: TURBO & AUTO SPIN */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  data-active={isTurbo}
+                  onClick={() => {
+                    playCabinetClick();
+                    setIsTurbo((prev) => !prev);
+                  }}
+                  className={`px-4 py-2.5 rounded-full border text-xs font-bold font-cinzel tracking-wider flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
+                    isTurbo
+                      ? 'bg-amber-300 border-amber-300 text-slate-950'
+                      : 'bg-white/[0.07] hover:bg-white/[0.14] border-white/15 text-slate-200'
+                  }`}
+                >
+                  <FastForward className="w-3.5 h-3.5 shrink-0" />
+                  <span>Turbo</span>
+                </button>
+
+                <button
+                  type="button"
+                  data-active={isAutoSpin}
+                  onClick={() => {
+                    playCabinetClick();
+                    const next = !isAutoSpin;
+                    setIsAutoSpin(next);
+                    if (next && !isSpinning) {
+                      executeSpin();
+                    }
+                  }}
+                  className={`px-4 py-2.5 rounded-full border text-xs font-bold font-cinzel tracking-wider flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
+                    isAutoSpin
+                      ? 'bg-emerald-400 border-emerald-400 text-slate-950'
+                      : 'bg-amber-300/15 hover:bg-amber-300/25 border-amber-300/35 text-amber-200'
+                  }`}
+                >
+                  <RotateCw
+                    className={`w-3.5 h-3.5 shrink-0 ${isAutoSpin ? 'animate-spin' : ''}`}
+                  />
+                  <span>{isAutoSpin ? 'Stop Auto' : 'Auto Spin'}</span>
+                </button>
               </div>
 
-              {/* Center Recessed Bet Rocker Well */}
-              <div className="flex items-center bg-[#080c14] border-2 border-cyan-400/75 rounded-2xl p-1.5 shadow-[inset_0_4px_10px_rgba(0,0,0,0.95),0_0_16px_rgba(6,182,212,0.28)] gap-2">
+              {/* Center Bet Rocker */}
+              <div className="flex items-center bg-white/[0.04] border border-white/15 rounded-full px-2 py-1 gap-2">
                 <button
                   type="button"
                   disabled={isSpinning || betIndex === 0}
@@ -2213,19 +2179,19 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                     setBetIndex((prev) => Math.max(0, prev - 1));
                   }}
                   aria-label="Decrease Bet"
-                  className="slot-tactile-btn w-9 h-9 rounded-lg slot-btn-steel text-cyan-200 flex items-center justify-center disabled:opacity-45"
+                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center disabled:opacity-35 cursor-pointer transition-colors"
                 >
-                  <Minus className="w-4 h-4 stroke-[3]" />
+                  <Minus className="w-4 h-4 stroke-[2.5]" />
                 </button>
 
                 <div className="px-3 text-center min-w-[138px]">
-                  <div className="text-[9px] uppercase tracking-widest text-cyan-400 font-bold font-cinzel">
+                  <div className="text-[9px] uppercase tracking-widest text-amber-300 font-bold font-cinzel">
                     TOTAL BET
                   </div>
-                  <div className="font-mono-tabular text-base sm:text-xl font-extrabold text-slate-100 leading-tight whitespace-nowrap">
+                  <div className="font-mono-tabular text-base sm:text-lg font-extrabold text-white leading-tight whitespace-nowrap">
                     {currentBet} RESPITE
                   </div>
-                  <div className="text-[9px] text-fuchsia-300 font-semibold tracking-wider uppercase whitespace-nowrap">
+                  <div className="text-[9px] text-slate-400 font-semibold tracking-wider uppercase whitespace-nowrap">
                     {modeSubtitle}
                   </div>
                 </div>
@@ -2238,77 +2204,63 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                     setBetIndex((prev) => Math.min(RESPITE_SLOT_BET_TIERS.length - 1, prev + 1));
                   }}
                   aria-label="Increase Bet"
-                  className="slot-tactile-btn w-9 h-9 rounded-lg slot-btn-steel text-cyan-200 flex items-center justify-center disabled:opacity-45"
+                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center disabled:opacity-35 cursor-pointer transition-colors"
                 >
-                  <Plus className="w-4 h-4 stroke-[3]" />
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
                 </button>
               </div>
 
-              {/* Max Bet Button in Recessed 3D Socket */}
-              <div className="slot-btn-socket-3d">
-                <button
-                  type="button"
-                  disabled={isSpinning}
-                  onClick={() => {
-                    playCabinetClick();
-                    let bestIdx = 0;
-                    for (let i = 0; i < RESPITE_SLOT_BET_TIERS.length; i++) {
-                      if (respiteBalance >= RESPITE_SLOT_BET_TIERS[i]) {
-                        bestIdx = i;
-                      }
+              {/* Max Bet Pill */}
+              <button
+                type="button"
+                disabled={isSpinning}
+                onClick={() => {
+                  playCabinetClick();
+                  let bestIdx = 0;
+                  for (let i = 0; i < RESPITE_SLOT_BET_TIERS.length; i++) {
+                    if (respiteBalance >= RESPITE_SLOT_BET_TIERS[i]) {
+                      bestIdx = i;
                     }
-                    setBetIndex(bestIdx);
-                  }}
-                  className="slot-tactile-btn slot-btn-gold px-3.5 py-2.5 rounded-xl text-xs font-black font-cinzel text-amber-950 tracking-wider whitespace-nowrap disabled:opacity-50"
-                >
-                  Max Bet
-                </button>
-              </div>
+                  }
+                  setBetIndex(bestIdx);
+                }}
+                className="px-4 py-2.5 rounded-full bg-amber-300/15 hover:bg-amber-300/25 border border-amber-300/35 text-xs font-bold font-cinzel text-amber-200 tracking-wider whitespace-nowrap disabled:opacity-45 cursor-pointer transition-colors"
+              >
+                Max Bet
+              </button>
 
-              {/* Giant 3D Extruded Emerald Dome SPIN Button in Recessed Socket */}
-              <div className="slot-btn-socket-3d flex-1 lg:flex-initial ml-auto">
-                <button
-                  type="button"
-                  disabled={isSpinning}
-                  data-casino-spin-slots-btn="true"
-                  onClick={executeSpin}
-                  className="w-full slot-tactile-btn slot-btn-spin-emerald min-w-[170px] sm:min-w-[215px] h-13 sm:h-14 rounded-xl flex items-center justify-center gap-2.5 text-white font-cinzel font-black text-xl sm:text-2xl tracking-widest whitespace-nowrap"
-                >
-                  <span>{isSpinning ? 'SPINNING' : freeSpinsLeft > 0 ? 'FREE SPIN' : 'SPIN'}</span>
-                  <Play className="w-5 h-5 text-yellow-200 fill-yellow-200 shrink-0" />
-                </button>
-              </div>
+              {/* Primary Emerald Pill SPIN Button */}
+              <button
+                type="button"
+                disabled={isSpinning}
+                data-casino-spin-slots-btn="true"
+                onClick={executeSpin}
+                className="flex-1 lg:flex-initial ml-auto min-w-[175px] sm:min-w-[215px] h-12 rounded-full bg-emerald-400 hover:bg-emerald-300 disabled:opacity-45 px-6 flex items-center justify-center gap-2 text-slate-950 font-cinzel font-black text-base sm:text-lg tracking-widest whitespace-nowrap shadow-md active:scale-[0.98] transition-all cursor-pointer"
+              >
+                <span>{isSpinning ? 'SPINNING' : freeSpinsLeft > 0 ? 'FREE SPIN' : 'SPIN'}</span>
+                <Play className="w-4 h-4 fill-current shrink-0" />
+              </button>
             </div>
           </footer>
-
-          {/* Physical 18px 3D Extruded Front Metallic Bumper Lip with Embedded Neon Cyan Vent */}
-          <div className="w-full slot-console-front-lip-3d">
-            <div className="slot-console-vent" />
-          </div>
-
-          {/* Grounded 3D Floor Shadow Beneath the Cabinet */}
-          <div className="slot-floor-shadow-3d" aria-hidden="true" />
         </div>
 
-        {/* =====================================================================
-            PAYTABLE & BANK RULES OVERLAY MODAL
-            ===================================================================== */}
+        {/* PAYTABLE & BANK RULES OVERLAY MODAL */}
         {isPaytableOpen && (
           <div
             role="dialog"
             aria-modal="true"
             aria-label={`${variantMeta.title} Paytable`}
-            className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 p-4"
+            className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/65 backdrop-blur-sm p-4"
             onClick={() => setIsPaytableOpen(false)}
           >
             <div
-              className="w-full max-w-2xl bg-gradient-to-b from-[#1a202c] via-[#10141d] to-[#07090e] border-2 border-cyan-400 rounded-3xl p-5 sm:p-6 shadow-[0_0_50px_rgba(6,182,212,0.45)] text-slate-100"
+              className="w-full max-w-2xl rounded-[26px] bg-[#0e121b]/95 backdrop-blur-2xl border border-white/15 p-5 sm:p-6 shadow-[0_24px_70px_rgba(0,0,0,0.62)] text-white"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between border-b border-cyan-500/35 pb-3 mb-4">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3.5 mb-4">
                 <div className="flex items-center gap-2.5">
-                  <Crown className="w-6 h-6 text-fuchsia-400" />
-                  <h3 className="font-cinzel text-lg sm:text-xl font-bold text-cyan-300">
+                  <Crown className="w-5 h-5 text-amber-300" />
+                  <h3 className="font-cinzel text-lg sm:text-xl font-bold text-amber-300">
                     {variantMeta.title} · Paytable &amp; Rules
                   </h3>
                 </div>
@@ -2316,9 +2268,9 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                   type="button"
                   onClick={() => setIsPaytableOpen(false)}
                   aria-label="Close Paytable"
-                  className="p-1.5 rounded-lg text-cyan-300 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
@@ -2327,23 +2279,23 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                   {ROYALE_SYMBOLS.slice(0, 8).map((sym) => (
                     <div
                       key={sym.id}
-                      className="bg-slate-900/90 border border-slate-700/70 rounded-xl p-2.5 flex flex-col items-center text-center"
+                      className="bg-white/[0.05] border border-white/10 rounded-2xl p-2.5 flex flex-col items-center text-center"
                     >
                       <GrandRoyaleSymbolTile symbolId={sym.id} compact />
-                      <span className="text-[10.5px] text-cyan-200 font-mono-tabular mt-1">
+                      <span className="text-[10.5px] text-amber-200 font-mono-tabular mt-1">
                         3x Line = {sym.payout3x}x
                       </span>
                     </div>
                   ))}
-                  <div className="col-span-1 sm:col-span-2 bg-slate-900/90 border border-amber-400/50 rounded-xl p-2.5 flex flex-col items-center justify-center text-center">
+                  <div className="col-span-1 sm:col-span-2 bg-white/[0.05] border border-amber-300/35 rounded-2xl p-2.5 flex flex-col items-center justify-center text-center">
                     <GrandRoyaleSymbolTile symbolId="WILD" compact />
-                    <span className="text-[10.5px] text-yellow-200 font-mono-tabular mt-1">
+                    <span className="text-[10.5px] text-amber-200 font-mono-tabular mt-1">
                       Substitutes All Non-Scatter Symbols
                     </span>
                   </div>
-                  <div className="col-span-1 sm:col-span-2 bg-slate-900/90 border border-fuchsia-400/50 rounded-xl p-2.5 flex flex-col items-center justify-center text-center">
+                  <div className="col-span-1 sm:col-span-2 bg-white/[0.05] border border-emerald-400/35 rounded-2xl p-2.5 flex flex-col items-center justify-center text-center">
                     <GrandRoyaleSymbolTile symbolId="SCATTER" compact />
-                    <span className="text-[10.5px] text-fuchsia-200 font-mono-tabular mt-1">
+                    <span className="text-[10.5px] text-emerald-300 font-mono-tabular mt-1">
                       2+ Scatters = +2 to +5 Free Spins (5X Boost)
                     </span>
                   </div>
@@ -2352,19 +2304,19 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
 
               {variant === 'lucky_draw' && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs mb-4">
-                  <div className="bg-slate-900/90 border border-fuchsia-400/50 rounded-xl p-3 text-center">
-                    <div className="font-cinzel font-bold text-fuchsia-300">x777 Vault</div>
-                    <div className="font-mono-tabular text-cyan-200 mt-1">
+                  <div className="bg-white/[0.05] border border-amber-300/35 rounded-2xl p-3 text-center">
+                    <div className="font-cinzel font-bold text-amber-300">x777 Vault</div>
+                    <div className="font-mono-tabular text-slate-200 mt-1">
                       100% Charge = 777x Bet
                     </div>
                   </div>
-                  <div className="bg-slate-900/90 border border-slate-700/70 rounded-xl p-3 text-center">
-                    <div className="font-cinzel font-bold text-yellow-300">Super 7 &amp; Gems</div>
-                    <div className="font-mono-tabular text-cyan-200 mt-1">Up to 10x Instant Win</div>
+                  <div className="bg-white/[0.05] border border-white/10 rounded-2xl p-3 text-center">
+                    <div className="font-cinzel font-bold text-amber-200">Super 7 &amp; Gems</div>
+                    <div className="font-mono-tabular text-slate-200 mt-1">Up to 10x Instant Win</div>
                   </div>
-                  <div className="bg-slate-900/90 border border-slate-700/70 rounded-xl p-3 text-center">
+                  <div className="bg-white/[0.05] border border-emerald-400/35 rounded-2xl p-3 text-center">
                     <div className="font-cinzel font-bold text-emerald-300">Free Re-Spin</div>
-                    <div className="font-mono-tabular text-cyan-200 mt-1">+1 Free Spin &amp; Charge</div>
+                    <div className="font-mono-tabular text-slate-200 mt-1">+1 Free Spin &amp; Charge</div>
                   </div>
                 </div>
               )}
@@ -2376,10 +2328,10 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                     return (
                       <div
                         key={s.id}
-                        className="bg-slate-900/90 border border-emerald-400/40 rounded-xl p-3 text-center"
+                        className="bg-white/[0.05] border border-emerald-400/30 rounded-2xl p-3 text-center"
                       >
                         <div className="font-cinzel font-bold text-emerald-300">Wedge #{idx + 1}</div>
-                        <div className="font-mono-tabular text-yellow-300 text-sm font-black mt-1">
+                        <div className="font-mono-tabular text-amber-300 text-sm font-black mt-1">
                           {mults[idx]}
                         </div>
                       </div>
@@ -2388,20 +2340,20 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                 </div>
               )}
 
-              <div className="bg-black/65 border border-slate-700/60 rounded-xl p-3 text-xs leading-relaxed text-slate-300 space-y-1">
+              <div className="bg-white/[0.05] border border-white/10 rounded-2xl p-3.5 text-xs leading-relaxed text-slate-300 space-y-1">
                 <p>
-                  <strong className="text-cyan-300 font-cinzel">RESPITE Settlement:</strong> All bets
+                  <strong className="text-amber-300 font-cinzel">RESPITE Settlement:</strong> All bets
                   and winnings settle directly against your in-game{' '}
-                  <span className="text-cyan-200 font-semibold">RESPITE</span> balance.
+                  <span className="text-emerald-300 font-semibold">RESPITE</span> balance.
                 </p>
                 <p>
-                  <strong className="text-cyan-300 font-cinzel">Active VIP Multiplier:</strong> Base
-                  spins apply a <span className="text-cyan-200 font-semibold">3X</span> multiplier;
-                  Free Spins surge to <span className="text-fuchsia-300 font-semibold">5X</span>!
+                  <strong className="text-amber-300 font-cinzel">Active VIP Multiplier:</strong> Base
+                  spins apply a <span className="text-amber-200 font-semibold">3X</span> multiplier;
+                  Free Spins surge to <span className="text-emerald-300 font-semibold">5X</span>!
                 </p>
                 <p>
-                  <strong className="text-cyan-300 font-cinzel">Quick Spin:</strong> Press{' '}
-                  <kbd className="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-600 font-mono-tabular text-cyan-300">
+                  <strong className="text-amber-300 font-cinzel">Quick Spin:</strong> Press{' '}
+                  <kbd className="px-2 py-0.5 bg-white/10 rounded-md border border-white/15 font-mono-tabular text-amber-300">
                     SPACEBAR
                   </kbd>{' '}
                   anytime to spin.

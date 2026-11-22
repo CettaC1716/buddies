@@ -360,23 +360,20 @@ const CafeReelSymbolTile: React.FC<{
 
   return (
     <div
-      className={`relative w-full max-w-[196px] h-[88px] rounded-xl border-[2.5px] flex flex-col items-center justify-center pb-2.5 transition-transform duration-150 ${
+      className={`relative w-full max-w-[196px] h-[88px] rounded-2xl border flex flex-col items-center justify-center pb-2.5 transition-all duration-150 ${
         highlighted
-          ? 'bg-gradient-to-b from-[#fef08a] via-[#fbbf24] to-[#f59e0b] border-[#fffbeb] ring-3 ring-[#b8ff3c] scale-[1.04] shadow-[0_4px_0_#3b1806]'
+          ? 'bg-gradient-to-b from-amber-50 via-amber-100 to-amber-200/90 border-amber-400 ring-2 ring-emerald-400/70 scale-[1.03] shadow-md'
           : isCenterRow
-            ? 'bg-gradient-to-b from-[#fffdf7] via-[#fef3c7] to-[#fde68a] border-[#78350f] shadow-[0_3px_0_#451a03]'
-            : 'bg-gradient-to-b from-[#fdf6e7]/90 to-[#f5ead4]/90 border-[#cbb894] opacity-80'
+            ? 'bg-white border-amber-300/80 shadow-sm'
+            : 'bg-stone-50/85 border-stone-200/70 opacity-75'
       }`}
     >
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-1 rounded-lg border border-[#78350f]/15"
-      />
-
       {showCornerBadge && (
         <div
-          className={`absolute -top-2 -right-2 z-10 px-1.5 py-0.5 rounded-lg border-2 border-[#14161d] font-mono-tabular font-black text-[9.5px] uppercase shadow-[0_2px_0_#14161d] whitespace-nowrap ${
-            highlighted ? 'bg-[#b8ff3c] text-[#14161d]' : 'bg-[#1e212b] text-[#fec83e]'
+          className={`absolute -top-2 -right-1.5 z-10 px-2 py-0.5 rounded-full font-mono-tabular font-bold text-[9.5px] uppercase shadow-sm whitespace-nowrap ${
+            highlighted
+              ? 'bg-emerald-500 text-white'
+              : 'bg-amber-800 text-amber-100'
           }`}
         >
           {highlighted && wonMultiplier ? `${wonMultiplier}X` : '50X'}
@@ -386,15 +383,15 @@ const CafeReelSymbolTile: React.FC<{
       <SlotSymbolArtwork id={symbolId} sizeClass="w-12 h-12 sm:w-13 sm:h-13" />
 
       <div
-        className={`absolute -bottom-2 inset-x-3 py-0.5 px-1.5 rounded-full border-2 text-center shadow-[0_2px_0_#3b1806] ${
+        className={`absolute -bottom-2 inset-x-4 py-0.5 px-2 rounded-full text-center shadow-xs ${
           highlighted
-            ? 'bg-gradient-to-b from-[#d9f99d] to-[#65a30d] border-white text-[#14161d]'
+            ? 'bg-emerald-600 text-white'
             : isCenterRow
-              ? 'bg-gradient-to-b from-[#7c2d12] to-[#3b1806] border-[#fef3c7] text-[#fffbeb]'
-              : 'bg-[#573614] border-[#efe4ce] text-[#fef3c7]'
+              ? 'bg-amber-900/90 text-amber-50'
+              : 'bg-stone-200/90 text-stone-700'
         }`}
       >
-        <span className="block text-[9px] font-black uppercase tracking-wider truncate">
+        <span className="block text-[9px] font-bold uppercase tracking-wider truncate">
           {spec?.label ?? symbolId}
         </span>
       </div>
@@ -987,7 +984,7 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
       aria-modal="true"
       aria-label="NEO-STRIKE SLOTS"
       data-cafe-slot-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/70 overflow-y-auto pointer-events-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/45 backdrop-blur-sm overflow-y-auto pointer-events-auto"
     >
       {/* Full-Viewport Golden LUL Coin Particle Burst Canvas */}
       <canvas
@@ -996,402 +993,376 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
         aria-hidden="true"
       />
 
-      <div className="w-full max-w-[1120px] mx-auto my-auto cafe-slot-perspective-stage flex flex-col items-center relative text-[#14161d] px-1 sm:px-3">
-        {/* =====================================================================
-            UPPER 3D BEVELED CAFE CHASSIS & WARM CREAM RECESSED CABINET SCREEN
-            ===================================================================== */}
-        <div className="w-full cafe-slot-cabinet-outer-3d">
-          <div className="w-full cafe-slot-cabinet-screen p-2.5 sm:p-3.5">
-            {/* Tactile 3D Red Close Button Pinned to Top-Right Bezel */}
+      <div className="w-full max-w-[1060px] mx-auto my-auto rounded-[26px] bg-[#f6f4f0]/96 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] text-slate-900 overflow-hidden relative">
+        {/* TOP CAFE ARCADE HEADER & JACKPOT MARQUEE */}
+        <header className="relative px-4 sm:px-6 py-4 bg-gradient-to-r from-amber-50/90 via-[#f6f4f0] to-stone-100/80 border-b border-stone-200/80">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-200/80 text-[10px] font-bold uppercase tracking-wide shrink-0">
+                LV {levelProgress.level}
+              </span>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Coffee className="w-4 h-4 text-amber-700 shrink-0" aria-hidden="true" />
+                <h2 className="text-sm sm:text-base font-extrabold uppercase tracking-tight text-slate-900 truncate">
+                  NEO-STRIKE SLOTS
+                </h2>
+              </div>
+              <span className="hidden sm:inline-block text-xs font-medium text-stone-500">
+                · Glasshouse Cafe
+              </span>
+            </div>
+
             <button
               type="button"
               data-cafe-slot-close-btn="true"
               onClick={handleClose}
               aria-label="Close Slot Machine"
-              className="slot-tactile-btn absolute top-2.5 right-2.5 z-50 w-9 h-9 rounded-xl bg-gradient-to-b from-[#ff554a] to-[#dc2626] border-[2.5px] border-[#14161d] shadow-[0_4px_0_#14161d] flex items-center justify-center text-white hover:brightness-105"
+              className="w-8 h-8 rounded-full bg-white hover:bg-stone-100 text-slate-600 hover:text-slate-900 border border-stone-200/80 shadow-xs flex items-center justify-center cursor-pointer transition-colors shrink-0"
             >
-              <X className="w-4 h-4 stroke-[3]" aria-hidden="true" />
+              <X className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
             </button>
+          </div>
 
-            {/* TOP CHASING 19-BULB WARM ESPRESSO & AMBER JACKPOT MARQUEE */}
-            <header className="relative mb-2.5 cafe-slot-marquee-frame rounded-2xl p-2 sm:p-2.5 sm:pr-12">
-              <div
-                className="flex justify-between items-center px-3 sm:px-6 mb-2"
-                aria-hidden="true"
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-center">
+            {/* DIAMOND 20X TIER */}
+            <div className="lg:col-span-3 flex items-center justify-between lg:justify-center gap-2 bg-white border border-stone-200/80 shadow-sm px-4 py-2 rounded-2xl">
+              <span className="text-[11px] font-bold text-amber-800 tracking-wider uppercase whitespace-nowrap">
+                DIAMOND 20X:
+              </span>
+              <span className="font-mono-tabular text-base font-extrabold text-slate-900 whitespace-nowrap">
+                {selectedBet * 20} LUL
+              </span>
+            </div>
+
+            {/* 777 GRAND JACKPOT CENTERPIECE */}
+            <div className="lg:col-span-6 text-center px-4 py-2 rounded-2xl bg-gradient-to-r from-amber-100/80 via-amber-50 to-amber-100/80 border border-amber-300/80 shadow-sm">
+              <div className="flex items-center justify-center gap-1.5">
+                <Trophy className="w-3.5 h-3.5 text-amber-600 shrink-0" aria-hidden="true" />
+                <span className="text-[10.5px] font-extrabold tracking-widest text-amber-900 uppercase whitespace-nowrap">
+                  777 JACKPOT PAYS 50X
+                </span>
+                <Trophy className="w-3.5 h-3.5 text-amber-600 shrink-0" aria-hidden="true" />
+              </div>
+
+              <svg
+                viewBox="0 0 420 38"
+                className="w-full max-w-[340px] h-7 sm:h-8 mx-auto overflow-visible"
+                role="img"
+                aria-label={`777 Jackpot ${selectedBet * 50} LUL`}
               >
-                {Array.from({ length: 19 }).map((_, idx) => (
-                  <div key={idx} className="cafe-slot-lamp-3d" />
-                ))}
-              </div>
-
-              <div className="flex flex-col lg:flex-row items-center justify-between gap-2 px-1 sm:px-2">
-                {/* DIAMOND 20X TIER */}
-                <div className="flex items-center gap-2 bg-gradient-to-b from-[#451a03] to-[#290f02] border-2 border-[#fbbf24] px-3.5 py-1.5 rounded-xl shadow-[0_3px_0_#1e0a01] w-full lg:w-auto justify-center">
-                  <span className="text-xs font-black text-[#fde68a] tracking-wider uppercase whitespace-nowrap">
-                    DIAMOND 20X:
-                  </span>
-                  <span className="font-mono-tabular text-base sm:text-lg font-black text-[#fffbeb] whitespace-nowrap">
-                    {selectedBet * 20} LUL
-                  </span>
-                </div>
-
-                {/* 777 GRAND JACKPOT CENTERPIECE */}
-                <div className="text-center px-4 sm:px-6 py-1.5 rounded-2xl border-[2.5px] border-[#fef3c7] bg-gradient-to-b from-[#9a3412] via-[#7c2d12] to-[#3b1806] shadow-[0_4px_0_#240d02,inset_0_2px_3px_rgba(255,251,235,0.35)] flex-1 max-w-xl relative">
-                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 flex items-center justify-center">
-                    <div className="px-3 py-0.5 bg-[#14161d] rounded-full border-2 border-[#fef3c7] shadow-[0_2px_0_#000] flex items-center gap-1.5 whitespace-nowrap">
-                      <span className="px-1.5 py-0.2 bg-[#b8ff3c] text-[#14161d] rounded text-[9px] font-black uppercase">
-                        LV {levelProgress.level}
-                      </span>
-                      <span className="text-[10px] font-black tracking-wider text-white uppercase">
-                        NEO-STRIKE SLOTS
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-center gap-1.5 pt-1">
-                    <Trophy className="w-3.5 h-3.5 text-[#fde047] shrink-0" aria-hidden="true" />
-                    <span className="text-[11px] sm:text-xs font-black tracking-widest text-[#fef08a] uppercase whitespace-nowrap">
-                      777 JACKPOT PAYS 50X
-                    </span>
-                    <Trophy className="w-3.5 h-3.5 text-[#fde047] shrink-0" aria-hidden="true" />
-                  </div>
-
-                  <svg
-                    viewBox="0 0 420 42"
-                    className="w-full max-w-[380px] h-8 sm:h-10 mx-auto overflow-visible"
-                    role="img"
-                    aria-label={`777 Jackpot ${selectedBet * 50} LUL`}
-                  >
-                    <defs>
-                      <linearGradient id={`${jackpotGradId}-cafe-jp`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#fffbeb" />
-                        <stop offset="45%" stopColor="#fde047" />
-                        <stop offset="100%" stopColor="#f59e0b" />
-                      </linearGradient>
-                    </defs>
-                    <text
-                      x="212"
-                      y="34"
-                      textAnchor="middle"
-                      className="font-mono-tabular"
-                      fontWeight="900"
-                      fontSize="31"
-                      fill="#240d02"
-                    >
-                      {selectedBet * 50} LUL
-                    </text>
-                    <text
-                      x="210"
-                      y="32"
-                      textAnchor="middle"
-                      className="font-mono-tabular"
-                      fontWeight="900"
-                      fontSize="31"
-                      fill={`url(#${jackpotGradId}-cafe-jp)`}
-                      stroke="#451a03"
-                      strokeWidth="0.9"
-                    >
-                      {selectedBet * 50} LUL
-                    </text>
-                  </svg>
-                </div>
-
-                {/* BLITZ STAR 12X TIER */}
-                <div className="flex items-center gap-2 bg-gradient-to-b from-[#1a3a18] to-[#0f240e] border-2 border-[#b8ff3c] px-3.5 py-1.5 rounded-xl shadow-[0_3px_0_#091708] w-full lg:w-auto justify-center">
-                  <span className="text-xs font-black text-[#bef264] tracking-wider uppercase whitespace-nowrap">
-                    STAR 12X:
-                  </span>
-                  <span className="font-mono-tabular text-base sm:text-lg font-black text-[#f7fee7] whitespace-nowrap">
-                    {selectedBet * 12} LUL
-                  </span>
-                </div>
-              </div>
-            </header>
-
-            {/* CENTER INTERACTIVE 3-COLUMN CABINET STAGE */}
-            <section className="grid grid-cols-12 gap-2.5 sm:gap-3 items-stretch relative">
-              {/* LEFT STATUS & UTILITY PANEL */}
-              <aside className="col-span-12 lg:col-span-2 flex lg:flex-col justify-between gap-2 cafe-slot-wood-frame rounded-2xl p-2.5">
-                <div className="flex-1 lg:flex-initial text-center bg-gradient-to-b from-[#fffdf7] to-[#fde68a] border-[2.5px] border-[#3b1806] rounded-xl p-2.5 shadow-[0_3px_0_#3b1806] flex flex-col items-center justify-center">
-                  <span className="text-[10px] font-black text-[#78350f] uppercase tracking-wider whitespace-nowrap">
-                    {isWinningOutcome && lastResult ? 'Hit Multiplier' : 'Top Jackpot'}
-                  </span>
-                  <div className="font-mono-tabular text-2xl sm:text-3xl font-black text-[#3b1806] my-0.5 tracking-tight">
-                    {isWinningOutcome && lastResult ? `${lastResult.multiplier}X` : '50X'}
-                  </div>
-                  <span className="text-[9.5px] text-[#4d7c0f] font-black tracking-wider uppercase whitespace-nowrap">
-                    Center Payline
-                  </span>
-                </div>
-
-                <div className="cafe-slot-btn-socket-3d flex-1 lg:flex-initial">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playCabinetClick();
-                      setIsPaytableOpen(true);
-                    }}
-                    className="w-full slot-tactile-btn cafe-slot-btn-cream rounded-xl py-2 px-2.5 flex items-center justify-center gap-1.5 text-[11px] font-black text-[#3b1806] uppercase tracking-wider whitespace-nowrap"
-                  >
-                    <BookOpen className="w-3.5 h-3.5 text-[#9a3412] shrink-0" aria-hidden="true" />
-                    <span>Paytable</span>
-                  </button>
-                </div>
-
-                <div className="cafe-slot-btn-socket-3d flex-1 lg:flex-initial">
-                  <button
-                    type="button"
-                    data-active={soundEnabled}
-                    onClick={() => {
-                      const next = !soundEnabled;
-                      setSoundEnabled(next);
-                      if (next) soundEngine.playUiClick();
-                    }}
-                    className="w-full slot-tactile-btn cafe-slot-btn-cream rounded-xl py-2 px-2.5 flex items-center justify-center gap-1.5 text-[11px] font-black uppercase tracking-wider whitespace-nowrap text-[#3b1806]"
-                  >
-                    {soundEnabled ? (
-                      <Volume2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                    ) : (
-                      <VolumeX className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                    )}
-                    <span>{soundEnabled ? 'Sound: On' : 'Sound: Off'}</span>
-                  </button>
-                </div>
-
-                <div className="hidden lg:flex flex-col items-center justify-center text-[#fef3c7] pt-1.5 border-t border-[#fef3c7]/25 text-center">
-                  <Coffee className="w-4 h-4 text-[#fde047]" aria-hidden="true" />
-                  <span className="text-[9px] font-black tracking-wider text-[#ffedd5] mt-1 uppercase">
-                    Glasshouse Cafe
-                  </span>
-                </div>
-              </aside>
-
-              {/* CENTER 3D CURVED CYLINDRICAL 3x3 CREAM REEL VIEWPORT */}
-              <div className="col-span-12 lg:col-span-8 relative rounded-2xl overflow-hidden cafe-slot-reels-viewport h-[324px]">
-                <canvas
-                  ref={paylineCanvasRef}
-                  className="pointer-events-none absolute inset-0 w-full h-full z-30"
-                />
-
-                {/* Center Payline Illuminated Guide Bar */}
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-[108px] border-y-[2.5px] border-[#d97706]/80 bg-gradient-to-r from-[#fde68a]/40 via-[#fffbeb]/60 to-[#fde68a]/40 z-10 flex items-center justify-between px-1"
+                <defs>
+                  <linearGradient id={`${jackpotGradId}-cafe-jp`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#92400e" />
+                    <stop offset="55%" stopColor="#b45309" />
+                    <stop offset="100%" stopColor="#78350f" />
+                  </linearGradient>
+                </defs>
+                <text
+                  x="210"
+                  y="30"
+                  textAnchor="middle"
+                  className="font-mono-tabular"
+                  fontWeight="900"
+                  fontSize="29"
+                  fill={`url(#${jackpotGradId}-cafe-jp)`}
                 >
-                  <div className="w-0 h-0 border-y-[7px] border-y-transparent border-l-[10px] border-l-[#b45309]" />
-                  <div className="w-0 h-0 border-y-[7px] border-y-transparent border-r-[10px] border-r-[#b45309]" />
+                  {selectedBet * 50} LUL
+                </text>
+              </svg>
+            </div>
+
+            {/* BLITZ STAR 12X TIER */}
+            <div className="lg:col-span-3 flex items-center justify-between lg:justify-center gap-2 bg-white border border-stone-200/80 shadow-sm px-4 py-2 rounded-2xl">
+              <span className="text-[11px] font-bold text-emerald-700 tracking-wider uppercase whitespace-nowrap">
+                STAR 12X:
+              </span>
+              <span className="font-mono-tabular text-base font-extrabold text-slate-900 whitespace-nowrap">
+                {selectedBet * 12} LUL
+              </span>
+            </div>
+          </div>
+        </header>
+
+        {/* BODY CONTENT */}
+        <div className="p-4 sm:p-5 space-y-3.5">
+          {/* CENTER INTERACTIVE 3-COLUMN STAGE */}
+          <section className="grid grid-cols-12 gap-3 items-stretch relative">
+            {/* LEFT STATUS & UTILITY PANEL */}
+            <aside className="col-span-12 lg:col-span-2 flex lg:flex-col justify-between gap-2.5 bg-white border border-stone-200/80 shadow-sm rounded-2xl p-3">
+              <div className="flex-1 lg:flex-initial text-center bg-amber-50/80 border border-amber-200/70 rounded-xl p-2.5 flex flex-col items-center justify-center">
+                <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider whitespace-nowrap">
+                  {isWinningOutcome && lastResult ? 'Hit Multiplier' : 'Top Jackpot'}
+                </span>
+                <div className="font-mono-tabular text-2xl sm:text-3xl font-extrabold text-slate-900 my-0.5 tracking-tight">
+                  {isWinningOutcome && lastResult ? `${lastResult.multiplier}X` : '50X'}
                 </div>
+                <span className="text-[9.5px] text-emerald-700 font-bold tracking-wider uppercase whitespace-nowrap">
+                  Center Payline
+                </span>
+              </div>
 
-                <div className="grid grid-cols-3 h-[324px] relative divide-x-[3px] divide-[#78350f]/45 z-20">
-                  {([0, 1, 2] as const).map((colIdx) => {
-                    const colSpinning = spinningCols[colIdx];
-                    const tape = reelTapes[colIdx];
+              <button
+                type="button"
+                onClick={() => {
+                  playCabinetClick();
+                  setIsPaytableOpen(true);
+                }}
+                className="flex-1 lg:flex-initial w-full rounded-full bg-[#f6f4f0] hover:bg-stone-200/80 border border-stone-200/90 py-2 px-3 flex items-center justify-center gap-1.5 text-[11px] font-bold text-slate-800 uppercase tracking-wide cursor-pointer transition-colors whitespace-nowrap"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-amber-700 shrink-0" aria-hidden="true" />
+                <span>Paytable</span>
+              </button>
 
-                    return (
+              <button
+                type="button"
+                data-active={soundEnabled}
+                onClick={() => {
+                  const next = !soundEnabled;
+                  setSoundEnabled(next);
+                  if (next) soundEngine.playUiClick();
+                }}
+                className={`flex-1 lg:flex-initial w-full rounded-full border py-2 px-3 flex items-center justify-center gap-1.5 text-[11px] font-bold uppercase tracking-wide cursor-pointer transition-colors whitespace-nowrap ${
+                  soundEnabled
+                    ? 'bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100'
+                    : 'bg-stone-100 border-stone-200 text-stone-500 hover:bg-stone-200'
+                }`}
+              >
+                {soundEnabled ? (
+                  <Volume2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                ) : (
+                  <VolumeX className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                )}
+                <span>{soundEnabled ? 'Sound: On' : 'Sound: Off'}</span>
+              </button>
+
+              <div className="hidden lg:flex flex-col items-center justify-center text-stone-500 pt-2 border-t border-stone-200/70 text-center">
+                <Coffee className="w-4 h-4 text-amber-600" aria-hidden="true" />
+                <span className="text-[9.5px] font-bold tracking-wider text-stone-500 mt-1 uppercase">
+                  Glasshouse Cafe
+                </span>
+              </div>
+            </aside>
+
+            {/* CENTER 3x3 REEL VIEWPORT */}
+            <div className="col-span-12 lg:col-span-8 relative rounded-2xl overflow-hidden bg-white border border-stone-200/90 shadow-inner h-[324px]">
+              <canvas
+                ref={paylineCanvasRef}
+                className="pointer-events-none absolute inset-0 w-full h-full z-30"
+              />
+
+              {/* Center Payline Illuminated Guide Bar */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 h-[108px] border-y border-amber-400/70 bg-amber-50/60 z-10 flex items-center justify-between px-1.5"
+              >
+                <div className="w-2 h-2 rounded-full bg-amber-500" />
+                <div className="w-2 h-2 rounded-full bg-amber-500" />
+              </div>
+
+              <div className="grid grid-cols-3 h-[324px] relative divide-x divide-stone-200/80 z-20">
+                {([0, 1, 2] as const).map((colIdx) => {
+                  const colSpinning = spinningCols[colIdx];
+                  const tape = reelTapes[colIdx];
+
+                  return (
+                    <div
+                      key={colIdx}
+                      data-slot-reel={colIdx}
+                      data-slot-symbol={reels[colIdx]}
+                      className={`relative overflow-hidden h-[324px] bg-gradient-to-b from-stone-100/70 via-white to-stone-100/70 ${
+                        colSpinning ? 'shadow-[inset_0_0_24px_rgba(245,158,11,0.18)]' : ''
+                      }`}
+                    >
                       <div
-                        key={colIdx}
-                        data-slot-reel={colIdx}
-                        data-slot-symbol={reels[colIdx]}
-                        className={`relative overflow-hidden h-[324px] cafe-slot-reel-drum-3d ${
-                          colSpinning ? 'shadow-[inset_0_0_24px_rgba(217,119,6,0.28)]' : ''
+                        ref={(el) => {
+                          stripDomRefs.current[colIdx] = el;
+                        }}
+                        className={`will-change-transform absolute top-0 left-0 w-full ${
+                          colSpinning ? 'slot-spinning-blur' : ''
                         }`}
                       >
-                        <div
-                          ref={(el) => {
-                            stripDomRefs.current[colIdx] = el;
-                          }}
-                          className={`will-change-transform absolute top-0 left-0 w-full ${
-                            colSpinning ? 'slot-spinning-blur' : ''
-                          }`}
-                        >
-                          {tape.map((symId, rowIdx) => {
-                            const isCenterRow = !colSpinning && rowIdx === 1;
-                            const isHighlighted =
-                              !colSpinning && winningCellKeys.has(`${colIdx}-${rowIdx}`);
-                            return (
-                              <div
-                                key={`${colIdx}-${rowIdx}-${symId}`}
-                                className="h-[108px] flex items-center justify-center px-2 sm:px-3 select-none"
-                              >
-                                <CafeReelSymbolTile
-                                  symbolId={symId}
-                                  isCenterRow={isCenterRow}
-                                  highlighted={isHighlighted}
-                                  wonMultiplier={lastResult?.multiplier}
-                                />
-                              </div>
-                            );
-                          })}
-                        </div>
+                        {tape.map((symId, rowIdx) => {
+                          const isCenterRow = !colSpinning && rowIdx === 1;
+                          const isHighlighted =
+                            !colSpinning && winningCellKeys.has(`${colIdx}-${rowIdx}`);
+                          return (
+                            <div
+                              key={`${colIdx}-${rowIdx}-${symId}`}
+                              className="h-[108px] flex items-center justify-center px-2 sm:px-3 select-none"
+                            >
+                              <CafeReelSymbolTile
+                                symbolId={symId}
+                                isCenterRow={isCenterRow}
+                                highlighted={isHighlighted}
+                                wonMultiplier={lastResult?.multiplier}
+                              />
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* RIGHT STATUS & SESSION LEDGER PANEL */}
+            <aside className="col-span-12 lg:col-span-2 flex lg:flex-col justify-between gap-2.5 bg-white border border-stone-200/80 shadow-sm rounded-2xl p-3">
+              <div className="flex-1 lg:flex-initial bg-[#f6f4f0] border border-stone-200/80 rounded-xl p-2.5">
+                <h4 className="text-[9.5px] font-bold tracking-wider text-amber-800 uppercase text-center border-b border-stone-200/80 pb-1 mb-1.5">
+                  Recent Hits
+                </h4>
+                <div className="text-[10.5px] space-y-1 font-mono-tabular text-slate-700 leading-tight">
+                  {recentHits.map((hit, idx) => (
+                    <div key={`${hit.player}-${idx}`} className="flex justify-between gap-1">
+                      <span
+                        className={`truncate ${
+                          hit.player === 'YOU' ? 'text-emerald-700 font-extrabold' : 'text-stone-600'
+                        }`}
+                      >
+                        {hit.player}
+                      </span>
+                      <span className="text-amber-700 font-bold whitespace-nowrap">
+                        +{hit.amountLul} LUL
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              {/* RIGHT STATUS & SESSION LEDGER PANEL */}
-              <aside className="col-span-12 lg:col-span-2 flex lg:flex-col justify-between gap-2 cafe-slot-wood-frame rounded-2xl p-2.5">
-                <div className="flex-1 lg:flex-initial bg-[#2b1003] border-2 border-[#d97706] rounded-xl p-2 shadow-[inset_0_3px_8px_rgba(0,0,0,0.75)]">
-                  <h4 className="text-[9.5px] font-black tracking-wider text-[#fde68a] uppercase text-center border-b border-[#78350f] pb-1 mb-1.5">
-                    Recent Hits
-                  </h4>
-                  <div className="text-[10.5px] space-y-1 font-mono-tabular text-[#ffedd5] leading-tight">
-                    {recentHits.map((hit, idx) => (
-                      <div key={`${hit.player}-${idx}`} className="flex justify-between gap-1">
-                        <span
-                          className={`truncate ${
-                            hit.player === 'YOU' ? 'text-[#b8ff3c] font-black' : 'text-[#fde68a]'
-                          }`}
-                        >
-                          {hit.player}
-                        </span>
-                        <span className="text-[#bef264] font-black whitespace-nowrap">
-                          +{hit.amountLul} LUL
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+              <div className="flex-1 lg:flex-initial bg-[#f6f4f0] border border-stone-200/80 rounded-xl p-2.5 text-[10.5px] font-mono-tabular font-bold text-slate-800 space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-stone-500">Spins</span>
+                  <span>{sessionStats.spins}</span>
                 </div>
-
-                <div className="flex-1 lg:flex-initial bg-gradient-to-b from-[#fffdf7] to-[#efe4ce] border-2 border-[#3b1806] rounded-xl p-2 text-[10.5px] font-mono-tabular font-black text-[#451a03] space-y-0.5 shadow-[0_3px_0_#3b1806]">
-                  <div className="flex justify-between">
-                    <span className="text-[#78350f]">Spins</span>
-                    <span>{sessionStats.spins}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#78350f]">Best</span>
-                    <span>{sessionStats.bestWinLul} LUL</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#78350f]">Net</span>
-                    <span
-                      className={
-                        sessionStats.netLul > 0
-                          ? 'text-[#15803d]'
-                          : sessionStats.netLul < 0
-                            ? 'text-[#b91c1c]'
-                            : 'text-[#451a03]'
-                      }
-                    >
-                      {sessionStats.netLul >= 0 ? `+${sessionStats.netLul}` : sessionStats.netLul}{' '}
-                      LUL
-                    </span>
-                  </div>
+                <div className="flex justify-between">
+                  <span className="text-stone-500">Best</span>
+                  <span>{sessionStats.bestWinLul} LUL</span>
                 </div>
+                <div className="flex justify-between">
+                  <span className="text-stone-500">Net</span>
+                  <span
+                    className={
+                      sessionStats.netLul > 0
+                        ? 'text-emerald-700'
+                        : sessionStats.netLul < 0
+                          ? 'text-rose-600'
+                          : 'text-slate-800'
+                    }
+                  >
+                    {sessionStats.netLul >= 0 ? `+${sessionStats.netLul}` : sessionStats.netLul}{' '}
+                    LUL
+                  </span>
+                </div>
+              </div>
 
-                <div
-                  data-slot-outcome-banner="true"
-                  className={`flex-1 lg:flex-initial rounded-xl border-2 px-2 py-2 text-center text-[10.5px] font-black uppercase tracking-wide flex items-center justify-center gap-1 leading-tight ${
-                    isSpinning
-                      ? 'bg-[#3b1806] border-[#fbbf24] text-[#fef08a]'
-                      : isWinningOutcome
-                        ? 'bg-gradient-to-b from-[#d9f99d] to-[#84cc16] border-[#14532d] text-[#14161d] shadow-[0_2px_0_#14532d]'
-                        : lastResult?.outcomeKind === 'push'
-                          ? 'bg-gradient-to-b from-[#fef08a] to-[#f59e0b] border-[#3b1806] text-[#14161d]'
-                          : 'bg-[#2b1003] border-[#d97706] text-[#ffedd5]'
+              <div
+                data-slot-outcome-banner="true"
+                className={`flex-1 lg:flex-initial rounded-xl border px-2.5 py-2 text-center text-[10.5px] font-bold uppercase tracking-wide flex items-center justify-center gap-1 leading-tight ${
+                  isSpinning
+                    ? 'bg-amber-50 border-amber-200 text-amber-800'
+                    : isWinningOutcome
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                      : lastResult?.outcomeKind === 'push'
+                        ? 'bg-amber-100/80 border-amber-300 text-amber-900'
+                        : 'bg-[#f6f4f0] border-stone-200/80 text-stone-600'
+                }`}
+              >
+                {isWinningOutcome && !isSpinning && (
+                  <Sparkles className="w-3.5 h-3.5 shrink-0 text-emerald-600" aria-hidden="true" />
+                )}
+                <span>{statusMessage}</span>
+              </div>
+            </aside>
+          </section>
+
+          {/* READOUTS: LUL BALANCE & WIN */}
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div
+              data-slot-lul-balance="true"
+              className="flex items-center justify-between gap-2 px-4 py-2.5 bg-white border border-stone-200/80 shadow-sm rounded-2xl"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <Coins className="w-4 h-4 text-amber-600 shrink-0" aria-hidden="true" />
+                <span className="text-xs sm:text-sm font-bold text-stone-600 tracking-wider uppercase whitespace-nowrap">
+                  CREDITS:
+                </span>
+                {lulBalance < ARCADE_SLOT_MIN_BET_LUL && !isSpinning && (
+                  <span className="hidden sm:inline text-[10.5px] font-medium text-rose-600 truncate">
+                    Min {ARCADE_SLOT_MIN_BET_LUL} LUL · Work shift or use Cafe ATM
+                  </span>
+                )}
+              </div>
+              <span className="font-mono-tabular text-xl sm:text-2xl font-extrabold text-amber-700 tracking-tight whitespace-nowrap">
+                {lulBalance} LUL
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between px-4 py-2.5 bg-white border border-stone-200/80 shadow-sm rounded-2xl">
+              <span className="text-xs sm:text-sm font-bold text-stone-600 tracking-wider uppercase whitespace-nowrap">
+                WIN:
+              </span>
+              <span className="font-mono-tabular text-xl sm:text-2xl font-extrabold text-emerald-600 tracking-tight whitespace-nowrap">
+                {lastWinLul} LUL
+              </span>
+            </div>
+          </section>
+
+          {errorMsg && (
+            <div className="px-4 py-2 rounded-2xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-800 text-center">
+              {errorMsg}
+            </div>
+          )}
+
+          {/* BOTTOM CONTROL DECK */}
+          <footer className="bg-white border border-stone-200/80 shadow-sm rounded-2xl px-4 py-3">
+            <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-2.5 sm:gap-3">
+              {/* Left Auxiliary Controls: TURBO & AUTO SPIN */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  data-active={isTurbo}
+                  onClick={() => {
+                    playCabinetClick();
+                    setIsTurbo((prev) => !prev);
+                  }}
+                  className={`px-3.5 py-2.5 rounded-full border text-xs font-bold uppercase tracking-wide flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
+                    isTurbo
+                      ? 'bg-amber-600 border-amber-600 text-white shadow-sm'
+                      : 'bg-[#f6f4f0] hover:bg-stone-200/80 border-stone-200 text-slate-700'
                   }`}
                 >
-                  {isWinningOutcome && !isSpinning && (
-                    <Sparkles className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                  )}
-                  <span>{statusMessage}</span>
-                </div>
-              </aside>
-            </section>
+                  <FastForward className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  <span>Turbo</span>
+                </button>
 
-            {/* DIGITAL WARM ESPRESSO READOUTS: LUL BALANCE & WIN */}
-            <section className="mt-2.5 grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              <div
-                data-slot-lul-balance="true"
-                className="flex items-center justify-between gap-2 px-4 py-2 cafe-slot-led-box rounded-xl"
-              >
-                <div className="flex items-center gap-2">
-                  <Coins className="w-4 h-4 text-[#fec83e] shrink-0" aria-hidden="true" />
-                  <span className="text-xs sm:text-sm font-black text-[#fde68a] tracking-wider uppercase whitespace-nowrap">
-                    CREDITS:
-                  </span>
-                  {lulBalance < ARCADE_SLOT_MIN_BET_LUL && !isSpinning && (
-                    <span className="hidden sm:inline text-[10.5px] font-bold text-[#fca5a5] truncate">
-                      Min {ARCADE_SLOT_MIN_BET_LUL} LUL · Work shift or use Cafe ATM
-                    </span>
-                  )}
-                </div>
-                <span className="font-mono-tabular text-xl sm:text-2xl font-black text-[#fec83e] tracking-wide whitespace-nowrap">
-                  {lulBalance} LUL
-                </span>
+                <button
+                  type="button"
+                  data-active={isAutoSpin}
+                  onClick={() => {
+                    playCabinetClick();
+                    const next = !isAutoSpin;
+                    setIsAutoSpin(next);
+                    if (next && !isSpinning) {
+                      handleSpin();
+                    }
+                  }}
+                  className={`px-3.5 py-2.5 rounded-full border text-xs font-bold uppercase tracking-wide flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
+                    isAutoSpin
+                      ? 'bg-amber-500 border-amber-500 text-white shadow-sm'
+                      : 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-900'
+                  }`}
+                >
+                  <RotateCw
+                    className={`w-3.5 h-3.5 shrink-0 ${isAutoSpin ? 'animate-spin' : ''}`}
+                    aria-hidden="true"
+                  />
+                  <span>{isAutoSpin ? 'Stop Auto' : 'Auto Spin'}</span>
+                </button>
               </div>
 
-              <div className="flex items-center justify-between px-4 py-2 cafe-slot-led-box rounded-xl">
-                <span className="text-xs sm:text-sm font-black text-[#bef264] tracking-wider uppercase whitespace-nowrap">
-                  WIN:
-                </span>
-                <span className="font-mono-tabular text-xl sm:text-2xl font-black text-[#b8ff3c] tracking-wide whitespace-nowrap">
-                  {lastWinLul} LUL
-                </span>
-              </div>
-            </section>
-
-            {errorMsg && (
-              <div className="mt-2 px-3 py-1.5 rounded-xl bg-[#fee2e2] border-2 border-[#7f1d1d] text-xs font-black text-[#991b1b] text-center">
-                {errorMsg}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* =====================================================================
-            3D MECHANICAL RECESSED HINGE SEAM
-            ===================================================================== */}
-        <div className="cafe-slot-hinge-neck-3d" aria-hidden="true" />
-
-        {/* =====================================================================
-            LOWER 3D FORWARD-JUTTING WARM CREAM CONSOLE DECK + FRONT BUMPER LIP
-            ===================================================================== */}
-        <div className="w-[99%] sm:w-[102%] flex flex-col items-center">
-          <footer className="w-full cafe-slot-tactile-console-3d px-3 py-3 sm:px-5 sm:py-3.5">
-            <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-2.5 sm:gap-3">
-              {/* Left Auxiliary Controls in Recessed 3D Sockets: TURBO & AUTO SPIN */}
-              <div className="flex items-center gap-2">
-                <div className="cafe-slot-btn-socket-3d">
-                  <button
-                    type="button"
-                    data-active={isTurbo}
-                    onClick={() => {
-                      playCabinetClick();
-                      setIsTurbo((prev) => !prev);
-                    }}
-                    className="slot-tactile-btn cafe-slot-btn-cream px-3 py-2.5 rounded-xl text-xs font-black text-[#3b1806] uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap"
-                  >
-                    <FastForward className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                    <span>Turbo</span>
-                  </button>
-                </div>
-
-                <div className="cafe-slot-btn-socket-3d">
-                  <button
-                    type="button"
-                    data-active={isAutoSpin}
-                    onClick={() => {
-                      playCabinetClick();
-                      const next = !isAutoSpin;
-                      setIsAutoSpin(next);
-                      if (next && !isSpinning) {
-                        handleSpin();
-                      }
-                    }}
-                    className="slot-tactile-btn cafe-slot-btn-amber px-3 py-2.5 rounded-xl text-xs font-black text-[#3b1806] uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap"
-                  >
-                    <RotateCw
-                      className={`w-3.5 h-3.5 shrink-0 ${isAutoSpin ? 'animate-spin' : ''}`}
-                      aria-hidden="true"
-                    />
-                    <span>{isAutoSpin ? 'Stop Auto' : 'Auto Spin'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Center Recessed Stake Rocker + Direct Tier Buttons (2 / 5 / 10 / 25 LUL) */}
-              <div className="flex items-center bg-[#3b1806] border-[2.5px] border-[#d97706] rounded-2xl p-1.5 shadow-[inset_0_3px_8px_rgba(0,0,0,0.75)] gap-1.5 sm:gap-2">
+              {/* Center Stake Rocker + Direct Tier Pills */}
+              <div className="flex items-center bg-[#f6f4f0] border border-stone-200/90 rounded-full p-1 gap-1.5">
                 <button
                   type="button"
                   disabled={isSpinning || currentBetIdx <= 0}
@@ -1402,9 +1373,9 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                     setErrorMsg(null);
                   }}
                   aria-label="Decrease Stake"
-                  className="slot-tactile-btn w-8 h-9 rounded-lg cafe-slot-btn-cream text-[#3b1806] flex items-center justify-center disabled:opacity-45"
+                  className="w-8 h-8 rounded-full bg-white hover:bg-stone-100 border border-stone-200/80 text-slate-700 flex items-center justify-center disabled:opacity-40 cursor-pointer transition-colors"
                 >
-                  <Minus className="w-4 h-4 stroke-[3]" aria-hidden="true" />
+                  <Minus className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
                 </button>
 
                 <div className="flex items-center gap-1">
@@ -1422,16 +1393,16 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                           setSelectedBet(tier);
                           setErrorMsg(null);
                         }}
-                        className={`px-2.5 py-1 rounded-lg border-2 font-mono-tabular font-black text-center cursor-pointer transition-transform duration-100 active:translate-y-0.5 whitespace-nowrap ${
+                        className={`px-3 py-1 rounded-full font-mono-tabular font-bold text-center cursor-pointer transition-all whitespace-nowrap ${
                           active
-                            ? 'bg-gradient-to-b from-[#fde047] via-[#f59e0b] to-[#c2410c] border-[#fffbeb] text-white shadow-[0_2px_0_#1e0a01]'
+                            ? 'bg-amber-700 text-white shadow-sm'
                             : affordable
-                              ? 'bg-[#fffdf7] hover:bg-[#fef3c7] border-[#9a3412] text-[#3b1806]'
-                              : 'bg-[#573614] border-[#78350f] text-[#cbb894]'
+                              ? 'bg-white hover:bg-amber-50 text-slate-800 border border-stone-200/80'
+                              : 'bg-stone-100 text-stone-400 border border-stone-200/60'
                         }`}
                       >
-                        <div className="text-xs font-black leading-tight">{tier}</div>
-                        <div className="text-[8.5px] font-black uppercase leading-none opacity-90">
+                        <div className="text-xs font-extrabold leading-tight">{tier}</div>
+                        <div className="text-[8.5px] font-bold uppercase leading-none opacity-85">
                           LUL
                         </div>
                       </button>
@@ -1452,81 +1423,64 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                     setErrorMsg(null);
                   }}
                   aria-label="Increase Stake"
-                  className="slot-tactile-btn w-8 h-9 rounded-lg cafe-slot-btn-cream text-[#3b1806] flex items-center justify-center disabled:opacity-45"
+                  className="w-8 h-8 rounded-full bg-white hover:bg-stone-100 border border-stone-200/80 text-slate-700 flex items-center justify-center disabled:opacity-40 cursor-pointer transition-colors"
                 >
-                  <Plus className="w-4 h-4 stroke-[3]" aria-hidden="true" />
+                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
                 </button>
               </div>
 
-              {/* Max Bet Button in Recessed 3D Socket */}
-              <div className="cafe-slot-btn-socket-3d">
-                <button
-                  type="button"
-                  disabled={isSpinning}
-                  onClick={() => {
-                    playCabinetClick();
-                    let bestTier: number = ARCADE_SLOT_BET_TIERS[0];
-                    for (const tier of ARCADE_SLOT_BET_TIERS) {
-                      if (lulBalance >= tier) bestTier = tier;
-                    }
-                    setSelectedBet(bestTier);
-                    setErrorMsg(null);
-                  }}
-                  className="slot-tactile-btn cafe-slot-btn-amber px-3 py-2.5 rounded-xl text-xs font-black text-[#3b1806] uppercase tracking-wider whitespace-nowrap disabled:opacity-50"
-                >
-                  Max Bet
-                </button>
-              </div>
+              {/* Max Bet Pill */}
+              <button
+                type="button"
+                disabled={isSpinning}
+                onClick={() => {
+                  playCabinetClick();
+                  let bestTier: number = ARCADE_SLOT_BET_TIERS[0];
+                  for (const tier of ARCADE_SLOT_BET_TIERS) {
+                    if (lulBalance >= tier) bestTier = tier;
+                  }
+                  setSelectedBet(bestTier);
+                  setErrorMsg(null);
+                }}
+                className="px-3.5 py-2.5 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-200 text-xs font-bold text-amber-900 uppercase tracking-wide whitespace-nowrap disabled:opacity-45 cursor-pointer transition-colors"
+              >
+                Max Bet
+              </button>
 
-              {/* Giant 3D Extruded Botanical Lime-Green Dome SPIN Button */}
-              <div className="cafe-slot-btn-socket-3d flex-1 lg:flex-initial ml-auto">
-                <button
-                  type="button"
-                  disabled={isSpinning || lulBalance < ARCADE_SLOT_MIN_BET_LUL}
-                  data-slot-spin-btn="true"
-                  onClick={handleSpin}
-                  className="w-full slot-tactile-btn cafe-slot-btn-spin-lime min-w-[175px] sm:min-w-[215px] h-13 sm:h-14 rounded-xl px-4 flex items-center justify-center gap-2 text-[#14161d] font-black text-base sm:text-lg uppercase tracking-wider whitespace-nowrap"
-                >
-                  <span className="font-mono-tabular">
-                    {isSpinning ? 'SPINNING...' : `SPIN (${selectedBet} LUL)`}
-                  </span>
-                  <Play
-                    className="w-4 h-4 text-[#14161d] fill-[#14161d] shrink-0"
-                    aria-hidden="true"
-                  />
-                </button>
-              </div>
+              {/* Primary Rounded Pill SPIN Button */}
+              <button
+                type="button"
+                disabled={isSpinning || lulBalance < ARCADE_SLOT_MIN_BET_LUL}
+                data-slot-spin-btn="true"
+                onClick={handleSpin}
+                className="flex-1 lg:flex-initial ml-auto min-w-[175px] sm:min-w-[210px] h-12 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:from-stone-200 disabled:to-stone-200 disabled:text-stone-400 px-5 flex items-center justify-center gap-2 text-white font-extrabold text-sm sm:text-base uppercase tracking-wider whitespace-nowrap shadow-md cursor-pointer active:scale-[0.98] transition-all"
+              >
+                <span className="font-mono-tabular">
+                  {isSpinning ? 'SPINNING...' : `SPIN (${selectedBet} LUL)`}
+                </span>
+                <Play className="w-4 h-4 fill-current shrink-0" aria-hidden="true" />
+              </button>
             </div>
           </footer>
-
-          {/* Physical 3D Extruded Front Espresso & Charcoal Bumper Lip with Warm Gold-Lime Vent */}
-          <div className="w-full cafe-slot-console-front-lip-3d">
-            <div className="cafe-slot-console-vent" />
-          </div>
-
-          {/* Grounded 3D Floor Shadow Beneath the Cabinet */}
-          <div className="cafe-slot-floor-shadow-3d" aria-hidden="true" />
         </div>
 
-        {/* =====================================================================
-            WARM CREAM & ESPRESSO PAYTABLE OVERLAY MODAL
-            ===================================================================== */}
+        {/* PAYTABLE OVERLAY MODAL */}
         {isPaytableOpen && (
           <div
             role="dialog"
             aria-modal="true"
             aria-label="Neo-Strike Slots Paytable"
-            className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 p-4"
+            className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/50 backdrop-blur-sm p-4"
             onClick={() => setIsPaytableOpen(false)}
           >
             <div
-              className="w-full max-w-xl bg-gradient-to-b from-[#fffdf7] via-[#fdf6e7] to-[#f5ead4] border-[3px] border-[#14161d] ring-3 ring-[#d97706] rounded-3xl overflow-hidden shadow-[0_18px_45px_rgba(0,0,0,0.85)] text-[#14161d]"
+              className="w-full max-w-xl rounded-[26px] bg-[#f6f4f0]/96 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] overflow-hidden text-slate-900"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between px-5 py-3.5 bg-[#1e212b] border-b-[3px] border-[#14161d] text-white">
+              <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-amber-50/90 via-[#f6f4f0] to-stone-100/80 border-b border-stone-200/80">
                 <div className="flex items-center gap-2.5">
-                  <Trophy className="w-5 h-5 text-[#fec83e]" aria-hidden="true" />
-                  <h3 className="text-base sm:text-lg font-black uppercase tracking-wider">
+                  <Trophy className="w-5 h-5 text-amber-600" aria-hidden="true" />
+                  <h3 className="text-base sm:text-lg font-extrabold uppercase tracking-tight text-slate-900">
                     Neo-Strike Slots · Paytable
                   </h3>
                 </div>
@@ -1534,9 +1488,9 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                   type="button"
                   onClick={() => setIsPaytableOpen(false)}
                   aria-label="Close Paytable"
-                  className="w-8 h-8 rounded-lg bg-[#ff3b30] hover:bg-[#ff554a] border-2 border-black text-white flex items-center justify-center cursor-pointer"
+                  className="w-8 h-8 rounded-full bg-white hover:bg-stone-100 border border-stone-200/80 text-slate-600 hover:text-slate-900 flex items-center justify-center cursor-pointer transition-colors"
                 >
-                  <X className="w-4 h-4 stroke-[3]" aria-hidden="true" />
+                  <X className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
                 </button>
               </div>
 
@@ -1547,20 +1501,20 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                     return (
                       <div
                         key={spec.id}
-                        className={`rounded-2xl border-2 p-3 flex flex-col items-center text-center ${
+                        className={`rounded-2xl border p-3 flex flex-col items-center text-center shadow-sm ${
                           isJackpot
-                            ? 'bg-gradient-to-b from-[#fffbeb] to-[#fde68a] border-[#b45309] shadow-[0_3px_0_#78350f]'
-                            : 'bg-[#fffdf7] border-[#cbb894] shadow-[0_3px_0_#a89068]'
+                            ? 'bg-amber-50 border-amber-300'
+                            : 'bg-white border-stone-200/80'
                         }`}
                       >
                         <SlotSymbolArtwork id={spec.id} sizeClass="w-11 h-11" />
-                        <span className="text-[11px] font-black uppercase tracking-wider text-[#3b1806] mt-1">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-900 mt-1">
                           {spec.label}
                         </span>
-                        <span className="font-mono-tabular text-xs font-black text-[#9a3412] mt-1">
+                        <span className="font-mono-tabular text-xs font-extrabold text-amber-700 mt-1">
                           3x Center = {spec.tripleMultiplier}x
                         </span>
-                        <span className="font-mono-tabular text-[11px] font-bold text-[#573614]">
+                        <span className="font-mono-tabular text-[11px] font-medium text-stone-500">
                           2x Any Pair = {spec.pairMultiplier}x
                         </span>
                       </div>
@@ -1568,15 +1522,15 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                   })}
                 </div>
 
-                <div className="bg-[#efe4ce] border-2 border-[#cbb894] rounded-2xl p-3.5 text-xs leading-relaxed text-[#451a03] space-y-1">
+                <div className="bg-white border border-stone-200/80 rounded-2xl p-3.5 text-xs leading-relaxed text-stone-600 space-y-1.5 shadow-sm">
                   <p>
-                    <strong className="font-black text-[#3b1806]">Center Payline:</strong> Match 3
+                    <strong className="font-bold text-slate-900">Center Payline:</strong> Match 3
                     identical symbols across the illuminated middle row for up to{' '}
-                    <span className="font-mono-tabular font-black text-[#9a3412]">50x</span> your
+                    <span className="font-mono-tabular font-bold text-amber-700">50x</span> your
                     LUL stake, or any 2 matching symbols on the center line for a pair payout.
                   </p>
                   <p>
-                    <strong className="font-black text-[#3b1806]">XP Rewards:</strong> Every spin
+                    <strong className="font-bold text-slate-900">XP Rewards:</strong> Every spin
                     awards Cafe progression XP (<span className="font-mono-tabular">+2 XP</span>{' '}
                     base, <span className="font-mono-tabular">+5 XP</span> pair,{' '}
                     <span className="font-mono-tabular">+10 XP</span> triple,{' '}

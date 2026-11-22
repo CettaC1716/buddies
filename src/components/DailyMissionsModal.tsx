@@ -14,6 +14,7 @@ import { soundEngine } from '../game/audio';
 export interface DailyMissionsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  embeddedInPhone?: boolean;
   missionsState: DailyMissionsState;
   claimedPlotSummary: {
     hasClaimedPlot: boolean;
@@ -66,6 +67,7 @@ function pickInitialMissionId(state: DailyMissionsState): DailyMissionId {
 export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
   isOpen,
   onClose,
+  embeddedInPhone = false,
   missionsState,
   claimedPlotSummary,
   onClaimMission,
@@ -109,32 +111,25 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
     selectedDef.shortcutStationId,
   );
 
-  return (
-    <div
-      data-daily-missions-modal="true"
-      role="dialog"
-      aria-modal="true"
-      aria-label="DAILY MISSIONS"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/65 pointer-events-auto select-none"
-      onClick={onClose}
-    >
+  if (embeddedInPhone) {
+    return (
       <div
-        className="w-full max-w-[680px] bg-[#14161d] text-white border-[4px] border-[#14161d] ring-3 ring-white shadow-[8px_8px_0_#000] rounded-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
+        data-daily-missions-modal="true"
+        className="w-full h-full flex flex-col overflow-hidden bg-[#f4f6f9] text-slate-900 select-none"
       >
-        {/* Header (Matches GlasshouseCafeOrderModal) */}
-        <div className="flex items-center justify-between px-4 py-3 bg-[#1e212b] border-b-[3px] border-black">
-          <div className="flex items-center gap-2.5">
-            <span className="px-2 py-0.5 bg-[#b8ff3c] text-[#14161d] border-2 border-black text-[10px] font-black uppercase">
+        {/* Compact Phone App Header */}
+        <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-white/95 border-b border-slate-200/80 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10.5px] font-semibold font-mono tabular-nums shrink-0">
               {summary.completedCount}/{summary.totalCount}
             </span>
-            <h2 className="text-base sm:text-lg font-black uppercase tracking-wider text-white">
-              DAILY MISSIONS
+            <h2 className="text-sm font-semibold tracking-tight text-slate-900 truncate">
+              Daily Missions
             </h2>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="px-2.5 py-1 bg-[#fec83e] text-[#14161d] border-2 border-black font-mono-tabular font-black text-xs">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-mono tabular-nums font-medium text-[10.5px]">
               {missionsState.dateKey}
             </div>
             <button
@@ -145,18 +140,245 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                 onClose();
               }}
               aria-label="Close Daily Missions"
-              className="w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black font-black flex items-center justify-center cursor-pointer"
+              className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer active:scale-95"
             >
-              <X className="w-4 h-4 stroke-[3]" aria-hidden="true" />
+              <X className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
             </button>
           </div>
         </div>
 
-        {/* White Body with Warm Cream Cards */}
-        <div className="p-4 bg-white text-[#14161d] space-y-3.5">
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5">
-            {/* Left 2x2 Mission Grid */}
-            <div className="sm:col-span-7 grid grid-cols-2 gap-2.5">
+        {/* Single-Column Mobile App Body */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-3">
+          {/* Selected Mission Detail Bento Card */}
+          <div className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-3.5 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10.5px] font-semibold font-mono tabular-nums">
+                +{selectedDef.rewardXp} XP
+              </span>
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[10.5px] font-semibold font-mono tabular-nums">
+                +{selectedDef.rewardLul} LUL
+              </span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-[#f4f6f9] border border-slate-200/60 rounded-2xl shrink-0">
+                <DailyMissionArtwork missionId={selectedDef.id} className="w-16 h-16" />
+              </div>
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="text-sm font-semibold text-slate-900 leading-snug">
+                  {selectedDef.title}
+                </div>
+                <div className="text-xs text-slate-500 leading-relaxed">
+                  {selectedDef.description}
+                </div>
+                {selectedDef.id === 'visit_claimed_house' && (
+                  <div className="pt-0.5">
+                    <span
+                      className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                        claimedPlotSummary.hasClaimedPlot
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      {claimedPlotSummary.hasClaimedPlot && claimedPlotSummary.plotIndex != null
+                        ? `PLOT #${claimedPlotSummary.plotIndex} (${
+                            claimedPlotSummary.team === 'blue' ? 'SOUTH' : 'NORTH'
+                          })`
+                        : 'NO PLOT CLAIMED'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {selectedClaimed ? (
+              <div
+                data-daily-mission-claimed={selectedDef.id}
+                className="w-full py-2.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold text-xs text-center"
+              >
+                Reward Claimed
+              </div>
+            ) : selectedComplete ? (
+              <button
+                type="button"
+                data-daily-mission-claim-btn={selectedDef.id}
+                onClick={() => onClaimMission(selectedDef.id)}
+                className="w-full py-2.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm font-semibold text-xs transition-colors cursor-pointer active:scale-[0.98]"
+              >
+                Claim (+{selectedDef.rewardLul} LUL)
+              </button>
+            ) : (
+              <button
+                type="button"
+                data-daily-mission-go-btn={selectedDef.id}
+                onClick={() => onShortcutTravel(selectedDef.id, targetStationId)}
+                className="w-full py-2.5 rounded-full bg-sky-100 hover:bg-sky-200 text-sky-900 font-semibold text-xs transition-colors cursor-pointer active:scale-[0.98]"
+              >
+                {selectedDef.shortcutLabel}
+              </button>
+            )}
+          </div>
+
+          {/* 2-Column Mission Selector Grid */}
+          <div className="grid grid-cols-2 gap-2.5">
+            {visibleCatalog(missionsState).map((def) => {
+              const entry = missionsState.missions[def.id];
+              const isSelected = def.id === selectedId;
+              const isComplete = entry.progress >= def.targetCount;
+              const isClaimed = entry.claimed;
+
+              return (
+                <button
+                  key={def.id}
+                  type="button"
+                  data-daily-mission-card={def.id}
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    setSelectedId(def.id);
+                  }}
+                  className={`relative flex flex-col items-center justify-between p-2.5 rounded-2xl border transition-all cursor-pointer active:scale-[0.98] ${
+                    isSelected
+                      ? 'bg-white border-sky-400 ring-2 ring-sky-400/25 shadow-md'
+                      : isClaimed
+                        ? 'bg-emerald-50/50 hover:bg-emerald-50/80 border-emerald-200/80 shadow-sm'
+                        : 'bg-white hover:bg-slate-50/80 border-slate-200/75 shadow-sm'
+                  }`}
+                >
+                  <div className="w-full flex items-center justify-between gap-1 text-[9.5px] font-semibold">
+                    <span className="text-slate-500 tracking-wide uppercase truncate">
+                      {SHORT_CARD_LABELS[def.id]}
+                    </span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded-full font-mono tabular-nums text-[9.5px] font-semibold shrink-0 ${
+                        isClaimed
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : isComplete
+                            ? 'bg-sky-100 text-sky-800'
+                            : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      {entry.progress}/{def.targetCount}
+                    </span>
+                  </div>
+
+                  <div className="my-1.5 w-12 h-12 rounded-xl bg-[#f4f6f9] flex items-center justify-center">
+                    <DailyMissionArtwork
+                      missionId={def.id}
+                      className="w-11 h-11 drop-shadow-[0_2px_4px_rgba(15,23,42,0.12)]"
+                    />
+                  </div>
+
+                  <div
+                    className={`w-full py-1 px-2 rounded-full text-[10px] font-semibold font-mono tabular-nums flex items-center justify-center ${
+                      isClaimed
+                        ? 'bg-emerald-100/80 text-emerald-700'
+                        : isComplete
+                          ? 'bg-emerald-500 text-white shadow-xs'
+                          : 'bg-sky-50 text-sky-800'
+                    }`}
+                  >
+                    <span>{isClaimed ? 'Claimed' : isComplete ? 'Claim' : `+${def.rewardLul} LUL`}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Compact All-Clear Bonus Card */}
+          <div className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-3.5 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-semibold text-slate-900">
+                All-Clear Bonus
+              </div>
+              <span className="text-[11px] font-semibold font-mono tabular-nums text-slate-600">
+                +{DAILY_ALL_CLEAR_BONUS.rewardLul} LUL · +{DAILY_ALL_CLEAR_BONUS.rewardXp} XP
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+
+              {summary.bonusClaimed ? (
+                <span
+                  data-daily-bonus-claimed="true"
+                  className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-semibold shrink-0"
+                >
+                  Bonus Claimed
+                </span>
+              ) : summary.bonusReady ? (
+                <button
+                  type="button"
+                  data-daily-bonus-claim-btn="true"
+                  onClick={onClaimAllClearBonus}
+                  className="px-3.5 py-1 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm text-[11px] font-semibold transition-colors cursor-pointer active:scale-95 shrink-0"
+                >
+                  Claim Bonus
+                </button>
+              ) : (
+                <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-semibold font-mono tabular-nums shrink-0">
+                  {summary.completedCount}/{summary.totalCount}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      data-daily-missions-modal="true"
+      role="dialog"
+      aria-modal="true"
+      aria-label="DAILY MISSIONS"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/45 backdrop-blur-sm pointer-events-auto select-none"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-[700px] rounded-[28px] bg-[#f4f6f9]/96 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] text-slate-900 overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Clean Light Header */}
+        <div className="flex items-center justify-between px-5 py-3.5 bg-white/95 border-b border-slate-200/80">
+          <div className="flex items-center gap-2.5">
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-semibold font-mono tabular-nums">
+              {summary.completedCount}/{summary.totalCount}
+            </span>
+            <h2 className="text-base sm:text-lg font-semibold tracking-tight text-slate-900">
+              Daily Missions
+            </h2>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 font-mono tabular-nums font-medium text-xs">
+              {missionsState.dateKey}
+            </div>
+            <button
+              type="button"
+              data-daily-missions-close-btn="true"
+              onClick={() => {
+                soundEngine.playUiCancel();
+                onClose();
+              }}
+              aria-label="Close Daily Missions"
+              className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer active:scale-95"
+            >
+              <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+
+        {/* Soft Light Body with Pure White Bento Cards */}
+        <div className="p-4 sm:p-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+            {/* Left 2-Column Mission Grid */}
+            <div className="sm:col-span-7 grid grid-cols-2 gap-3">
               {visibleCatalog(missionsState).map((def) => {
                 const entry = missionsState.missions[def.id];
                 const isSelected = def.id === selectedId;
@@ -172,46 +394,48 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                       soundEngine.playUiClick();
                       setSelectedId(def.id);
                     }}
-                    className={`relative flex flex-col items-center justify-between p-2.5 rounded-xl border-[3px] transition-transform cursor-pointer active:scale-95 ${
+                    className={`relative flex flex-col items-center justify-between p-3 rounded-2xl border transition-all cursor-pointer active:scale-[0.98] ${
                       isSelected
-                        ? 'bg-[#eef8d8] border-[#14161d] ring-2 ring-[#b8ff3c] -translate-y-0.5 shadow-[2px_2px_0_#000]'
+                        ? 'bg-white border-sky-400 ring-2 ring-sky-400/25 shadow-md -translate-y-0.5'
                         : isClaimed
-                          ? 'bg-[#ecfdf5] hover:bg-[#dcfce7] border-black shadow-[2px_2px_0_#000]'
-                          : 'bg-[#f7efe0] hover:bg-[#efe3cc] border-black shadow-[2px_2px_0_#000]'
+                          ? 'bg-emerald-50/50 hover:bg-emerald-50/80 border-emerald-200/80 shadow-sm'
+                          : 'bg-white hover:bg-slate-50/80 border-slate-200/75 shadow-sm hover:shadow-md'
                     }`}
                   >
-                    <div className="w-full flex items-center justify-between text-[9.5px] font-black uppercase">
-                      <span className="text-slate-600">{SHORT_CARD_LABELS[def.id]}</span>
+                    <div className="w-full flex items-center justify-between gap-1 text-[10px] font-semibold">
+                      <span className="text-slate-500 tracking-wide uppercase truncate">
+                        {SHORT_CARD_LABELS[def.id]}
+                      </span>
                       <span
-                        className={`px-1.5 py-0.2 border border-black rounded-sm ${
+                        className={`px-2 py-0.5 rounded-full font-mono tabular-nums text-[10px] font-semibold shrink-0 ${
                           isClaimed
-                            ? 'bg-[#22c55e] text-[#14161d]'
+                            ? 'bg-emerald-100 text-emerald-700'
                             : isComplete
-                              ? 'bg-[#b8ff3c] text-[#14161d]'
-                              : 'bg-white text-[#14161d]'
+                              ? 'bg-sky-100 text-sky-800'
+                              : 'bg-slate-100 text-slate-600'
                         }`}
                       >
                         {entry.progress}/{def.targetCount}
                       </span>
                     </div>
 
-                    <div className="my-2 w-16 h-16 flex items-center justify-center">
+                    <div className="my-2 w-16 h-16 rounded-2xl bg-[#f4f6f9] flex items-center justify-center">
                       <DailyMissionArtwork
                         missionId={def.id}
-                        className="w-15 h-15 drop-shadow-[0_2px_2px_rgba(0,0,0,0.22)]"
+                        className="w-14 h-14 drop-shadow-[0_2px_4px_rgba(15,23,42,0.12)]"
                       />
                     </div>
 
                     <div
-                      className={`w-full py-0.5 px-1.5 bg-[#0f172a] border border-black rounded text-[10px] font-black font-mono-tabular flex items-center justify-center gap-1 ${
+                      className={`w-full py-1 px-2 rounded-full text-[10.5px] font-semibold font-mono tabular-nums flex items-center justify-center ${
                         isClaimed
-                          ? 'text-[#4ade80]'
+                          ? 'bg-emerald-100/80 text-emerald-700'
                           : isComplete
-                            ? 'text-[#b8ff3c]'
-                            : 'text-[#38bdf8]'
+                            ? 'bg-emerald-500 text-white shadow-xs'
+                            : 'bg-sky-50 text-sky-800'
                       }`}
                     >
-                      <span>{isClaimed ? 'CLAIMED' : isComplete ? 'CLAIM' : `+${def.rewardLul} LUL`}</span>
+                      <span>{isClaimed ? 'Claimed' : isComplete ? 'Claim' : `+${def.rewardLul} LUL`}</span>
                     </div>
                   </button>
                 );
@@ -219,34 +443,34 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
             </div>
 
             {/* Right Detail Panel */}
-            <div className="sm:col-span-5 bg-[#f7efe0] text-[#14161d] border-[3px] border-black shadow-[3px_3px_0_#000] rounded-xl p-3.5 flex flex-col items-center justify-between text-center min-h-[260px]">
-              <div className="w-full flex items-center justify-between">
-                <span className="px-2 py-0.5 bg-[#b8ff3c] text-[#14161d] border border-black text-[10px] font-black uppercase">
+            <div className="sm:col-span-5 bg-white text-slate-900 border border-slate-200/75 shadow-sm rounded-2xl p-4 flex flex-col items-center justify-between text-center min-h-[270px]">
+              <div className="w-full flex items-center justify-between gap-2">
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-semibold font-mono tabular-nums">
                   +{selectedDef.rewardXp} XP
                 </span>
-                <span className="px-2 py-0.5 bg-[#fec83e] text-[#14161d] border border-black text-[10px] font-black font-mono-tabular">
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[11px] font-semibold font-mono tabular-nums">
                   +{selectedDef.rewardLul} LUL
                 </span>
               </div>
 
-              <div className="my-2 p-2.5 bg-white border-2 border-black rounded-xl shadow-[2px_2px_0_#000]">
+              <div className="my-2.5 p-3 bg-[#f4f6f9] border border-slate-200/60 rounded-2xl">
                 <DailyMissionArtwork missionId={selectedDef.id} className="w-22 h-22" />
               </div>
 
-              <div className="space-y-1 mb-2.5">
-                <div className="text-sm font-black uppercase text-[#14161d] leading-tight">
+              <div className="space-y-1.5 mb-3">
+                <div className="text-sm font-semibold text-slate-900 leading-snug">
                   {selectedDef.title}
                 </div>
-                <div className="text-[11px] font-bold text-slate-600 leading-snug">
+                <div className="text-xs text-slate-500 leading-relaxed">
                   {selectedDef.description}
                 </div>
                 {selectedDef.id === 'visit_claimed_house' && (
-                  <div className="pt-0.5">
+                  <div className="pt-1">
                     <span
-                      className={`inline-block px-2 py-0.5 border border-black text-[9.5px] font-black uppercase ${
+                      className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-semibold ${
                         claimedPlotSummary.hasClaimedPlot
-                          ? 'bg-[#b8ff3c] text-[#14161d]'
-                          : 'bg-white text-slate-700'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-slate-100 text-slate-600'
                       }`}
                     >
                       {claimedPlotSummary.hasClaimedPlot && claimedPlotSummary.plotIndex != null
@@ -262,25 +486,25 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
               {selectedClaimed ? (
                 <div
                   data-daily-mission-claimed={selectedDef.id}
-                  className="w-full py-2.5 bg-[#dcfce7] text-[#166534] border-[3px] border-black font-black text-xs uppercase tracking-wider"
+                  className="w-full py-2.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold text-xs"
                 >
-                  REWARD CLAIMED
+                  Reward Claimed
                 </div>
               ) : selectedComplete ? (
                 <button
                   type="button"
                   data-daily-mission-claim-btn={selectedDef.id}
                   onClick={() => onClaimMission(selectedDef.id)}
-                  className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-[#14161d] border-[3px] border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5"
+                  className="w-full py-2.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm font-semibold text-xs transition-colors cursor-pointer active:scale-[0.98]"
                 >
-                  CLAIM (+{selectedDef.rewardLul} LUL)
+                  Claim (+{selectedDef.rewardLul} LUL)
                 </button>
               ) : (
                 <button
                   type="button"
                   data-daily-mission-go-btn={selectedDef.id}
                   onClick={() => onShortcutTravel(selectedDef.id, targetStationId)}
-                  className="w-full py-2.5 bg-[#fec83e] hover:bg-[#fde047] text-[#14161d] border-[3px] border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5"
+                  className="w-full py-2.5 rounded-full bg-sky-100 hover:bg-sky-200 text-sky-900 font-semibold text-xs transition-colors cursor-pointer active:scale-[0.98]"
                 >
                   {selectedDef.shortcutLabel}
                 </button>
@@ -289,18 +513,18 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
           </div>
 
           {/* Compact All-Clear Bonus Strip */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 px-3.5 py-2.5 bg-[#f7efe0] border-[3px] border-black shadow-[3px_3px_0_#000] rounded-xl">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-white border border-slate-200/75 shadow-sm rounded-2xl">
             <div className="flex items-center gap-3 min-w-0 flex-1">
-              <div className="text-xs font-black uppercase text-[#14161d] shrink-0">
-                ALL-CLEAR BONUS
+              <div className="text-xs font-semibold text-slate-900 shrink-0">
+                All-Clear Bonus
               </div>
-              <div className="flex-1 min-w-[70px] max-w-[170px] h-3 bg-[#090b10] border-2 border-black rounded-sm overflow-hidden">
+              <div className="flex-1 min-w-[70px] max-w-[170px] h-2 bg-slate-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-[#b8ff3c] transition-all duration-300"
+                  className="h-full bg-emerald-500 rounded-full transition-all duration-300"
                   style={{ width: `${progressPct}%` }}
                 />
               </div>
-              <span className="text-[11px] font-black font-mono-tabular text-[#14161d] shrink-0">
+              <span className="text-xs font-semibold font-mono tabular-nums text-slate-700 shrink-0">
                 +{DAILY_ALL_CLEAR_BONUS.rewardLul} LUL · +{DAILY_ALL_CLEAR_BONUS.rewardXp} XP
               </span>
             </div>
@@ -308,21 +532,21 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
             {summary.bonusClaimed ? (
               <span
                 data-daily-bonus-claimed="true"
-                className="px-3 py-1 bg-[#dcfce7] text-[#166534] border-2 border-black text-[11px] font-black uppercase"
+                className="px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold"
               >
-                BONUS CLAIMED
+                Bonus Claimed
               </span>
             ) : summary.bonusReady ? (
               <button
                 type="button"
                 data-daily-bonus-claim-btn="true"
                 onClick={onClaimAllClearBonus}
-                className="px-3 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-[#14161d] border-2 border-black shadow-[2px_2px_0_#000] text-[11px] font-black uppercase cursor-pointer active:translate-y-0.5"
+                className="px-4 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm text-xs font-semibold transition-colors cursor-pointer active:scale-95"
               >
-                CLAIM BONUS
+                Claim Bonus
               </button>
             ) : (
-              <span className="px-2.5 py-1 bg-[#0f172a] text-[#38bdf8] border-2 border-black text-[10.5px] font-black font-mono-tabular">
+              <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold font-mono tabular-nums">
                 {summary.completedCount}/{summary.totalCount}
               </span>
             )}

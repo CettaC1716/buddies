@@ -169,7 +169,7 @@ export function HudQuickMountScooterControl({
       }}
       className="relative flex items-center select-none pointer-events-auto"
     >
-      {/* Vehicle Selector Popover (same Neo-Brutalist style as Audio Volume Mixer) */}
+      {/* Vehicle Selector Popover (Dark Frosted Glass) */}
       {isOpen && (
         <div
           role="region"
@@ -179,17 +179,17 @@ export function HudQuickMountScooterControl({
           onKeyDown={(e) => e.stopPropagation()}
           className={`absolute right-0 ${
             popoverPlacement === 'bottom' ? 'top-full mt-2.5' : 'bottom-full mb-2.5'
-          } z-50 w-[256px] bg-[#14161d] text-white border-3 border-black ring-2 ring-white shadow-[5px_5px_0_#000] p-3 space-y-2`}
+          } z-50 w-[262px] rounded-2xl bg-[#0d1118]/86 backdrop-blur-xl text-white border border-white/15 shadow-[0_18px_46px_rgba(0,0,0,0.58)] p-3.5 space-y-2.5`}
         >
-          <div className="flex items-center justify-between border-b border-white/15 pb-1.5">
-            <span className="text-[11px] font-black tracking-wide text-white whitespace-nowrap">
+          <div className="flex items-center justify-between border-b border-white/10 pb-2">
+            <span className="text-xs font-semibold tracking-tight text-white whitespace-nowrap">
               Quick Mount
             </span>
             <button
               type="button"
               onClick={() => setIsOpen(false)}
               aria-label="Close Quick Mount Selector"
-              className="px-1.5 py-0.5 bg-white/10 hover:bg-white/20 text-[10px] font-black text-slate-200 border border-white/20 cursor-pointer whitespace-nowrap shrink-0"
+              className="px-2 py-0.5 rounded-full bg-white/[0.08] hover:bg-white/[0.18] text-[10px] font-medium text-white/85 border border-white/10 cursor-pointer whitespace-nowrap shrink-0 transition-colors"
             >
               Done
             </button>
@@ -212,39 +212,39 @@ export function HudQuickMountScooterControl({
                 <div
                   key={veh.id}
                   data-quick-mount-item={veh.kind}
-                  className={`flex items-center justify-between gap-2 p-2 border ${
+                  className={`flex items-center justify-between gap-2 p-2 rounded-xl border transition-colors ${
                     isMountedThis
-                      ? 'bg-[#1c2820] border-[#b8ff3c]'
-                      : 'bg-[#1f2430] border-white/20'
+                      ? 'bg-emerald-400/12 border-emerald-300/45'
+                      : 'bg-white/[0.05] border-white/10'
                   }`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <div
-                      className={`w-7 h-7 flex items-center justify-center border shrink-0 ${
+                      className={`w-8 h-8 rounded-full flex items-center justify-center border shrink-0 ${
                         isMountedThis
-                          ? 'bg-[#14161d] border-[#b8ff3c] text-[#b8ff3c]'
+                          ? 'bg-emerald-400/20 border-emerald-300/60 text-emerald-200'
                           : isOwned
-                            ? 'bg-[#14161d] border-white/25 text-[#38bdf8]'
-                            : 'bg-[#14161d] border-white/15 text-slate-400'
+                            ? 'bg-white/[0.08] border-white/15 text-sky-300'
+                            : 'bg-white/[0.04] border-white/10 text-white/40'
                       }`}
                     >
                       <VehIcon className="w-4 h-4" />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-xs font-bold text-slate-100 truncate">
+                      <div className="text-xs font-medium text-white/95 truncate">
                         {shortLabel}
                       </div>
-                      <div className="text-[10px] font-semibold truncate">
+                      <div className="text-[10px] font-normal truncate">
                         {isMountedThis ? (
-                          <span className="text-[#b8ff3c]">Riding now</span>
+                          <span className="text-emerald-300">Riding now</span>
                         ) : isOwned ? (
                           canMountOutdoors ? (
-                            <span className="text-slate-400">Owned · Ready</span>
+                            <span className="text-white/50">Owned · Ready</span>
                           ) : (
                             <span className="text-amber-300">Outdoor only</span>
                           )
                         ) : (
-                          <span className="text-slate-400 tabular-nums">
+                          <span className="text-white/45 tabular-nums">
                             {veh.priceRespite} RESPITE · Showroom
                           </span>
                         )}
@@ -260,7 +260,7 @@ export function HudQuickMountScooterControl({
                         onDismountScooter();
                         setIsOpen(false);
                       }}
-                      className="px-2 py-1 bg-[#ff3b30] hover:bg-[#ff554a] text-white border border-black text-[10px] font-black cursor-pointer whitespace-nowrap shrink-0"
+                      className="px-2.5 py-1 rounded-full bg-rose-500/80 hover:bg-rose-500 text-white text-[10px] font-semibold cursor-pointer whitespace-nowrap shrink-0 transition-colors"
                     >
                       Off
                     </button>
@@ -276,8 +276,8 @@ export function HudQuickMountScooterControl({
                       }}
                       className={
                         canMountOutdoors
-                          ? 'px-2.5 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border border-black text-[10px] font-black cursor-pointer whitespace-nowrap shrink-0'
-                          : 'px-2 py-1 bg-white/5 text-slate-500 border border-white/10 text-[10px] font-bold cursor-not-allowed whitespace-nowrap shrink-0'
+                          ? 'px-2.5 py-1 rounded-full bg-emerald-400/90 hover:bg-emerald-300 text-slate-950 text-[10px] font-semibold cursor-pointer whitespace-nowrap shrink-0 transition-colors'
+                          : 'px-2.5 py-1 rounded-full bg-white/5 text-white/35 border border-white/10 text-[10px] font-medium cursor-not-allowed whitespace-nowrap shrink-0'
                       }
                     >
                       Ride
@@ -290,12 +290,12 @@ export function HudQuickMountScooterControl({
                         onLocateShowroom();
                         setIsOpen(false);
                       }}
-                      className="px-2 py-1 bg-[#272c3a] hover:bg-[#333a4d] text-[#38bdf8] border border-white/25 text-[10px] font-black cursor-pointer whitespace-nowrap shrink-0"
+                      className="px-2.5 py-1 rounded-full bg-white/[0.1] hover:bg-white/[0.2] text-sky-300 border border-white/15 text-[10px] font-semibold cursor-pointer whitespace-nowrap shrink-0 transition-colors"
                     >
                       Shop
                     </button>
                   ) : (
-                    <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap shrink-0">
+                    <span className="text-[10px] font-medium text-white/40 whitespace-nowrap shrink-0">
                       Locked
                     </span>
                   )}
@@ -306,7 +306,7 @@ export function HudQuickMountScooterControl({
         </div>
       )}
 
-      {/* Compact Neo-Brutalist Quick Mount Scooter Button `[🛵]` */}
+      {/* Frosted Glass Quick Mount Scooter Button */}
       <button
         type="button"
         data-hud-scooter-quick-mount="true"
@@ -342,29 +342,29 @@ export function HudQuickMountScooterControl({
                 : 'Step outside to mount your scooter'
               : 'Vehicles — Buy a scooter at Central Plaza Showroom'
         }
-        className="-skew-x-6 relative w-10 h-10 flex items-center justify-center bg-[#14161d] hover:bg-[#1f2430] text-white border-3 border-black ring-2 ring-white shadow-[3px_3px_0_#000] cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8ff3c]"
+        className={`relative w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-xl border shadow-[0_6px_20px_rgba(0,0,0,0.35)] cursor-pointer active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70 ${
+          isRiding
+            ? 'bg-emerald-400/22 hover:bg-emerald-400/32 border-emerald-300/60 text-emerald-200'
+            : isOpen
+              ? 'bg-white/18 border-white/35 text-white'
+              : 'bg-[#0d1118]/65 hover:bg-[#171d29]/82 border-white/15 hover:border-white/30 text-white'
+        }`}
       >
-        <span className="skew-x-6 relative flex items-center justify-center">
-          <ActiveButtonIcon
-            className={`w-[18px] h-[18px] ${
-              isRiding
-                ? 'text-[#b8ff3c]'
-                : quickTargetKind
-                  ? 'text-[#38bdf8]'
-                  : 'text-slate-300'
-            }`}
-          />
-        </span>
-        {/* Bottom miniature status bar matching Sound FX button */}
-        <span
-          aria-hidden="true"
-          className="absolute bottom-[2px] left-1 right-1 h-[2.5px] bg-white/15 overflow-hidden"
-        >
+        <ActiveButtonIcon
+          className={`w-[17px] h-[17px] ${
+            isRiding
+              ? 'text-emerald-200'
+              : quickTargetKind
+                ? 'text-white/92'
+                : 'text-white/55'
+          }`}
+        />
+        {isRiding && (
           <span
-            className={`block h-full ${isRiding ? 'bg-[#b8ff3c]' : 'bg-[#38bdf8]'}`}
-            style={{ width: isRiding || quickTargetKind ? '100%' : '0%' }}
+            aria-hidden="true"
+            className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-[#0d1118]"
           />
-        </span>
+        )}
       </button>
     </div>
   );

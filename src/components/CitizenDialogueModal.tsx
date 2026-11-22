@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, Heart, Trash2 } from 'lucide-react';
+import { Check, Heart, Trash2, X } from 'lucide-react';
 import { soundEngine } from '../game/audio';
 import {
   CITIZEN_DAILY_GIFT_CATALOG,
@@ -51,15 +51,15 @@ interface CitizenChatEntry {
 }
 
 const TIER_PILL_STYLE: Record<CitizenGiftReactionTier, string> = {
-  loved: 'bg-[#ec4899] text-white border-black',
-  liked: 'bg-[#22d3ee] text-slate-950 border-black',
-  neutral: 'bg-[#facc15] text-slate-950 border-black',
+  loved: 'bg-pink-100 text-pink-700 border-pink-200/80',
+  liked: 'bg-sky-100 text-sky-700 border-sky-200/80',
+  neutral: 'bg-amber-100 text-amber-800 border-amber-200/80',
 };
 
 const TIER_LABEL: Record<CitizenGiftReactionTier, string> = {
-  loved: 'LOVED GIFT!',
-  liked: 'LIKED GIFT',
-  neutral: 'THANK YOU',
+  loved: 'Loved gift!',
+  liked: 'Liked gift',
+  neutral: 'Thank you',
 };
 
 export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
@@ -71,8 +71,8 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   isRaining,
   daytimePhase = 'day',
   talkedBonusJustAwarded = false,
-  playerBubbleBgColor = '#fef9c3',
-  playerBubbleTextColor = '#0f172a',
+  playerBubbleBgColor: _playerBubbleBgColor = '#fef9c3',
+  playerBubbleTextColor: _playerBubbleTextColor = '#0f172a',
   onClose,
   onGiveCatalogGift,
   onGiveFishGift,
@@ -233,23 +233,23 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
       }`}
     >
       {profile && (
-        <div className="relative flex-1 flex flex-col bg-white border-[3.5px] border-black shadow-[4px_4px_0px_#000] p-4 sm:p-5 text-black overflow-hidden min-h-0">
-          {/* Top Bar matching Hana Drawer: Skewed Tabs + Hearts Pill + Skewed Red Close */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b-[2.5px] border-black shrink-0">
-            <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 flex flex-col rounded-[28px] bg-white/96 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] text-slate-900 overflow-hidden min-h-0">
+          {/* Top Bar: Clean Pill Tabs + Hearts Pill + Circular Close */}
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3.5 pb-3 border-b border-slate-200/80 bg-white/90 shrink-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 type="button"
                 onClick={() => {
                   soundEngine.playUiClick();
                   setActiveTab('sesi_chat');
                 }}
-                className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[3px_3px_0px_#000] text-[11px] font-black uppercase cursor-pointer transition-all ${
+                className={`px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer transition-all ${
                   activeTab === 'sesi_chat'
-                    ? 'bg-[#facc15] text-black -translate-y-0.5'
-                    : 'bg-slate-50 hover:bg-[#fef08a] text-black'
+                    ? 'bg-sky-500 text-white shadow-sm'
+                    : 'bg-slate-100/90 hover:bg-slate-200/80 text-slate-600 hover:text-slate-900'
                 }`}
               >
-                <span className="skew-x-6 inline-block">CHAT SESSION</span>
+                <span>Chat Session</span>
               </button>
 
               <button
@@ -259,15 +259,13 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                   soundEngine.playUiClick();
                   setActiveTab('gift');
                 }}
-                className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[3px_3px_0px_#000] text-[11px] font-black uppercase cursor-pointer transition-all ${
+                className={`px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer transition-all ${
                   activeTab === 'gift'
-                    ? 'bg-[#10b981] text-black -translate-y-0.5'
-                    : 'bg-slate-50 hover:bg-[#a7f3d0] text-black'
+                    ? 'bg-emerald-500 text-white shadow-sm'
+                    : 'bg-slate-100/90 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700'
                 }`}
               >
-                <span className="skew-x-6 inline-block">
-                  GIFT ({giftedToday ? '1/1' : '0/1'})
-                </span>
+                <span>Gift ({giftedToday ? '1/1' : '0/1'})</span>
               </button>
 
               <button
@@ -277,27 +275,27 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                   soundEngine.playUiClick();
                   setActiveTab('directory');
                 }}
-                className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[3px_3px_0px_#000] text-[11px] font-black uppercase cursor-pointer transition-all ${
+                className={`px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer transition-all ${
                   activeTab === 'directory'
-                    ? 'bg-[#38bdf8] text-black -translate-y-0.5'
-                    : 'bg-slate-50 hover:bg-[#bae6fd] text-black'
+                    ? 'bg-sky-500 text-white shadow-sm'
+                    : 'bg-slate-100/90 hover:bg-sky-50 text-slate-600 hover:text-sky-700'
                 }`}
               >
-                <span className="skew-x-6 inline-block">TOWN FOLKS</span>
+                <span>Town Folks</span>
               </button>
             </div>
 
             <div className="flex items-center gap-2">
               <span
                 title={`${progress.tierLabel} (${progress.points}/${progress.nextHeartPoints} pts)`}
-                className="px-2 py-1 bg-[#fff1f2] border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase inline-flex items-center gap-1"
+                className="px-2.5 py-1 rounded-full bg-rose-50 border border-rose-200/80 text-rose-700 text-[11px] font-semibold inline-flex items-center gap-1"
               >
-                <Heart className="w-3 h-3 fill-rose-500 text-black" aria-hidden="true" />
+                <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500" aria-hidden="true" />
                 <span>
                   {progress.hearts}/{progress.maxHearts}
                 </span>
                 {talkedBonusJustAwarded && (
-                  <span className="ml-0.5 text-emerald-700">+25</span>
+                  <span className="ml-0.5 text-emerald-600 font-bold">+25</span>
                 )}
               </span>
 
@@ -308,93 +306,90 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                   soundEngine.playUiClick();
                   onClose();
                 }}
-                className="-skew-x-6 w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs flex items-center justify-center cursor-pointer active:scale-95"
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200/80 flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
                 aria-label="Close Citizen Chat"
               >
-                <span className="skew-x-6 inline-block">X</span>
+                <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
               </button>
             </div>
           </div>
 
           {/* Tab Viewport */}
-          <div className="mt-3 flex-1 flex flex-col overflow-y-auto pr-1 space-y-3 min-h-0">
+          <div className="flex-1 flex flex-col overflow-hidden bg-[#f2f4f8] min-h-0">
             {activeTab === 'sesi_chat' && (
-              <div className="flex-1 flex flex-col justify-between gap-3 min-h-0">
+              <div className="flex-1 flex flex-col justify-between min-h-0">
                 {/* Scrollable Chat History + Active Typewriter Reply */}
-                <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 min-h-0">
+                <div className="flex-1 overflow-y-auto px-4 py-3.5 space-y-3 min-h-0">
                   {chatHistory.map((entry) =>
                     entry.role === 'player' ? (
-                      <div
-                        key={entry.id}
-                        data-player-chat-bubble="true"
-                        style={{
-                          backgroundColor: playerBubbleBgColor,
-                          color: playerBubbleTextColor,
-                        }}
-                        className="p-3 border-[2.5px] border-black shadow-[3px_3px_0px_#000] ml-6"
-                      >
-                        <div className="flex items-center justify-end mb-1">
-                          <span className="px-2 py-0.5 bg-[#facc15] text-black border border-black text-[9.5px] font-black uppercase">
-                            YOU
-                          </span>
+                      <div key={entry.id} className="flex flex-col items-end">
+                        <div className="flex items-center gap-1.5 mb-1 px-1.5">
+                          <span className="text-[10px] font-semibold text-slate-500">You</span>
+                          <span className="text-[10px] text-slate-400">Sent</span>
                         </div>
-                        <p className="text-xs sm:text-[13px] font-bold leading-relaxed">
-                          {entry.text}
-                        </p>
+                        <div
+                          data-player-chat-bubble="true"
+                          className="max-w-[85%] px-3.5 py-2.5 rounded-2xl rounded-tr-sm bg-sky-500 text-white shadow-sm"
+                        >
+                          <p className="text-xs sm:text-[13px] font-medium leading-relaxed">
+                            {entry.text}
+                          </p>
+                        </div>
                       </div>
                     ) : (
-                      <div
-                        key={entry.id}
-                        className="p-3 bg-[#1e293b] text-slate-100 border-[2px] border-black shadow-[3px_3px_0px_#000] mr-4"
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span
-                            className="px-2 py-0.5 text-black border border-black text-[9.5px] font-black uppercase"
-                            style={{ backgroundColor: '#2bb3b1' }}
-                          >
-                            {profile.name.toUpperCase()}
+                      <div key={entry.id} className="flex flex-col items-start">
+                        <div className="flex items-center gap-1.5 mb-1 px-1.5">
+                          <span className="text-[10px] font-semibold text-slate-600">
+                            {profile.name}
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            {profile.districtLabel}
                           </span>
                         </div>
-                        <p className="text-xs font-bold leading-relaxed">{entry.text}</p>
+                        <div className="max-w-[88%] px-3.5 py-2.5 rounded-2xl rounded-tl-sm bg-white text-slate-800 border border-slate-200/60 shadow-sm">
+                          <p className="text-xs sm:text-[13px] font-medium leading-relaxed">
+                            {entry.text}
+                          </p>
+                        </div>
                       </div>
                     ),
                   )}
 
                   {/* Active NPC Typewriter Speech Bubble */}
-                  <div
-                    data-npc-chat-bubble="true"
-                    className="p-3.5 bg-[#0f172a] text-white border-[2.5px] border-black shadow-[4px_4px_0px_#000]"
-                  >
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="px-2.5 py-0.5 bg-[#2bb3b1] text-black border border-black text-[10px] font-black uppercase shrink-0">
-                          {profile.name.toUpperCase()}
-                        </span>
-                        <span
-                          className="px-1.5 py-0.5 text-[9.5px] font-black uppercase border border-black text-white shrink-0"
-                          style={{ backgroundColor: profile.accentColor }}
-                        >
-                          {profile.roleBadge}
-                        </span>
-                      </div>
-                      <span className="text-[9.5px] font-bold text-slate-400 truncate">
+                  <div className="flex flex-col items-start">
+                    <div className="flex items-center gap-1.5 mb-1 px-1.5 flex-wrap">
+                      <span className="text-[10.5px] font-semibold text-slate-700">
+                        {profile.name}
+                      </span>
+                      <span
+                        className="px-2 py-0.5 rounded-full text-[9.5px] font-semibold text-white shrink-0"
+                        style={{ backgroundColor: profile.accentColor }}
+                      >
+                        {profile.roleBadge}
+                      </span>
+                      <span className="text-[10px] text-slate-400 truncate">
                         {profile.districtLabel}
                       </span>
                     </div>
-                    <p className="text-xs sm:text-[13px] font-bold leading-relaxed text-[#f8fafc] min-h-[54px]">
-                      {npcTypedText}
-                      {npcTypedText.length < npcFullText.length && (
-                        <span className="inline-block w-1.5 h-3.5 bg-[#b8ff3c] ml-0.5" />
-                      )}
-                    </p>
+                    <div
+                      data-npc-chat-bubble="true"
+                      className="w-full max-w-[92%] px-4 py-3 rounded-2xl rounded-tl-sm bg-white text-slate-800 border border-slate-200/70 shadow-sm"
+                    >
+                      <p className="text-xs sm:text-[13px] font-medium leading-relaxed text-slate-800 min-h-[48px]">
+                        {npcTypedText}
+                        {npcTypedText.length < npcFullText.length && (
+                          <span className="inline-block w-1.5 h-3.5 rounded-full bg-sky-500 ml-0.5 align-middle animate-pulse" />
+                        )}
+                      </p>
+                    </div>
                   </div>
 
                   <div ref={chatScrollEndRef} />
                 </div>
 
-                {/* Quick Question Chips + CLEAR CHAT Footer matching Hana */}
-                <div className="pt-2 border-t-2 border-black shrink-0 bg-white space-y-2">
-                  <div className="flex items-center gap-1.5 flex-wrap">
+                {/* Quick-Reply Choices + Clear Chat Footer */}
+                <div className="px-4 py-3 border-t border-slate-200/80 shrink-0 bg-white/90 space-y-2">
+                  <div className="flex flex-col gap-1.5">
                     {quickPrompts.map((prompt) => (
                       <button
                         key={prompt}
@@ -403,19 +398,21 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                           soundEngine.playUiClick();
                           submitPlayerQuestion(prompt);
                         }}
-                        className="px-2 py-1 bg-slate-100 hover:bg-[#fef08a] text-black border border-black text-[9.5px] font-bold cursor-pointer transition-colors"
+                        className="w-full text-left px-3.5 py-2 rounded-xl bg-white hover:bg-sky-50 border border-slate-200/90 shadow-xs text-slate-800 text-xs font-medium cursor-pointer transition-colors"
                       >
                         {prompt}
                       </button>
                     ))}
+                  </div>
+                  <div className="flex justify-end pt-0.5">
                     <button
                       type="button"
                       data-citizen-clear-chat-btn="true"
                       onClick={handleClearChat}
-                      className="ml-auto px-2 py-1 bg-[#fee2e2] hover:bg-[#fecaca] text-[#991b1b] border border-black text-[9px] font-black uppercase cursor-pointer inline-flex items-center gap-1 transition-colors shrink-0"
+                      className="px-3 py-1 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200/70 text-[10.5px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-colors shrink-0"
                     >
                       <Trash2 className="w-3 h-3" aria-hidden="true" />
-                      <span>CLEAR CHAT</span>
+                      <span>Clear chat</span>
                     </button>
                   </div>
                 </div>
@@ -423,19 +420,19 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
             )}
 
             {activeTab === 'gift' && (
-              <div className="space-y-3 pb-2">
-                <div className="p-2.5 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-[11px] font-black uppercase">
+              <div className="flex-1 overflow-y-auto px-4 py-3.5 space-y-3 min-h-0">
+                <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-xs font-semibold text-slate-800">
                     Daily Gift:{' '}
-                    <span className={giftedToday ? 'text-[#b8ff3c]' : 'text-[#facc15]'}>
+                    <span className={giftedToday ? 'text-emerald-600' : 'text-sky-600'}>
                       {giftedToday ? '1 / 1 Gifted Today ✓' : '0 / 1 Available'}
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1.5">
                     {profile.favoriteTags.map((tag) => (
                       <span
                         key={tag}
-                        className="px-1.5 py-0.5 bg-white text-black border border-black text-[9.5px] font-black uppercase"
+                        className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200/70 text-[10px] font-semibold"
                       >
                         ♥ {tag}
                       </span>
@@ -444,29 +441,29 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                 </div>
 
                 {activeFeedback && (
-                  <div className="p-3 bg-[#0f172a] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-1">
+                  <div className="p-3.5 rounded-2xl bg-white border border-sky-200/90 shadow-sm space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
                       <span
-                        className={`px-2 py-0.5 text-[9.5px] font-black uppercase border ${
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${
                           TIER_PILL_STYLE[activeFeedback.outcome.tier]
                         }`}
                       >
                         {activeFeedback.outcome.accepted
-                          ? `${TIER_LABEL[activeFeedback.outcome.tier]} · +${activeFeedback.outcome.pointsAwarded} PTS`
-                          : 'DAILY LIMIT'}
+                          ? `${TIER_LABEL[activeFeedback.outcome.tier]} · +${activeFeedback.outcome.pointsAwarded} pts`
+                          : 'Daily limit'}
                       </span>
-                      <span className="text-[10px] font-bold text-slate-300">
+                      <span className="text-[11px] font-medium text-slate-500">
                         {activeFeedback.giftLabel}
                       </span>
                     </div>
-                    <p className="text-xs font-bold leading-relaxed">
+                    <p className="text-xs font-medium text-slate-800 leading-relaxed">
                       “{activeFeedback.outcome.reactionLine}”
                     </p>
                   </div>
                 )}
 
-                <div className="space-y-1.5">
-                  <div className="text-[10.5px] font-black uppercase tracking-wider text-slate-600">
+                <div className="space-y-2">
+                  <div className="text-[11px] font-semibold text-slate-500 px-1">
                     Town Keepsakes &amp; Refreshments
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -476,20 +473,20 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                         type="button"
                         disabled={giftedToday}
                         onClick={() => handleCatalogGiftClick(gift.id, gift.label)}
-                        className={`p-2 border-2 border-black text-left flex items-center gap-2 transition-all ${
+                        className={`p-2.5 rounded-2xl border text-left flex items-center gap-2.5 transition-all ${
                           giftedToday
-                            ? 'bg-slate-100 opacity-50 cursor-not-allowed'
-                            : 'bg-white hover:bg-[#fef08a] shadow-[2px_2px_0px_#000] cursor-pointer active:translate-y-0.5'
+                            ? 'bg-slate-100/80 border-slate-200 opacity-50 cursor-not-allowed'
+                            : 'bg-white hover:bg-sky-50/70 border-slate-200/80 hover:border-sky-300 shadow-xs cursor-pointer active:scale-[0.99]'
                         }`}
                       >
-                        <span className="w-8 h-8 bg-[#f3efe2] border-2 border-black flex items-center justify-center text-base shrink-0">
+                        <span className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200/70 flex items-center justify-center text-base shrink-0">
                           {gift.emoji}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <div className="text-[11px] font-black uppercase truncate">
+                          <div className="text-xs font-semibold text-slate-900 truncate">
                             {gift.label}
                           </div>
-                          <div className="text-[10px] font-semibold text-slate-600 line-clamp-1">
+                          <div className="text-[10.5px] text-slate-500 line-clamp-1">
                             {gift.description}
                           </div>
                         </div>
@@ -498,12 +495,12 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <div className="text-[10.5px] font-black uppercase tracking-wider text-slate-600">
+                <div className="space-y-2">
+                  <div className="text-[11px] font-semibold text-slate-500 px-1">
                     Fresh Catch ({caughtFishBucket.length} in Bucket)
                   </div>
                   {caughtFishBucket.length === 0 ? (
-                    <div className="p-2.5 bg-slate-100 border-2 border-dashed border-slate-400 text-[11px] font-bold text-slate-600">
+                    <div className="p-3.5 rounded-2xl bg-white/80 border border-dashed border-slate-300 text-xs font-medium text-slate-500">
                       Catch fish at NW Oasis Lake or East Beach to gift fresh fish!
                     </div>
                   ) : (
@@ -514,22 +511,22 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                           type="button"
                           disabled={giftedToday}
                           onClick={() => handleFishGiftClick(fish)}
-                          className={`p-2 border-2 border-black text-left flex items-center justify-between gap-2 ${
+                          className={`p-2.5 rounded-2xl border text-left flex items-center justify-between gap-2 transition-all ${
                             giftedToday
-                              ? 'bg-slate-100 opacity-50 cursor-not-allowed'
-                              : 'bg-white hover:bg-[#bae6fd] shadow-[2px_2px_0px_#000] cursor-pointer'
+                              ? 'bg-slate-100/80 border-slate-200 opacity-50 cursor-not-allowed'
+                              : 'bg-white hover:bg-sky-50/70 border-slate-200/80 hover:border-sky-300 shadow-xs cursor-pointer'
                           }`}
                         >
                           <div className="min-w-0">
-                            <div className="text-[11px] font-black truncate">
+                            <div className="text-xs font-semibold text-slate-900 truncate">
                               🐟 {fish.speciesName}
                             </div>
-                            <div className="text-[10px] font-bold text-slate-600">
+                            <div className="text-[10.5px] text-slate-500">
                               {fish.rarity} · {fish.weightKg.toFixed(1)}kg
                             </div>
                           </div>
-                          <span className="px-2 py-0.5 bg-[#b8ff3c] border border-black text-[9.5px] font-black uppercase shrink-0">
-                            GIVE
+                          <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-semibold shrink-0">
+                            Give
                           </span>
                         </button>
                       ))}
@@ -540,67 +537,67 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
             )}
 
             {activeTab === 'directory' && (
-              <div className="space-y-2.5 pb-2">
-                <div className="p-2.5 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
-                  <div className="text-[11px] font-black uppercase">Blitz City Citizens</div>
-                  <span className="px-2 py-0.5 bg-[#fff1f2] text-rose-700 border border-black text-[10px] font-black">
+              <div className="flex-1 overflow-y-auto px-4 py-3.5 space-y-3 min-h-0">
+                <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex items-center justify-between gap-2">
+                  <div className="text-xs font-semibold text-slate-900">Blitz City Citizens</div>
+                  <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200/80 text-[11px] font-semibold">
                     {totalTownHearts} / {maxTownHearts} ♥
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {directoryEntries.map((entry) => {
                     const isCurrent = entry.profile.id === profile.id;
                     return (
                       <div
                         key={entry.profile.id}
-                        className={`p-2.5 border-2 border-black flex flex-col justify-between gap-2 ${
+                        className={`p-3 rounded-2xl border flex flex-col justify-between gap-2.5 transition-all ${
                           isCurrent
-                            ? 'bg-[#fef9c3] shadow-[3px_3px_0px_#000]'
-                            : 'bg-white shadow-[2px_2px_0px_#000]'
+                            ? 'bg-sky-50/90 border-sky-300 shadow-sm ring-1 ring-sky-200'
+                            : 'bg-white border-slate-200/80 shadow-xs'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5">
                               <span className="text-sm">{entry.profile.portraitEmoji}</span>
-                              <span className="text-xs font-black uppercase truncate">
+                              <span className="text-xs font-semibold text-slate-900 truncate">
                                 {entry.profile.name}
                               </span>
                             </div>
-                            <div className="text-[10px] font-bold text-slate-600 truncate">
+                            <div className="text-[10.5px] text-slate-500 truncate mt-0.5">
                               {entry.profile.districtLabel}
                             </div>
                           </div>
                           <span
-                            className="px-1.5 py-0.5 text-[9px] font-black uppercase border border-black text-white shrink-0"
+                            className="px-2 py-0.5 rounded-full text-[9.5px] font-semibold text-white shrink-0"
                             style={{ backgroundColor: entry.profile.accentColor }}
                           >
                             {entry.profile.roleBadge}
                           </span>
                         </div>
 
-                        <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-slate-200">
-                          <div className="flex items-center gap-1">
+                        <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-slate-100">
+                          <div className="flex items-center gap-0.5">
                             {Array.from({ length: entry.progress.maxHearts }).map((_, hIdx) => (
                               <Heart
                                 key={hIdx}
                                 className={`w-3 h-3 ${
                                   hIdx < entry.progress.hearts
-                                    ? 'fill-rose-500 text-black'
-                                    : 'fill-white text-slate-300'
+                                    ? 'fill-rose-500 text-rose-500'
+                                    : 'fill-slate-100 text-slate-300'
                                 }`}
                               />
                             ))}
-                            <span className="ml-1 text-[9.5px] font-bold text-slate-600 inline-flex items-center gap-0.5">
-                              {entry.talkedToday && <Check className="w-2.5 h-2.5 text-emerald-700" />}
+                            <span className="ml-1 text-[10px] font-medium text-slate-500 inline-flex items-center gap-0.5">
+                              {entry.talkedToday && <Check className="w-2.5 h-2.5 text-emerald-600" />}
                               {entry.progress.points}
                             </span>
                           </div>
                           <button
                             type="button"
                             onClick={() => onVisitDirectoryCitizen(entry.profile)}
-                            className="px-2 py-0.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border border-black text-[9.5px] font-black uppercase cursor-pointer"
+                            className="px-3 py-1 rounded-full bg-sky-500 hover:bg-sky-600 text-white text-[10px] font-semibold shadow-xs cursor-pointer transition-colors"
                           >
                             Visit
                           </button>

@@ -11,6 +11,7 @@ import {
   Upload,
   User,
   Users,
+  X,
 } from 'lucide-react';
 import { NearbyEntityUser } from './SocialChatModal';
 import { soundEngine } from '../game/audio';
@@ -98,6 +99,7 @@ export interface CharacterProfileModalProps {
   lulBalance?: number;
   onChangePlayerName?: (newName: string) => void;
   onStartWhisper?: (user: NearbyEntityUser) => void;
+  embeddedInPhone?: boolean;
 }
 
 export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
@@ -119,6 +121,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
   lulBalance = 0,
   onChangePlayerName,
   onStartWhisper,
+  embeddedInPhone = false,
 }) => {
   const defaultPhotoUrl =
     characterGender === 'female' ? '/assets/avatar_nadia.jpg' : '/assets/avatar_hiro.jpg';
@@ -304,6 +307,556 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
         ? 'PRIVATE HOUSE OWNED'
         : 'NO PLOT CLAIMED';
 
+  if (embeddedInPhone && (!isOpen || !targetUser)) {
+    return null;
+  }
+
+  const innerContent = (
+    <div
+      className={
+        embeddedInPhone
+          ? 'relative w-full h-full bg-[#edf0f5] p-3 text-slate-900 flex flex-col overflow-hidden'
+          : 'relative rounded-[24px] bg-[#e8ecf2]/94 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] p-4 sm:p-5 text-slate-900 flex flex-col max-h-full overflow-hidden'
+      }
+    >
+      {/* Hidden File Inputs for Custom Photo Uploads */}
+      <input
+        ref={statusFileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => handleUploadPhotoFile('status', e)}
+      />
+      <input
+        ref={avatarFileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => handleUploadPhotoFile('avatar', e)}
+      />
+
+      {/* TOP HEADER BAR */}
+      <div
+        className={`flex items-center justify-between gap-2 border-b border-slate-300/60 shrink-0 ${
+          embeddedInPhone ? 'pb-2.5' : 'pb-3'
+        }`}
+      >
+        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/95 border border-slate-200/80 shadow-xs text-[11.5px] font-semibold text-slate-800">
+            <User className="w-3.5 h-3.5 text-sky-500 stroke-[2.2]" aria-hidden="true" />
+            <span>{isSelfProfile ? 'Citizen Profile' : 'Player Profile'}</span>
+          </div>
+
+          <div
+            className={`inline-flex items-center px-2.5 py-1 rounded-full border text-[10.5px] font-semibold ${
+              isNpcProfile
+                ? 'bg-amber-100/90 text-amber-800 border-amber-200/80'
+                : effectiveTeam === 'red'
+                  ? 'bg-rose-100/90 text-rose-700 border-rose-200/80'
+                  : 'bg-sky-100/90 text-sky-700 border-sky-200/80'
+            }`}
+          >
+            <span>
+              {isNpcProfile
+                ? 'Merchant NPC'
+                : `${effectiveTeam === 'red' ? 'Red' : 'Blue'} Team`}
+            </span>
+          </div>
+
+          {isSelfProfile && (
+            <div
+              data-profile-level-badge="true"
+              className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-100/90 text-emerald-800 border border-emerald-200/80 text-[10.5px] font-semibold"
+            >
+              <span>
+                Lv {playerLevel}
+                {playerXpLabel ? ` · ${playerXpLabel}` : ''}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {!embeddedInPhone && (
+          <button
+            type="button"
+            onClick={() => {
+              soundEngine.playUiClick();
+              onClose();
+            }}
+            aria-label="Close Profile"
+            data-profile-close-btn="true"
+            className="w-8 h-8 rounded-full bg-white/90 hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200/80 shadow-xs flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
+          >
+            <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+          </button>
+        )}
+      </div>
+
+      {/* SCROLLABLE BODY */}
+      <div
+        className={`flex-1 overflow-y-auto overflow-x-hidden pr-0.5 min-h-0 ${
+          embeddedInPhone ? 'mt-2.5 space-y-2.5' : 'mt-3 space-y-3'
+        }`}
+      >
+        {/* 1. FEATURED STATUS PHOTO + CIRCULAR PROFILE AVATAR HEADER */}
+        <div
+          className={`rounded-2xl bg-white/95 border border-slate-200/70 shadow-sm ${
+            embeddedInPhone ? 'p-3 space-y-2.5' : 'p-3.5 space-y-3'
+          }`}
+        >
+          {/* Large Featured Square/Showcase Status Photo Frame */}
+          <div
+            data-profile-status-photo-frame="true"
+            className={`relative w-full rounded-xl bg-slate-900 border border-slate-200/70 shadow-xs overflow-hidden ${
+              embeddedInPhone ? 'h-[124px]' : 'h-[138px]'
+            }`}
+          >
+            <img
+              src={resolvedStatusPhotoUrl}
+              alt={`${cleanTargetName} Status Showcase`}
+              draggable={false}
+              className={`w-full h-full select-none ${getPhotoCropClassName(resolvedStatusPhotoUrl)}`}
+            />
+
+            {/* Top-left Status Photo Label */}
+            <div className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-slate-900/65 backdrop-blur-md text-white/95 border border-white/20 text-[10px] font-medium tracking-wide">
+              <span>Status photo</span>
+            </div>
+
+            {/* Top-right Customize Status Photo Button (Self Only) */}
+            {isSelfProfile && (
+              <button
+                type="button"
+                data-edit-status-photo-btn="true"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  setActivePhotoPicker((prev) => (prev === 'status' ? 'none' : 'status'));
+                }}
+                className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded-full bg-white/90 hover:bg-white text-slate-800 backdrop-blur-md border border-white/80 shadow-sm text-[10px] font-semibold cursor-pointer transition-colors"
+              >
+                <span className="flex items-center gap-1">
+                  <Camera className="w-3 h-3 text-sky-500 stroke-[2.2]" aria-hidden="true" />
+                  <span>Change status photo</span>
+                </span>
+              </button>
+            )}
+
+            {/* Bottom Status Caption Bar */}
+            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950/85 via-slate-900/65 to-transparent px-3 py-2 flex items-center justify-between gap-2">
+              {isSelfProfile && isEditingCaption ? (
+                <div className="flex items-center gap-1.5 w-full">
+                  <input
+                    type="text"
+                    value={draftCaption}
+                    maxLength={80}
+                    onChange={(e) => setDraftCaption(e.target.value)}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSaveCaption();
+                      }
+                    }}
+                    placeholder="Enter short status..."
+                    className="flex-1 min-w-0 rounded-full bg-white/95 text-slate-900 px-3 py-1 text-[11px] font-medium border border-white/80 shadow-xs focus:outline-none focus:ring-2 focus:ring-sky-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveCaption}
+                    className="px-3 py-1 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-semibold cursor-pointer shadow-xs transition-colors shrink-0"
+                  >
+                    <span>Save</span>
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div
+                    data-profile-status-caption="true"
+                    className="text-[11.5px] font-medium text-white truncate drop-shadow-xs"
+                  >
+                    {isSelfProfile
+                      ? statusCaption || 'Online in Buddies Blitz'
+                      : isNpcProfile
+                        ? 'Official Exchange & Supply Merchant in The City'
+                        : targetUser?.status || 'Online in Buddies Blitz'}
+                  </div>
+                  {isSelfProfile && (
+                    <button
+                      type="button"
+                      data-edit-status-caption-btn="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setDraftCaption(statusCaption);
+                        setIsEditingCaption(true);
+                      }}
+                      className="px-2 py-0.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white text-[10px] font-medium shrink-0 flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <Edit3 className="w-2.5 h-2.5 stroke-[2.2]" aria-hidden="true" />
+                      <span>Edit status</span>
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Circular Profile Picture Avatar + Player Identity Row */}
+          <div className="flex items-center gap-3">
+            <div className="relative shrink-0">
+              <div
+                data-profile-circular-avatar="true"
+                className={`rounded-full p-[2.5px] shadow-md ${
+                  embeddedInPhone ? 'w-14 h-14' : 'w-16 h-16'
+                } ${
+                  isNpcProfile
+                    ? 'bg-gradient-to-tr from-amber-300 to-yellow-400'
+                    : effectiveTeam === 'red'
+                      ? 'bg-gradient-to-tr from-rose-400 to-pink-300'
+                      : 'bg-gradient-to-tr from-sky-400 to-teal-300'
+                }`}
+              >
+                <div className="w-full h-full rounded-full overflow-hidden bg-slate-100 ring-2 ring-white">
+                  <img
+                    src={resolvedAvatarPhotoUrl}
+                    alt={`${cleanTargetName} Avatar`}
+                    draggable={false}
+                    className={`w-full h-full select-none ${getPhotoCropClassName(resolvedAvatarPhotoUrl)}`}
+                  />
+                </div>
+              </div>
+              {isSelfProfile && (
+                <button
+                  type="button"
+                  data-edit-avatar-photo-btn="true"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    setActivePhotoPicker((prev) => (prev === 'avatar' ? 'none' : 'avatar'));
+                  }}
+                  title="Change Circular Profile Avatar"
+                  className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-sky-500 hover:bg-sky-600 text-white border-2 border-white shadow-sm flex items-center justify-center cursor-pointer transition-colors"
+                >
+                  <Camera className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex-1 min-w-0 space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-100 shrink-0" />
+                <span className="text-[11px] font-medium text-slate-500">
+                  {isSelfProfile ? 'Active citizen' : isNpcProfile ? 'Merchant NPC' : 'Online player'}
+                </span>
+              </div>
+
+              {isSelfProfile && onChangePlayerName && isEditingName ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={draftPlayerName}
+                    maxLength={24}
+                    onChange={(e) => setDraftPlayerName(e.target.value)}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSaveUsername();
+                      }
+                    }}
+                    className="flex-1 min-w-0 px-3 py-1 rounded-xl bg-slate-50 text-slate-900 font-semibold text-xs border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:bg-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveUsername}
+                    className="px-3 py-1 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-[11px] shadow-xs cursor-pointer shrink-0 transition-colors"
+                  >
+                    <span>Save</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-2">
+                  <h2
+                    data-profile-display-name="true"
+                    className={`font-bold tracking-tight text-slate-900 truncate ${
+                      embeddedInPhone ? 'text-base' : 'text-base sm:text-lg'
+                    }`}
+                  >
+                    {cleanTargetName}
+                  </h2>
+                  {isSelfProfile && onChangePlayerName && (
+                    <button
+                      type="button"
+                      data-profile-edit-username-btn="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setDraftPlayerName(cleanTargetName);
+                        setIsEditingName(true);
+                      }}
+                      className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-sky-50 text-slate-700 hover:text-sky-700 border border-slate-200/80 text-[10.5px] font-semibold cursor-pointer shrink-0 transition-colors"
+                    >
+                      <span className="flex items-center gap-1">
+                        <Edit3 className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
+                        <span>Rename</span>
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200/70 text-[10px] font-medium">
+                  Gender: {effectiveGenderLabel === 'FEMALE' ? 'Female' : 'Male'}
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200/70 text-[10px] font-medium">
+                  Team: {effectiveTeam === 'red' ? 'Red' : 'Blue'}
+                </span>
+                {isSelfProfile && (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200/80 text-[10px] font-semibold font-mono">
+                    LUL: {lulBalance.toLocaleString()}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* INLINE PHOTO PICKER DRAWER (When Changing Status Photo or Circular Avatar) */}
+          {isSelfProfile && activePhotoPicker !== 'none' && (
+            <div
+              data-profile-photo-picker={activePhotoPicker}
+              className="p-3 rounded-2xl bg-slate-50/95 border border-slate-200/80 space-y-2.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold text-slate-700 truncate">
+                  {activePhotoPicker === 'status'
+                    ? 'Select featured status photo'
+                    : 'Select circular profile avatar'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    if (activePhotoPicker === 'status') {
+                      statusFileInputRef.current?.click();
+                    } else {
+                      avatarFileInputRef.current?.click();
+                    }
+                  }}
+                  className="px-2.5 py-1 rounded-full bg-sky-500 hover:bg-sky-600 text-white shadow-xs text-[10px] font-semibold cursor-pointer shrink-0 transition-colors"
+                >
+                  <span className="flex items-center gap-1">
+                    <Upload className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
+                    <span>Upload image</span>
+                  </span>
+                </button>
+              </div>
+
+              <div
+                className={`grid gap-2 ${
+                  embeddedInPhone ? 'grid-cols-3' : 'grid-cols-3 sm:grid-cols-6'
+                }`}
+              >
+                {PROFILE_PHOTO_PRESETS.map((preset) => {
+                  const currentUrl =
+                    activePhotoPicker === 'status'
+                      ? resolvedStatusPhotoUrl
+                      : resolvedAvatarPhotoUrl;
+                  const isSelected = currentUrl === preset.url;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => handleSelectPhotoUrl(activePhotoPicker, preset.url)}
+                      className={`p-1.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center gap-1 min-w-0 ${
+                        isSelected
+                          ? 'bg-sky-50 text-sky-900 border-sky-400 ring-2 ring-sky-200 shadow-xs'
+                          : 'bg-white text-slate-600 border-slate-200/80 hover:border-sky-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="w-full h-9 rounded-lg overflow-hidden bg-slate-100">
+                        <img
+                          src={preset.url}
+                          alt={preset.label}
+                          className={`w-full h-full ${preset.cropClassName}`}
+                        />
+                      </div>
+                      <span className="text-[9px] font-semibold truncate w-full text-center">
+                        {preset.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 2. ACCOUNT & WALLET IDENTITY DETAILS */}
+        <div
+          className={`rounded-2xl bg-white/95 border border-slate-200/70 shadow-sm space-y-2.5 ${
+            embeddedInPhone ? 'p-3' : 'p-3.5'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[11px] font-medium text-slate-500">
+                {isSelfProfile ? 'Account session' : 'Citizen identity'}
+              </div>
+              <div className="text-xs font-semibold text-slate-900 truncate mt-0.5">
+                {isSelfProfile
+                  ? connectedAccountEmail || (playerUid ? 'Connected Citizen Account' : 'Guest Session')
+                  : isNpcProfile
+                    ? 'System Autonomous Merchant'
+                    : cleanTargetName}
+              </div>
+            </div>
+            <span className="px-2.5 py-0.5 rounded-full bg-sky-50 border border-sky-200/80 text-[10px] font-semibold text-sky-700 shrink-0">
+              {isSelfProfile
+                ? playerUid
+                  ? 'Registered'
+                  : 'Guest mode'
+                : isNpcProfile
+                  ? 'Official NPC'
+                  : 'Live peer'}
+            </span>
+          </div>
+
+          {isSelfProfile && (
+            <div className="p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/70 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-[10px] font-semibold text-emerald-700">
+                  NEAR wallet ID
+                </div>
+                <div
+                  data-profile-wallet-id="true"
+                  className="text-[11px] font-mono font-medium text-slate-700 break-all mt-0.5"
+                >
+                  {playerUid || 'Not registered yet (Guest Session)'}
+                </div>
+              </div>
+              {playerUid && (
+                <button
+                  type="button"
+                  onClick={handleCopyAccountId}
+                  className="px-3 py-1 rounded-full bg-sky-500 hover:bg-sky-600 text-white font-semibold text-[10.5px] shadow-xs cursor-pointer shrink-0 transition-colors"
+                >
+                  <span className="flex items-center gap-1">
+                    {copiedUid ? (
+                      <>
+                        <Check className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </span>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 3. REAL IN-GAME ASSET SUMMARY (FOR SELF PROFILE) */}
+        {isSelfProfile && (
+          <div
+            className={`rounded-2xl bg-white/95 border border-slate-200/70 shadow-sm space-y-2 ${
+              embeddedInPhone ? 'p-3' : 'p-3.5'
+            }`}
+          >
+            <div className="text-[11px] font-semibold text-slate-600">
+              In-game citizen assets
+            </div>
+
+            <div className={`grid grid-cols-3 ${embeddedInPhone ? 'gap-1.5' : 'gap-2'}`}>
+              {/* Command Plot / House Ownership */}
+              <div
+                data-profile-asset-plot="true"
+                className="min-w-0 p-2 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col justify-between gap-1.5"
+              >
+                <div className="flex items-center gap-1 text-[10px] font-medium text-slate-500 min-w-0">
+                  <Home className="w-3 h-3 text-sky-500 stroke-[2.2] shrink-0" aria-hidden="true" />
+                  <span className="truncate">Estate / Plot</span>
+                </div>
+                <div className="text-[10.5px] font-semibold text-slate-900 leading-tight break-words">
+                  {plotSummaryLabel}
+                </div>
+              </div>
+
+              {/* Caught Fish & Minted Fish NFTs */}
+              <div
+                data-profile-asset-fish="true"
+                className="min-w-0 p-2 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col justify-between gap-1.5"
+              >
+                <div className="flex items-center gap-1 text-[10px] font-medium text-slate-500 min-w-0">
+                  <Fish className="w-3 h-3 text-teal-500 stroke-[2.2] shrink-0" aria-hidden="true" />
+                  <span className="truncate">Fish &amp; NFTs</span>
+                </div>
+                <div className="text-[10.5px] font-semibold text-slate-900 leading-tight break-words">
+                  {caughtFishCount} Caught · {mintedFishNftCount} NFT
+                </div>
+              </div>
+
+              {/* Recruited Family & Active Harvesters */}
+              <div
+                data-profile-asset-units="true"
+                className="min-w-0 p-2 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col justify-between gap-1.5"
+              >
+                <div className="flex items-center gap-1 text-[10px] font-medium text-slate-500 min-w-0">
+                  <Users className="w-3 h-3 text-indigo-500 stroke-[2.2] shrink-0" aria-hidden="true" />
+                  <span className="truncate">Active units</span>
+                </div>
+                <div className="text-[10.5px] font-semibold text-slate-900 leading-tight break-words">
+                  {recruitedFamilyCount} Family · {activeHarvesterCount} Harvester
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 4. REMOTE REAL PLAYER WHISPER ACTION (Hidden for Self and NPCs) */}
+        {!isSelfProfile && !isNpcProfile && targetUser && onStartWhisper && (
+          <button
+            type="button"
+            data-profile-whisper-btn="true"
+            onClick={() => {
+              soundEngine.playUiClick();
+              onStartWhisper(targetUser);
+            }}
+            className="w-full py-2.5 px-4 rounded-full bg-sky-500 hover:bg-sky-600 text-white shadow-sm font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] transition-all"
+          >
+            <MessageCircle className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+            <span>Send whisper message</span>
+          </button>
+        )}
+
+        {/* 5. NPC MERCHANT NOTICE (When inspecting an NPC) */}
+        {isNpcProfile && (
+          <div className="p-3.5 rounded-2xl bg-amber-50/95 border border-amber-200/80 shadow-xs flex items-center gap-2.5">
+            <Shield className="w-4 h-4 text-amber-600 stroke-[2.2] shrink-0" aria-hidden="true" />
+            <div className="text-[11.5px] font-medium text-amber-950 leading-snug">
+              {cleanTargetName} is an official NPC merchant in The City. Interact using the{' '}
+              <span className="font-semibold">TALK</span> action to open the exchange counter.
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  if (embeddedInPhone) {
+    return (
+      <div
+        role="region"
+        aria-label="Character Profile"
+        data-character-profile-modal="true"
+        className="w-full h-full flex flex-col overflow-hidden select-none"
+      >
+        {innerContent}
+      </div>
+    );
+  }
+
   return (
     <aside
       role="dialog"
@@ -318,492 +871,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
           : '-translate-x-[120%] opacity-0 invisible pointer-events-none'
       }`}
     >
-      <div className="relative bg-white border-[3.5px] border-black shadow-[4px_4px_0px_#000] p-4 sm:p-5 text-black flex flex-col max-h-full overflow-hidden">
-        {/* Hidden File Inputs for Custom Photo Uploads */}
-        <input
-          ref={statusFileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => handleUploadPhotoFile('status', e)}
-        />
-        <input
-          ref={avatarFileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => handleUploadPhotoFile('avatar', e)}
-        />
-
-        {/* TOP HEADER BAR (Matches SocialChatModal & PersonalWalletModal) */}
-        <div className="flex items-center justify-between gap-2 pb-2.5 border-b-[2.5px] border-black shrink-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="-skew-x-6 inline-block px-3 py-1 bg-[#38bdf8] border-2 border-black shadow-[2px_2px_0px_#000] text-xs font-black uppercase tracking-wider text-black">
-              <span className="skew-x-6 flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
-                <span>{isSelfProfile ? 'CITIZEN PROFILE' : 'PLAYER PROFILE'}</span>
-              </span>
-            </div>
-
-            <div
-              className={`-skew-x-6 inline-block px-2.5 py-1 border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase tracking-wider ${
-                isNpcProfile
-                  ? 'bg-[#facc15] text-black'
-                  : effectiveTeam === 'red'
-                    ? 'bg-[#ff3b30] text-white'
-                    : 'bg-[#00d2ff] text-black'
-              }`}
-            >
-              <span className="skew-x-6 inline-block">
-                {isNpcProfile ? 'MERCHANT NPC' : `${effectiveTeam.toUpperCase()} TEAM`}
-              </span>
-            </div>
-
-            {isSelfProfile && (
-              <div
-                data-profile-level-badge="true"
-                className="-skew-x-6 inline-block px-2.5 py-1 bg-[#b8ff3c] text-black border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase tracking-wider"
-              >
-                <span className="skew-x-6 inline-block">
-                  LV {playerLevel}
-                  {playerXpLabel ? ` · ${playerXpLabel}` : ''}
-                </span>
-              </div>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              soundEngine.playUiClick();
-              onClose();
-            }}
-            aria-label="Close Profile"
-            data-profile-close-btn="true"
-            className="-skew-x-6 w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs flex items-center justify-center cursor-pointer active:scale-95 shrink-0"
-          >
-            <span className="skew-x-6 inline-block">X</span>
-          </button>
-        </div>
-
-        {/* SCROLLABLE BODY */}
-        <div className="mt-2 flex-1 overflow-y-auto pr-1 space-y-2 min-h-0">
-          {/* 1. FEATURED STATUS PHOTO + CIRCULAR PROFILE AVATAR HEADER */}
-          <div className="bg-[#f8fafc] border-[2.5px] border-black shadow-[3px_3px_0px_#000] p-2.5 space-y-2">
-            {/* Large Featured Square/Showcase Status Photo Frame */}
-            <div
-              data-profile-status-photo-frame="true"
-              className="relative w-full h-[132px] bg-[#1e293b] border-[2.5px] border-black shadow-[2px_2px_0px_#000] overflow-hidden"
-            >
-              <img
-                src={resolvedStatusPhotoUrl}
-                alt={`${cleanTargetName} Status Showcase`}
-                draggable={false}
-                className={`w-full h-full select-none ${getPhotoCropClassName(resolvedStatusPhotoUrl)}`}
-              />
-
-              {/* Top-left Status Photo Label */}
-              <div className="absolute top-2 left-2 -skew-x-6 px-2 py-0.5 bg-black/85 text-white border border-white/30 text-[9px] font-black uppercase tracking-wider">
-                <span className="skew-x-6 inline-block">STATUS PHOTO</span>
-              </div>
-
-              {/* Top-right Customize Status Photo Button (Self Only) */}
-              {isSelfProfile && (
-                <button
-                  type="button"
-                  data-edit-status-photo-btn="true"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setActivePhotoPicker((prev) => (prev === 'status' ? 'none' : 'status'));
-                  }}
-                  className="absolute top-2 right-2 -skew-x-6 px-2.5 py-0.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0px_#000] text-[9.5px] font-black uppercase tracking-wider cursor-pointer"
-                >
-                  <span className="skew-x-6 flex items-center gap-1">
-                    <Camera className="w-3 h-3 stroke-[2.5]" aria-hidden="true" />
-                    <span>CHANGE STATUS PHOTO</span>
-                  </span>
-                </button>
-              )}
-
-              {/* Bottom Status Caption Bar */}
-              <div className="absolute bottom-0 inset-x-0 bg-black/85 border-t-2 border-black px-2.5 py-1 flex items-center justify-between gap-2">
-                {isSelfProfile && isEditingCaption ? (
-                  <div className="flex items-center gap-1.5 w-full">
-                    <input
-                      type="text"
-                      value={draftCaption}
-                      maxLength={80}
-                      onChange={(e) => setDraftCaption(e.target.value)}
-                      onKeyDown={(e) => {
-                        e.stopPropagation();
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleSaveCaption();
-                        }
-                      }}
-                      placeholder="Enter short status..."
-                      className="flex-1 min-w-0 bg-white text-black px-2 py-0.5 text-[11px] font-bold border border-black focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleSaveCaption}
-                      className="-skew-x-6 px-2 py-0.5 bg-[#b8ff3c] text-black border border-black text-[9px] font-black uppercase cursor-pointer shrink-0"
-                    >
-                      <span className="skew-x-6 inline-block">SAVE</span>
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <div
-                      data-profile-status-caption="true"
-                      className="text-[11px] font-bold text-white truncate"
-                    >
-                      {isSelfProfile
-                        ? statusCaption || 'Online in Buddies Blitz'
-                        : isNpcProfile
-                          ? 'Official Exchange & Supply Merchant in The City'
-                          : targetUser?.status || 'Online in Buddies Blitz'}
-                    </div>
-                    {isSelfProfile && (
-                      <button
-                        type="button"
-                        data-edit-status-caption-btn="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          setDraftCaption(statusCaption);
-                          setIsEditingCaption(true);
-                        }}
-                        className="text-[#facc15] hover:text-[#fde047] text-[9px] font-black uppercase tracking-wider shrink-0 flex items-center gap-1 cursor-pointer"
-                      >
-                        <Edit3 className="w-2.5 h-2.5 stroke-[2.5]" aria-hidden="true" />
-                        <span>EDIT STATUS</span>
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Circular Profile Picture Avatar + Player Identity Row */}
-            <div className="flex items-center gap-3">
-              <div className="relative shrink-0">
-                <div
-                  data-profile-circular-avatar="true"
-                  className="w-14 h-14 sm:w-16 sm:h-16 rounded-full border-[3px] border-black shadow-[3px_3px_0px_#000] overflow-hidden bg-[#1e293b]"
-                >
-                  <img
-                    src={resolvedAvatarPhotoUrl}
-                    alt={`${cleanTargetName} Avatar`}
-                    draggable={false}
-                    className={`w-full h-full select-none ${getPhotoCropClassName(resolvedAvatarPhotoUrl)}`}
-                  />
-                </div>
-                {isSelfProfile && (
-                  <button
-                    type="button"
-                    data-edit-avatar-photo-btn="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      setActivePhotoPicker((prev) => (prev === 'avatar' ? 'none' : 'avatar'));
-                    }}
-                    title="Change Circular Profile Avatar"
-                    className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-center cursor-pointer"
-                  >
-                    <Camera className="w-3 h-3 stroke-[2.5]" aria-hidden="true" />
-                  </button>
-                )}
-              </div>
-
-              <div className="flex-1 min-w-0 space-y-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-[#10b981] border border-black shrink-0" />
-                  <span className="text-[9.5px] font-black uppercase tracking-wider text-slate-600">
-                    {isSelfProfile ? 'ACTIVE CITIZEN' : isNpcProfile ? 'MERCHANT NPC' : 'ONLINE PLAYER'}
-                  </span>
-                </div>
-
-                {isSelfProfile && onChangePlayerName && isEditingName ? (
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      value={draftPlayerName}
-                      maxLength={24}
-                      onChange={(e) => setDraftPlayerName(e.target.value)}
-                      onKeyDown={(e) => {
-                        e.stopPropagation();
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleSaveUsername();
-                        }
-                      }}
-                      className="flex-1 min-w-0 px-2.5 py-1 bg-white text-black font-black text-xs border-2 border-black focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleSaveUsername}
-                      className="-skew-x-6 px-2.5 py-1 bg-[#b8ff3c] hover:bg-[#a3e635] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0"
-                    >
-                      <span className="skew-x-6 inline-block">SAVE</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between gap-2">
-                    <h2
-                      data-profile-display-name="true"
-                      className="text-base sm:text-lg font-black uppercase tracking-tight text-black truncate"
-                    >
-                      {cleanTargetName}
-                    </h2>
-                    {isSelfProfile && onChangePlayerName && (
-                      <button
-                        type="button"
-                        data-profile-edit-username-btn="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          setDraftPlayerName(cleanTargetName);
-                          setIsEditingName(true);
-                        }}
-                        className="-skew-x-6 px-2.5 py-0.5 bg-white hover:bg-[#facc15] text-black border-2 border-black shadow-[2px_2px_0px_#000] text-[9.5px] font-black uppercase cursor-pointer shrink-0"
-                      >
-                        <span className="skew-x-6 flex items-center gap-1">
-                          <Edit3 className="w-3 h-3 stroke-[2.5]" aria-hidden="true" />
-                          <span>RENAME</span>
-                        </span>
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="px-2 py-0.5 bg-[#e2e8f0] border border-black text-[9.5px] font-black uppercase text-black">
-                    GENDER: {effectiveGenderLabel}
-                  </span>
-                  <span className="px-2 py-0.5 bg-[#e2e8f0] border border-black text-[9.5px] font-black uppercase text-black">
-                    TEAM: {effectiveTeam.toUpperCase()}
-                  </span>
-                  {isSelfProfile && (
-                    <>
-                      <span className="px-2 py-0.5 bg-[#facc15] border border-black text-[9.5px] font-black uppercase text-black font-mono">
-                        LUL: {lulBalance}
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* INLINE PHOTO PICKER DRAWER (When Changing Status Photo or Circular Avatar) */}
-            {isSelfProfile && activePhotoPicker !== 'none' && (
-              <div
-                data-profile-photo-picker={activePhotoPicker}
-                className="p-2 bg-[#1e293b] text-white border-2 border-black shadow-[2px_2px_0px_#000] space-y-1.5"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[9.5px] font-black uppercase tracking-wider text-[#facc15]">
-                    {activePhotoPicker === 'status'
-                      ? 'SELECT FEATURED STATUS PHOTO'
-                      : 'SELECT CIRCULAR PROFILE AVATAR'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      if (activePhotoPicker === 'status') {
-                        statusFileInputRef.current?.click();
-                      } else {
-                        avatarFileInputRef.current?.click();
-                      }
-                    }}
-                    className="-skew-x-6 px-2.5 py-0.5 bg-[#b8ff3c] hover:bg-[#a3e635] text-black border border-black text-[9px] font-black uppercase cursor-pointer shrink-0"
-                  >
-                    <span className="skew-x-6 flex items-center gap-1">
-                      <Upload className="w-3 h-3 stroke-[2.5]" aria-hidden="true" />
-                      <span>UPLOAD IMAGE</span>
-                    </span>
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
-                  {PROFILE_PHOTO_PRESETS.map((preset) => {
-                    const currentUrl =
-                      activePhotoPicker === 'status'
-                        ? resolvedStatusPhotoUrl
-                        : resolvedAvatarPhotoUrl;
-                    const isSelected = currentUrl === preset.url;
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => handleSelectPhotoUrl(activePhotoPicker, preset.url)}
-                        className={`p-1 border-2 transition-all cursor-pointer flex flex-col items-center gap-1 ${
-                          isSelected
-                            ? 'bg-[#facc15] text-black border-black shadow-[2px_2px_0px_#000]'
-                            : 'bg-[#0f172a] text-white border-white/25 hover:border-white'
-                        }`}
-                      >
-                        <div className="w-full h-9 overflow-hidden border border-black bg-slate-900">
-                          <img
-                            src={preset.url}
-                            alt={preset.label}
-                            className={`w-full h-full ${preset.cropClassName}`}
-                          />
-                        </div>
-                        <span className="text-[8.5px] font-black uppercase truncate w-full text-center">
-                          {preset.label}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 2. ACCOUNT & WALLET IDENTITY DETAILS */}
-          <div className="p-2.5 bg-[#1e293b] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-[9.5px] font-black uppercase tracking-wider text-slate-400">
-                  {isSelfProfile ? 'ACCOUNT SESSION' : 'CITIZEN IDENTITY'}
-                </div>
-                <div className="text-xs font-bold text-white truncate">
-                  {isSelfProfile
-                    ? connectedAccountEmail || (playerUid ? 'Connected Citizen Account' : 'Guest Session')
-                    : isNpcProfile
-                      ? 'System Autonomous Merchant'
-                      : cleanTargetName}
-                </div>
-              </div>
-              <span className="px-2 py-0.5 bg-[#0f172a] border border-white/20 text-[9px] font-black uppercase text-[#38bdf8] shrink-0">
-                {isSelfProfile
-                  ? playerUid
-                    ? 'REGISTERED'
-                    : 'GUEST MODE'
-                  : isNpcProfile
-                    ? 'OFFICIAL NPC'
-                    : 'LIVE PEER'}
-              </span>
-            </div>
-
-            {isSelfProfile && (
-              <div className="p-2 bg-[#0f172a] border border-white/15 flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-[9px] font-black uppercase tracking-wider text-[#b8ff3c]">
-                    NEAR WALLET ID
-                  </div>
-                  <div
-                    data-profile-wallet-id="true"
-                    className="text-[11px] font-mono font-bold text-slate-200 break-all"
-                  >
-                    {playerUid || 'Not registered yet (Guest Session)'}
-                  </div>
-                </div>
-                {playerUid && (
-                  <button
-                    type="button"
-                    onClick={handleCopyAccountId}
-                    className="-skew-x-6 px-2.5 py-1 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black font-black text-[9.5px] uppercase border border-black cursor-pointer shrink-0"
-                  >
-                    <span className="skew-x-6 flex items-center gap-1">
-                      {copiedUid ? (
-                        <>
-                          <Check className="w-3 h-3 stroke-[2.5]" aria-hidden="true" />
-                          <span>COPIED</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3 h-3 stroke-[2.5]" aria-hidden="true" />
-                          <span>COPY</span>
-                        </>
-                      )}
-                    </span>
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* 3. REAL IN-GAME ASSET SUMMARY (FOR SELF PROFILE) */}
-          {isSelfProfile && (
-            <div className="space-y-1.5">
-              <div className="text-[9.5px] font-black uppercase tracking-wider text-slate-700">
-                IN-GAME CITIZEN ASSETS
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                {/* Command Plot / House Ownership */}
-                <div
-                  data-profile-asset-plot="true"
-                  className="p-2 bg-white border-[2.5px] border-black shadow-[2px_2px_0px_#000] flex flex-col justify-between gap-1"
-                >
-                  <div className="flex items-center gap-1 text-[9px] font-black uppercase text-slate-600">
-                    <Home className="w-3 h-3 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
-                    <span className="truncate">ESTATE / PLOT</span>
-                  </div>
-                  <div className="text-[11px] font-black uppercase text-black leading-tight">
-                    {plotSummaryLabel}
-                  </div>
-                </div>
-
-                {/* Caught Fish & Minted Fish NFTs */}
-                <div
-                  data-profile-asset-fish="true"
-                  className="p-2 bg-white border-[2.5px] border-black shadow-[2px_2px_0px_#000] flex flex-col justify-between gap-1"
-                >
-                  <div className="flex items-center gap-1 text-[9px] font-black uppercase text-slate-600">
-                    <Fish className="w-3 h-3 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
-                    <span className="truncate">FISH &amp; NFTs</span>
-                  </div>
-                  <div className="text-[11px] font-black uppercase text-black leading-tight">
-                    {caughtFishCount} CAUGHT · {mintedFishNftCount} NFT
-                  </div>
-                </div>
-
-                {/* Recruited Family & Active Harvesters */}
-                <div
-                  data-profile-asset-units="true"
-                  className="p-2 bg-white border-[2.5px] border-black shadow-[2px_2px_0px_#000] flex flex-col justify-between gap-1"
-                >
-                  <div className="flex items-center gap-1 text-[9px] font-black uppercase text-slate-600">
-                    <Users className="w-3 h-3 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
-                    <span className="truncate">ACTIVE UNITS</span>
-                  </div>
-                  <div className="text-[11px] font-black uppercase text-black leading-tight">
-                    {recruitedFamilyCount} FAMILY · {activeHarvesterCount} HARVESTER
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 4. REMOTE REAL PLAYER WHISPER ACTION (Hidden for Self and NPCs) */}
-          {!isSelfProfile && !isNpcProfile && targetUser && onStartWhisper && (
-            <button
-              type="button"
-              data-profile-whisper-btn="true"
-              onClick={() => {
-                soundEngine.playUiClick();
-                onStartWhisper(targetUser);
-              }}
-              className="w-full py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#a3e635] text-black border-[2.5px] border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer active:translate-y-0.5 transition-all"
-            >
-              <MessageCircle className="w-4 h-4 stroke-[2.5]" aria-hidden="true" />
-              <span>SEND WHISPER MESSAGE</span>
-            </button>
-          )}
-
-          {/* 5. NPC MERCHANT NOTICE (When inspecting an NPC) */}
-          {isNpcProfile && (
-            <div className="p-3 bg-[#fef9c3] border-[2.5px] border-black shadow-[2px_2px_0px_#000] flex items-center gap-2.5">
-              <Shield className="w-4 h-4 text-black stroke-[2.5] shrink-0" aria-hidden="true" />
-              <div className="text-[11px] font-bold text-black leading-snug">
-                {cleanTargetName} is an official NPC merchant in The City. Interact using the{' '}
-                <span className="font-black">TALK</span> action to open the exchange counter.
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      {innerContent}
     </aside>
   );
 };

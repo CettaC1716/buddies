@@ -91,7 +91,7 @@ function renderShieldCrestSvg(variant: KioskCrestVariant) {
   return (
     <svg
       viewBox="0 0 96 108"
-      className="w-[66px] h-[74px] sm:w-[72px] sm:h-[80px] drop-shadow-[0_3.5px_0_#0d0f12] select-none"
+      className="w-10 h-11 drop-shadow-md select-none shrink-0"
     >
       {/* Outer Black Shield Silhouette */}
       <path
@@ -309,8 +309,8 @@ function renderComicCardIllustration(
           data-silhouette-lock-id={kind}
           className="absolute inset-0 flex items-center justify-center"
         >
-          <div className="w-12 h-12 rounded-full bg-[#0d0f12] border-[3px] border-[#f5b82e] shadow-[0_3.5px_0_#0d0f12] flex items-center justify-center">
-            <span className="text-[28px] font-black leading-none text-[#f5b82e]">
+          <div className="w-11 h-11 rounded-full bg-slate-950/90 border border-amber-400/70 shadow-lg flex items-center justify-center">
+            <span className="text-2xl font-extrabold leading-none text-amber-300">
               ?
             </span>
           </div>
@@ -668,157 +668,137 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
           : '-translate-x-[120%] opacity-0 invisible pointer-events-none'
       }`}
     >
-      <div className="relative pt-10 pl-2.5 pb-2.5 pr-1 max-h-full overflow-y-auto">
-        {/* Solid Pitch-Black Comic Offset Backplate Shadow (Left & Bottom Skewed Frame) */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-x-0 top-11 bottom-0 bg-[#0d0f12] -rotate-[1.1deg] translate-x-[-7px] translate-y-[7px]"
-          style={{
-            clipPath:
-              'polygon(0% 1%, 96% 0%, 100% 4%, 99% 100%, 1% 99%)',
-          }}
-        />
+      <div className="relative max-h-full overflow-y-auto rounded-[26px] bg-[#0e121b]/88 backdrop-blur-2xl border border-white/15 shadow-[0_24px_70px_rgba(0,0,0,0.62)] text-white">
+        {/* Top Controls & Header Bar */}
+        <div className="px-5 pt-4 pb-3.5 border-b border-white/10 bg-white/[0.03] space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              {renderShieldCrestSvg(
+                !isPlotClaimedAndDeployed
+                  ? 'claim'
+                  : isSafezoneCityMode
+                  ? 'safezone'
+                  : pageIndex,
+              )}
+              <div className="min-w-0">
+                <h2 className="text-lg sm:text-xl font-extrabold uppercase tracking-tight leading-tight text-white truncate">
+                  {!isPlotClaimedAndDeployed
+                    ? 'CLAIM HOUSE PLOT'
+                    : isSafezoneCityMode
+                    ? 'MANAGE HOUSE PLOT'
+                    : currentPage.headerTitle}
+                </h2>
+              </div>
+            </div>
 
-        {/* Main Crisp White Comic-Tactical Card Container */}
-        <div className="relative bg-white border-[3.5px] border-[#0d0f12] px-5 sm:px-6 pt-11 sm:pt-12 pb-5 text-[#0d0f12]">
-          {/* Top-Edge Tactical V-Notch & Top-Right Chamfer Accent */}
-          <div
-            aria-hidden="true"
-            className="absolute -top-[3.5px] right-20 w-5 h-2.5 bg-[#0d0f12]"
-            style={{ clipPath: 'polygon(0 0, 100% 0, 50% 100%)' }}
-          />
-          <div
-            aria-hidden="true"
-            className="absolute -top-[4px] -right-[4px] w-5 h-5 bg-[#0d0f12]"
-            style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%)' }}
-          />
-
-          {/* Overlapping Top-Left Metallic Shield Crest Emblem (Positioned high so it never obstructs h2) */}
-          <div className="absolute -top-10 sm:-top-11 left-4 sm:left-5 z-20 pointer-events-none">
-            {renderShieldCrestSvg(
-              !isPlotClaimedAndDeployed
-                ? 'claim'
-                : isSafezoneCityMode
-                ? 'safezone'
-                : pageIndex,
-            )}
-          </div>
-
-          {/* Top-Right Connect/Disconnect Wallet + Gold Pill + Bold Close Button (No Emojis) */}
-          <div className="absolute top-3 right-3.5 z-20 flex items-center gap-2">
-            {!isGamepassVerified && onNearConnectAndMint ? (
-              <button
-                type="button"
-                data-near-btn="connect-mint"
-                disabled={isScanningGamepass}
-                onClick={handleConnectAndScanGamepass}
-                className={`px-2.5 py-0.5 border-2 border-[#0d0f12] text-[10.5px] font-black uppercase tracking-tight shadow-[0_2px_0_#0d0f12] transition-colors ${
-                  isScanningGamepass
-                    ? 'bg-[#facc15] text-[#0d0f12] cursor-wait'
-                    : 'bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#0f172a] cursor-pointer'
-                }`}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {!isGamepassVerified && onNearConnectAndMint ? (
+                <button
+                  type="button"
+                  data-near-btn="connect-mint"
+                  disabled={isScanningGamepass}
+                  onClick={handleConnectAndScanGamepass}
+                  className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                    isScanningGamepass
+                      ? 'bg-amber-400/20 text-amber-300 border border-amber-300/40 cursor-wait'
+                      : 'bg-sky-500 hover:bg-sky-400 text-white cursor-pointer'
+                  }`}
+                >
+                  {isScanningGamepass ? 'SCANNING...' : 'CONNECT WALLET'}
+                </button>
+              ) : isGamepassVerified ? (
+                <button
+                  type="button"
+                  data-near-wallet-badge="true"
+                  data-near-btn={isConfirmingDisconnect ? 'release-base' : 'wallet-toggle-disconnect'}
+                  data-kiosk-release-plot={isConfirmingDisconnect ? 'true' : undefined}
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    soundEngine.playUiClick();
+                    if (!isConfirmingDisconnect) {
+                      setIsConfirmingDisconnect(true);
+                    } else {
+                      setIsConfirmingDisconnect(false);
+                      onNearReleaseBasePlot?.();
+                    }
+                  }}
+                  className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide cursor-pointer transition-colors ${
+                    isConfirmingDisconnect
+                      ? 'bg-rose-500 hover:bg-rose-400 text-white'
+                      : 'bg-emerald-400/20 hover:bg-emerald-400/30 text-emerald-300 border border-emerald-400/40'
+                  }`}
+                  title={
+                    isConfirmingDisconnect
+                      ? 'Click again to Disconnect & Release Plot'
+                      : 'Click to show Disconnect button'
+                  }
+                >
+                  {isConfirmingDisconnect ? 'DISCONNECT' : hud.nearWalletId}
+                </button>
+              ) : null}
+              <div
+                data-kiosk-gold="true"
+                className="px-2.5 py-1 rounded-full bg-white/[0.07] border border-white/15 text-[11px] font-mono-tabular font-bold tracking-tight text-amber-300"
+                title="LUL (Lulling) Balance"
               >
-                {isScanningGamepass ? 'SCANNING...' : 'CONNECT WALLET'}
-              </button>
-            ) : isGamepassVerified ? (
+                {hud.gold.toLocaleString()} LUL
+              </div>
               <button
                 type="button"
-                data-near-wallet-badge="true"
-                data-near-btn={isConfirmingDisconnect ? 'release-base' : 'wallet-toggle-disconnect'}
-                data-kiosk-release-plot={isConfirmingDisconnect ? 'true' : undefined}
+                data-kiosk-close="true"
                 onClick={(e) => {
                   e.currentTarget.blur();
                   soundEngine.playUiClick();
-                  if (!isConfirmingDisconnect) {
-                    setIsConfirmingDisconnect(true);
-                  } else {
-                    setIsConfirmingDisconnect(false);
-                    onNearReleaseBasePlot?.();
-                  }
+                  onClose();
                 }}
-                className={`px-2.5 py-0.5 border-2 border-[#0d0f12] text-[10px] font-black uppercase tracking-tight shadow-[0_2px_0_#0d0f12] cursor-pointer transition-colors ${
-                  isConfirmingDisconnect
-                    ? 'bg-[#ff3b30] hover:bg-[#ff554a] text-white'
-                    : 'bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12]'
-                }`}
-                title={
-                  isConfirmingDisconnect
-                    ? 'Click again to Disconnect & Release Plot'
-                    : 'Click to show Disconnect button'
-                }
+                aria-label="Close Kiosk"
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center active:scale-95 transition-all cursor-pointer"
               >
-                {isConfirmingDisconnect ? 'DISCONNECT' : hud.nearWalletId}
+                <svg viewBox="0 0 24 24" className="w-4 h-4 stroke-current" strokeWidth="2.5">
+                  <line x1="6" y1="6" x2="18" y2="18" strokeLinecap="round" />
+                  <line x1="18" y1="6" x2="6" y2="18" strokeLinecap="round" />
+                </svg>
               </button>
-            ) : null}
-            <div
-              data-kiosk-gold="true"
-              className="px-2.5 py-0.5 bg-[#f4f6f8] border-2 border-[#0d0f12] text-[11px] font-mono-tabular font-bold tracking-tight text-[#0d0f12] shadow-[0_2px_0_#0d0f12]"
-              title="LUL (Lulling) Balance"
-            >
-              {hud.gold.toLocaleString()} LUL
             </div>
-            <button
-              type="button"
-              data-kiosk-close="true"
-              onClick={(e) => {
-                e.currentTarget.blur();
-                soundEngine.playUiClick();
-                onClose();
-              }}
-              aria-label="Close Kiosk"
-              className="w-8 h-8 flex items-center justify-center text-[#0d0f12] hover:scale-110 active:scale-95 transition-transform cursor-pointer"
-            >
-              <svg viewBox="0 0 24 24" className="w-6 h-6 stroke-[#0d0f12]" strokeWidth="3.8">
-                <line x1="4" y1="4" x2="20" y2="20" strokeLinecap="square" />
-                <line x1="20" y1="4" x2="4" y2="20" strokeLinecap="square" />
-              </svg>
-            </button>
           </div>
 
-          {/* Header Block: Fixed-Height Title & 2-Line Subtitle so modal never jumps between pages */}
-          <div className="mt-1">
-            <h2 className="h-[32px] sm:h-[36px] flex items-center text-[25px] sm:text-[31px] font-black uppercase tracking-tight leading-none text-[#0d0f12] whitespace-nowrap truncate">
-              {!isPlotClaimedAndDeployed
-                ? 'CLAIM HOUSE PLOT'
-                : isSafezoneCityMode
-                ? 'MANAGE HOUSE PLOT'
-                : currentPage.headerTitle}
-            </h2>
-            <p className="mt-1.5 h-[34px] sm:h-[36px] line-clamp-2 overflow-hidden text-[12px] sm:text-[13px] font-medium leading-[1.32] text-[#1c2026]">
-              {!isPlotClaimedAndDeployed
-                ? isScanningGamepass
-                  ? 'Checking house ownership...'
-                  : isGamepassVerified
-                  ? 'House ownership verified. Click CLAIM PLOT below to place your house on this plot.'
-                  : 'Connect your wallet or buy a House in Hana Catalog to claim this city plot.'
-                : isSafezoneCityMode
-                ? 'Set gate access and friend permissions for your house plot.'
-                : currentPage.headerSubtitle}
-            </p>
-          </div>
+          <p className="h-[34px] line-clamp-2 overflow-hidden text-xs font-medium leading-relaxed text-slate-300">
+            {!isPlotClaimedAndDeployed
+              ? isScanningGamepass
+                ? 'Checking house ownership...'
+                : isGamepassVerified
+                ? 'House ownership verified. Click CLAIM PLOT below to place your house on this plot.'
+                : 'Connect your wallet or buy a House in Hana Catalog to claim this city plot.'
+              : isSafezoneCityMode
+              ? 'Set gate access and friend permissions for your house plot.'
+              : currentPage.headerSubtitle}
+          </p>
+        </div>
 
+        {/* Main Body Content */}
+        <div className="px-5 py-4">
           {/* Plot Claim & Verification Panel (Shown before plot is claimed) */}
           {!isPlotClaimedAndDeployed && (
             <div
               data-near-gamepass-panel="true"
-              className="mt-3 p-3 bg-[#0f172a] text-white border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] space-y-2.5"
+              className="p-4 rounded-2xl bg-white/[0.05] border border-white/10 space-y-3"
             >
-              <div className="flex items-center justify-between gap-2 border-b border-white/15 pb-2">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="w-2 h-2 rounded-full bg-[#00f0ff]" />
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-300 truncate">
+              <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2 h-2 rounded-full bg-sky-400" />
+                  <span className="text-[10.5px] font-bold uppercase tracking-wider text-slate-300 truncate">
                     HOUSE PLOT {targetPlotLabel}
                   </span>
                 </div>
                 <span
-                  className={`px-2 py-0.5 text-[9px] font-black uppercase border border-black ${
+                  className={`px-2.5 py-0.5 rounded-full text-[9.5px] font-bold uppercase ${
                     isGamepassVerified
-                      ? 'bg-[#b8ff3c] text-black'
+                      ? 'bg-emerald-400/20 text-emerald-300 border border-emerald-400/35'
                       : isScanningGamepass
-                      ? 'bg-[#facc15] text-black'
+                      ? 'bg-amber-400/20 text-amber-300 border border-amber-400/35'
                       : hasValidWalletId
-                      ? 'bg-[#38bdf8] text-black'
-                      : 'bg-slate-700 text-slate-300'
+                      ? 'bg-sky-400/20 text-sky-300 border border-sky-400/35'
+                      : 'bg-white/10 text-slate-300'
                   }`}
                 >
                   {isGamepassVerified
@@ -833,8 +813,8 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
 
               {!hasValidWalletId ? (
                 /* Unregistered / Not Connected State */
-                <div className="space-y-2">
-                  <p className="text-[11px] font-bold text-slate-300 leading-snug">
+                <div className="space-y-2.5">
+                  <p className="text-xs font-medium text-slate-300 leading-snug">
                     Sign in or connect your wallet to verify house ownership.
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -843,7 +823,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                         type="button"
                         data-kiosk-connect-wallet="true"
                         onClick={handleConnectAndScanGamepass}
-                        className="py-2 px-3 bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#0f172a] border-2 border-black font-black text-[10.5px] uppercase tracking-tight shadow-[2px_2px_0_#000] cursor-pointer"
+                        className="py-2 px-4 rounded-full bg-sky-500 hover:bg-sky-400 text-white font-bold text-xs uppercase tracking-wide cursor-pointer transition-colors"
                       >
                         CONNECT WALLET
                       </button>
@@ -856,7 +836,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                           soundEngine.playUiClick();
                           onOpenPersonalWallet();
                         }}
-                        className="py-2 px-3 bg-[#facc15] hover:bg-[#fde047] text-[#0f172a] border-2 border-black font-black text-[10.5px] uppercase tracking-tight shadow-[2px_2px_0_#000] cursor-pointer"
+                        className="py-2 px-4 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs uppercase tracking-wide cursor-pointer transition-colors"
                       >
                         OPEN WALLET
                       </button>
@@ -870,7 +850,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                         soundEngine.playUiClick();
                         onOpenHouseCatalog();
                       }}
-                      className="w-full py-1.5 px-3 bg-[#1e293b] hover:bg-[#334155] text-[#d8b4fe] border border-white/30 font-black text-[10px] uppercase tracking-wide cursor-pointer text-center"
+                      className="w-full py-2 px-4 rounded-full bg-white/[0.08] hover:bg-white/[0.14] text-violet-200 border border-white/15 font-bold text-[11px] uppercase tracking-wide cursor-pointer text-center transition-colors"
                     >
                       BUY HOUSE IN CATALOG
                     </button>
@@ -878,43 +858,43 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                 </div>
               ) : isScanningGamepass ? (
                 /* Scanning in Progress */
-                <div className="py-3 px-3 bg-[#1e293b] border border-[#facc15] text-center space-y-1">
-                  <div className="text-xs font-black uppercase text-[#facc15] tracking-wider">
+                <div className="py-3 px-4 rounded-xl bg-amber-400/10 border border-amber-400/30 text-center">
+                  <div className="text-xs font-bold uppercase text-amber-300 tracking-wider">
                     CHECKING HOUSE OWNERSHIP...
                   </div>
                 </div>
               ) : isGamepassVerified ? (
                 /* Verified State -> Claim Button */
-                <div className="space-y-2">
-                  <div className="p-2 bg-[#14532d]/40 border border-[#4ade80] flex items-center justify-between gap-2">
-                    <span className="text-[10.5px] font-black uppercase text-[#4ade80]">
+                <div className="space-y-2.5">
+                  <div className="p-2.5 rounded-xl bg-emerald-400/10 border border-emerald-400/30 flex items-center justify-between gap-2">
+                    <span className="text-[10.5px] font-bold uppercase text-emerald-300">
                       HOUSE OWNERSHIP VERIFIED
                     </span>
-                    <span className="text-[9.5px] font-mono font-bold text-white/80">
+                    <span className="text-[10px] font-mono-tabular font-semibold text-white/80">
                       {hud.nearWalletId}
                     </span>
                   </div>
                   {onNearClaimBasePlotWithStyle && ownedHouseStyles && ownedHouseStyles.length > 0 ? (
                     <div className="space-y-2">
-                      <div className="text-[10px] font-black uppercase tracking-wider text-slate-300">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                         BUILD YOUR HOUSE — PICK YOUR DEED
                       </div>
                       {ownedHouseStyles.map((style) => (
                         <div
                           key={style}
                           data-kiosk-build-style={style}
-                          className="p-2.5 bg-[#1e293b] border border-white/25 flex items-center justify-between gap-2"
+                          className="p-3 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-between gap-2.5"
                         >
                           <div className="min-w-0">
-                            <div className="text-[11px] font-black uppercase text-white">
+                            <div className="text-xs font-bold uppercase text-white">
                               {style === 'plaza_manor' ? 'Classic Plaza Manor' : 'Japanese Pavilion'}
                             </div>
-                            <div className="text-[9.5px] font-bold text-slate-300">
+                            <div className="text-[10.5px] font-medium text-slate-300">
                               {style === 'plaza_manor'
                                 ? 'Stone manor, round front porch, twin stairs.'
                                 : 'Wooden pavilion, tiled roof, garden front.'}
                             </div>
-                            <div className="text-[9px] font-black uppercase text-[#4ade80]">
+                            <div className="text-[9.5px] font-bold uppercase text-emerald-400 mt-0.5">
                               From your deed NFT
                             </div>
                           </div>
@@ -927,7 +907,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                               soundEngine.playUiClick();
                               onNearClaimBasePlotWithStyle(style);
                             }}
-                            className="py-2 px-3 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-2 border-white shadow-[0_3px_0_#000] font-black text-[10px] uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all shrink-0"
+                            className="py-2 px-4 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-[10.5px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all shrink-0"
                           >
                             BUILD HERE
                           </button>
@@ -945,7 +925,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                           soundEngine.playUiClick();
                           onNearClaimBasePlot();
                         }}
-                        className="w-full py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-2 border-white shadow-[0_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
+                        className="w-full py-2.5 px-4 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs uppercase tracking-wider cursor-pointer active:scale-[0.98] transition-all"
                       >
                         CLAIM PLOT
                       </button>
@@ -954,12 +934,12 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                 </div>
               ) : (
                 /* Connected But No House */
-                <div className="space-y-2">
-                  <div className="p-2 bg-[#450a0a]/50 border border-[#f87171] space-y-1">
-                    <div className="text-[10.5px] font-black uppercase text-[#f87171]">
+                <div className="space-y-2.5">
+                  <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-400/35 space-y-1">
+                    <div className="text-[10.5px] font-bold uppercase text-rose-300">
                       NO HOUSE FOUND ON {hud.nearWalletId}
                     </div>
-                    <div className="text-[9.5px] font-bold text-slate-300">
+                    <div className="text-[10.5px] font-medium text-slate-300">
                       Buy a Private House in Hana Catalog to claim a city plot.
                     </div>
                   </div>
@@ -968,7 +948,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                       type="button"
                       data-rescan-nft-btn="true"
                       onClick={handleConnectAndScanGamepass}
-                      className="py-2 px-3 bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#0f172a] border-2 border-black font-black text-[10px] uppercase cursor-pointer"
+                      className="py-2 px-4 rounded-full bg-sky-500 hover:bg-sky-400 text-white font-bold text-[10.5px] uppercase cursor-pointer transition-colors"
                     >
                       RECHECK WALLET
                     </button>
@@ -980,7 +960,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                           soundEngine.playUiClick();
                           onOpenHouseCatalog();
                         }}
-                        className="py-2 px-3 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black font-black text-[10px] uppercase cursor-pointer"
+                        className="py-2 px-4 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-[10.5px] uppercase cursor-pointer transition-colors"
                       >
                         BUY HOUSE
                       </button>
@@ -998,7 +978,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                ================================================================= */
             <div
               data-safezone-plot-access-panel="true"
-              className="mt-4 space-y-3"
+              className="space-y-3"
             >
               {onEnterPrivateHouseInterior && (
                 <button
@@ -1009,19 +989,19 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                     soundEngine.playUiClick();
                     onEnterPrivateHouseInterior();
                   }}
-                  className="w-full py-2.5 px-3 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] font-black text-xs uppercase tracking-tight cursor-pointer transition-colors"
+                  className="w-full py-2.5 px-4 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs uppercase tracking-wider cursor-pointer active:scale-[0.98] transition-all"
                 >
                   ENTER PRIVATE HOUSE &amp; DECORATE
                 </button>
               )}
-              <div className="p-3 bg-[#f4f6f8] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] space-y-2.5">
+              <div className="p-3.5 rounded-2xl bg-white/[0.05] border border-white/10 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-black uppercase tracking-wider text-[#0d0f12]">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
                     GATE ACCESS MODE
                   </span>
                   <span
                     data-safezone-current-access={currentAccessMode}
-                    className="px-2 py-0.5 bg-[#10b981] text-[#0d0f12] border-2 border-[#0d0f12] text-[10px] font-black uppercase"
+                    className="px-2.5 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 border border-emerald-400/35 text-[10px] font-bold uppercase"
                   >
                     {currentAccessMode === 'FRIENDS_ONLY' ? 'FRIENDS ONLY' : currentAccessMode}
                   </span>
@@ -1045,16 +1025,16 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                           soundEngine.playUiClick();
                           onSetSafezoneAccessMode?.(opt.id);
                         }}
-                        className={`p-2.5 text-left border-[2.5px] border-[#0d0f12] transition-all cursor-pointer ${
+                        className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
                           active
-                            ? 'bg-[#2bb3b1] text-[#0d0f12] shadow-[0_3px_0_#0d0f12] -translate-y-0.5'
-                            : 'bg-white hover:bg-[#e5e9ee] text-[#0d0f12] shadow-[0_2px_0_#0d0f12]'
+                            ? 'bg-emerald-400/20 border-emerald-400/70 text-white'
+                            : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/10 text-slate-200'
                         }`}
                       >
-                        <div className="text-[11px] font-black uppercase leading-tight">
+                        <div className="text-[11px] font-bold uppercase leading-tight">
                           {opt.label}
                         </div>
-                        <div className="text-[9.5px] font-bold text-[#1c2026]/80 mt-0.5">
+                        <div className="text-[9.5px] font-medium text-slate-400 mt-0.5">
                           {opt.desc}
                         </div>
                       </button>
@@ -1064,8 +1044,8 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
               </div>
 
               {/* Friend List Management for FRIENDS ONLY mode */}
-              <div className="p-3 bg-[#f4f6f8] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] space-y-2">
-                <div className="text-[11px] font-black uppercase tracking-wider text-[#0d0f12]">
+              <div className="p-3.5 rounded-2xl bg-white/[0.05] border border-white/10 space-y-2.5">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
                   ADD FRIEND WALLET / ID
                 </div>
                 <form
@@ -1086,12 +1066,12 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                     value={friendWalletInput}
                     onChange={(e) => setFriendWalletInput(e.target.value)}
                     placeholder="buddy-friend.near"
-                    className="flex-1 px-2.5 py-1.5 bg-white border-2 border-[#0d0f12] text-xs font-bold text-[#0d0f12] focus:outline-none"
+                    className="flex-1 px-3.5 py-2 rounded-full bg-white/[0.07] border border-white/15 focus:border-emerald-400/60 text-xs font-medium text-white placeholder:text-slate-400 focus:outline-none"
                   />
                   <button
                     type="submit"
                     data-safezone-add-friend-btn="true"
-                    className="px-3 py-1.5 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-2 border-[#0d0f12] shadow-[0_2px_0_#0d0f12] font-black text-[10.5px] uppercase cursor-pointer"
+                    className="px-4 py-2 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-[10.5px] uppercase cursor-pointer transition-colors"
                   >
                     ADD FRIEND
                   </button>
@@ -1106,7 +1086,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                       <span
                         key={friendId}
                         data-safezone-friend-item={friendId}
-                        className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-white border-2 border-[#0d0f12] text-[10px] font-black text-[#0d0f12]"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-[10.5px] font-semibold text-white"
                       >
                         <span>{friendId}</span>
                         <button
@@ -1116,16 +1096,16 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                             soundEngine.playUiClick();
                             onRemoveSafezoneFriend?.(friendId);
                           }}
-                          className="text-[#ff3b30] hover:text-[#d9261c] font-black cursor-pointer"
+                          className="text-rose-400 hover:text-rose-300 font-bold cursor-pointer"
                           title="Remove Friend"
                         >
-                          X
+                          ✕
                         </button>
                       </span>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-[10px] font-bold text-[#7a8490]">
+                  <div className="text-[10.5px] font-medium text-slate-400">
                     NO FRIENDS ADDED YET
                   </div>
                 )}
@@ -1134,7 +1114,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
               {hud.kioskStatusMessage && (
                 <div
                   data-kiosk-status-toast="true"
-                  className="px-3 py-2 bg-[#f0f4f6] border-[2.5px] border-[#0d0f12] text-[10.5px] font-black text-[#0f7a78]"
+                  className="px-3.5 py-2 rounded-xl bg-teal-500/15 border border-teal-400/35 text-[11px] font-semibold text-teal-200"
                 >
                   {hud.kioskStatusMessage}
                 </div>
@@ -1143,7 +1123,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
           ) : (
             <>
               {/* Scrollable 2-Column Grid with Fixed Viewport Height (Warzone Military Mode) */}
-              <div className="h-[312px] sm:h-[338px] overflow-y-auto pr-1 grid grid-cols-2 content-start gap-3 sm:gap-3.5 mt-4">
+              <div className="h-[312px] sm:h-[338px] overflow-y-auto pr-1 grid grid-cols-2 content-start gap-3">
                 {currentPage.cards.map((card) => {
                   const isSelected = selectedCard.id === card.id;
                   return (
@@ -1153,67 +1133,56 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                       data-kiosk-card={card.id}
                       data-kiosk-recipe={card.recipeId}
                       onClick={() => handleSelectCard(card)}
-                      className={`group relative h-[148px] sm:h-[160px] text-left transition-transform cursor-pointer select-none ${
+                      className={`group relative h-[148px] sm:h-[158px] rounded-2xl p-3 text-left transition-all cursor-pointer select-none border flex flex-col justify-between overflow-hidden ${
                         isSelected
-                          ? 'bg-[#2bb3b1] p-[3.5px] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12]'
-                          : 'bg-white border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] hover:-translate-y-0.5'
+                          ? 'bg-teal-400/15 border-teal-400/75 ring-1 ring-teal-400/40 shadow-md'
+                          : 'bg-white/[0.05] hover:bg-white/[0.09] border-white/10 hover:border-white/20'
                       }`}
                     >
-                      <div
-                        className={`relative h-full flex flex-col justify-between bg-white overflow-hidden ${
-                          isSelected ? 'border-[2px] border-[#0d0f12] p-2.5' : 'p-2.5'
-                        }`}
-                      >
-                        {/* Top-Right Teal Corner Checkmark Badge on Selected Card */}
-                        {isSelected && (
-                          <div
-                            className="absolute -top-[2px] -right-[2px] w-7 h-7 bg-[#2bb3b1] border-l-[2.5px] border-b-[2.5px] border-[#0d0f12] flex items-center justify-center z-10"
-                            style={{
-                              clipPath: 'polygon(0 0, 100% 0, 100% 100%, 22% 100%, 0 78%)',
-                            }}
+                      {/* Top-Right Circular Checkmark Badge on Selected Card */}
+                      {isSelected && (
+                        <div className="absolute top-2.5 right-2.5 w-6 h-6 rounded-full bg-teal-400 text-slate-950 flex items-center justify-center z-10 shadow-sm">
+                          <svg
+                            viewBox="0 0 20 20"
+                            className="w-3.5 h-3.5 stroke-current fill-none"
+                            strokeWidth="3"
                           >
-                            <svg
-                              viewBox="0 0 20 20"
-                              className="w-4 h-4 stroke-[#0d0f12] fill-none"
-                              strokeWidth="3.2"
-                            >
-                              <polyline
-                                points="3.5,10.5 8,15 16.5,5.5"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                            </svg>
-                          </div>
-                        )}
-
-                        {!card.isSilhouetteLocked && (
-                          <div className={`h-[40px] sm:h-[44px] overflow-hidden ${isSelected ? 'pr-6' : ''}`}>
-                            <div
-                              className={`${
-                                card.title.length >= 22
-                                  ? 'text-[10.5px] sm:text-[11.5px]'
-                                  : 'text-[12px] sm:text-[13.5px]'
-                              } font-black uppercase tracking-tight leading-[1.1] text-[#0d0f12] truncate`}
-                            >
-                              {card.title}
-                            </div>
-                            <div className="text-[9.5px] sm:text-[10.5px] font-extrabold uppercase tracking-tight text-[#1c2026] mt-0.5 truncate">
-                              {card.tagLine}
-                            </div>
-                          </div>
-                        )}
-
-                        <div
-                          className={`${
-                            card.isSilhouetteLocked ? 'my-auto' : 'mt-1'
-                          } flex items-center justify-center`}
-                        >
-                          {renderComicCardIllustration(
-                            card.illustration,
-                            card.title,
-                            Boolean(card.isSilhouetteLocked),
-                          )}
+                            <polyline
+                              points="3.5,10.5 8,15 16.5,5.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
                         </div>
+                      )}
+
+                      {!card.isSilhouetteLocked && (
+                        <div className={`h-[40px] sm:h-[42px] overflow-hidden ${isSelected ? 'pr-7' : ''}`}>
+                          <div
+                            className={`${
+                              card.title.length >= 22
+                                ? 'text-[10.5px] sm:text-[11.5px]'
+                                : 'text-xs sm:text-[13px]'
+                            } font-bold uppercase tracking-tight leading-[1.15] text-white truncate`}
+                          >
+                            {card.title}
+                          </div>
+                          <div className="text-[9.5px] font-semibold uppercase tracking-wide text-slate-400 mt-0.5 truncate">
+                            {card.tagLine}
+                          </div>
+                        </div>
+                      )}
+
+                      <div
+                        className={`${
+                          card.isSilhouetteLocked ? 'my-auto' : 'mt-1'
+                        } flex items-center justify-center`}
+                      >
+                        {renderComicCardIllustration(
+                          card.illustration,
+                          card.title,
+                          Boolean(card.isSilhouetteLocked),
+                        )}
                       </div>
                     </button>
                   );
@@ -1222,7 +1191,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                   <div
                     key={`empty-slot-${emptyIdx}`}
                     aria-hidden="true"
-                    className="invisible pointer-events-none select-none h-[148px] sm:h-[160px] border-[2.5px] border-transparent p-2.5"
+                    className="invisible pointer-events-none select-none h-[148px] sm:h-[158px] p-3"
                   />
                 ))}
               </div>
@@ -1230,7 +1199,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
               {/* Single Active Recipe Contract Bar (Warzone Only) */}
               <div
                 data-kiosk-build-queue="true"
-                className="mt-3 px-3 py-2 bg-[#f4f6f8] border-[2.5px] border-[#0d0f12] shadow-[0_2px_0_#0d0f12] flex items-center justify-between gap-2"
+                className="mt-3.5 px-3.5 py-2.5 rounded-2xl bg-white/[0.05] border border-white/10 flex items-center justify-between gap-2"
               >
                 {(() => {
                   const activeContractId = buildQueue[0];
@@ -1240,14 +1209,14 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                   return (
                     <>
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-[10.5px] font-black uppercase tracking-tight text-[#0d0f12] shrink-0">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0">
                           ACTIVE CONTRACT:
                         </span>
                         <span
-                          className={`px-2 py-0.5 border-[2px] border-[#0d0f12] text-[10.5px] font-black uppercase truncate ${
+                          className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-bold uppercase truncate ${
                             activeContractSpec
-                              ? 'bg-[#2bb3b1] text-[#0d0f12] shadow-[0_1.5px_0_#0d0f12]'
-                              : 'bg-[#e5e9ee] text-[#7a8490] border-dashed'
+                              ? 'bg-teal-400/20 text-teal-200 border border-teal-400/40'
+                              : 'bg-white/[0.06] text-slate-400 border border-dashed border-white/15'
                           }`}
                         >
                           {activeContractSpec
@@ -1266,7 +1235,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                               onRemoveQueueIndex(0);
                             }
                           }}
-                          className="text-[9.5px] font-black uppercase px-2 py-1 bg-white hover:bg-[#fee2e2] border-[2px] border-[#0d0f12] text-[#0d0f12] cursor-pointer shrink-0"
+                          className="text-[10px] font-bold uppercase px-2.5 py-1 rounded-full bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/35 text-rose-200 cursor-pointer shrink-0 transition-colors"
                         >
                           CANCEL
                         </button>
@@ -1276,7 +1245,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                 })()}
               </div>
 
-              {/* Bottom Footer Bar: Pagination on Left + Skewed [BUILD] Button on Right */}
+              {/* Bottom Footer Bar: Pagination on Left + Pill [BUILD] Button on Right */}
               <div className="mt-4 pt-1 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <button
@@ -1284,10 +1253,10 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                     data-kiosk-prev="true"
                     onClick={handlePrevPage}
                     aria-label="Previous Page"
-                    className="w-11 h-11 bg-white hover:bg-[#eef2f5] active:translate-y-0.5 border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12] flex items-center justify-center cursor-pointer transition-all"
+                    className="w-10 h-10 rounded-full bg-white/[0.08] hover:bg-white/[0.15] border border-white/15 active:scale-95 flex items-center justify-center cursor-pointer transition-all text-white"
                   >
-                    <svg viewBox="0 0 20 20" className="w-4 h-4 fill-[#0d0f12]">
-                      <polygon points="14,3 5,10 14,17" />
+                    <svg viewBox="0 0 20 20" className="w-4 h-4 fill-current">
+                      <polygon points="13,4 6,10 13,16" />
                     </svg>
                   </button>
                   <button
@@ -1295,13 +1264,13 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                     data-kiosk-next="true"
                     onClick={handleNextPage}
                     aria-label="Next Page"
-                    className="w-11 h-11 bg-white hover:bg-[#eef2f5] active:translate-y-0.5 border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12] flex items-center justify-center cursor-pointer transition-all"
+                    className="w-10 h-10 rounded-full bg-white/[0.08] hover:bg-white/[0.15] border border-white/15 active:scale-95 flex items-center justify-center cursor-pointer transition-all text-white"
                   >
-                    <svg viewBox="0 0 20 20" className="w-4 h-4 fill-[#0d0f12]">
-                      <polygon points="6,3 15,10 6,17" />
+                    <svg viewBox="0 0 20 20" className="w-4 h-4 fill-current">
+                      <polygon points="7,4 14,10 7,16" />
                     </svg>
                   </button>
-                  <div className="px-2.5 h-11 bg-[#f4f6f8] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12] flex items-center justify-center text-[11px] font-mono-tabular font-bold tracking-tight text-[#0d0f12] select-none">
+                  <div className="px-3.5 h-10 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center text-xs font-mono-tabular font-bold tracking-tight text-slate-300 select-none">
                     0{pageIndex + 1} / 05
                   </div>
                 </div>
@@ -1311,21 +1280,19 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                     type="button"
                     data-kiosk-build="true"
                     onClick={handleExecuteBuild}
-                    className={`h-12 px-7 sm:px-9 active:translate-y-0.5 border-[3.5px] border-[#0d0f12] font-black text-xl sm:text-2xl uppercase tracking-tight shadow-[3px_4px_0_#0d0f12] -skew-x-6 cursor-pointer transition-all ${
+                    className={`h-11 px-7 sm:px-8 rounded-full active:scale-95 font-extrabold text-sm sm:text-base uppercase tracking-wider cursor-pointer transition-all shadow-md ${
                       selectedCard.isSilhouetteLocked
-                        ? 'bg-[#262b30] text-[#f5b82e] hover:bg-[#343b42]'
-                        : 'bg-[#e2e6ea] hover:bg-[#2bb3b1] text-[#0d0f12]'
+                        ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40 hover:bg-amber-400/30'
+                        : 'bg-teal-400 hover:bg-teal-300 text-slate-950'
                     }`}
                   >
-                    <span className="inline-block skew-x-6">
-                      {selectedCard.isSilhouetteLocked
-                        ? 'LOCKED LV.3'
-                        : selectedCard.actionKind === 'upgrade_base'
-                        ? 'UPGRADE'
-                        : selectedCard.actionKind === 'buy_crate'
-                        ? 'AIRDROP'
-                        : 'BUILD'}
-                    </span>
+                    {selectedCard.isSilhouetteLocked
+                      ? 'LOCKED LV.3'
+                      : selectedCard.actionKind === 'upgrade_base'
+                      ? 'UPGRADE'
+                      : selectedCard.actionKind === 'buy_crate'
+                      ? 'AIRDROP'
+                      : 'BUILD'}
                   </button>
                 </div>
               </div>

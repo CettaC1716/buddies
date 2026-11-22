@@ -94,12 +94,12 @@ type ExchangeQuickMode =
   | 'teleport';
 
 const EXCHANGE_QUICK_MODE_LABELS: Record<ExchangeQuickMode, string> = {
-  quick_shop: 'QUICK SHOP',
-  exchange_lul: 'EXCHANGE LUL',
-  swap_near: 'SWAP NEAR',
-  buy_house: 'BUY HOUSE',
-  fishing_gear: 'FISHING GEAR',
-  teleport: 'TELEPORT',
+  quick_shop: 'Quick Shop',
+  exchange_lul: 'Exchange LUL',
+  swap_near: 'Swap NEAR',
+  buy_house: 'Buy House',
+  fishing_gear: 'Fishing Gear',
+  teleport: 'Teleport',
 };
 
 export interface HouseInteriorPlacementState {
@@ -423,8 +423,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   onAssignInteriorSlot: _onAssignInteriorSlot,
   onRotateInteriorSlot: _onRotateInteriorSlot,
   onConnectWallet,
-  playerBubbleBgColor = '#0f172a',
-  playerBubbleTextColor = '#f8fafc',
+  playerBubbleBgColor: _playerBubbleBgColor = '#0f172a',
+  playerBubbleTextColor: _playerBubbleTextColor = '#f8fafc',
   caughtFishBucket = [],
   fishMarketListings = [],
   fishSalesStats = null,
@@ -1468,31 +1468,39 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         data-house-interior-modal="true"
         className="fixed inset-0 z-40 pointer-events-none select-none"
       >
-        {/* TOP BAR: Minimalist Architectural Studio Bar (Simple text, zero emojis) */}
-        <header className="fixed top-0 inset-x-0 h-13 bg-[#0f172a]/95 text-white border-b-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] px-3 sm:px-5 flex items-center justify-between pointer-events-auto z-50">
+        {/* TOP BAR: Clean Frosted Architectural Studio Bar */}
+        <header className="fixed top-0 inset-x-0 h-14 bg-white/90 backdrop-blur-2xl text-slate-900 border-b border-slate-200/80 shadow-sm px-4 sm:px-6 flex items-center justify-between pointer-events-auto z-50">
           <div className="flex items-center gap-2.5">
-            <span className={`px-2 py-0.5 ${isSampleHouseView ? 'bg-[#38bdf8]' : 'bg-[#b8ff3c]'} text-[#0d0f12] text-[10px] font-black uppercase tracking-wider border border-[#0d0f12]`}>
-              {isSampleHouseView ? 'SHOWCASE' : 'INTERIOR'}
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold border ${
+                isSampleHouseView
+                  ? 'bg-sky-100 text-sky-700 border-sky-200/80'
+                  : 'bg-emerald-100 text-emerald-700 border-emerald-200/80'
+              }`}
+            >
+              {isSampleHouseView ? 'Showcase' : 'Interior'}
             </span>
             <div className="flex flex-col">
-              <span className="text-[11.5px] sm:text-[12.5px] font-black uppercase tracking-wide text-white leading-tight">
-                {isSampleHouseView ? 'MODEL HOUSE // SHOWCASE ESTATE (VIEW ONLY)' : 'PRIVATE HOUSE // DECORATIVE MODE'}
-              </span>
-              <span className="text-[9px] font-bold text-slate-300 hidden md:inline">
+              <span className="text-xs sm:text-[13px] font-bold tracking-tight text-slate-900 leading-tight">
                 {isSampleHouseView
-                  ? 'OPEN SHOWCASE HOUSE FOR ALL CITIZENS · ARCHITECTURE & FURNITURE PREVIEW (VIEW ONLY)'
-                  : 'DRAG FURNITURE TO PLACE (10CM SNAP) · DRAG FLOOR TO ORBIT CAMERA · SCROLL TO ZOOM'}
+                  ? 'Model House · Showcase Estate (View Only)'
+                  : 'Private House · Decorative Mode'}
+              </span>
+              <span className="text-[10px] font-medium text-slate-500 hidden md:inline">
+                {isSampleHouseView
+                  ? 'Open showcase house for all citizens · Architecture & furniture preview (view only)'
+                  : 'Drag furniture to place (10cm snap) · Drag floor to orbit camera · Scroll to zoom'}
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 bg-black/40 border border-white/20 text-[10px] font-mono">
-              <span className="text-slate-400">MOOD:</span>
-              <span className="text-[#b8ff3c] font-black uppercase">{moodEval.dominantMood}</span>
-              <span className="text-slate-500">|</span>
-              <span className="text-slate-400">SOLAR TIME:</span>
-              <span className="text-[#fde047] font-black">{formatDaylightHour(daylightHour)}</span>
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100/90 border border-slate-200/80 text-[10.5px] font-medium">
+              <span className="text-slate-500">Mood:</span>
+              <span className="text-emerald-700 font-semibold capitalize">{moodEval.dominantMood}</span>
+              <span className="text-slate-300">|</span>
+              <span className="text-slate-500">Solar time:</span>
+              <span className="text-amber-600 font-semibold font-mono">{formatDaylightHour(daylightHour)}</span>
             </div>
 
             <button
@@ -1501,9 +1509,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 soundEngine.playUiClick();
                 dispatchHouseStudioPatch({ resetCamera: true });
               }}
-              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border-2 border-black text-[10px] font-black uppercase cursor-pointer"
+              className="px-3 py-1.5 rounded-full bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/90 shadow-xs text-[11px] font-semibold cursor-pointer transition-colors"
             >
-              RESET CAMERA
+              Reset camera
             </button>
 
             <button
@@ -1513,33 +1521,33 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 soundEngine.playUiClick();
                 onClose();
               }}
-              className="px-3 py-1 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black text-[10px] font-black uppercase tracking-wider cursor-pointer"
+              className="px-3.5 py-1.5 rounded-full bg-rose-500 hover:bg-rose-600 text-white shadow-xs text-[11px] font-semibold cursor-pointer transition-colors"
             >
-              {isSampleHouseView ? 'EXIT SHOWCASE HOUSE [ESC]' : 'DONE EDITING [ESC]'}
+              {isSampleHouseView ? 'Exit Showcase House [ESC]' : 'Done Editing [ESC]'}
             </button>
           </div>
         </header>
 
         {isSampleHouseView ? (
-          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto bg-[#0d0f12] text-white border-[3px] border-[#38bdf8] shadow-[4px_4px_0_#000] px-5 py-3 z-50 text-center max-w-lg space-y-1">
-            <div className="text-xs font-black uppercase tracking-wider text-[#38bdf8]">
-              MODEL HOUSE // SHOWCASE ESTATE (VIEW ONLY)
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto rounded-[24px] bg-white/95 backdrop-blur-2xl text-slate-900 border border-white/80 shadow-[0_20px_50px_rgba(15,23,42,0.22)] px-6 py-4 z-50 text-center max-w-lg space-y-1.5">
+            <div className="text-xs font-bold text-sky-600">
+              Model House · Showcase Estate (View Only)
             </div>
-            <div className="text-[10px] font-bold text-slate-300">
+            <div className="text-[11px] font-medium text-slate-600 leading-relaxed">
               This showcase residence is open for all citizens to tour. Editing is disabled here. To own and decorate your own Private House, purchase a House Deed at the Plot Kiosk or Hana&apos;s Catalog.
             </div>
           </div>
         ) : (
-        /* BOTTOM DOCK: Consolidated Tabbed Studio Console (Zero emojis, simple text) */
-        <div className="fixed bottom-3 left-1/2 -translate-x-1/2 w-[96vw] max-w-4xl pointer-events-auto bg-white border-[3px] border-[#0d0f12] shadow-[5px_5px_0_#0d0f12] p-3 text-[#0d0f12] z-50">
+        /* BOTTOM DOCK: Consolidated Tabbed Studio Bento Console */
+        <div className="fixed bottom-3 left-1/2 -translate-x-1/2 w-[96vw] max-w-4xl pointer-events-auto rounded-[24px] bg-[#e8ecf2]/94 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.26)] p-3.5 text-slate-900 z-50">
           {/* Dock Header & Navigation Tabs */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b-2 border-[#0d0f12]">
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-300/60">
             <div className="flex items-center gap-1.5">
               {(
                 [
-                  { id: 'furniture', label: `FURNITURE (${ownedFurniture.length})` },
-                  { id: 'materials', label: 'THEMES & FINISHES' },
-                  { id: 'lighting', label: 'LIGHTING & MOOD' },
+                  { id: 'furniture', label: `Furniture (${ownedFurniture.length})` },
+                  { id: 'materials', label: 'Themes & Finishes' },
+                  { id: 'lighting', label: 'Lighting & Mood' },
                 ] as const
               ).map((tab) => (
                 <button
@@ -1550,10 +1558,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     soundEngine.playUiClick();
                     setStudioDockTab(tab.id);
                   }}
-                  className={`px-3 py-1 text-[10px] font-black uppercase tracking-wider border-2 border-[#0d0f12] cursor-pointer transition-colors ${
+                  className={`px-3.5 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer transition-all ${
                     studioDockTab === tab.id
-                      ? 'bg-[#b8ff3c] shadow-[2px_2px_0_#0d0f12]'
-                      : 'bg-[#f4f6f8] hover:bg-[#e2e8f0] text-slate-700'
+                      ? 'bg-sky-500 text-white shadow-sm'
+                      : 'bg-white/90 hover:bg-white text-slate-600 hover:text-slate-900 border border-slate-200/80'
                   }`}
                 >
                   {tab.label}
@@ -1563,9 +1571,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
             {/* Selected 3D Item Controls */}
             {selectedCatalogItem && (
-              <div className="flex items-center gap-1.5 bg-[#0f172a] text-white px-2.5 py-1 border-2 border-[#0d0f12]">
-                <span className="text-[9.5px] font-black uppercase text-[#38bdf8] truncate max-w-[150px]">
-                  SELECTED: {selectedCatalogItem.name}
+              <div className="flex items-center gap-1.5 rounded-full bg-white/95 text-slate-900 px-3 py-1 border border-slate-200/80 shadow-xs">
+                <span className="text-[10.5px] font-semibold text-sky-600 truncate max-w-[150px]">
+                  Selected: {selectedCatalogItem.name}
                 </span>
                 <button
                   type="button"
@@ -1574,9 +1582,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     soundEngine.playUiClick();
                     dispatchHouseStudioPatch({ rotateSelectedDelta: 1 });
                   }}
-                  className="px-2 py-0.5 bg-[#b8ff3c] text-[#0d0f12] text-[9px] font-black uppercase cursor-pointer"
+                  className="px-2.5 py-0.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-semibold cursor-pointer transition-colors"
                 >
-                  ROTATE +45 DEG
+                  Rotate +45°
                 </button>
                 <button
                   type="button"
@@ -1585,9 +1593,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     soundEngine.playUiClick();
                     dispatchHouseStudioPatch({ removeSelected: true });
                   }}
-                  className="px-2 py-0.5 bg-[#ff3b30] text-white text-[9px] font-black uppercase cursor-pointer"
+                  className="px-2.5 py-0.5 rounded-full bg-rose-500 hover:bg-rose-600 text-white text-[10px] font-semibold cursor-pointer transition-colors"
                 >
-                  STORE
+                  Store
                 </button>
                 {furnitureMovePending && (
                   <>
@@ -1599,9 +1607,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         setFurnitureMovePending(false);
                         dispatchHouseStudioPatch({ confirmFurnitureMove: true });
                       }}
-                      className="px-2 py-0.5 bg-[#b8ff3c] text-[#0d0f12] text-[9px] font-black uppercase cursor-pointer"
+                      className="px-2.5 py-0.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-semibold cursor-pointer transition-colors"
                     >
-                      ✓ CONFIRM MOVE
+                      ✓ Confirm move
                     </button>
                     <button
                       type="button"
@@ -1611,9 +1619,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         setFurnitureMovePending(false);
                         dispatchHouseStudioPatch({ cancelFurnitureMove: true });
                       }}
-                      className="px-2 py-0.5 bg-[#f4f6f8] text-[#0d0f12] text-[9px] font-black uppercase cursor-pointer"
+                      className="px-2.5 py-0.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-semibold cursor-pointer transition-colors"
                     >
-                      ✕ CANCEL
+                      ✕ Cancel
                     </button>
                   </>
                 )}
@@ -1623,20 +1631,20 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
           {/* TAB 1: FURNITURE CATALOG */}
           {studioDockTab === 'furniture' && (
-            <div className="pt-2.5">
+            <div className="pt-3">
               {ownedFurniture.length === 0 ? (
-                <div className="py-4 text-center text-xs font-bold text-slate-600 flex items-center justify-center gap-2">
-                  <Sofa className="w-4 h-4 text-slate-500" aria-hidden="true" />
-                  <span>NO FURNITURE YET — CHECK HANA&apos;S CATALOG</span>
+                <div className="py-5 rounded-2xl bg-white/80 border border-dashed border-slate-300 text-center text-xs font-medium text-slate-500 flex items-center justify-center gap-2">
+                  <Sofa className="w-4 h-4 text-slate-400" aria-hidden="true" />
+                  <span>No furniture yet — check Hana&apos;s Catalog</span>
                 </div>
               ) : (
-                <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
+                <div className="flex items-stretch gap-2.5 overflow-x-auto pb-1">
                   {ownedFurniture.map((item) => (
                     <div
                       key={item.id}
-                      className="w-[148px] p-1.5 bg-[#f4f6f8] border-2 border-[#0d0f12] flex flex-col justify-between gap-1.5 shrink-0"
+                      className="w-[152px] p-2 rounded-2xl bg-white border border-slate-200/80 shadow-sm flex flex-col justify-between gap-2 shrink-0"
                     >
-                      <div className="relative">
+                      <div className="relative rounded-xl overflow-hidden bg-slate-50">
                         <Furniture3dThumbnail
                           catalogId={item.id}
                           name={item.name}
@@ -1655,14 +1663,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           }
                         />
                         <span
-                          className={`absolute top-1 left-1 px-1 py-0.2 text-[7.5px] font-black uppercase border border-[#0d0f12] z-20 ${
-                            item.isNft ? 'bg-[#38bdf8] text-black' : 'bg-[#a7f3d0] text-black'
+                          className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full text-[8.5px] font-semibold z-20 ${
+                            item.isNft
+                              ? 'bg-sky-100/95 text-sky-700 border border-sky-200/80'
+                              : 'bg-emerald-100/95 text-emerald-700 border border-emerald-200/80'
                           }`}
                         >
                           {item.isNft ? 'NFT' : 'CYON'}
                         </span>
                       </div>
-                      <div className="text-[9.5px] font-black uppercase truncate">
+                      <div className="text-[10.5px] font-semibold text-slate-800 truncate px-0.5">
                         {item.name}
                       </div>
                       {(() => {
@@ -1678,14 +1688,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               soundEngine.playUiClick();
                               dispatchHouseStudioPatch({ spawnCatalogId: item.id });
                             }}
-                            className={`w-full py-1 border-[1.5px] border-[#0d0f12] text-[9px] font-black uppercase inline-flex items-center justify-center gap-1 ${
+                            className={`w-full py-1.5 rounded-full text-[10px] font-semibold inline-flex items-center justify-center gap-1 transition-colors ${
                               inBag > 0
-                                ? 'bg-[#b8ff3c] hover:bg-[#d2ff7a] cursor-pointer'
-                                : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                                ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs cursor-pointer'
+                                : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                             }`}
                           >
                             <Plus className="w-3 h-3" aria-hidden="true" />
-                            <span>{inBag > 0 ? `PLACE · ${inBag} IN BAG` : 'ALL PLACED'}</span>
+                            <span>{inBag > 0 ? `Place · ${inBag} in bag` : 'All placed'}</span>
                           </button>
                         );
                       })()}
@@ -1698,13 +1708,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
           {/* TAB 2: THEMES & FINISHES */}
           {studioDockTab === 'materials' && (
-            <div className="pt-2.5 grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[160px] overflow-y-auto">
+            <div className="pt-3 grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[168px] overflow-y-auto">
               {/* Architecture Themes */}
-              <div className="space-y-1">
-                <div className="text-[9.5px] font-black uppercase tracking-wider text-slate-600">
-                  HOUSE THEME
+              <div className="p-3 rounded-2xl bg-white border border-slate-200/70 shadow-sm space-y-2">
+                <div className="text-[11px] font-semibold text-slate-600">
+                  House theme
                 </div>
-                <div className="grid grid-cols-1 gap-1">
+                <div className="grid grid-cols-1 gap-1.5">
                   {ownedThemes.map((th) => {
                     const isActive = activeHouseThemeId === th.id;
                     return (
@@ -1715,15 +1725,21 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           soundEngine.playUiClick();
                           onSelectHouseTheme(th);
                         }}
-                        className={`p-1.5 border-2 border-[#0d0f12] flex items-center justify-between text-left cursor-pointer ${
+                        className={`px-3 py-2 rounded-xl border flex items-center justify-between text-left cursor-pointer transition-all ${
                           isActive
-                            ? 'bg-[#b8ff3c] shadow-[2px_2px_0_#0d0f12]'
-                            : 'bg-[#f4f6f8] hover:bg-white'
+                            ? 'bg-sky-50 border-sky-300 ring-1 ring-sky-200'
+                            : 'bg-slate-50/80 hover:bg-slate-100 border-slate-200/80'
                         }`}
                       >
-                        <span className="text-[10px] font-black uppercase truncate">{th.name}</span>
-                        <span className="text-[8px] font-black uppercase px-1.5 py-0.5 bg-[#0d0f12] text-white">
-                          {isActive ? 'ACTIVE' : 'APPLY'}
+                        <span className="text-xs font-semibold text-slate-900 truncate">{th.name}</span>
+                        <span
+                          className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full ${
+                            isActive
+                              ? 'bg-sky-500 text-white'
+                              : 'bg-white text-slate-600 border border-slate-200/80'
+                          }`}
+                        >
+                          {isActive ? 'Active' : 'Apply'}
                         </span>
                       </button>
                     );
@@ -1732,11 +1748,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               </div>
 
               {/* Surface Finish Swatches */}
-              <div className="space-y-1">
-                <div className="text-[9.5px] font-black uppercase tracking-wider text-slate-600">
-                  FLOOR &amp; WALL FINISH
+              <div className="p-3 rounded-2xl bg-white border border-slate-200/70 shadow-sm space-y-2">
+                <div className="text-[11px] font-semibold text-slate-600">
+                  Floor &amp; wall finish
                 </div>
-                <div className="grid grid-cols-2 gap-1">
+                <div className="grid grid-cols-2 gap-1.5">
                   {HOUSE_SURFACE_SWATCHES.filter((s) => s.slot === 'floor' || s.slot === 'wall').map(
                     (sw) => {
                       const isCurrent =
@@ -1757,15 +1773,17 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               dispatchHouseStudioPatch({ wallSwatchId: sw.id });
                             }
                           }}
-                          className={`p-1 border-[1.5px] border-[#0d0f12] flex items-center gap-1.5 text-left cursor-pointer ${
-                            isCurrent ? 'bg-[#2bb3b1] text-black font-black' : 'bg-[#f4f6f8] hover:bg-white'
+                          className={`px-2.5 py-1.5 rounded-xl border flex items-center gap-2 text-left cursor-pointer transition-all ${
+                            isCurrent
+                              ? 'bg-sky-50 text-sky-900 border-sky-400 ring-1 ring-sky-200 font-semibold'
+                              : 'bg-slate-50/80 hover:bg-white text-slate-700 border-slate-200/80'
                           }`}
                         >
                           <span
-                            className="w-3.5 h-3.5 border border-[#0d0f12] shrink-0"
+                            className="w-4 h-4 rounded-full border border-slate-300/80 shadow-xs shrink-0"
                             style={{ backgroundColor: sw.colorHex }}
                           />
-                          <span className="text-[9px] font-black uppercase truncate">{sw.name}</span>
+                          <span className="text-[10.5px] font-medium truncate">{sw.name}</span>
                         </button>
                       );
                     },
@@ -1777,14 +1795,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
           {/* TAB 3: LIGHTING & MOOD */}
           {studioDockTab === 'lighting' && (
-            <div className="pt-2.5 grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[160px] overflow-y-auto">
+            <div className="pt-3 grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[168px] overflow-y-auto">
               {/* Daylight Time Slider & Solar Presets */}
-              <div className="space-y-2">
+              <div className="p-3 rounded-2xl bg-white border border-slate-200/70 shadow-sm space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-[9.5px] font-black uppercase text-slate-600">
-                    DAYLIGHT SOLAR ARC:
+                  <span className="text-[11px] font-semibold text-slate-600">
+                    Daylight solar arc
                   </span>
-                  <span className="px-2 py-0.5 bg-[#0f172a] text-[#fde047] font-mono text-[10px] font-black">
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/80 font-mono text-[11px] font-semibold">
                     {formatDaylightHour(daylightHour)}
                   </span>
                 </div>
@@ -1797,15 +1815,15 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   step={0.1}
                   value={daylightHour}
                   onChange={(e) => handleChangeDaylightHour(parseFloat(e.target.value))}
-                  className="w-full accent-[#0f7a78] cursor-pointer"
+                  className="w-full accent-sky-500 cursor-pointer"
                 />
-                <div className="grid grid-cols-2 gap-1">
+                <div className="grid grid-cols-2 gap-1.5">
                   {(
                     [
-                      { label: 'MORNING 07:36', h: 7.6 },
-                      { label: 'NOON 12:48', h: 12.8 },
-                      { label: 'EVENING 18:30', h: 18.5 },
-                      { label: 'NIGHT 22:12', h: 22.2 },
+                      { label: 'Morning 07:36', h: 7.6 },
+                      { label: 'Noon 12:48', h: 12.8 },
+                      { label: 'Evening 18:30', h: 18.5 },
+                      { label: 'Night 22:12', h: 22.2 },
                     ] as const
                   ).map((preset) => (
                     <button
@@ -1815,10 +1833,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         soundEngine.playUiClick();
                         handleChangeDaylightHour(preset.h);
                       }}
-                      className={`py-1 px-1.5 border border-[#0d0f12] text-[9px] font-black uppercase cursor-pointer ${
+                      className={`py-1.5 px-2 rounded-xl border text-[10px] font-semibold cursor-pointer transition-all ${
                         Math.abs(daylightHour - preset.h) < 0.4
-                          ? 'bg-[#fde047] text-black font-black'
-                          : 'bg-[#f4f6f8] hover:bg-[#e2e8f0]'
+                          ? 'bg-amber-100 text-amber-900 border-amber-300'
+                          : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200/80'
                       }`}
                     >
                       {preset.label}
@@ -1828,10 +1846,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               </div>
 
               {/* Mood Meter & Softmax bars */}
-              <div className="p-2.5 bg-[#0f172a] text-white border border-[#0d0f12] space-y-1.5">
-                <div className="flex items-center justify-between pb-1 border-b border-white/15">
-                  <span className="text-[9.5px] font-black uppercase text-[#38bdf8]">
-                    ROOM MOOD
+              <div className="p-3 rounded-2xl bg-white border border-slate-200/70 shadow-sm space-y-2">
+                <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                  <span className="text-[11px] font-semibold text-slate-700">
+                    Room mood
                   </span>
                   <div className="flex items-center gap-1">
                     {(['cozy', 'bright', 'moody'] as const).map((mId) => (
@@ -1839,8 +1857,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         key={mId}
                         type="button"
                         onClick={() => handleApplyMoodPreset(mId)}
-                        className={`px-1.5 py-0.5 border border-white text-[8px] font-black uppercase cursor-pointer ${
-                          moodEval.dominantMood === mId ? 'bg-[#b8ff3c] text-black' : 'bg-black text-white'
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold capitalize cursor-pointer transition-colors ${
+                          moodEval.dominantMood === mId
+                            ? 'bg-sky-500 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                         }`}
                       >
                         {mId}
@@ -1850,19 +1870,19 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 </div>
                 {(
                   [
-                    { key: 'cozy', label: 'Cozy', pct: moodEval.cozyPct, barCol: '#f5b82e' },
-                    { key: 'bright', label: 'Bright', pct: moodEval.brightPct, barCol: '#38bdf8' },
-                    { key: 'moody', label: 'Moody', pct: moodEval.moodyPct, barCol: '#a855f7' },
+                    { key: 'cozy', label: 'Cozy', pct: moodEval.cozyPct, barCol: '#f59e0b' },
+                    { key: 'bright', label: 'Bright', pct: moodEval.brightPct, barCol: '#0ea5e9' },
+                    { key: 'moody', label: 'Moody', pct: moodEval.moodyPct, barCol: '#8b5cf6' },
                   ] as const
                 ).map((row) => (
-                  <div key={row.key} className="space-y-0.5">
-                    <div className="flex justify-between text-[9px] font-black uppercase">
+                  <div key={row.key} className="space-y-1">
+                    <div className="flex justify-between text-[10.5px] font-semibold text-slate-600">
                       <span>{row.label}</span>
-                      <span>{row.pct}%</span>
+                      <span className="text-slate-900">{row.pct}%</span>
                     </div>
-                    <div className="w-full h-1.5 bg-[#1e293b] border border-white/20 overflow-hidden">
+                    <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
                       <div
-                        className="h-full transition-all duration-300"
+                        className="h-full rounded-full transition-all duration-300"
                         style={{ width: `${row.pct}%`, backgroundColor: row.barCol }}
                       />
                     </div>
@@ -1961,10 +1981,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             : '-translate-x-[120%] opacity-0 pointer-events-none'
         }`}
       >
-      <div className="relative flex-1 flex flex-col bg-white border-[3.5px] border-black shadow-[4px_4px_0px_#000] p-4 sm:p-5 text-black overflow-hidden min-h-0">
-        {/* Top Bar: 3 Navigation Tab Buttons (CHAT SESSION, EXCHANGE, CATALOG) + Close */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b-[2.5px] border-black shrink-0">
-          <div className="flex items-center gap-2 flex-wrap [&_button:disabled]:opacity-40 [&_button:disabled]:cursor-not-allowed">
+      <div className="relative flex-1 flex flex-col rounded-[24px] bg-[#e8ecf2]/94 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] p-4 sm:p-5 text-slate-900 overflow-hidden min-h-0">
+        {/* Top Bar: Clean Pill Navigation Tabs + Circular Close */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-300/60 shrink-0">
+          <div className="flex items-center gap-1.5 flex-wrap [&_button:disabled]:opacity-40 [&_button:disabled]:cursor-not-allowed">
             <button
               type="button"
               data-gold-exchange-balance="true"
@@ -1972,13 +1992,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 soundEngine.playUiClick();
                 setActiveTab('sesi_chat');
               }}
-              className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[3px_3px_0px_#000] text-[11px] font-black uppercase cursor-pointer transition-all ${
+              className={`px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer transition-all ${
                 activeTab === 'sesi_chat'
-                  ? 'bg-[#facc15] text-black -translate-y-0.5'
-                  : 'bg-slate-50 hover:bg-[#fef08a] text-black'
+                  ? 'bg-sky-500 text-white shadow-sm'
+                  : 'bg-white/90 hover:bg-white text-slate-600 hover:text-slate-900 border border-slate-200/80'
               }`}
             >
-              <span className="skew-x-6 inline-block">CHAT SESSION</span>
+              <span>Chat Session</span>
             </button>
 
             <button
@@ -1992,14 +2012,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   setActiveTab('transaksi');
                 }
               }}
-              className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[3px_3px_0px_#000] text-[11px] font-black uppercase cursor-pointer transition-all ${
+              className={`px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer transition-all ${
                 activeTab === 'transaksi'
-                  ? 'bg-[#10b981] text-black -translate-y-0.5'
-                  : 'bg-slate-50 hover:bg-[#a7f3d0] text-black'
+                  ? 'bg-emerald-500 text-white shadow-sm'
+                  : 'bg-white/90 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-200/80'
               }`}
             >
-              <span className="skew-x-6 inline-block">
-                {exchangeQuickMode ? EXCHANGE_QUICK_MODE_LABELS[exchangeQuickMode] : 'EXCHANGE'}
+              <span>
+                {exchangeQuickMode ? EXCHANGE_QUICK_MODE_LABELS[exchangeQuickMode] : 'Exchange'}
               </span>
             </button>
 
@@ -2010,13 +2030,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   soundEngine.playUiClick();
                   setActiveTab('katalog');
                 }}
-                className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[3px_3px_0px_#000] text-[11px] font-black uppercase cursor-pointer transition-all ${
+                className={`px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer transition-all ${
                   activeTab === 'katalog'
-                    ? 'bg-[#38bdf8] text-black -translate-y-0.5'
-                    : 'bg-slate-50 hover:bg-[#bae6fd] text-black'
+                    ? 'bg-sky-500 text-white shadow-sm'
+                    : 'bg-white/90 hover:bg-sky-50 text-slate-600 hover:text-sky-700 border border-slate-200/80'
                 }`}
               >
-                <span className="skew-x-6 inline-block">CATALOG</span>
+                <span>Catalog</span>
               </button>
             )}
 
@@ -2028,15 +2048,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   soundEngine.playUiClick();
                   setActiveTab('fish_market');
                 }}
-                className={`-skew-x-6 px-3 py-1 border-2 border-black shadow-[3px_3px_0px_#000] text-[11px] font-black uppercase cursor-pointer transition-all ${
+                className={`px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer transition-all ${
                   activeTab === 'fish_market'
-                    ? 'bg-[#b8ff3c] text-black -translate-y-0.5'
-                    : 'bg-slate-50 hover:bg-[#d9f99d] text-black'
+                    ? 'bg-teal-500 text-white shadow-sm'
+                    : 'bg-white/90 hover:bg-teal-50 text-slate-600 hover:text-teal-700 border border-slate-200/80'
                 }`}
               >
-                <span className="skew-x-6 inline-block">
-                  FISH MARKET ({caughtFishBucket.length})
-                </span>
+                <span>Fish Market ({caughtFishBucket.length})</span>
               </button>
             )}
           </div>
@@ -2048,91 +2066,90 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               soundEngine.playUiClick();
               onClose();
             }}
-            className="-skew-x-6 w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs flex items-center justify-center cursor-pointer active:scale-95"
+            className="w-8 h-8 rounded-full bg-white/90 hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200/80 shadow-xs flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
             aria-label="Close NPC Dialogue"
           >
-            <span className="skew-x-6 inline-block">X</span>
+            <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
           </button>
         </div>
 
         {/* Tab Content Viewport */}
-        <div className="mt-3 flex-1 flex flex-col overflow-y-auto pr-1 space-y-3 min-h-0">
+        <div className="mt-3 flex-1 flex flex-col overflow-y-auto pr-0.5 space-y-3 min-h-0">
           {/* ===============================================================
               TAB 1: LIVE CHAT SESSION (Interactive Game Concierge)
              =============================================================== */}
           {activeTab === 'sesi_chat' && (
             <div className="flex-1 flex flex-col justify-between gap-3 min-h-0">
               {/* Scrollable Conversation Thread */}
-              <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 min-h-0">
+              <div className="flex-1 overflow-y-auto px-2.5 py-3 rounded-2xl bg-[#f2f4f8] border border-slate-200/70 space-y-3 min-h-0">
                 {chatHistory.map((entry) =>
                   entry.role === 'player' ? (
-                    <div
-                      key={entry.id}
-                      data-player-chat-bubble="true"
-                      style={{
-                        backgroundColor: playerBubbleBgColor,
-                        color: playerBubbleTextColor,
-                      }}
-                      className="p-3 border-[2.5px] border-black shadow-[3px_3px_0px_#000] ml-6"
-                    >
-                      <div className="flex items-center justify-end mb-1">
-                        <span className="px-2 py-0.5 bg-[#facc15] text-black border border-black text-[9.5px] font-black uppercase">
-                          YOU
-                        </span>
+                    <div key={entry.id} className="flex flex-col items-end">
+                      <div className="flex items-center gap-1.5 mb-1 px-1.5">
+                        <span className="text-[10px] font-semibold text-slate-500">You</span>
                       </div>
-                      <p className="text-xs sm:text-[13px] font-bold leading-relaxed">
-                        {entry.text}
-                      </p>
+                      <div
+                        data-player-chat-bubble="true"
+                        className="max-w-[85%] px-3.5 py-2.5 rounded-2xl rounded-tr-sm bg-sky-500 text-white shadow-sm"
+                      >
+                        <p className="text-xs sm:text-[13px] font-medium leading-relaxed">
+                          {entry.text}
+                        </p>
+                      </div>
                     </div>
                   ) : (
-                    <div
-                      key={entry.id}
-                      className="p-3 bg-[#1e293b] text-slate-100 border-[2px] border-black shadow-[3px_3px_0px_#000] mr-4"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="px-2 py-0.5 bg-[#2bb3b1] text-black border border-black text-[9.5px] font-black uppercase">
-                          {npcShortName}
+                    <div key={entry.id} className="flex flex-col items-start">
+                      <div className="flex items-center gap-1.5 mb-1 px-1.5">
+                        <span className="text-[10px] font-semibold text-slate-600">
+                          {npcShortName === 'HANA' ? 'Hana' : 'Kai'}
                         </span>
                       </div>
-                      <p className="text-xs font-bold leading-relaxed">{entry.text}</p>
+                      <div className="max-w-[88%] px-3.5 py-2.5 rounded-2xl rounded-tl-sm bg-white text-slate-800 border border-slate-200/60 shadow-sm">
+                        <p className="text-xs sm:text-[13px] font-medium leading-relaxed">
+                          {entry.text}
+                        </p>
+                      </div>
                     </div>
                   ),
                 )}
 
                 {/* Active NPC Reply Bubble */}
-                <div
-                  data-npc-chat-bubble="true"
-                  className="p-3.5 bg-[#0f172a] text-white border-[2.5px] border-black shadow-[4px_4px_0px_#000]"
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="px-2.5 py-0.5 bg-[#2bb3b1] text-black border border-black text-[10px] font-black uppercase">
-                      {npcShortName}
+                <div className="flex flex-col items-start">
+                  <div className="flex items-center justify-between gap-2 w-full mb-1 px-1.5">
+                    <span className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-slate-700">
+                      <span className="w-2 h-2 rounded-full bg-teal-500" />
+                      <span>{npcShortName === 'HANA' ? 'Hana' : 'Kai'}</span>
                     </span>
-                    <span className="text-[9.5px] font-bold text-slate-400">
+                    <span className="text-[10px] text-slate-400">
                       {merchantLocation === 'lobby_cafe'
                         ? 'Central Plaza'
                         : 'Beachfront Harbor'}
                     </span>
                   </div>
-                  <p className="text-xs sm:text-[13px] font-bold leading-relaxed text-[#f8fafc] min-h-[54px]">
-                    {isNpcThinking ? (
-                      <span className="text-slate-400">Typing...</span>
-                    ) : (
-                      <>
-                        {npcTypedText}
-                        {npcTypedText.length < npcFullText.length && (
-                          <span className="inline-block w-1.5 h-3.5 bg-[#b8ff3c] ml-0.5" />
-                        )}
-                      </>
-                    )}
-                  </p>
+                  <div
+                    data-npc-chat-bubble="true"
+                    className="w-full px-4 py-3 rounded-2xl rounded-tl-sm bg-white text-slate-800 border border-slate-200/70 shadow-sm"
+                  >
+                    <p className="text-xs sm:text-[13px] font-medium leading-relaxed text-slate-800 min-h-[48px]">
+                      {isNpcThinking ? (
+                        <span className="text-slate-400">Typing...</span>
+                      ) : (
+                        <>
+                          {npcTypedText}
+                          {npcTypedText.length < npcFullText.length && (
+                            <span className="inline-block w-1.5 h-3.5 rounded-full bg-sky-500 ml-0.5 align-middle animate-pulse" />
+                          )}
+                        </>
+                      )}
+                    </p>
+                  </div>
                 </div>
 
                 {/* Guest Sign-In Callout (Compact 1-row pill) */}
                 {!walletConnected && onConnectWallet && (
-                  <div className="px-3 py-2 bg-[#1e293b] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1.5 text-[10.5px] font-bold text-slate-200 truncate">
-                      <LogIn className="w-3.5 h-3.5 text-[#b8ff3c] shrink-0" aria-hidden="true" />
+                  <div className="px-3.5 py-2.5 rounded-2xl bg-white text-slate-800 border border-slate-200/80 shadow-sm flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-600 truncate">
+                      <LogIn className="w-3.5 h-3.5 text-emerald-500 shrink-0" aria-hidden="true" />
                       <span>Sign in to buy &amp; exchange</span>
                     </span>
                     <button
@@ -2142,9 +2159,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         soundEngine.playUiClick();
                         onConnectWallet();
                       }}
-                      className="px-3 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[10.5px] uppercase cursor-pointer shrink-0"
+                      className="px-3.5 py-1 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs font-semibold text-[11px] cursor-pointer transition-colors shrink-0"
                     >
-                      SIGN IN
+                      Sign in
                     </button>
                   </div>
                 )}
@@ -2154,22 +2171,24 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   caughtFishBucket.some((f) => !f.isMintedNft) && (
                     <div
                       data-kai-trade-entry="true"
-                      className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                      className="p-3.5 rounded-2xl bg-white text-slate-900 border border-slate-200/80 shadow-sm space-y-2.5"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10.5px] font-black uppercase text-[#38bdf8]">
+                        <span className="text-xs font-semibold text-sky-700">
                           {tradeLabels.entryTitle}
                         </span>
-                        <span className="text-[10.5px] font-black text-white">{tradeCurrency === 'RESPITE' ? 'PAID IN RESPITE' : tradeLabels.paidIn}</span>
+                        <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200/80 text-[10px] font-semibold">
+                          {tradeCurrency === 'RESPITE' ? 'Paid in RESPITE' : tradeLabels.paidIn}
+                        </span>
                       </div>
-                      <p className="text-[11px] font-bold text-slate-300">
+                      <p className="text-xs text-slate-500">
                         {tradeLabels.entrySub}
                       </p>
                       <button
                         type="button"
                         data-kai-trade-start-btn="true"
                         onClick={startTradePick}
-                        className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0px_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5 transition-all"
+                        className="w-full py-2.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm font-semibold text-xs cursor-pointer active:scale-[0.99] transition-all"
                       >
                         {tradeLabels.startHaggling}
                       </button>
@@ -2179,9 +2198,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 {merchantLocation === 'beach_house' && tradePhase === 'pick' && (
                   <div
                     data-kai-trade-card="pick"
-                    className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                    className="p-3.5 rounded-2xl bg-white text-slate-900 border border-slate-200/80 shadow-sm space-y-2.5"
                   >
-                    <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
+                    <div className="text-xs font-semibold text-sky-700">
                       {tradeLabels.pickFish}
                     </div>
                     <div className="grid grid-cols-2 gap-2">
@@ -2193,12 +2212,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             type="button"
                             data-kai-trade-fish={fish.id}
                             onClick={() => chooseTradeFish(fish)}
-                            className="p-2 bg-white text-black border-2 border-black shadow-[2px_2px_0px_#000] text-left cursor-pointer hover:bg-[#ecfccb]"
+                            className="p-2.5 rounded-xl bg-slate-50 hover:bg-sky-50 text-slate-900 border border-slate-200/80 hover:border-sky-300 shadow-xs text-left cursor-pointer transition-all"
                           >
-                            <div className="text-[11px] font-black uppercase truncate">
+                            <div className="text-xs font-semibold truncate">
                               {fish.speciesName}
                             </div>
-                            <div className="text-[10px] font-bold text-slate-600">
+                            <div className="text-[10.5px] text-slate-500">
                               {fish.weightKg.toFixed(2)} kg · {fish.rarity}
                             </div>
                           </button>
@@ -2207,7 +2226,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     <button
                       type="button"
                       onClick={endTrade}
-                      className="w-full py-2 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black font-black text-[11px] uppercase cursor-pointer"
+                      className="w-full py-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer transition-colors"
                     >
                       {tradeLabels.cancel}
                     </button>
@@ -2220,13 +2239,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   tradeFish && (
                     <div
                       data-kai-trade-card="offering"
-                      className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                      className="p-3.5 rounded-2xl bg-white text-slate-900 border border-slate-200/80 shadow-sm space-y-2.5"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10.5px] font-black uppercase text-[#38bdf8] truncate">
+                        <span className="text-xs font-semibold text-sky-700 truncate">
                           {tradeFish.speciesName} · {tradeFish.weightKg.toFixed(2)} kg
                         </span>
-                        <span className="text-[10px] font-black text-slate-300 shrink-0">
+                        <span className="text-xs font-semibold text-slate-400 shrink-0">
                           {'\u25CF'.repeat(tradeSession.roundsUsed)}
                           {'\u25CB'.repeat(
                             Math.max(0, tradeSession.maxRounds - tradeSession.roundsUsed),
@@ -2234,25 +2253,25 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         </span>
                       </div>
                       <div>
-                        <div className="text-[9.5px] font-black uppercase text-slate-400">
+                        <div className="text-[10.5px] font-medium text-slate-500">
                           {tradeLabels.offerLabel}
                         </div>
-                        <div className="text-2xl font-black text-white leading-none">
+                        <div className="text-2xl font-bold text-slate-900 leading-tight mt-0.5">
                           {tradeSession.currentOffer} {tradeCurrency}
                         </div>
-                        <div className="mt-1.5 h-2 bg-slate-700 border border-black">
+                        <div className="mt-2 h-2 rounded-full bg-slate-100 overflow-hidden">
                           <div
-                            className="h-full bg-[#b8ff3c]"
+                            className="h-full rounded-full bg-emerald-500 transition-all duration-300"
                             style={{
                               width: `${Math.min(100, Math.round((tradeSession.currentOffer / tradeSession.baseValue) * 100))}%`,
                             }}
                           />
                         </div>
-                        <div className="text-[9.5px] font-bold text-slate-400 mt-1">
+                        <div className="text-[10.5px] font-medium text-slate-500 mt-1.5">
                           {tradeLabels.standardPrice}: {tradeSession.baseValue} {tradeCurrency}
                           {tradeSession.isFinalOffer ? ` · ${tradeLabels.finalOffer}` : ''}
                         </div>
-                        <div className="text-[9.5px] italic font-bold text-slate-400 mt-0.5">
+                        <div className="text-[10.5px] italic text-slate-400 mt-0.5">
                           {TRADE_LINES[tradeLang][getTradeReasonKey(tradeSession)]}
                         </div>
                       </div>
@@ -2261,7 +2280,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           type="button"
                           data-kai-trade-accept-btn="true"
                           onClick={doTradeAccept}
-                          className="flex-1 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
+                          className="flex-1 py-2 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs font-semibold text-xs cursor-pointer transition-colors"
                         >
                           {tradeLabels.accept}
                         </button>
@@ -2270,14 +2289,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           data-kai-trade-raise-btn="true"
                           onClick={doTradeRaise}
                           disabled={tradeSession.isFinalOffer}
-                          className="flex-1 py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] disabled:opacity-40 text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
+                          className="flex-1 py-2 rounded-full bg-sky-500 hover:bg-sky-600 disabled:opacity-40 text-white shadow-xs font-semibold text-xs cursor-pointer transition-colors"
                         >
                           {tradeLabels.haggle}
                         </button>
                         <button
                           type="button"
                           onClick={doTradeWalkAway}
-                          className="flex-1 py-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black font-black text-[11px] uppercase cursor-pointer"
+                          className="flex-1 py-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer transition-colors"
                         >
                           {tradeLabels.stop}
                         </button>
@@ -2291,12 +2310,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   tradeSession.agreedPrice != null && (
                     <div
                       data-kai-trade-card="agreed"
-                      className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                      className="p-3.5 rounded-2xl bg-emerald-50/90 text-slate-900 border border-emerald-200/80 shadow-sm space-y-2.5"
                     >
-                      <div className="text-[10.5px] font-black uppercase text-[#b8ff3c]">
+                      <div className="text-xs font-bold text-emerald-700">
                         {tradeLabels.deal} · {tradeSession.agreedPrice} {tradeCurrency}
                       </div>
-                      <div className="text-[11px] font-bold text-slate-300">
+                      <div className="text-xs font-medium text-emerald-800">
                         ✓ {tradeLabels.fishPicked} · ● {tradeLabels.payment}
                       </div>
                       <div className="flex gap-2">
@@ -2305,14 +2324,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           data-kai-trade-sell-btn="true"
                           disabled={tradeBusy}
                           onClick={doTradeSell}
-                          className="flex-1 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
+                          className="flex-1 py-2 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs font-semibold text-xs cursor-pointer transition-colors"
                         >
                           {tradeLabels.sellNow}
                         </button>
                         <button
                           type="button"
                           onClick={endTrade}
-                          className="flex-1 py-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black font-black text-[11px] uppercase cursor-pointer"
+                          className="flex-1 py-2 rounded-full bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 font-semibold text-xs cursor-pointer transition-colors"
                         >
                           {tradeLabels.cancel}
                         </button>
@@ -2323,9 +2342,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 {merchantLocation === 'beach_house' && tradePhase === 'done' && tradeDoneInfo && (
                   <div
                     data-kai-trade-card="done"
-                    className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                    className="p-3.5 rounded-2xl bg-emerald-50/90 text-slate-900 border border-emerald-200/80 shadow-sm space-y-2.5"
                   >
-                    <div className="text-[10.5px] font-black uppercase text-[#b8ff3c]">
+                    <div className="text-xs font-bold text-emerald-700">
                       ✓ {tradeLabels.sold} · {tradeDoneInfo.name} · +{tradeDoneInfo.price} {tradeDoneInfo.currency}
                     </div>
                     <div className="flex gap-2">
@@ -2333,7 +2352,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         <button
                           type="button"
                           onClick={startTradePick}
-                          className="flex-1 py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
+                          className="flex-1 py-2 rounded-full bg-sky-500 hover:bg-sky-600 text-white shadow-xs font-semibold text-xs cursor-pointer transition-colors"
                         >
                           {tradeLabels.sellMore}
                         </button>
@@ -2341,7 +2360,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       <button
                         type="button"
                         onClick={endTrade}
-                        className="flex-1 py-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black font-black text-[11px] uppercase cursor-pointer"
+                        className="flex-1 py-2 rounded-full bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 font-semibold text-xs cursor-pointer transition-colors"
                       >
                         {tradeLabels.close}
                       </button>
@@ -2354,19 +2373,19 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   tradeSession && (
                     <div
                       data-kai-trade-card="walkaway"
-                      className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                      className="p-3.5 rounded-2xl bg-white text-slate-900 border border-slate-200/80 shadow-sm space-y-2.5"
                     >
-                      <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
+                      <div className="text-xs font-semibold text-sky-700">
                         {tradeLabels.lastOffer} · {tradeSession.currentOffer} {tradeCurrency}
                       </div>
-                      <div className="text-[9.5px] italic font-bold text-slate-400">
+                      <div className="text-[11px] italic text-slate-500">
                         {TRADE_LINES[tradeLang][getTradeReasonKey(tradeSession)]}
                       </div>
                       <div className="flex gap-2">
                         <button
                           type="button"
                           onClick={doTradeAccept}
-                          className="flex-1 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
+                          className="flex-1 py-2 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs font-semibold text-xs cursor-pointer transition-colors"
                         >
                           {tradeLabels.takeIt}
                         </button>
@@ -2377,14 +2396,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             endTrade();
                             setActiveTab('fish_market');
                           }}
-                          className="flex-1 py-2.5 bg-[#38bdf8] hover:bg-[#7dd3fc] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[11px] uppercase cursor-pointer"
+                          className="flex-1 py-2 rounded-full bg-sky-500 hover:bg-sky-600 text-white shadow-xs font-semibold text-xs cursor-pointer transition-colors"
                         >
                           {tradeLabels.fishMarket}
                         </button>
                         <button
                           type="button"
                           onClick={endTrade}
-                          className="flex-1 py-2.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black font-black text-[11px] uppercase cursor-pointer"
+                          className="flex-1 py-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer transition-colors"
                         >
                           {tradeLabels.close}
                         </button>
@@ -2398,20 +2417,20 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   pitchView === 'full' && (
                     <div
                       data-hana-property-pitch="true"
-                      className="p-2.5 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                      className="p-3.5 rounded-2xl bg-white text-slate-900 border border-slate-200/80 shadow-sm space-y-2.5"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="inline-flex items-center gap-1.5 text-[10.5px] font-black uppercase text-[#38bdf8]">
-                          <Home className="w-3.5 h-3.5" aria-hidden="true" />
-                          <span>YOUR FIRST HOME</span>
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-sky-700">
+                          <Home className="w-3.5 h-3.5 text-sky-500" aria-hidden="true" />
+                          <span>Your First Home</span>
                         </span>
                         <button
                           type="button"
                           aria-label="Dismiss property offer for now"
                           onClick={() => setPitchViewBoth('hidden')}
-                          className="w-5 h-5 leading-none bg-[#1e293b] hover:bg-[#334155] text-white border border-black font-black text-[10px] cursor-pointer"
+                          className="w-6 h-6 rounded-full bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 flex items-center justify-center cursor-pointer transition-colors"
                         >
-                          ✕
+                          <X className="w-3.5 h-3.5" aria-hidden="true" />
                         </button>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
@@ -2423,20 +2442,20 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               soundEngine.playUiClick();
                               onViewModelHouse();
                             }}
-                            className="py-2 px-2 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[10.5px] uppercase cursor-pointer active:translate-y-0.5 transition-all inline-flex items-center justify-center gap-1.5"
+                            className="py-2 px-3 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs font-semibold text-[11px] cursor-pointer active:scale-[0.99] transition-all inline-flex items-center justify-center gap-1.5"
                           >
                             <Eye className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                            <span>MODEL HOUSE</span>
+                            <span>Model House</span>
                           </button>
                         )}
                         <button
                           type="button"
                           data-hana-view-catalog-btn="true"
                           onClick={openPitchCatalog}
-                          className="py-2 px-2 bg-white hover:bg-slate-100 text-black border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[10.5px] uppercase cursor-pointer active:translate-y-0.5 transition-all inline-flex items-center justify-center gap-1.5"
+                          className="py-2 px-3 rounded-full bg-slate-100 hover:bg-sky-50 text-slate-800 hover:text-sky-700 border border-slate-200/80 font-semibold text-[11px] cursor-pointer active:scale-[0.99] transition-all inline-flex items-center justify-center gap-1.5"
                         >
                           <Store className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                          <span>VIEW CATALOG</span>
+                          <span>View Catalog</span>
                         </button>
                       </div>
                       {hanaPitchOrigin === 'kiosk' && onOpenTeleportKioskFromPitch && (
@@ -2447,10 +2466,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             soundEngine.playUiClick();
                             onOpenTeleportKioskFromPitch();
                           }}
-                          className="w-full py-1.5 bg-[#1e293b] hover:bg-[#334155] text-white border-2 border-black shadow-[2px_2px_0px_#000] font-black text-[10px] uppercase tracking-wider cursor-pointer inline-flex items-center justify-center gap-1.5"
+                          className="w-full py-2 rounded-full bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200/80 font-semibold text-[11px] cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors"
                         >
-                          <MapPin className="w-3.5 h-3.5 text-[#38bdf8]" aria-hidden="true" />
-                          <span>OPEN TELEPORT KIOSK</span>
+                          <MapPin className="w-3.5 h-3.5 text-sky-500" aria-hidden="true" />
+                          <span>Open Teleport Kiosk</span>
                         </button>
                       )}
                     </div>
@@ -2462,21 +2481,21 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   (!hanaWelcomeNearClaimed || hanaClaimResult?.ok) && (
                     <div
                       data-hana-onboarding-tutorial-box="true"
-                      className="p-2.5 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2"
+                      className="p-3.5 rounded-2xl bg-emerald-50/90 text-slate-900 border border-emerald-200/80 shadow-sm space-y-2.5"
                     >
                       {!hanaWelcomeNearClaimed && !hanaClaimResult?.ok ? (
                         <>
                           <div className="flex items-center justify-between gap-2">
-                            <span className="inline-flex items-center gap-1.5 text-[10.5px] font-black uppercase text-[#b8ff3c]">
-                              <Gift className="w-3.5 h-3.5" aria-hidden="true" />
-                              <span>STARTER BONUS</span>
+                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
+                              <Gift className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
+                              <span>Starter Bonus</span>
                             </span>
-                            <span className="px-2 py-0.5 bg-black/50 border border-white/20 text-[10px] font-black text-white">
+                            <span className="px-2.5 py-0.5 rounded-full bg-white text-emerald-700 border border-emerald-200/80 text-[10.5px] font-semibold">
                               0.30 NEAR
                             </span>
                           </div>
                           {hanaClaimResult?.error && (
-                            <div className="p-2 bg-[#fef2f2] text-[#991b1b] border border-[#ff3b30] text-[10px] font-bold">
+                            <div className="p-2.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200/80 text-[11px] font-medium">
                               {hanaClaimResult.error}
                             </div>
                           )}
@@ -2504,18 +2523,18 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 setIsClaimingHanaNear(false);
                               }
                             }}
-                            className={`w-full py-2 border-2 border-black shadow-[2px_2px_0px_#000] font-black text-xs uppercase tracking-wider transition-all ${
+                            className={`w-full py-2.5 rounded-full font-semibold text-xs shadow-xs transition-all ${
                               isClaimingHanaNear
-                                ? 'bg-slate-600 text-slate-200 cursor-wait'
-                                : 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer active:translate-y-0.5'
+                                ? 'bg-slate-200 text-slate-500 cursor-wait'
+                                : 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer active:scale-[0.99]'
                             }`}
                           >
-                            {isClaimingHanaNear ? 'CLAIMING...' : 'CLAIM STARTER PACK'}
+                            {isClaimingHanaNear ? 'Claiming...' : 'Claim Starter Pack'}
                           </button>
                         </>
                       ) : (
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between gap-2 text-[11px] font-bold text-emerald-300">
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between gap-2 text-xs font-medium text-emerald-800">
                             <span>Starter pack added: 0.30 NEAR + 100 LUL + 20 CYON.</span>
                             {hanaClaimResult?.txHash && (
                               <a
@@ -2525,7 +2544,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 }
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-[#38bdf8] underline font-mono text-[10px]"
+                                className="text-sky-600 hover:text-sky-700 underline font-mono text-[11px]"
                               >
                                 Receipt
                               </a>
@@ -2540,7 +2559,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               </div>
 
               {/* Clean Quick Question Chips + Clear Chat Footer */}
-              <div className="pt-2 border-t-2 border-black shrink-0 bg-white space-y-2">
+              <div className="pt-2.5 border-t border-slate-300/60 shrink-0 space-y-2">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {(
                     [
@@ -2556,7 +2575,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         soundEngine.playUiClick();
                         submitPlayerQuestion(prompt);
                       }}
-                      className="px-2 py-1 bg-slate-100 hover:bg-[#fef08a] text-black border border-black text-[9.5px] font-bold cursor-pointer transition-colors"
+                      className="px-3 py-1.5 rounded-xl bg-white hover:bg-sky-50 text-slate-700 hover:text-sky-800 border border-slate-200/90 shadow-xs text-[11px] font-medium cursor-pointer transition-colors"
                     >
                       {prompt}
                     </button>
@@ -2565,10 +2584,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     type="button"
                     data-chat-clear-btn="true"
                     onClick={handleClearChat}
-                    className="ml-auto px-2 py-1 bg-[#fee2e2] hover:bg-[#fecaca] text-[#991b1b] border border-black text-[9px] font-black uppercase cursor-pointer inline-flex items-center gap-1 transition-colors shrink-0"
+                    className="ml-auto px-3 py-1.5 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200/70 text-[10.5px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-colors shrink-0"
                   >
                     <Trash2 className="w-3 h-3" aria-hidden="true" />
-                    <span>CLEAR CHAT</span>
+                    <span>Clear chat</span>
                   </button>
                 </div>
               </div>
@@ -2617,24 +2636,24 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
             return (
               <div className="flex-1 flex flex-col justify-between gap-3 min-h-0">
-                <div className="flex-1 overflow-y-auto pr-1 space-y-3.5 min-h-0">
+                <div className="flex-1 overflow-y-auto pr-0.5 space-y-3 min-h-0">
                   {exchangeQuickMode ? (
                     <div
                       data-exchange-quick-panel={exchangeQuickMode}
-                      className="p-3 bg-[#141c2e] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2.5"
+                      className="p-3.5 rounded-2xl bg-white text-slate-900 border border-slate-200/80 shadow-sm space-y-3"
                     >
-                      <div className="flex items-center justify-between gap-2 pb-2 border-b border-white/15">
-                        <span className="inline-flex items-center gap-1.5 text-[10.5px] font-black uppercase text-[#facc15]">
+                      <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-900">
                           {exchangeQuickMode === 'teleport' ? (
-                            <MapPin className="w-3.5 h-3.5 text-[#00f0ff] shrink-0" aria-hidden="true" />
+                            <MapPin className="w-4 h-4 text-sky-500 shrink-0" aria-hidden="true" />
                           ) : exchangeQuickMode === 'buy_house' ? (
-                            <Home className="w-3.5 h-3.5 text-[#38bdf8] shrink-0" aria-hidden="true" />
+                            <Home className="w-4 h-4 text-sky-500 shrink-0" aria-hidden="true" />
                           ) : exchangeQuickMode === 'exchange_lul' ? (
-                            <Coins className="w-3.5 h-3.5 text-[#10b981] shrink-0" aria-hidden="true" />
+                            <Coins className="w-4 h-4 text-emerald-500 shrink-0" aria-hidden="true" />
                           ) : exchangeQuickMode === 'swap_near' ? (
-                            <Sparkles className="w-3.5 h-3.5 text-[#d8b4fe] shrink-0" aria-hidden="true" />
+                            <Sparkles className="w-4 h-4 text-violet-500 shrink-0" aria-hidden="true" />
                           ) : (
-                            <Store className="w-3.5 h-3.5 text-[#b8ff3c] shrink-0" aria-hidden="true" />
+                            <Store className="w-4 h-4 text-emerald-500 shrink-0" aria-hidden="true" />
                           )}
                           <span>{EXCHANGE_QUICK_MODE_LABELS[exchangeQuickMode]}</span>
                         </span>
@@ -2646,10 +2665,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             setExchangeQuickMode(null);
                           }}
                           aria-label="Back to Exchange"
-                          className="px-2 py-0.5 bg-[#1e293b] hover:bg-[#334155] text-white border border-black text-[9px] font-black uppercase cursor-pointer inline-flex items-center gap-1"
+                          className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-colors"
                         >
                           <X className="w-3 h-3" aria-hidden="true" />
-                          <span>EXCHANGE</span>
+                          <span>Exchange</span>
                         </button>
                       </div>
 
@@ -2716,12 +2735,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   ) : (
                     <>
                 {/* Wallet or Sign-In Header */}
-                <div className="p-3 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2">
+                <div className="p-3.5 rounded-2xl bg-white text-slate-900 border border-slate-200/80 shadow-sm flex items-center justify-between gap-2.5">
                   <div className="min-w-0">
-                    <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
-                      {walletConnected ? 'YOUR WALLET' : 'SIGN IN REQUIRED'}
+                    <div className="text-[11px] font-semibold text-sky-600">
+                      {walletConnected ? 'Your wallet' : 'Sign in required'}
                     </div>
-                    <div className="text-[10px] font-bold text-white/85 mt-0.5 truncate">
+                    <div className="text-xs font-medium text-slate-600 mt-0.5 truncate">
                       {walletConnected
                         ? `${playerNearAccount} · ${nearTestnetBalance.toFixed(2)} NEAR · ${respiteBalance.toLocaleString()} RESPITE`
                         : 'Sign in to exchange currencies.'}
@@ -2735,28 +2754,26 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         soundEngine.playUiClick();
                         onConnectWallet();
                       }}
-                      className={`-skew-x-6 px-3 py-1.5 font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0 ${
+                      className={`px-3.5 py-1.5 rounded-full font-semibold text-[11px] shadow-xs cursor-pointer transition-colors shrink-0 ${
                         walletConnected
-                          ? 'bg-[#38bdf8] hover:bg-[#7dd3fc] text-black'
-                          : 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black'
+                          ? 'bg-sky-500 hover:bg-sky-600 text-white'
+                          : 'bg-emerald-500 hover:bg-emerald-600 text-white'
                       }`}
                     >
-                      <span className="skew-x-6 inline-block">
-                        {walletConnected ? 'WALLET' : 'SIGN IN'}
-                      </span>
+                      <span>{walletConnected ? 'Wallet' : 'Sign in'}</span>
                     </button>
                   )}
                 </div>
 
                 {/* Beginner-Friendly Currency Guide */}
-                <div className="px-3 py-2 bg-[#f8fafc] border-2 border-black text-[10.5px] font-bold text-slate-700 leading-snug">
-                  Swap <span className="font-black text-[#6d28d9]">NEAR -&gt; RESPITE</span> for Houses, NFT Furniture &amp; Fish Market, or{' '}
-                  <span className="font-black text-[#0369a1]">LUL -&gt; CYON</span> for Fishing Gear &amp; Cafe items.
+                <div className="px-3.5 py-2.5 rounded-2xl bg-white/85 border border-slate-200/70 text-[11px] font-medium text-slate-600 leading-snug">
+                  Swap <span className="font-semibold text-violet-600">NEAR -&gt; RESPITE</span> for Houses, NFT Furniture &amp; Fish Market, or{' '}
+                  <span className="font-semibold text-sky-600">LUL -&gt; CYON</span> for Fishing Gear &amp; Cafe items.
                 </div>
 
                 {marketState.isShopBroke && (
-                  <div className="p-2.5 bg-[#1e293b] text-white border-2 border-black flex items-center justify-between gap-2 flex-wrap">
-                    <span className="text-[10.5px] font-bold text-slate-200">
+                  <div className="p-3 rounded-2xl bg-amber-50/95 text-amber-950 border border-amber-200/80 shadow-xs flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-[11px] font-medium text-amber-900">
                       Shop CYON reserve is low. Support the shop for +45 CYON and a 15% discount.
                     </span>
                     <button
@@ -2769,13 +2786,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           'Thank you! Shop reserves are refilled, +45 CYON added, and your 15% catalog discount is active.',
                         );
                       }}
-                      className={`px-2.5 py-1 border border-black text-[9.5px] font-black uppercase ${
+                      className={`px-3 py-1.5 rounded-full text-[10.5px] font-semibold shadow-xs transition-colors ${
                         walletConnected && lulBalance >= 300
-                          ? 'bg-[#b8ff3c] hover:bg-[#d9f99d] text-black cursor-pointer'
-                          : 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                          ? 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer'
+                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                       }`}
                     >
-                      SUPPORT (300 LUL)
+                      Support (300 LUL)
                     </button>
                   </div>
                 )}
@@ -2785,20 +2802,20 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                    =========================================================== */}
                 <div
                   data-near-respite-swap-card="true"
-                  className={`bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] overflow-hidden ${
+                  className={`rounded-2xl bg-white text-slate-900 border border-slate-200/80 shadow-sm overflow-hidden ${
                     !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
                   }`}
                 >
-                  <div className="px-4 py-2 bg-[#1e1b4b] border-b-2 border-black flex items-center justify-between gap-2 flex-wrap">
+                  <div className="px-4 py-2.5 bg-violet-50/70 border-b border-slate-200/70 flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                      <span className="-skew-x-6 px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9.5px] font-black uppercase shrink-0">
-                        <span className="skew-x-6 inline-block">NEAR TO RESPITE</span>
+                      <span className="px-2.5 py-0.5 rounded-full bg-violet-100 text-violet-700 border border-violet-200/80 text-[10.5px] font-semibold shrink-0">
+                        NEAR to RESPITE
                       </span>
-                      <span className="text-[9.5px] font-bold text-slate-300">
+                      <span className="text-[10.5px] font-medium text-slate-500">
                         For Houses (100 R) &amp; Fish Market
                       </span>
                     </div>
-                    <span className="text-[10px] font-bold text-[#d8b4fe]">
+                    <span className="text-[10.5px] font-semibold text-violet-700">
                       1 NEAR = {respitePerNearRate} RESPITE
                     </span>
                   </div>
@@ -2826,10 +2843,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               setSwapErrorText(null);
                               setLastCryptoSwapReceipt(null);
                             }}
-                            className={`px-2.5 py-0.5 border border-white/40 text-[9.5px] font-black uppercase ${
+                            className={`px-2.5 py-1 rounded-full border text-[10px] font-semibold transition-colors ${
                               overBalance
-                                ? 'bg-slate-700 text-slate-400 opacity-40 cursor-not-allowed'
-                                : 'bg-[#1e293b] hover:bg-[#334155] text-[#d8b4fe] cursor-pointer'
+                                ? 'bg-slate-100 text-slate-400 border-slate-200 opacity-50 cursor-not-allowed'
+                                : 'bg-violet-50 hover:bg-violet-100 text-violet-700 border-violet-200/80 cursor-pointer'
                             }`}
                           >
                             {preset.label}
@@ -2839,15 +2856,15 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     </div>
 
                     {/* Input Row */}
-                    <div className="flex items-center gap-3 max-w-xs mx-auto">
+                    <div className="flex items-center gap-2.5 max-w-xs mx-auto">
                       <div
-                        className={`-skew-x-6 w-24 py-2 ${
-                          isNearToRespite ? 'bg-[#38bdf8]' : 'bg-[#d8b4fe]'
-                        } text-black border-2 border-black shadow-[2px_2px_0_#000] text-center text-[10px] font-black uppercase shrink-0`}
+                        className={`w-24 py-2 rounded-xl text-center text-[11px] font-semibold shrink-0 border ${
+                          isNearToRespite
+                            ? 'bg-sky-50 text-sky-700 border-sky-200/80'
+                            : 'bg-violet-50 text-violet-700 border-violet-200/80'
+                        }`}
                       >
-                        <span className="skew-x-6 inline-block">
-                          {isNearToRespite ? 'NEAR' : 'RESPITE'}
-                        </span>
+                        <span>{isNearToRespite ? 'NEAR' : 'RESPITE'}</span>
                       </div>
                       <input
                         type="number"
@@ -2860,56 +2877,55 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           setSwapErrorText(null);
                           setLastCryptoSwapReceipt(null);
                         }}
-                        className="flex-1 px-3 py-2 bg-[#1e293b] text-white font-black text-base border-2 border-white/80 shadow-[2px_2px_0_#000] focus:outline-none focus:border-[#d8b4fe]"
+                        className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-slate-50 text-slate-900 font-semibold text-sm border border-slate-200/90 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:bg-white"
                       />
                     </div>
 
                     {/* Middle Label: You will receive */}
-                    <div className="text-center text-xs font-black uppercase tracking-wider text-slate-200">
+                    <div className="text-center text-[11px] font-medium text-slate-400">
                       You will receive
                     </div>
 
                     {/* Output Row */}
-                    <div className="flex items-center gap-3 max-w-xs mx-auto">
+                    <div className="flex items-center gap-2.5 max-w-xs mx-auto">
                       <div
-                        className={`-skew-x-6 w-24 py-2 ${
-                          isNearToRespite ? 'bg-[#d8b4fe]' : 'bg-[#38bdf8]'
-                        } text-black border-2 border-black shadow-[2px_2px_0_#000] text-center text-[10px] font-black uppercase shrink-0`}
+                        className={`w-24 py-2 rounded-xl text-center text-[11px] font-semibold shrink-0 border ${
+                          isNearToRespite
+                            ? 'bg-violet-50 text-violet-700 border-violet-200/80'
+                            : 'bg-sky-50 text-sky-700 border-sky-200/80'
+                        }`}
                       >
-                        <span className="skew-x-6 inline-block">
-                          {isNearToRespite ? 'RESPITE' : 'NEAR'}
-                        </span>
+                        <span>{isNearToRespite ? 'RESPITE' : 'NEAR'}</span>
                       </div>
                       <div
                         data-near-respite-swap-output="true"
-                        className="flex-1 px-3 py-2 bg-[#1e293b] text-[#d8b4fe] font-black text-base border-2 border-white/80 shadow-[2px_2px_0_#000]"
+                        className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-violet-50/60 text-violet-700 font-bold text-sm border border-violet-200/70"
                       >
                         {calculatedCryptoOutput}
                       </div>
                     </div>
 
                     {isReadOnlyWallet && (
-                      <div className="p-2 bg-[#fef3c7] text-[#78350f] border border-black text-[10px] font-black text-center">
+                      <div className="p-2.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200/80 text-[11px] font-medium text-center">
                         View-only mode is active ({playerNearAccount}). Open Wallet and switch to your own account to swap.
                       </div>
                     )}
 
                     {exceedsKnownSignerBalance && (
-                      <div className="p-2 bg-[#fef2f2] text-[#991b1b] border border-[#ff3b30] text-[10px] font-bold text-center">
+                      <div className="p-2.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200/80 text-[11px] font-medium text-center">
                         Not enough NEAR ({nearTestnetBalance.toFixed(2)} NEAR available). Choose a smaller amount.
                       </div>
                     )}
 
                     {swapErrorText && (
-                      <div className="p-2 bg-[#fef2f2] text-[#991b1b] border border-[#ff3b30] text-[10px] font-bold text-center">
+                      <div className="p-2.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200/80 text-[11px] font-medium text-center">
                         {swapErrorText}
                       </div>
                     )}
-
                   </div>
 
                   {/* Bottom Divider & Swap Submit Button */}
-                  <div className="border-t-2 border-white/25 bg-[#141c2e] px-5 py-3.5 flex items-center justify-center gap-3 flex-wrap">
+                  <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-3 flex items-center justify-center gap-3 flex-wrap">
                     <button
                       type="button"
                       data-near-respite-swap-submit-btn="true"
@@ -2942,15 +2958,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           setIsSwappingNear(false);
                         }
                       }}
-                      className={`-skew-x-6 min-w-[210px] py-2.5 px-6 border-2 border-black text-xs sm:text-sm font-black uppercase tracking-wider shadow-[3px_3px_0px_#000] transition-all ${
+                      className={`min-w-[200px] py-2.5 px-6 rounded-full text-xs font-semibold shadow-sm transition-all ${
                         canPerformCryptoSwap
-                          ? 'bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black cursor-pointer active:translate-x-[1px] active:translate-y-[1px]'
-                          : 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                          ? 'bg-violet-500 hover:bg-violet-600 text-white cursor-pointer active:scale-[0.99]'
+                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                       }`}
                     >
-                      <span className="skew-x-6 inline-block">
-                        {isSwappingNear ? 'SWAPPING...' : 'SWAP'}
-                      </span>
+                      <span>{isSwappingNear ? 'Swapping...' : 'Swap'}</span>
                     </button>
                   </div>
 
@@ -2958,7 +2972,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     <div className="px-4 pb-4">
                       <div
                         data-near-respite-swap-receipt="true"
-                        className="p-2 bg-black/50 border border-[#10b981] text-[10px] font-bold text-slate-200 text-center space-y-0.5"
+                        className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200/80 text-[11px] font-medium text-emerald-800 text-center space-y-0.5"
                       >
                         <div>
                           Swapped {lastCryptoSwapReceipt.nearAmount} NEAR &rarr; +
@@ -2969,7 +2983,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             href={getNearBlocksTxUrl(lastCryptoSwapReceipt.txHash, 'testnet')}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-block text-[#38bdf8] underline font-mono"
+                            className="inline-block text-sky-600 hover:text-sky-700 underline font-mono"
                           >
                             View Tx on NearBlocks ↗
                           </a>
@@ -2984,29 +2998,29 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                    =========================================================== */}
                 <div
                   data-lul-cyon-exchange-card="true"
-                  className={`bg-[#0f172a] text-white border-[3px] border-black shadow-[4px_4px_0px_#000] overflow-hidden ${
+                  className={`rounded-2xl bg-white text-slate-900 border border-slate-200/80 shadow-sm overflow-hidden ${
                     !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
                   }`}
                 >
-                  <div className="px-4 py-2 bg-[#1e293b] border-b-2 border-black flex items-center justify-between gap-2 flex-wrap">
+                  <div className="px-4 py-2.5 bg-sky-50/70 border-b border-slate-200/70 flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                      <span className="-skew-x-6 px-2 py-0.5 bg-[#fec83e] text-black border border-black text-[9.5px] font-black uppercase shrink-0">
-                        <span className="skew-x-6 inline-block">LUL TO CYON</span>
+                      <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200/80 text-[10.5px] font-semibold shrink-0">
+                        LUL to CYON
                       </span>
-                      <span className="text-[9.5px] font-bold text-slate-300">
+                      <span className="text-[10.5px] font-medium text-slate-500">
                         For Fishing Gear &amp; Cafe Items
                       </span>
                     </div>
-                    <span className="text-[10px] font-bold text-[#38bdf8]">
+                    <span className="text-[10.5px] font-semibold text-sky-700">
                       {rateLul} LUL = {rateCyon} CYON
                     </span>
                   </div>
 
                   <div className="p-4 space-y-3">
                     {/* LUL Amount Input Row */}
-                    <div className="flex items-center gap-3 max-w-xs mx-auto">
-                      <div className="-skew-x-6 w-16 py-2 bg-[#fec83e] text-black border-2 border-black shadow-[2px_2px_0_#000] text-center text-[11px] font-black uppercase shrink-0">
-                        <span className="skew-x-6 inline-block">LUL</span>
+                    <div className="flex items-center gap-2.5 max-w-xs mx-auto">
+                      <div className="w-20 py-2 rounded-xl bg-amber-50 text-amber-800 border border-amber-200/80 text-center text-[11px] font-semibold shrink-0">
+                        <span>LUL</span>
                       </div>
                       <input
                         type="number"
@@ -3016,22 +3030,22 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         data-exchange-lul-input="true"
                         value={exchangeLulAmountStr}
                         onChange={(e) => setExchangeLulAmountStr(e.target.value)}
-                        className="flex-1 px-3 py-2 bg-[#1e293b] text-white font-black text-base border-2 border-white/80 shadow-[2px_2px_0_#000] focus:outline-none focus:border-[#fec83e]"
+                        className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-slate-50 text-slate-900 font-semibold text-sm border border-slate-200/90 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:bg-white"
                       />
                     </div>
 
-                    <div className="text-center text-[11px] font-black uppercase tracking-wider text-slate-300">
+                    <div className="text-center text-[11px] font-medium text-slate-400">
                       You receive
                     </div>
 
                     {/* CYON Output Row */}
-                    <div className="flex items-center gap-3 max-w-xs mx-auto">
-                      <div className="-skew-x-6 w-16 py-2 bg-[#38bdf8] text-black border-2 border-black shadow-[2px_2px_0_#000] text-center text-[11px] font-black uppercase shrink-0">
-                        <span className="skew-x-6 inline-block">CYON</span>
+                    <div className="flex items-center gap-2.5 max-w-xs mx-auto">
+                      <div className="w-20 py-2 rounded-xl bg-sky-50 text-sky-700 border border-sky-200/80 text-center text-[11px] font-semibold shrink-0">
+                        <span>CYON</span>
                       </div>
                       <div
                         data-exchange-cyon-output="true"
-                        className="flex-1 px-3 py-2 bg-[#1e293b] text-[#38bdf8] font-black text-base border-2 border-white/80 shadow-[2px_2px_0_#000]"
+                        className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-sky-50/60 text-sky-700 font-bold text-sm border border-sky-200/70"
                       >
                         {calculatedCyon}
                       </div>
@@ -3039,7 +3053,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   </div>
 
                   {/* Bottom Divider & Exchange Button */}
-                  <div className="border-t-2 border-white/25 bg-[#141c2e] px-5 py-3 flex justify-center">
+                  <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-3 flex justify-center">
                     <button
                       type="button"
                       data-exchange-submit-btn="true"
@@ -3052,13 +3066,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           `Exchanged ${exchangeLulSpent} LUL for +${calculatedCyon} CYON.`,
                         );
                       }}
-                      className={`-skew-x-6 min-w-[180px] py-2 px-6 border-2 border-black text-xs font-black uppercase tracking-wider shadow-[3px_3px_0px_#000] transition-all ${
+                      className={`min-w-[180px] py-2.5 px-6 rounded-full text-xs font-semibold shadow-sm transition-all ${
                         canPerformExchange
-                          ? 'bg-[#10b981] hover:bg-[#34d399] text-black cursor-pointer active:translate-x-[1px] active:translate-y-[1px]'
-                          : 'bg-slate-600 text-slate-300 cursor-not-allowed'
+                          ? 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer active:scale-[0.99]'
+                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                       }`}
                     >
-                      <span className="skew-x-6 inline-block">EXCHANGE</span>
+                      <span>Exchange</span>
                     </button>
                   </div>
                 </div>
@@ -3069,7 +3083,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 {/* Pinned Bottom Quick Action Buttons inside EXCHANGE tab */}
                 <div
                   data-exchange-quick-bar="true"
-                  className="pt-2 border-t-2 border-black shrink-0 bg-white"
+                  className="pt-2.5 border-t border-slate-300/60 shrink-0"
                 >
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <button
@@ -3081,14 +3095,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           prev === 'quick_shop' ? null : 'quick_shop',
                         );
                       }}
-                      className={`px-2 py-1 border border-black text-[9px] font-black uppercase cursor-pointer inline-flex items-center gap-1 transition-all ${
+                      className={`px-2.5 py-1.5 rounded-full border text-[10px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-all ${
                         exchangeQuickMode === 'quick_shop'
-                          ? 'bg-[#b8ff3c] text-black shadow-[2px_2px_0px_#000] -translate-y-0.5'
-                          : 'bg-[#ecfccb] hover:bg-[#b8ff3c] text-black'
+                          ? 'bg-emerald-500 text-white border-emerald-500 shadow-xs'
+                          : 'bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border-slate-200/80'
                       }`}
                     >
                       <Store className="w-3 h-3" aria-hidden="true" />
-                      <span>QUICK SHOP</span>
+                      <span>Quick Shop</span>
                     </button>
                     <button
                       type="button"
@@ -3100,14 +3114,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           prev === 'exchange_lul' ? null : 'exchange_lul',
                         );
                       }}
-                      className={`px-2 py-1 border border-black text-[9px] font-black uppercase cursor-pointer inline-flex items-center gap-1 transition-all ${
+                      className={`px-2.5 py-1.5 rounded-full border text-[10px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-all ${
                         exchangeQuickMode === 'exchange_lul'
-                          ? 'bg-[#10b981] text-black shadow-[2px_2px_0px_#000] -translate-y-0.5'
-                          : 'bg-[#d1fae5] hover:bg-[#a7f3d0] text-black'
+                          ? 'bg-emerald-500 text-white border-emerald-500 shadow-xs'
+                          : 'bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border-slate-200/80'
                       }`}
                     >
                       <Coins className="w-3 h-3" aria-hidden="true" />
-                      <span>EXCHANGE LUL</span>
+                      <span>Exchange LUL</span>
                     </button>
                     <button
                       type="button"
@@ -3119,14 +3133,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           prev === 'swap_near' ? null : 'swap_near',
                         );
                       }}
-                      className={`px-2 py-1 border border-black text-[9px] font-black uppercase cursor-pointer inline-flex items-center gap-1 transition-all ${
+                      className={`px-2.5 py-1.5 rounded-full border text-[10px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-all ${
                         exchangeQuickMode === 'swap_near'
-                          ? 'bg-[#c084fc] text-black shadow-[2px_2px_0px_#000] -translate-y-0.5'
-                          : 'bg-[#ede9fe] hover:bg-[#ddd6fe] text-black'
+                          ? 'bg-violet-500 text-white border-violet-500 shadow-xs'
+                          : 'bg-white hover:bg-violet-50 text-slate-700 hover:text-violet-700 border-slate-200/80'
                       }`}
                     >
                       <Sparkles className="w-3 h-3" aria-hidden="true" />
-                      <span>SWAP NEAR</span>
+                      <span>Swap NEAR</span>
                     </button>
                     {merchantLocation === 'lobby_cafe' ? (
                       <button
@@ -3139,14 +3153,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             prev === 'buy_house' ? null : 'buy_house',
                           );
                         }}
-                        className={`px-2 py-1 border border-black text-[9px] font-black uppercase cursor-pointer inline-flex items-center gap-1 transition-all ${
+                        className={`px-2.5 py-1.5 rounded-full border text-[10px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-all ${
                           exchangeQuickMode === 'buy_house'
-                            ? 'bg-[#38bdf8] text-black shadow-[2px_2px_0px_#000] -translate-y-0.5'
-                            : 'bg-[#e0f2fe] hover:bg-[#bae6fd] text-black'
+                            ? 'bg-sky-500 text-white border-sky-500 shadow-xs'
+                            : 'bg-white hover:bg-sky-50 text-slate-700 hover:text-sky-700 border-slate-200/80'
                         }`}
                       >
                         <Home className="w-3 h-3" aria-hidden="true" />
-                        <span>BUY HOUSE</span>
+                        <span>Buy House</span>
                       </button>
                     ) : (
                       <button
@@ -3158,14 +3172,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             prev === 'fishing_gear' ? null : 'fishing_gear',
                           );
                         }}
-                        className={`px-2 py-1 border border-black text-[9px] font-black uppercase cursor-pointer inline-flex items-center gap-1 transition-all ${
+                        className={`px-2.5 py-1.5 rounded-full border text-[10px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-all ${
                           exchangeQuickMode === 'fishing_gear'
-                            ? 'bg-[#facc15] text-black shadow-[2px_2px_0px_#000] -translate-y-0.5'
-                            : 'bg-[#fef08a] hover:bg-[#fde047] text-black'
+                            ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                            : 'bg-white hover:bg-amber-50 text-slate-700 hover:text-amber-700 border-slate-200/80'
                         }`}
                       >
                         <ShoppingBag className="w-3 h-3" aria-hidden="true" />
-                        <span>FISHING GEAR</span>
+                        <span>Fishing Gear</span>
                       </button>
                     )}
                     <button
@@ -3179,14 +3193,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           prev === 'teleport' ? null : 'teleport',
                         );
                       }}
-                      className={`px-2 py-1 border border-black text-[9px] font-black uppercase cursor-pointer inline-flex items-center gap-1 transition-all ${
+                      className={`px-2.5 py-1.5 rounded-full border text-[10px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-all ${
                         exchangeQuickMode === 'teleport'
-                          ? 'bg-[#22d3ee] text-black shadow-[2px_2px_0px_#000] -translate-y-0.5'
-                          : 'bg-[#cffafe] hover:bg-[#a5f3fc] text-black'
+                          ? 'bg-sky-500 text-white border-sky-500 shadow-xs'
+                          : 'bg-white hover:bg-sky-50 text-slate-700 hover:text-sky-700 border-slate-200/80'
                       }`}
                     >
                       <MapPin className="w-3 h-3" aria-hidden="true" />
-                      <span>TELEPORT</span>
+                      <span>Teleport</span>
                     </button>
                   </div>
                 </div>
@@ -3233,16 +3247,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 );
 
               return (
-                <div className="space-y-2.5" data-catalog-kai-fishing-panel="true">
+                <div className="space-y-3" data-catalog-kai-fishing-panel="true">
                   {/* Compact Balance / Registration Bar */}
-                  <div className="p-2.5 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] flex items-center justify-between gap-2 flex-wrap">
+                  <div className="p-3.5 rounded-2xl bg-white text-slate-900 border border-slate-200/80 shadow-sm flex items-center justify-between gap-2 flex-wrap">
                     <div className="min-w-0">
-                      <div className="text-[10.5px] font-black uppercase text-[#38bdf8]">
+                      <div className="text-xs font-semibold text-sky-600">
                         {walletConnected
-                          ? 'FISHING RODS, REELS & TACKLE'
-                          : 'REGISTRATION REQUIRED'}
+                          ? 'Fishing Rods, Reels & Tackle'
+                          : 'Registration required'}
                       </div>
-                      <div className="text-[9.5px] font-bold text-slate-300">
+                      <div className="text-[11px] text-slate-500 mt-0.5">
                         {walletConnected
                           ? 'Select an item card below — stored in Personal Bag (BAG).'
                           : 'Register your account to purchase fishing rods & tackle.'}
@@ -3250,10 +3264,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     </div>
                     {walletConnected ? (
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="px-2 py-0.5 bg-[#38bdf8] text-black border border-black text-[9px] font-black uppercase">
+                        <span className="px-2.5 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200/80 text-[10.5px] font-semibold">
                           {cyonBalance.toLocaleString()} CYON
                         </span>
-                        <span className="px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9px] font-black uppercase">
+                        <span className="px-2.5 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200/80 text-[10.5px] font-semibold">
                           {respiteBalance.toLocaleString()} RESPITE
                         </span>
                       </div>
@@ -3264,14 +3278,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           soundEngine.playUiClick();
                           onConnectWallet?.();
                         }}
-                        className="-skew-x-6 px-3 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer shrink-0"
+                        className="px-3.5 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-[11px] shadow-xs cursor-pointer transition-colors shrink-0"
                       >
-                        <span className="skew-x-6 inline-block">REGISTER</span>
+                        <span>Register</span>
                       </button>
                     )}
                   </div>
 
-                  {/* Tactical Kiosk-Style 2x2 Selectable Card Grid */}
+                  {/* Clean Bento 2x2 Selectable Card Grid */}
                   <div
                     className={`grid grid-cols-2 gap-2.5 ${
                       !walletConnected ? 'opacity-70 pointer-events-none select-none' : ''
@@ -3291,97 +3305,90 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             soundEngine.playUiClick();
                             setSelectedKaiFishingId(item.id);
                           }}
-                          className={`group relative h-[136px] text-left select-none transition-transform duration-100 cursor-pointer ${
+                          className={`group relative h-[140px] rounded-2xl text-left select-none transition-all duration-150 cursor-pointer border p-3 flex flex-col justify-between overflow-hidden ${
                             isSelected
-                              ? 'bg-[#2bb3b1] p-[3.5px] border-[3px] border-[#0d0f12] shadow-[0_3.5px_0_#0d0f12] -translate-y-[1px]'
-                              : 'bg-[#f4f6f8] p-[2.5px] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] hover:bg-white'
+                              ? 'bg-sky-50/90 border-sky-400 ring-2 ring-sky-200 shadow-sm'
+                              : 'bg-white border-slate-200/80 shadow-xs hover:border-sky-300 hover:bg-slate-50/60'
                           }`}
                         >
-                          <div className="relative h-full flex flex-col justify-between bg-white border-[1.5px] border-[#0d0f12] p-2.5 overflow-hidden">
-                            {isSelected && (
-                              <div
-                                className="absolute top-0 right-0 w-7 h-7 bg-[#2bb3b1] border-l-[2px] border-b-[2px] border-[#0d0f12] flex items-start justify-end p-0.5 z-10"
-                                style={{ clipPath: 'polygon(100% 0, 0 0, 100% 100%)' }}
-                              >
-                                <span className="text-[9px] font-black text-[#0d0f12] leading-none">
-                                  ✓
-                                </span>
-                              </div>
-                            )}
+                          {isSelected && (
+                            <span className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full bg-sky-500 text-white text-[10px] font-bold flex items-center justify-center shadow-xs">
+                              ✓
+                            </span>
+                          )}
 
-                            <div className="flex items-start justify-between gap-1.5 pr-4">
-                              <div className="min-w-0">
-                                <div className="text-[10.5px] font-black uppercase text-[#0d0f12] leading-tight truncate">
-                                  {item.name}
-                                </div>
-                                <div className="text-[8.5px] font-extrabold uppercase text-slate-600 mt-0.5">
-                                  {item.isNft ? 'NFT TACKLE' : 'FISHING GEAR'} · Stock {quote.stock}
-                                </div>
+                          <div className="flex items-start justify-between gap-1.5 pr-6">
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-slate-900 leading-tight truncate">
+                                {item.name}
+                              </div>
+                              <div className="text-[10px] font-medium text-slate-500 mt-0.5">
+                                {item.isNft ? 'NFT Tackle' : 'Fishing Gear'} · Stock {quote.stock}
                               </div>
                             </div>
+                          </div>
 
-                            <div className="my-1 flex items-center justify-center">
-                              <div className="w-11 h-11 bg-[#0f172a] border-2 border-[#0d0f12] shadow-[2px_2px_0_#0d0f12] flex items-center justify-center">
-                                <svg viewBox="0 0 24 24" className="w-6 h-6 stroke-[#38bdf8] fill-none" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                                  <circle cx="18" cy="5" r="3" />
-                                  <line x1="16" y1="7" x2="5" y2="18" />
-                                  <path d="M18 8a6 6 0 0 1-6 6H7" />
-                                </svg>
-                              </div>
+                          <div className="my-1 flex items-center justify-center">
+                            <div className="w-11 h-11 rounded-2xl bg-sky-50 border border-sky-200/70 flex items-center justify-center">
+                              <svg viewBox="0 0 24 24" className="w-6 h-6 stroke-sky-500 fill-none" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="18" cy="5" r="3" />
+                                <line x1="16" y1="7" x2="5" y2="18" />
+                                <path d="M18 8a6 6 0 0 1-6 6H7" />
+                              </svg>
                             </div>
+                          </div>
 
-                            <div className="flex items-center justify-between gap-1">
-                              <span
-                                className={`px-1.5 py-0.5 border border-[#0d0f12] text-[8.5px] font-black uppercase ${
-                                  item.currency === 'RESPITE'
-                                    ? 'bg-[#d8b4fe] text-[#0d0f12]'
-                                    : 'bg-[#38bdf8] text-[#0d0f12]'
-                                }`}
-                              >
-                                {quote.buyPrice} {item.currency}
+                          <div className="flex items-center justify-between gap-1">
+                            <span
+                              className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold ${
+                                item.currency === 'RESPITE'
+                                  ? 'bg-violet-50 text-violet-700 border-violet-200/80'
+                                  : 'bg-sky-50 text-sky-700 border-sky-200/80'
+                              }`}
+                            >
+                              {quote.buyPrice} {item.currency}
+                            </span>
+                            {isOwned && (
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200/80 text-[9.5px] font-semibold">
+                                In bag
                               </span>
-                              {isOwned && (
-                                <span className="px-1.5 py-0.5 bg-[#b8ff3c] text-[#0d0f12] border border-[#0d0f12] text-[8px] font-black uppercase">
-                                  IN BAG
-                                </span>
-                              )}
-                            </div>
+                            )}
                           </div>
                         </button>
                       );
                     })}
                   </div>
 
-                  {/* Selected Item Details Strip + Dynamic Pricing Reasoning (`09-games` Track) */}
+                  {/* Selected Item Details Strip */}
                   {selectedFishingItem && selectedQuote && (
-                    <div className="p-2.5 bg-[#f4f6f8] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] space-y-1">
+                    <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-sm space-y-1">
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0">
-                          <div className="text-[10.5px] font-black uppercase text-[#0d0f12] truncate">
+                          <div className="text-xs font-semibold text-slate-900 truncate">
                             {selectedFishingItem.name}
                           </div>
-                          <div className="text-[9.5px] font-bold text-[#1c2026]/85 line-clamp-1">
+                          <div className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
                             {selectedFishingItem.description}
                           </div>
                         </div>
                         <span
-                          className={`px-2 py-0.5 border-[2px] border-[#0d0f12] text-[9.5px] font-black uppercase shrink-0 ${
+                          className={`px-2.5 py-1 rounded-full border text-[10.5px] font-semibold shrink-0 ${
                             isSelectedOwned
-                              ? 'bg-[#b8ff3c] text-[#0d0f12]'
+                              ? 'bg-emerald-100 text-emerald-700 border-emerald-200/80'
                               : selectedFishingItem.currency === 'RESPITE'
-                                ? 'bg-[#d8b4fe] text-[#0d0f12]'
-                                : 'bg-[#38bdf8] text-[#0d0f12]'
+                                ? 'bg-violet-50 text-violet-700 border-violet-200/80'
+                                : 'bg-sky-50 text-sky-700 border-sky-200/80'
                           }`}
                         >
                           {isSelectedOwned
-                            ? 'OWNED IN BAG'
+                            ? 'Owned in bag'
                             : `${selectedQuote.buyPrice} ${selectedFishingItem.currency}`}
                         </span>
                       </div>
                     </div>
                   )}
 
-                  {/* Tactical Kiosk Footer: [<] [>] Pagination + Primary Action Button */}
+                  {/* Footer: Pagination + Primary Action Button */}
                   <div className="pt-1 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5">
                       <button
@@ -3393,7 +3400,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           const firstOnPage = fishingCatalogItems[nextPage * pageSize];
                           if (firstOnPage) setSelectedKaiFishingId(firstOnPage.id);
                         }}
-                        className="w-8 h-8 bg-[#f4f6f8] hover:bg-white text-[#0d0f12] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] flex items-center justify-center font-black text-xs cursor-pointer active:translate-y-[1px]"
+                        className="w-8 h-8 rounded-full bg-white hover:bg-sky-50 text-slate-700 border border-slate-200/90 shadow-xs flex items-center justify-center font-semibold text-xs cursor-pointer active:scale-95 transition-all"
                         title="Previous Page"
                       >
                         &lt;
@@ -3407,12 +3414,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           const firstOnPage = fishingCatalogItems[nextPage * pageSize];
                           if (firstOnPage) setSelectedKaiFishingId(firstOnPage.id);
                         }}
-                        className="w-8 h-8 bg-[#f4f6f8] hover:bg-white text-[#0d0f12] border-[2.5px] border-[#0d0f12] shadow-[0_2.5px_0_#0d0f12] flex items-center justify-center font-black text-xs cursor-pointer active:translate-y-[1px]"
+                        className="w-8 h-8 rounded-full bg-white hover:bg-sky-50 text-slate-700 border border-slate-200/90 shadow-xs flex items-center justify-center font-semibold text-xs cursor-pointer active:scale-95 transition-all"
                         title="Next Page"
                       >
                         &gt;
                       </button>
-                      <span className="ml-1 text-[11px] font-black tracking-wider text-[#0d0f12]">
+                      <span className="ml-1.5 text-xs font-semibold text-slate-600">
                         {String(safePage + 1).padStart(2, '0')} /{' '}
                         {String(totalPages).padStart(2, '0')}
                       </span>
@@ -3436,10 +3443,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   : `That sale did not go through — your item was not taken.`,
                               );
                             }}
-                            className="-skew-x-12 px-4 py-2 bg-[#facc15] hover:bg-[#fde047] text-[#0d0f12] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] font-black text-[11px] uppercase tracking-wider cursor-pointer"
+                            className="px-4 py-2 rounded-full bg-amber-400 hover:bg-amber-500 text-slate-900 shadow-sm font-semibold text-xs cursor-pointer transition-colors"
                           >
-                            <span className="skew-x-12 inline-block">
-                              SELL (+{selectedQuote.sellbackPrice} {selectedFishingItem.currency})
+                            <span>
+                              Sell (+{selectedQuote.sellbackPrice} {selectedFishingItem.currency})
                             </span>
                           </button>
                         ) : (
@@ -3458,16 +3465,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   : `That purchase did not go through — your balance was not charged.`,
                               );
                             }}
-                            className={`-skew-x-12 px-5 py-2 border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] font-black text-[11px] uppercase tracking-wider transition-all ${
+                            className={`px-5 py-2 rounded-full shadow-sm font-semibold text-xs transition-all ${
                               canAffordSelected
-                                ? 'bg-[#2bb3b1] hover:bg-[#38bdf8] text-[#0d0f12] cursor-pointer'
-                                : 'bg-slate-300 text-slate-600 cursor-not-allowed'
+                                ? 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer'
+                                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                             }`}
                           >
-                            <span className="skew-x-12 inline-block">
+                            <span>
                               {selectedQuote.stock <= 0
-                                ? 'OUT OF STOCK'
-                                : `BUY (${selectedQuote.buyPrice} ${selectedFishingItem.currency})`}
+                                ? 'Out of stock'
+                                : `Buy (${selectedQuote.buyPrice} ${selectedFishingItem.currency})`}
                             </span>
                           </button>
                         )}
@@ -3488,17 +3495,17 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
           {merchantLocation === 'beach_house' && activeTab === 'fish_market' && (
             <div className="space-y-3" data-fish-market-panel="true">
               {/* Top Balance / Sign-In Header */}
-              <div className="p-3 bg-[#0f172a] text-white border-2 border-black shadow-[3px_3px_0px_#000] space-y-1">
+              <div className="p-3.5 rounded-2xl bg-white text-slate-900 border border-slate-200/80 shadow-sm space-y-1.5">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="text-[11px] font-black uppercase text-[#b8ff3c]">
-                    {walletConnected ? 'FISH MARKET' : 'SIGN IN REQUIRED'}
+                  <span className="text-xs font-semibold text-teal-700">
+                    {walletConnected ? 'Fish Market' : 'Sign in required'}
                   </span>
                   {walletConnected ? (
                     <div className="flex items-center gap-1.5">
-                      <span className="px-2 py-0.5 bg-[#38bdf8] text-black border border-black text-[9.5px] font-black uppercase">
+                      <span className="px-2.5 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200/80 text-[10.5px] font-semibold">
                         {cyonBalance.toLocaleString()} CYON
                       </span>
-                      <span className="px-2 py-0.5 bg-[#d8b4fe] text-black border border-black text-[9.5px] font-black uppercase">
+                      <span className="px-2.5 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200/80 text-[10.5px] font-semibold">
                         {respiteBalance.toLocaleString()} RESPITE
                       </span>
                     </div>
@@ -3510,14 +3517,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           soundEngine.playUiClick();
                           onConnectWallet();
                         }}
-                        className="-skew-x-6 px-3 py-1 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black font-black text-[10px] uppercase border-2 border-black shadow-[2px_2px_0px_#000] cursor-pointer"
+                        className="px-3.5 py-1 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-[11px] shadow-xs cursor-pointer transition-colors"
                       >
-                        <span className="skew-x-6 inline-block">SIGN IN</span>
+                        <span>Sign in</span>
                       </button>
                     )
                   )}
                 </div>
-                <p className="text-[10px] font-bold text-slate-300 leading-snug">
+                <p className="text-[11px] text-slate-500 leading-snug">
                   {walletConnected
                     ? 'Sell catches for LUL or mint Fish NFTs to trade with players for RESPITE.'
                     : 'Sign in to sell fish or trade Fish NFTs.'}
@@ -3525,7 +3532,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               </div>
 
               {/* Fish market tabs: My Fish (bucket + my listings) | Market (other players) */}
-              <div className="grid grid-cols-2 gap-1.5" data-fish-market-tabs="true">
+              <div className="grid grid-cols-2 gap-1.5 p-1 rounded-full bg-white/80 border border-slate-200/80" data-fish-market-tabs="true">
                 <button
                   type="button"
                   data-fish-market-tab="mine"
@@ -3533,10 +3540,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     soundEngine.playUiClick();
                     setFishMarketTab('mine');
                   }}
-                  className={`px-2 py-1.5 border-2 border-black text-[10px] font-black uppercase cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer transition-all ${
                     fishMarketTab === 'mine'
-                      ? 'bg-[#b8ff3c] text-black shadow-[2px_2px_0px_#000]'
-                      : 'bg-[#1e293b] text-white/60 hover:text-white'
+                      ? 'bg-teal-500 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   {`My Fish (${caughtFishBucket.length + fishMarketListings.filter((l) => l.sellerNearAccount.toLowerCase() === playerNearAccount.toLowerCase()).length})`}
@@ -3548,10 +3555,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     soundEngine.playUiClick();
                     setFishMarketTab('market');
                   }}
-                  className={`px-2 py-1.5 border-2 border-black text-[10px] font-black uppercase cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer transition-all ${
                     fishMarketTab === 'market'
-                      ? 'bg-[#b8ff3c] text-black shadow-[2px_2px_0px_#000]'
-                      : 'bg-[#1e293b] text-white/60 hover:text-white'
+                      ? 'bg-teal-500 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
                   {`Market (${fishMarketListings.filter((l) => l.sellerNearAccount.toLowerCase() !== playerNearAccount.toLowerCase()).length})`}
@@ -3562,13 +3569,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 <>
               {/* SECTION 1: YOUR FISH BUCKET (RAW CATCHES -> CYON OR MINT NFT -> RESPITE MARKETPLACE) */}
               <div
-                className={`p-3 bg-[#f8fafc] border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2.5 ${
+                className={`p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-sm space-y-2.5 ${
                   !walletConnected ? 'opacity-65 pointer-events-none select-none' : ''
                 }`}
               >
-                <div className="flex items-center justify-between border-b-2 border-black pb-1.5 gap-2 flex-wrap">
-                  <span className="text-[11px] font-black uppercase">
-                    1. YOUR FISH BUCKET ({caughtFishBucket.length} / 20)
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2 gap-2 flex-wrap">
+                  <span className="text-xs font-semibold text-slate-900">
+                    1. Your Fish Bucket ({caughtFishBucket.length} / 20)
                   </span>
                   <div className="flex items-center gap-2">
                     {caughtFishBucket.some((f) => !f.isMintedNft && f.rarity === 'Common') && (
@@ -3582,23 +3589,23 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             'Released all Common fish back into the water to free up space in your Fish Bucket!',
                           );
                         }}
-                        className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-black border border-black text-[9px] font-black uppercase cursor-pointer"
+                        className="px-2.5 py-0.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80 text-[10px] font-semibold cursor-pointer transition-colors"
                       >
-                        RELEASE COMMON
+                        Release common
                       </button>
                     )}
-                    <span className="text-[9.5px] font-extrabold uppercase text-slate-600">
+                    <span className="text-[10px] font-medium text-slate-400">
                       Press [F] near any water to catch
                     </span>
                   </div>
                 </div>
 
                 {caughtFishBucket.length === 0 ? (
-                  <div className="py-4 px-3 bg-white border-2 border-dashed border-slate-400 text-center text-[11px] font-bold text-slate-600">
+                  <div className="py-5 px-3 rounded-xl bg-slate-50/80 border border-dashed border-slate-300 text-center text-xs font-medium text-slate-500">
                     Your Fish Bucket is empty. Walk to the East Beach shoreline or the Central Oasis Lake and press [F] CAST ROD to catch fish.
                   </div>
                 ) : (
-                  <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-[220px] overflow-y-auto pr-0.5">
                     {caughtFishBucket.map((fish) => {
                       const lulValue = Math.max(5, fish.sellValueLul || fish.sellValueCyon || 25);
                       const defaultSuggestedRespite = Math.max(
@@ -3614,12 +3621,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
                       const rarityBadgeStyle =
                         fish.rarity === 'Mythic'
-                          ? 'bg-[#c084fc] text-black'
+                          ? 'bg-purple-100 text-purple-800 border-purple-200/80'
                           : fish.rarity === 'Rare'
-                            ? 'bg-[#facc15] text-black'
+                            ? 'bg-amber-100 text-amber-800 border-amber-200/80'
                             : fish.rarity === 'Uncommon'
-                              ? 'bg-[#2dd4bf] text-black'
-                              : 'bg-slate-200 text-black';
+                              ? 'bg-teal-100 text-teal-800 border-teal-200/80'
+                              : 'bg-slate-100 text-slate-700 border-slate-200/80';
 
                       const openBucketFish3d = () => {
                         setPreview3dFish({
@@ -3646,7 +3653,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         <div
                           key={fish.id}
                           data-fish-bucket-item={fish.speciesId}
-                          className="p-2.5 bg-white border-2 border-black shadow-[2px_2px_0px_#000] flex flex-col gap-2"
+                          className="p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/80 flex flex-col gap-2"
                         >
                           <div className="flex items-start gap-2.5">
                             <Fish3dThumbnail
@@ -3660,29 +3667,29 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span
-                                  className={`px-1.5 py-0.5 border border-black text-[9px] font-black uppercase ${rarityBadgeStyle}`}
+                                  className={`px-2 py-0.5 rounded-full border text-[9.5px] font-semibold ${rarityBadgeStyle}`}
                                 >
                                   {fish.rarity}
                                 </span>
-                                <span className="text-xs font-black uppercase text-black">
+                                <span className="text-xs font-semibold text-slate-900">
                                   {fish.speciesName}
                                 </span>
-                                <span className="px-1.5 py-0.5 bg-[#0f172a] text-[#38bdf8] text-[9px] font-black">
+                                <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200/70 text-[9.5px] font-semibold">
                                   {fish.weightKg.toFixed(2)} kg
                                   {fish.lengthCm ? ` · ${fish.lengthCm} cm` : ''}
                                 </span>
                                 {fish.isTrophy && (
-                                  <span className="px-1.5 py-0.5 bg-[#facc15] text-black border border-black text-[8.5px] font-black uppercase">
-                                    TROPHY +25%
+                                  <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200/80 text-[9px] font-semibold">
+                                    Trophy +25%
                                   </span>
                                 )}
                                 {fish.isMintedNft && (
-                                  <span className="px-1.5 py-0.5 bg-[#b8ff3c] text-black border border-black text-[8.5px] font-black uppercase">
-                                    FISH NFT
+                                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200/80 text-[9px] font-semibold">
+                                    Fish NFT
                                   </span>
                                 )}
                               </div>
-                              <div className="text-[9.5px] font-bold text-slate-600 mt-0.5">
+                              <div className="text-[10.5px] text-slate-500 mt-0.5">
                                 Caught at {fish.waterZoneLabel}
                               </div>
                             </div>
@@ -3694,14 +3701,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 soundEngine.playUiClick();
                                 openBucketFish3d();
                               }}
-                              className="py-1 px-2 bg-[#0f172a] hover:bg-[#1e293b] text-[#38bdf8] border-2 border-black shadow-[2px_2px_0_#000] text-[9.5px] font-black uppercase cursor-pointer shrink-0"
+                              className="py-1 px-2.5 rounded-full bg-white hover:bg-sky-50 text-sky-700 border border-slate-200/90 shadow-xs text-[10px] font-semibold cursor-pointer transition-colors shrink-0"
                             >
-                              VIEW
+                              View
                             </button>
                           </div>
 
                           {!fish.isMintedNft ? (
-                            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-200">
+                            <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-200/70">
                               <button
                                 type="button"
                                 data-sell-fish-btn={fish.id}
@@ -3712,9 +3719,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                     `Fresh ${fish.speciesName} (${fish.weightKg} kg)! Here is +${lulValue} LUL — convert your LUL into CYON in the Exchange tab.`,
                                   );
                                 }}
-                                className="flex-1 py-1.5 px-2.5 bg-[#facc15] hover:bg-[#fde047] text-black border-2 border-black shadow-[2px_2px_0px_#000] text-[10px] font-black uppercase cursor-pointer"
+                                className="flex-1 py-1.5 px-3 rounded-full bg-amber-400 hover:bg-amber-500 text-slate-900 shadow-xs text-[10.5px] font-semibold cursor-pointer transition-colors"
                               >
-                                SELL (+{lulValue} LUL)
+                                Sell (+{lulValue} LUL)
                               </button>
 
                               <button
@@ -3742,9 +3749,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                     setBusyFishActionId(null);
                                   }
                                 }}
-                                className="flex-1 py-1.5 px-2.5 bg-[#d8b4fe] hover:bg-[#e9d5ff] disabled:bg-slate-300 text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
+                                className="flex-1 py-1.5 px-3 rounded-full bg-violet-500 hover:bg-violet-600 disabled:bg-slate-200 disabled:text-slate-400 text-white shadow-xs text-[10.5px] font-semibold cursor-pointer transition-colors"
                               >
-                                {busyFishActionId === fish.id ? 'MINTING...' : 'MINT NFT'}
+                                {busyFishActionId === fish.id ? 'Minting...' : 'Mint NFT'}
                               </button>
 
                               <button
@@ -3757,16 +3764,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                     `Released ${fish.speciesName} (${fish.weightKg} kg) back into the water.`,
                                   );
                                 }}
-                                className="py-1.5 px-2.5 bg-slate-200 hover:bg-slate-300 text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
+                                className="py-1.5 px-3 rounded-full bg-white hover:bg-slate-100 text-slate-600 border border-slate-200/80 text-[10.5px] font-semibold cursor-pointer transition-colors"
                               >
-                                RELEASE
+                                Release
                               </button>
                             </div>
                           ) : (
-                            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-200">
-                              <div className="flex items-center gap-1">
-                                <span className="text-[9.5px] font-black uppercase">
-                                  PRICE (RESPITE):
+                            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200/70">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10.5px] font-medium text-slate-600">
+                                  Price (RESPITE):
                                 </span>
                                 <input
                                   type="number"
@@ -3779,7 +3786,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                       [fish.id]: e.target.value,
                                     }))
                                   }
-                                  className="w-20 px-2 py-1 bg-slate-100 border-2 border-black text-[10.5px] font-black"
+                                  className="w-20 px-2.5 py-1 rounded-xl bg-white border border-slate-200/90 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-400"
                                 />
                               </div>
                               <button
@@ -3810,11 +3817,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                     setBusyFishActionId(null);
                                   }
                                 }}
-                                className="flex-1 py-1.5 px-3 bg-[#b8ff3c] hover:bg-[#d9f99d] disabled:bg-slate-300 text-black border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase cursor-pointer"
+                                className="flex-1 py-1.5 px-3.5 rounded-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-200 disabled:text-slate-400 text-white shadow-xs text-[10.5px] font-semibold cursor-pointer transition-colors"
                               >
                                 {busyFishActionId === fish.id
-                                  ? 'LISTING...'
-                                  : `LIST FOR ${parsedListPriceRespite} RESPITE`}
+                                  ? 'Listing...'
+                                  : `List for ${parsedListPriceRespite} RESPITE`}
                               </button>
                             </div>
                           )}
@@ -3827,10 +3834,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
               {fishMarketFeedback && (
                 <div
-                  className={`p-2 border-2 border-black text-[10px] font-bold ${
+                  className={`p-3 rounded-2xl border text-[11px] font-medium ${
                     fishMarketFeedback.ok
-                      ? 'bg-[#ecfdf5] text-[#065f46]'
-                      : 'bg-[#fef2f2] text-[#991b1b]'
+                      ? 'bg-emerald-50 border-emerald-200/80 text-emerald-800'
+                      : 'bg-rose-50 border-rose-200/80 text-rose-700'
                   }`}
                 >
                   {fishMarketFeedback.text}
@@ -3841,26 +3848,26 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               )}
 
               {/* SECTION 2: KAI'S PLAYER MARKET (BOUGHT & SOLD USING RESPITE) */}
-              <div className="p-3 bg-[#0f172a] text-white border-[2.5px] border-black shadow-[3px_3px_0px_#000] space-y-2.5">
-                <div className="flex items-center justify-between border-b border-white/20 pb-1.5">
-                  <span className="text-[11px] font-black uppercase text-[#d8b4fe]">
-{fishMarketTab === 'mine'
-                      ? `MY LISTINGS (${fishMarketListings.filter((l) => l.sellerNearAccount.toLowerCase() === playerNearAccount.toLowerCase()).length})`
-                      : `PLAYER MARKET (${fishMarketListings.filter((l) => l.sellerNearAccount.toLowerCase() !== playerNearAccount.toLowerCase()).length})`}
+              <div className="p-3.5 rounded-2xl bg-white text-slate-900 border border-slate-200/80 shadow-sm space-y-2.5">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <span className="text-xs font-semibold text-violet-700">
+                    {fishMarketTab === 'mine'
+                      ? `My Listings (${fishMarketListings.filter((l) => l.sellerNearAccount.toLowerCase() === playerNearAccount.toLowerCase()).length})`
+                      : `Player Market (${fishMarketListings.filter((l) => l.sellerNearAccount.toLowerCase() !== playerNearAccount.toLowerCase()).length})`}
                   </span>
-                  <span className="text-[9px] font-black uppercase px-1.5 py-0.5 bg-[#d8b4fe] text-black">
+                  <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200/80">
                     RESPITE
                   </span>
                 </div>
 
                 {(fishMarketTab === 'mine' ? fishMarketListings.filter((l) => l.sellerNearAccount.toLowerCase() === playerNearAccount.toLowerCase()) : fishMarketListings.filter((l) => l.sellerNearAccount.toLowerCase() !== playerNearAccount.toLowerCase())).length === 0 ? (
-                  <div className="py-4 text-center text-[11px] font-bold text-slate-400">
+                  <div className="py-5 text-center text-xs font-medium text-slate-400">
                     {fishMarketTab === 'mine'
                       ? 'You have no Fish NFTs listed. Mint a caught fish above and list it for RESPITE.'
                       : 'No Fish NFTs listed by other players yet.'}
                   </div>
                 ) : (
-                  <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-[240px] overflow-y-auto pr-0.5">
                     {fishMarketListings.map((listing) => {
                       const isOwnListing =
                         listing.sellerNearAccount.toLowerCase() ===
@@ -3879,12 +3886,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         (isOwnListing || respiteBalance >= listingPriceRespite);
                       const rarityBadgeStyle =
                         listing.rarity === 'Mythic'
-                          ? 'bg-[#c084fc] text-black'
+                          ? 'bg-purple-100 text-purple-800 border-purple-200/80'
                           : listing.rarity === 'Rare'
-                            ? 'bg-[#facc15] text-black'
+                            ? 'bg-amber-100 text-amber-800 border-amber-200/80'
                             : listing.rarity === 'Uncommon'
-                              ? 'bg-[#2dd4bf] text-black'
-                              : 'bg-slate-200 text-black';
+                              ? 'bg-teal-100 text-teal-800 border-teal-200/80'
+                              : 'bg-slate-100 text-slate-700 border-slate-200/80';
 
                       const openListingFish3d = () => {
                         setPreview3dFish({
@@ -3907,42 +3914,42 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         <div
                           key={listing.listingId}
                           data-fish-market-listing={listing.listingId}
-                          className="p-2.5 bg-[#1e293b] border-2 border-black shadow-[2px_2px_0_#000] flex items-center justify-between gap-2.5"
+                          className="p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/80 flex items-center justify-between gap-2.5"
                         >
                           <Fish3dThumbnail
                             speciesId={listing.speciesId}
                             speciesName={listing.speciesName}
                             colorHex={listing.colorHex}
-                            variant="dark"
+                            variant="compact"
                             onInspect={openListingFish3d}
                           />
 
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span
-                                className={`px-1.5 py-0.5 border border-black text-[8.5px] font-black uppercase ${rarityBadgeStyle}`}
+                                className={`px-2 py-0.5 rounded-full border text-[9px] font-semibold ${rarityBadgeStyle}`}
                               >
                                 {listing.rarity}
                               </span>
-                              <span className="text-xs font-black uppercase text-white">
+                              <span className="text-xs font-semibold text-slate-900">
                                 {listing.speciesName}
                               </span>
-                              <span className="px-1.5 py-0.5 bg-black/50 text-[#b8ff3c] text-[9px] font-black">
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/70 text-[9.5px] font-semibold">
                                 {listing.weightKg.toFixed(2)} kg
                                 {listing.lengthCm ? ` · ${listing.lengthCm} cm` : ''}
                               </span>
                               {listing.isTrophy && (
-                                <span className="px-1.5 py-0.5 bg-[#facc15] text-black border border-black text-[8px] font-black uppercase">
-                                  TROPHY
+                                <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200/80 text-[9px] font-semibold">
+                                  Trophy
                                 </span>
                               )}
                             </div>
-                            <div className="text-[9.5px] font-bold text-slate-300 mt-0.5 truncate">
+                            <div className="text-[10.5px] text-slate-500 mt-0.5 truncate">
                               {listing.waterZoneLabel} · Seller: {listing.sellerNearAccount}
                             </div>
                           </div>
 
-                          <div className="flex flex-col items-end gap-1 shrink-0">
+                          <div className="flex flex-col items-end gap-1.5 shrink-0">
                             <button
                               type="button"
                               data-market-fish-3d-btn={listing.listingId}
@@ -3950,9 +3957,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 soundEngine.playUiClick();
                                 openListingFish3d();
                               }}
-                              className="w-full px-2.5 py-1 bg-[#0f172a] hover:bg-black text-[#38bdf8] border border-white/25 text-[9px] font-black uppercase cursor-pointer"
+                              className="w-full px-2.5 py-1 rounded-full bg-white hover:bg-sky-50 text-sky-700 border border-slate-200/90 text-[10px] font-semibold cursor-pointer transition-colors"
                             >
-                              VIEW
+                              View
                             </button>
 
                             <button
@@ -3986,19 +3993,19 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   setBusyFishActionId(null);
                                 }
                               }}
-                              className={`px-3 py-1.5 border-2 border-black shadow-[2px_2px_0_#000] text-[10px] font-black uppercase shrink-0 ${
+                              className={`px-3 py-1.5 rounded-full shadow-xs text-[10.5px] font-semibold transition-colors shrink-0 ${
                                 isOwnListing
-                                  ? 'bg-[#facc15] hover:bg-[#fde047] text-black cursor-pointer'
+                                  ? 'bg-amber-400 hover:bg-amber-500 text-slate-900 cursor-pointer'
                                   : canBuy
-                                    ? 'bg-[#d8b4fe] hover:bg-[#e9d5ff] text-black cursor-pointer'
-                                    : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                                    ? 'bg-violet-500 hover:bg-violet-600 text-white cursor-pointer'
+                                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                               }`}
                             >
                               {busyFishActionId === listing.listingId
-                                ? 'PROCESSING...'
+                                ? 'Processing...'
                                 : isOwnListing
-                                  ? 'UNLIST'
-                                  : `BUY (${listingPriceRespite.toLocaleString()} RESPITE)`}
+                                  ? 'Unlist'
+                                  : `Buy (${listingPriceRespite.toLocaleString()} RESPITE)`}
                             </button>
                           </div>
                         </div>

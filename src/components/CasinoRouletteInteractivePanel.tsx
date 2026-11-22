@@ -943,818 +943,795 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
   return (
     <div
       onContextMenu={(e) => e.preventDefault()}
-      className="roulette-stage-fixed relative w-full max-w-[1340px] mx-auto select-none my-auto"
+      className="relative w-full max-w-[1320px] mx-auto select-none my-auto rounded-[26px] bg-[#0e121b]/88 backdrop-blur-2xl border border-white/15 shadow-[0_24px_70px_rgba(0,0,0,0.62)] text-white overflow-hidden"
     >
-      {/* Grounded Soft Contact Floor Shadow Underneath Table */}
-      <div className="roulette-table-contact-shadow absolute -bottom-7 left-[4%] right-[4%] h-16 rounded-[50%] pointer-events-none" />
+      {/* TOP HEADER BAR */}
+      <div className="flex items-center justify-between gap-3 px-5 py-3.5 bg-white/[0.03] border-b border-white/10">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center gap-2 text-amber-300 min-w-0">
+            <svg viewBox="0 0 20 20" className="w-4 h-4 shrink-0" aria-hidden="true">
+              <rect
+                x="2.5"
+                y="2.5"
+                width="15"
+                height="15"
+                rx="3"
+                fill="none"
+                stroke="#fcd34d"
+                strokeWidth="1.7"
+              />
+              <circle cx="6.5" cy="6.5" r="1.2" fill="#fcd34d" />
+              <circle cx="13.5" cy="6.5" r="1.2" fill="#fcd34d" />
+              <circle cx="10" cy="10" r="1.3" fill="#fcd34d" />
+              <circle cx="6.5" cy="13.5" r="1.2" fill="#fcd34d" />
+              <circle cx="13.5" cy="13.5" r="1.2" fill="#fcd34d" />
+            </svg>
+            <span className="font-mono-tabular text-[11px] sm:text-xs tracking-[0.15em] font-bold uppercase text-amber-300 truncate">
+              AURA LUXURY TABLE · AMERICAN DUAL-ZERO
+            </span>
+          </div>
+        </div>
 
-      {/* LEVEL 1: OUTER PADDED DARK SADDLE-BROWN LEATHER ARMREST / RIM */}
-      <div className="roulette-leather-rail relative w-full rounded-[46px] p-3 sm:p-4">
-        {/* LEVEL 2: INNER POLISHED MAHOGANY WOOD APRON WITH INLAID BRASS ACCENT */}
-        <div className="roulette-mahogany-apron relative w-full rounded-[36px] p-2.5 sm:p-3.5">
-          {/* INTEGRATED SINGLE-ROW TOP HEADER BRASS BAR */}
-          <div className="flex items-center justify-between gap-3 px-4 py-1.5 mb-2.5 rounded-t-[26px] rounded-b-lg bg-gradient-to-r from-[#1f0e08] via-[#31160c] to-[#1f0e08] border border-[#b88c34]/35 shadow-inner">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="flex items-center gap-2 text-[#f4d38c] min-w-0">
-                <svg viewBox="0 0 20 20" className="w-4 h-4 shrink-0" aria-hidden="true">
-                  <rect
-                    x="2.5"
-                    y="2.5"
-                    width="15"
-                    height="15"
-                    rx="3"
-                    fill="none"
-                    stroke="#f4d38c"
-                    strokeWidth="1.7"
-                  />
-                  <circle cx="6.5" cy="6.5" r="1.2" fill="#f4d38c" />
-                  <circle cx="13.5" cy="6.5" r="1.2" fill="#f4d38c" />
-                  <circle cx="10" cy="10" r="1.3" fill="#f4d38c" />
-                  <circle cx="6.5" cy="13.5" r="1.2" fill="#f4d38c" />
-                  <circle cx="13.5" cy="13.5" r="1.2" fill="#f4d38c" />
-                </svg>
-                <span className="font-mono-tabular text-[11px] sm:text-xs tracking-[0.15em] font-bold uppercase text-[#f4d38c] truncate">
-                  AURA LUXURY TABLE · AMERICAN DUAL-ZERO
-                </span>
-              </div>
-            </div>
-
-            {/* Integrated Limits, Currency Switch, Vault & Close Button */}
-            <div className="flex items-center gap-2.5 sm:gap-3.5 shrink-0 font-mono-tabular text-xs">
-              <div className="hidden sm:flex items-center gap-1.5 text-[#e2e8f0]/85">
-                <span className="text-[#f7d77e]/75 text-[10px] uppercase">LIMITS:</span>
-                <span className="text-white font-bold">1 - 5,000</span>
-              </div>
-
-              <div className="hidden sm:block h-3.5 w-px bg-[#b88c34]/40" />
-
-              {canUseRespite && (
-                <button
-                  type="button"
-                  disabled={isSpinning}
-                  title="Switch Betting Currency (LUL / RESPITE)"
-                  onClick={() => {
-                    if (isSpinning) return;
-                    soundEngine.playUiClick();
-                    setActiveBets({});
-                    setBetHistoryStack([]);
-                    setCurrencyMode((prev) => (prev === 'LUL' ? 'RESPITE' : 'LUL'));
-                  }}
-                  className="px-2 py-0.5 rounded bg-black/55 border border-[#b88c34]/45 text-[#fde68a] hover:border-[#fde68a] text-[10px] font-bold uppercase tracking-wider cursor-pointer"
-                >
-                  {currencyMode} ⇄
-                </button>
-              )}
-
-              <div className="flex items-center gap-1.5 bg-[#071512] px-3 py-0.5 rounded border border-[#6bfad8]/40 shadow-inner">
-                <span className="text-[10px] text-[#6bfad8] uppercase tracking-wider font-bold">
-                  VAULT
-                </span>
-                <span className="text-[#6bfad8] font-bold text-xs sm:text-sm tracking-wide">
-                  {availableVaultAfterStage.toLocaleString()} {currencyMode}
-                </span>
-              </div>
-
-              {onClose && (
-                <button
-                  type="button"
-                  data-grand-casino-close-btn="true"
-                  onClick={() => {
-                    soundEngine.playUiCancel();
-                    onClose();
-                  }}
-                  aria-label="Close Roulette Table"
-                  title="Close Roulette Table"
-                  className="w-7 h-7 rounded-lg bg-gradient-to-b from-[#991b1b] to-[#450a0a] hover:brightness-125 border border-[#f87171]/60 text-white font-bold text-xs flex items-center justify-center shadow cursor-pointer"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
+        {/* Integrated Limits, Currency Switch, Vault & Close Button */}
+        <div className="flex items-center gap-2.5 sm:gap-3 shrink-0 font-mono-tabular text-xs">
+          <div className="hidden sm:flex items-center gap-1.5 text-slate-300">
+            <span className="text-amber-300/80 text-[10px] uppercase">LIMITS:</span>
+            <span className="text-white font-bold">1 - 5,000</span>
           </div>
 
-          {/* LEVEL 3: RECESSED EMERALD FELT ARENA */}
-          <div className="roulette-felt-well relative w-full rounded-[28px] p-3.5 sm:p-5 flex flex-col gap-3.5">
-            {/* UPPER ROW: 3D PRECISION ROULETTE WHEEL (LEFT) + FELT BETTING GRID (RIGHT) */}
-            <div className="flex flex-col lg:flex-row gap-5 items-center justify-between">
-              {/* LEFT: MULTI-BEVEL 3D SVG PRECISION ROULETTE WHEEL CYLINDER */}
-              <div className="flex flex-col items-center justify-center relative shrink-0">
-                <div className="font-mono-tabular text-[10px] text-[#f0fdf4]/80 uppercase tracking-[0.16em] mb-1.5 flex items-center gap-1.5">
-                  <svg viewBox="0 0 16 16" className="w-3.5 h-3.5 shrink-0" aria-hidden="true">
-                    <path
-                      d="M 8 2 A 6 6 0 1 1 3.2 4.4"
-                      fill="none"
-                      stroke="#edd587"
-                      strokeWidth="1.7"
-                      strokeLinecap="round"
-                    />
-                    <polygon points="8,0.6 10.8,3.2 7.5,3.8" fill="#edd587" />
-                  </svg>
-                  <span>PRECISION BALANCED ROTOR</span>
-                </div>
+          <div className="hidden sm:block h-3.5 w-px bg-white/15" />
 
-                {/* High-Precision 3D Beveled SVG Wheel (Immune to Browser Force-Dark Mode!) */}
-                <div className="relative w-64 h-64 sm:w-72 sm:h-72 rounded-full shadow-[0_18px_38px_rgba(0,0,0,0.78)] flex items-center justify-center">
-                  <svg
-                    viewBox="0 0 320 320"
-                    className="w-full h-full"
-                    aria-label="Aura 3D American Dual-Zero Roulette Wheel"
-                  >
-                    <defs>
-                      {/* Outer Mahogany Bowl 3D Gradient */}
-                      <linearGradient id="aura-mahogany-rim" x1="12%" y1="8%" x2="88%" y2="92%">
-                        <stop offset="0%" stopColor="#5e2714" />
-                        <stop offset="48%" stopColor="#341409" />
-                        <stop offset="100%" stopColor="#140602" />
-                      </linearGradient>
-                      {/* Polished 3D Gold-Brass Deflector Rim */}
-                      <linearGradient id="aura-brass-rim" x1="15%" y1="10%" x2="85%" y2="90%">
-                        <stop offset="0%" stopColor="#fff1b8" />
-                        <stop offset="32%" stopColor="#d9a441" />
-                        <stop offset="68%" stopColor="#f7d77e" />
-                        <stop offset="100%" stopColor="#784d12" />
-                      </linearGradient>
-                      {/* Recessed Dark Bronze Ball Track */}
-                      <radialGradient id="aura-ball-track" cx="50%" cy="50%" r="50%">
-                        <stop offset="72%" stopColor="#0e1217" />
-                        <stop offset="88%" stopColor="#1c232d" />
-                        <stop offset="100%" stopColor="#090c10" />
-                      </radialGradient>
-                      {/* Inner Espresso Wood Cone */}
-                      <radialGradient id="aura-inner-cone" cx="38%" cy="35%" r="65%">
-                        <stop offset="0%" stopColor="#422817" />
-                        <stop offset="65%" stopColor="#1f130b" />
-                        <stop offset="100%" stopColor="#110905" />
-                      </radialGradient>
-                      {/* Heavy 3D Turned Gold-Brass Center Turret */}
-                      <radialGradient id="aura-turret-dome" cx="35%" cy="32%" r="68%">
-                        <stop offset="0%" stopColor="#fff6c7" />
-                        <stop offset="38%" stopColor="#e5c158" />
-                        <stop offset="76%" stopColor="#9c6c1e" />
-                        <stop offset="100%" stopColor="#593a0a" />
-                      </radialGradient>
-                      <linearGradient id="aura-turret-arm" x1="0%" y1="0%" x2="0%" y2="100%">
-                        <stop offset="0%" stopColor="#fff7cc" />
-                        <stop offset="52%" stopColor="#e5c158" />
-                        <stop offset="100%" stopColor="#784d12" />
-                      </linearGradient>
-                      {/* 3D Pearl-Ivory Ball Sphere */}
-                      <radialGradient id="aura-ivory-ball" cx="35%" cy="30%" r="68%">
-                        <stop offset="0%" stopColor="#ffffff" />
-                        <stop offset="45%" stopColor="#f8fafc" />
-                        <stop offset="82%" stopColor="#cbd5e1" />
-                        <stop offset="100%" stopColor="#64748b" />
-                      </radialGradient>
-                    </defs>
+          {canUseRespite && (
+            <button
+              type="button"
+              disabled={isSpinning}
+              title="Switch Betting Currency (LUL / RESPITE)"
+              onClick={() => {
+                if (isSpinning) return;
+                soundEngine.playUiClick();
+                setActiveBets({});
+                setBetHistoryStack([]);
+                setCurrencyMode((prev) => (prev === 'LUL' ? 'RESPITE' : 'LUL'));
+              }}
+              className="px-3 py-1 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-amber-300/35 text-amber-300 text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors"
+            >
+              {currencyMode} ⇄
+            </button>
+          )}
 
-                    {/* 1. Outer Mahogany Wood Bowl */}
-                    <circle cx="160" cy="160" r="158" fill="url(#aura-mahogany-rim)" />
-                    <circle
-                      cx="160"
-                      cy="160"
-                      r="156.5"
-                      fill="none"
-                      stroke="rgba(255,230,195,0.22)"
-                      strokeWidth="1.5"
-                    />
+          <div className="flex items-center gap-1.5 bg-emerald-400/10 px-3 py-1 rounded-full border border-emerald-400/30">
+            <span className="text-[10px] text-emerald-300 uppercase tracking-wider font-bold">
+              VAULT
+            </span>
+            <span className="text-emerald-400 font-bold text-xs sm:text-sm tracking-wide">
+              {availableVaultAfterStage.toLocaleString()} {currencyMode}
+            </span>
+          </div>
 
-                    {/* 2. Sloped Polished Gold-Brass Track */}
-                    <circle
-                      cx="160"
-                      cy="160"
-                      r="143"
-                      fill="url(#aura-brass-rim)"
-                      stroke="#3d2011"
-                      strokeWidth="2"
-                    />
-                    <circle
-                      cx="160"
-                      cy="160"
-                      r="140"
-                      fill="none"
-                      stroke="rgba(255,255,255,0.45)"
-                      strokeWidth="1"
-                    />
+          {onClose && (
+            <button
+              type="button"
+              data-grand-casino-close-btn="true"
+              onClick={() => {
+                soundEngine.playUiCancel();
+                onClose();
+              }}
+              aria-label="Close Roulette Table"
+              title="Close Roulette Table"
+              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white font-bold text-xs flex items-center justify-center active:scale-95 transition-all cursor-pointer"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
 
-                    {/* 3. Dark Bronze Ball Run Track + 8 Brass Diamond Deflectors */}
-                    <circle
-                      cx="160"
-                      cy="160"
-                      r="131"
-                      fill="url(#aura-ball-track)"
-                      stroke="#593a0a"
-                      strokeWidth="1.5"
-                    />
-                    {DEFLECTOR_ANGLES.map((ang) => (
-                      <g key={ang} transform={`rotate(${ang} 160 160)`}>
-                        <polygon
-                          points="160,24 164.5,27.5 160,31 155.5,27.5"
-                          fill="#f7d77e"
-                          stroke="#593a0a"
-                          strokeWidth="0.8"
-                        />
-                      </g>
-                    ))}
-
-                    {/* 4. Spinning 38-Pocket Rotor Disc */}
-                    <g ref={rotorGroupRef} transform="rotate(0 160 160)">
-                      <circle cx="160" cy="160" r="119" fill="#140d08" />
-                      {wheelPocketsGeometry.map((seg) => {
-                        const isHovered = hoveredPocketSet.has(seg.pocket);
-                        const isSettledWinner = settledBanner?.pocket === seg.pocket;
-                        return (
-                          <g key={seg.pocket}>
-                            <path
-                              d={seg.outerPath}
-                              fill={seg.fillHex}
-                              stroke={
-                                isSettledWinner
-                                  ? '#fde047'
-                                  : isHovered
-                                    ? '#6bfad8'
-                                    : '#b88c34'
-                              }
-                              strokeWidth={isSettledWinner || isHovered ? '1.8' : '0.7'}
-                            />
-                            <path
-                              d={seg.innerPocketPath}
-                              fill={seg.deepHex}
-                              stroke="#8c5e1c"
-                              strokeWidth="0.55"
-                            />
-                            <line
-                              x1={seg.fretX1}
-                              y1={seg.fretY1}
-                              x2={seg.fretX2}
-                              y2={seg.fretY2}
-                              stroke="#e5c158"
-                              strokeWidth="0.95"
-                            />
-                            <text
-                              x={seg.labelX}
-                              y={seg.labelY}
-                              fill={isSettledWinner ? '#fef08a' : '#f8fafc'}
-                              fontSize="8.5"
-                              fontWeight="800"
-                              textAnchor="middle"
-                              dominantBaseline="central"
-                              transform={`rotate(${seg.centerDeg} ${seg.labelX} ${seg.labelY})`}
-                            >
-                              {seg.pocket}
-                            </text>
-                          </g>
-                        );
-                      })}
-                      {/* Inner Mahogany Cone */}
-                      <circle
-                        cx="160"
-                        cy="160"
-                        r="68"
-                        fill="url(#aura-inner-cone)"
-                        stroke="#c9933b"
-                        strokeWidth="1.8"
-                      />
-                      <circle
-                        cx="160"
-                        cy="160"
-                        r="56"
-                        fill="none"
-                        stroke="rgba(247,215,126,0.2)"
-                        strokeWidth="1"
-                      />
-                    </g>
-
-                    {/* 5. Orbiting 3D Pearl-Ivory Ball */}
-                    <g ref={ballGroupRef} opacity="0" transform="translate(160 37)">
-                      <circle cx="1.8" cy="2.6" r="6.8" fill="rgba(0,0,0,0.65)" />
-                      <circle
-                        cx="0"
-                        cy="0"
-                        r="6.5"
-                        fill="url(#aura-ivory-ball)"
-                        stroke="rgba(255,255,255,0.8)"
-                        strokeWidth="0.6"
-                      />
-                      <circle cx="-2" cy="-2.2" r="1.8" fill="#ffffff" />
-                    </g>
-
-                    {/* 6. Polished 3D Gold-Brass Heavy Center Turret & Cross Spindles */}
-                    <g ref={turretGroupRef} transform="rotate(0 160 160)">
-                      <circle cx="162" cy="164" r="39" fill="rgba(0,0,0,0.62)" />
-                      <circle
-                        cx="160"
-                        cy="160"
-                        r="38"
-                        fill="url(#aura-turret-dome)"
-                        stroke="#fff1b8"
-                        strokeWidth="1.2"
-                      />
-                      <circle
-                        cx="160"
-                        cy="160"
-                        r="29"
-                        fill="none"
-                        stroke="rgba(92,52,9,0.45)"
-                        strokeWidth="1.2"
-                      />
-                      {/* Horizontal & Vertical 3D Brass Spindle Crossbars */}
-                      <rect
-                        x="133"
-                        y="157.2"
-                        width="54"
-                        height="5.6"
-                        rx="2.8"
-                        fill="url(#aura-turret-arm)"
-                        stroke="#6d4d12"
-                        strokeWidth="0.7"
-                      />
-                      <rect
-                        x="157.2"
-                        y="133"
-                        width="5.6"
-                        height="54"
-                        rx="2.8"
-                        fill="url(#aura-turret-arm)"
-                        stroke="#6d4d12"
-                        strokeWidth="0.7"
-                      />
-                      {/* Center Cap Finial */}
-                      <circle
-                        cx="160"
-                        cy="160"
-                        r="13"
-                        fill="url(#aura-turret-dome)"
-                        stroke="#fff6c7"
-                        strokeWidth="1"
-                      />
-                      <circle cx="160" cy="160" r="4.8" fill="#3d2011" />
-                    </g>
-                  </svg>
-                </div>
-
-                {/* Ball Status Pill Tag Directly Below Wheel */}
-                <div className="mt-2.5 font-mono-tabular text-[11px] bg-[#021c12] border border-[#48ddbc]/45 text-[#6bfad8] px-3.5 py-1 rounded-full shadow flex items-center gap-1.5 max-w-[290px]">
-                  <span className="text-[#edd587] text-[10px]">↻</span>
-                  <span className="truncate font-semibold">{ballStatusText}</span>
-                </div>
+      {/* MAIN BODY */}
+      <div className="p-4 sm:p-5 flex flex-col gap-3.5">
+        {/* EMERALD FELT ARENA */}
+        <div className="relative w-full rounded-2xl bg-gradient-to-b from-[#0b3a26]/95 via-[#072b1c]/95 to-[#051f15]/95 border border-emerald-400/20 p-4 sm:p-5 flex flex-col gap-4 shadow-inner">
+          {/* UPPER ROW: 3D PRECISION ROULETTE WHEEL (LEFT) + FELT BETTING GRID (RIGHT) */}
+          <div className="flex flex-col lg:flex-row gap-5 items-center justify-between">
+            {/* LEFT: MULTI-BEVEL 3D SVG PRECISION ROULETTE WHEEL CYLINDER */}
+            <div className="flex flex-col items-center justify-center relative shrink-0">
+              <div className="font-mono-tabular text-[10px] text-emerald-100/80 uppercase tracking-[0.16em] mb-1.5 flex items-center gap-1.5">
+                <svg viewBox="0 0 16 16" className="w-3.5 h-3.5 shrink-0" aria-hidden="true">
+                  <path
+                    d="M 8 2 A 6 6 0 1 1 3.2 4.4"
+                    fill="none"
+                    stroke="#fcd34d"
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                  />
+                  <polygon points="8,0.6 10.8,3.2 7.5,3.8" fill="#fcd34d" />
+                </svg>
+                <span>PRECISION BALANCED ROTOR</span>
               </div>
 
-              {/* RIGHT: CASINO GREEN FELT BETTING LAYOUT */}
-              <div className="flex-1 w-full max-w-full overflow-x-auto pb-1 flex flex-col gap-2">
-                {/* Felt Gold Foil Header Strip */}
-                <div className="flex items-center justify-between px-1 pb-1 border-b border-[#e5c158]/25 text-[#f5ebd7]">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono-tabular text-[11px] text-[#edd587] uppercase font-bold tracking-[0.16em]">
-                      AMERICAN ROULETTE BOARD
-                    </span>
-                    {hoveredSpot && (
-                      <span className="hidden sm:inline-block px-2 py-0.5 rounded bg-black/35 border border-[#6bfad8]/35 text-[#6bfad8] font-mono-tabular text-[10px] font-bold">
-                        {hoveredSpot.label}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono-tabular text-[10px] text-[#a7f3d0] uppercase tracking-wider">
-                      STRAIGHT-UP PAYS 35:1
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setShowPaytableModal(true);
-                      }}
-                      className="text-[10px] uppercase font-mono-tabular font-bold px-2.5 py-0.5 rounded bg-black/35 border border-[#edd587]/35 text-[#edd587] hover:bg-black/55 transition-all cursor-pointer"
-                    >
-                      ? PAYTABLE
-                    </button>
-                  </div>
-                </div>
+              {/* High-Precision 3D Beveled SVG Wheel */}
+              <div className="relative w-64 h-64 sm:w-72 sm:h-72 rounded-full shadow-[0_18px_38px_rgba(0,0,0,0.65)] flex items-center justify-center">
+                <svg
+                  viewBox="0 0 320 320"
+                  className="w-full h-full"
+                  aria-label="Aura 3D American Dual-Zero Roulette Wheel"
+                >
+                  <defs>
+                    <linearGradient id="aura-mahogany-rim" x1="12%" y1="8%" x2="88%" y2="92%">
+                      <stop offset="0%" stopColor="#5e2714" />
+                      <stop offset="48%" stopColor="#341409" />
+                      <stop offset="100%" stopColor="#140602" />
+                    </linearGradient>
+                    <linearGradient id="aura-brass-rim" x1="15%" y1="10%" x2="85%" y2="90%">
+                      <stop offset="0%" stopColor="#fff1b8" />
+                      <stop offset="32%" stopColor="#d9a441" />
+                      <stop offset="68%" stopColor="#f7d77e" />
+                      <stop offset="100%" stopColor="#784d12" />
+                    </linearGradient>
+                    <radialGradient id="aura-ball-track" cx="50%" cy="50%" r="50%">
+                      <stop offset="72%" stopColor="#0e1217" />
+                      <stop offset="88%" stopColor="#1c232d" />
+                      <stop offset="100%" stopColor="#090c10" />
+                    </radialGradient>
+                    <radialGradient id="aura-inner-cone" cx="38%" cy="35%" r="65%">
+                      <stop offset="0%" stopColor="#422817" />
+                      <stop offset="65%" stopColor="#1f130b" />
+                      <stop offset="100%" stopColor="#110905" />
+                    </radialGradient>
+                    <radialGradient id="aura-turret-dome" cx="35%" cy="32%" r="68%">
+                      <stop offset="0%" stopColor="#fff6c7" />
+                      <stop offset="38%" stopColor="#e5c158" />
+                      <stop offset="76%" stopColor="#9c6c1e" />
+                      <stop offset="100%" stopColor="#593a0a" />
+                    </radialGradient>
+                    <linearGradient id="aura-turret-arm" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stopColor="#fff7cc" />
+                      <stop offset="52%" stopColor="#e5c158" />
+                      <stop offset="100%" stopColor="#784d12" />
+                    </linearGradient>
+                    <radialGradient id="aura-ivory-ball" cx="35%" cy="30%" r="68%">
+                      <stop offset="0%" stopColor="#ffffff" />
+                      <stop offset="45%" stopColor="#f8fafc" />
+                      <stop offset="82%" stopColor="#cbd5e1" />
+                      <stop offset="100%" stopColor="#64748b" />
+                    </radialGradient>
+                  </defs>
 
-                {/* Technical Betting Grid Board */}
-                <div className="flex gap-1.5 min-w-[620px] text-white font-mono-tabular">
-                  {/* Dual Zero Column (0, 0/00 Split, and 00) */}
-                  <div className="relative flex flex-col gap-1.5 w-16 shrink-0">
-                    {(['0', '00'] as const).map((zeroPocket) => {
-                      const spotId = `straight:${zeroPocket}`;
-                      const spec = spotRegistry.get(spotId)!;
-                      const isHighlighted =
-                        hoveredPocketSet.has(zeroPocket) || settledBanner?.pocket === zeroPocket;
+                  <circle cx="160" cy="160" r="158" fill="url(#aura-mahogany-rim)" />
+                  <circle
+                    cx="160"
+                    cy="160"
+                    r="156.5"
+                    fill="none"
+                    stroke="rgba(255,230,195,0.22)"
+                    strokeWidth="1.5"
+                  />
+                  <circle
+                    cx="160"
+                    cy="160"
+                    r="143"
+                    fill="url(#aura-brass-rim)"
+                    stroke="#3d2011"
+                    strokeWidth="2"
+                  />
+                  <circle
+                    cx="160"
+                    cy="160"
+                    r="140"
+                    fill="none"
+                    stroke="rgba(255,255,255,0.45)"
+                    strokeWidth="1"
+                  />
+                  <circle
+                    cx="160"
+                    cy="160"
+                    r="131"
+                    fill="url(#aura-ball-track)"
+                    stroke="#593a0a"
+                    strokeWidth="1.5"
+                  />
+                  {DEFLECTOR_ANGLES.map((ang) => (
+                    <g key={ang} transform={`rotate(${ang} 160 160)`}>
+                      <polygon
+                        points="160,24 164.5,27.5 160,31 155.5,27.5"
+                        fill="#f7d77e"
+                        stroke="#593a0a"
+                        strokeWidth="0.8"
+                      />
+                    </g>
+                  ))}
+
+                  <g ref={rotorGroupRef} transform="rotate(0 160 160)">
+                    <circle cx="160" cy="160" r="119" fill="#140d08" />
+                    {wheelPocketsGeometry.map((seg) => {
+                      const isHovered = hoveredPocketSet.has(seg.pocket);
+                      const isSettledWinner = settledBanner?.pocket === seg.pocket;
                       return (
-                        <button
-                          key={zeroPocket}
-                          type="button"
-                          onMouseEnter={() => setHoveredSpot(spec)}
-                          onMouseLeave={() => setHoveredSpot(null)}
-                          onClick={() => placeChipOnSpot(spotId)}
-                          onContextMenu={(e) => removeSpotBetOnRightClick(e, spotId)}
-                          className={`relative h-16 bg-[#0c6b40] hover:bg-[#128a53] active:scale-95 rounded-l-md text-[#f0fdf4] font-bold flex flex-col items-center justify-center shadow-[inset_0_0_8px_rgba(0,0,0,0.5),0_2px_4px_rgba(0,0,0,0.3)] border transition-all cursor-pointer ${
-                            isHighlighted
-                              ? 'border-[#fde047] ring-2 ring-[#fde047]/80 brightness-125'
-                              : 'border-[#168a55]/65'
-                          }`}
-                        >
-                          <span className="text-lg leading-none font-black">{zeroPocket}</span>
-                          <span className="text-[9px] text-[#a7f3d0] mt-0.5">35:1</span>
-                          {renderSpotChip(spotId)}
-                        </button>
+                        <g key={seg.pocket}>
+                          <path
+                            d={seg.outerPath}
+                            fill={seg.fillHex}
+                            stroke={
+                              isSettledWinner
+                                ? '#fde047'
+                                : isHovered
+                                  ? '#34d399'
+                                  : '#b88c34'
+                            }
+                            strokeWidth={isSettledWinner || isHovered ? '1.8' : '0.7'}
+                          />
+                          <path
+                            d={seg.innerPocketPath}
+                            fill={seg.deepHex}
+                            stroke="#8c5e1c"
+                            strokeWidth="0.55"
+                          />
+                          <line
+                            x1={seg.fretX1}
+                            y1={seg.fretY1}
+                            x2={seg.fretX2}
+                            y2={seg.fretY2}
+                            stroke="#e5c158"
+                            strokeWidth="0.95"
+                          />
+                          <text
+                            x={seg.labelX}
+                            y={seg.labelY}
+                            fill={isSettledWinner ? '#fef08a' : '#f8fafc'}
+                            fontSize="8.5"
+                            fontWeight="800"
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            transform={`rotate(${seg.centerDeg} ${seg.labelX} ${seg.labelY})`}
+                          >
+                            {seg.pocket}
+                          </text>
+                        </g>
                       );
                     })}
+                    <circle
+                      cx="160"
+                      cy="160"
+                      r="68"
+                      fill="url(#aura-inner-cone)"
+                      stroke="#c9933b"
+                      strokeWidth="1.8"
+                    />
+                    <circle
+                      cx="160"
+                      cy="160"
+                      r="56"
+                      fill="none"
+                      stroke="rgba(247,215,126,0.2)"
+                      strokeWidth="1"
+                    />
+                  </g>
 
-                    {/* 0 / 00 Split Hotspot */}
-                    <button
-                      type="button"
-                      title="Split 0 / 00 (17:1)"
-                      onMouseEnter={() => setHoveredSpot(spotRegistry.get('split:0_00') ?? null)}
-                      onMouseLeave={() => setHoveredSpot(null)}
-                      onClick={() => placeChipOnSpot('split:0_00')}
-                      onContextMenu={(e) => removeSpotBetOnRightClick(e, 'split:0_00')}
-                      className="absolute left-2 right-2 top-1/2 -translate-y-1/2 h-3.5 z-20 rounded flex items-center justify-center hover:bg-[#fde047]/35 cursor-pointer"
-                    >
-                      {renderSpotChip('split:0_00', true)}
-                    </button>
-                  </div>
+                  <g ref={ballGroupRef} opacity="0" transform="translate(160 37)">
+                    <circle cx="1.8" cy="2.6" r="6.8" fill="rgba(0,0,0,0.65)" />
+                    <circle
+                      cx="0"
+                      cy="0"
+                      r="6.5"
+                      fill="url(#aura-ivory-ball)"
+                      stroke="rgba(255,255,255,0.8)"
+                      strokeWidth="0.6"
+                    />
+                    <circle cx="-2" cy="-2.2" r="1.8" fill="#ffffff" />
+                  </g>
 
-                  {/* 1 to 36 Grid Matrix (3 Rows x 12 Cols) + Split & Corner Hotspots */}
-                  <div className="relative flex-1 flex flex-col gap-1.5">
-                    {TABLE_MATRIX_ROWS.map((rowPockets, rowIdx) => (
-                      <div key={rowIdx} className="grid grid-cols-12 gap-1 h-10">
-                        {rowPockets.map((pocket, colIdx) => {
-                          const spotId = `straight:${pocket}`;
-                          const spec = spotRegistry.get(spotId)!;
-                          const isRed = RED_POCKETS.has(pocket);
-                          const isHighlighted =
-                            hoveredPocketSet.has(pocket) || settledBanner?.pocket === pocket;
-                          const nextColPocket =
-                            colIdx < 11 ? TABLE_MATRIX_ROWS[rowIdx][colIdx + 1] : null;
-                          const belowRowPocket =
-                            rowIdx < 2 ? TABLE_MATRIX_ROWS[rowIdx + 1][colIdx] : null;
-                          const diagPocket =
-                            rowIdx < 2 && colIdx < 11
-                              ? TABLE_MATRIX_ROWS[rowIdx + 1][colIdx + 1]
-                              : null;
+                  <g ref={turretGroupRef} transform="rotate(0 160 160)">
+                    <circle cx="162" cy="164" r="39" fill="rgba(0,0,0,0.62)" />
+                    <circle
+                      cx="160"
+                      cy="160"
+                      r="38"
+                      fill="url(#aura-turret-dome)"
+                      stroke="#fff1b8"
+                      strokeWidth="1.2"
+                    />
+                    <circle
+                      cx="160"
+                      cy="160"
+                      r="29"
+                      fill="none"
+                      stroke="rgba(92,52,9,0.45)"
+                      strokeWidth="1.2"
+                    />
+                    <rect
+                      x="133"
+                      y="157.2"
+                      width="54"
+                      height="5.6"
+                      rx="2.8"
+                      fill="url(#aura-turret-arm)"
+                      stroke="#6d4d12"
+                      strokeWidth="0.7"
+                    />
+                    <rect
+                      x="157.2"
+                      y="133"
+                      width="5.6"
+                      height="54"
+                      rx="2.8"
+                      fill="url(#aura-turret-arm)"
+                      stroke="#6d4d12"
+                      strokeWidth="0.7"
+                    />
+                    <circle
+                      cx="160"
+                      cy="160"
+                      r="13"
+                      fill="url(#aura-turret-dome)"
+                      stroke="#fff6c7"
+                      strokeWidth="1"
+                    />
+                    <circle cx="160" cy="160" r="4.8" fill="#3d2011" />
+                  </g>
+                </svg>
+              </div>
 
-                          const hSplitId = nextColPocket
-                            ? `split:h_${pocket}_${nextColPocket}`
-                            : null;
-                          const vSplitId = belowRowPocket
-                            ? `split:v_${belowRowPocket}_${pocket}`
-                            : null;
-                          const cornerId =
-                            belowRowPocket && nextColPocket && diagPocket
-                              ? `corner:${belowRowPocket}_${pocket}_${diagPocket}_${nextColPocket}`
-                              : null;
-
-                          return (
-                            <div key={pocket} className="relative h-full">
-                              <button
-                                type="button"
-                                onMouseEnter={() => setHoveredSpot(spec)}
-                                onMouseLeave={() => setHoveredSpot(null)}
-                                onClick={() => placeChipOnSpot(spotId)}
-                                onContextMenu={(e) => removeSpotBetOnRightClick(e, spotId)}
-                                className={`relative w-full h-full rounded flex items-center justify-center font-bold text-sm shadow-[inset_0_0_5px_rgba(0,0,0,0.55)] border transition-all cursor-pointer ${
-                                  isRed
-                                    ? 'bg-[#b22020] hover:brightness-125 border-red-700/55'
-                                    : 'bg-[#1c222c] hover:brightness-125 border-slate-700/55'
-                                } ${
-                                  isHighlighted
-                                    ? 'ring-2 ring-[#fde047] border-[#fde047] brightness-125'
-                                    : ''
-                                }`}
-                              >
-                                <span>{pocket}</span>
-                                {renderSpotChip(spotId)}
-                              </button>
-
-                              {hSplitId && (
-                                <button
-                                  type="button"
-                                  title={spotRegistry.get(hSplitId)?.label}
-                                  onMouseEnter={() =>
-                                    setHoveredSpot(spotRegistry.get(hSplitId) ?? null)
-                                  }
-                                  onMouseLeave={() => setHoveredSpot(null)}
-                                  onClick={() => placeChipOnSpot(hSplitId)}
-                                  onContextMenu={(e) => removeSpotBetOnRightClick(e, hSplitId)}
-                                  className="absolute -right-1.5 top-1.5 bottom-1.5 w-2.5 z-20 rounded-sm hover:bg-[#fde047]/45 flex items-center justify-center cursor-pointer"
-                                >
-                                  {renderSpotChip(hSplitId, true)}
-                                </button>
-                              )}
-
-                              {vSplitId && (
-                                <button
-                                  type="button"
-                                  title={spotRegistry.get(vSplitId)?.label}
-                                  onMouseEnter={() =>
-                                    setHoveredSpot(spotRegistry.get(vSplitId) ?? null)
-                                  }
-                                  onMouseLeave={() => setHoveredSpot(null)}
-                                  onClick={() => placeChipOnSpot(vSplitId)}
-                                  onContextMenu={(e) => removeSpotBetOnRightClick(e, vSplitId)}
-                                  className="absolute left-1.5 right-1.5 -bottom-1.5 h-2.5 z-20 rounded-sm hover:bg-[#fde047]/45 flex items-center justify-center cursor-pointer"
-                                >
-                                  {renderSpotChip(vSplitId, true)}
-                                </button>
-                              )}
-
-                              {cornerId && (
-                                <button
-                                  type="button"
-                                  title={spotRegistry.get(cornerId)?.label}
-                                  onMouseEnter={() =>
-                                    setHoveredSpot(spotRegistry.get(cornerId) ?? null)
-                                  }
-                                  onMouseLeave={() => setHoveredSpot(null)}
-                                  onClick={() => placeChipOnSpot(cornerId)}
-                                  onContextMenu={(e) => removeSpotBetOnRightClick(e, cornerId)}
-                                  className="absolute -right-2 -bottom-2 w-3.5 h-3.5 z-30 rounded-full hover:bg-[#6bfad8]/60 flex items-center justify-center cursor-pointer"
-                                >
-                                  {renderSpotChip(cornerId, true)}
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* 2:1 Column Bets */}
-                  <div className="flex flex-col gap-1.5 w-14 shrink-0">
-                    {(['col:col3', 'col:col2', 'col:col1'] as const).map((colId) => {
-                      const spec = spotRegistry.get(colId)!;
-                      return (
-                        <button
-                          key={colId}
-                          type="button"
-                          onMouseEnter={() => setHoveredSpot(spec)}
-                          onMouseLeave={() => setHoveredSpot(null)}
-                          onClick={() => placeChipOnSpot(colId)}
-                          onContextMenu={(e) => removeSpotBetOnRightClick(e, colId)}
-                          className="relative h-10 bg-[#073821] hover:bg-[#0c5936] rounded flex items-center justify-center font-bold text-xs uppercase tracking-wider text-[#edd587] shadow-[inset_0_0_4px_rgba(0,0,0,0.5)] border border-[#b88c34]/45 cursor-pointer"
-                        >
-                          <span>2:1</span>
-                          {renderSpotChip(colId)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Outside Bets: Dozens (1st 12, 2nd 12, 3rd 12) */}
-                <div className="flex gap-1.5 min-w-[620px] pl-[70px] pr-[62px] font-mono-tabular">
-                  {(
-                    [
-                      { id: 'dozen:1st12', text: '1ST 12 (PAYS 2:1)' },
-                      { id: 'dozen:2nd12', text: '2ND 12 (PAYS 2:1)' },
-                      { id: 'dozen:3rd12', text: '3RD 12 (PAYS 2:1)' },
-                    ] as const
-                  ).map((doz) => {
-                    const spec = spotRegistry.get(doz.id)!;
-                    return (
-                      <button
-                        key={doz.id}
-                        type="button"
-                        onMouseEnter={() => setHoveredSpot(spec)}
-                        onMouseLeave={() => setHoveredSpot(null)}
-                        onClick={() => placeChipOnSpot(doz.id)}
-                        onContextMenu={(e) => removeSpotBetOnRightClick(e, doz.id)}
-                        className="relative flex-1 h-9 bg-[#073821] hover:bg-[#0c5936] rounded flex items-center justify-center font-bold text-xs uppercase tracking-wider text-[#f5ebd7] shadow-[inset_0_0_4px_rgba(0,0,0,0.5)] border border-[#0d6e43] cursor-pointer"
-                      >
-                        <span>{doz.text}</span>
-                        {renderSpotChip(doz.id)}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Outside Bets: Even-Money (1-18, EVEN, RED, BLACK, ODD, 19-36) */}
-                <div className="flex gap-1.5 min-w-[620px] pl-[70px] pr-[62px] font-mono-tabular">
-                  {(
-                    [
-                      {
-                        id: 'even_money:low',
-                        text: '1-18',
-                        cls: 'bg-[#073821] hover:bg-[#0c5936] border-[#0d6e43] text-[#f5ebd7]',
-                        dotCls: '',
-                      },
-                      {
-                        id: 'even_money:even',
-                        text: 'EVEN',
-                        cls: 'bg-[#073821] hover:bg-[#0c5936] border-[#0d6e43] text-[#f5ebd7]',
-                        dotCls: '',
-                      },
-                      {
-                        id: 'even_money:red',
-                        text: 'RED',
-                        cls: 'bg-[#b22020] hover:brightness-115 border-red-700/65 text-white',
-                        dotCls: 'bg-[#fca5a5]',
-                      },
-                      {
-                        id: 'even_money:black',
-                        text: 'BLACK',
-                        cls: 'bg-[#1c222c] hover:brightness-125 border-slate-700/65 text-white',
-                        dotCls: 'bg-slate-400',
-                      },
-                      {
-                        id: 'even_money:odd',
-                        text: 'ODD',
-                        cls: 'bg-[#073821] hover:bg-[#0c5936] border-[#0d6e43] text-[#f5ebd7]',
-                        dotCls: '',
-                      },
-                      {
-                        id: 'even_money:high',
-                        text: '19-36',
-                        cls: 'bg-[#073821] hover:bg-[#0c5936] border-[#0d6e43] text-[#f5ebd7]',
-                        dotCls: '',
-                      },
-                    ] as const
-                  ).map((ev) => {
-                    const spec = spotRegistry.get(ev.id)!;
-                    return (
-                      <button
-                        key={ev.id}
-                        type="button"
-                        onMouseEnter={() => setHoveredSpot(spec)}
-                        onMouseLeave={() => setHoveredSpot(null)}
-                        onClick={() => placeChipOnSpot(ev.id)}
-                        onContextMenu={(e) => removeSpotBetOnRightClick(e, ev.id)}
-                        className={`relative flex-1 h-9 rounded flex items-center justify-center gap-1.5 font-bold text-xs uppercase tracking-wider shadow-[inset_0_0_4px_rgba(0,0,0,0.5)] border cursor-pointer ${ev.cls}`}
-                      >
-                        {ev.dotCls && (
-                          <span className={`w-2.5 h-2.5 rounded-full inline-block ${ev.dotCls}`} />
-                        )}
-                        <span>{ev.text}</span>
-                        {renderSpotChip(ev.id)}
-                      </button>
-                    );
-                  })}
-                </div>
+              {/* Ball Status Pill Tag Directly Below Wheel */}
+              <div className="mt-2.5 font-mono-tabular text-[11px] bg-black/40 backdrop-blur-md border border-emerald-400/35 text-emerald-300 px-4 py-1 rounded-full flex items-center gap-1.5 max-w-[290px]">
+                <span className="text-amber-300 text-[10px]">↻</span>
+                <span className="truncate font-semibold">{ballStatusText}</span>
               </div>
             </div>
 
-            {/* WINNER ANNOUNCEMENT INLAID BANNER DIRECTLY ON FELT */}
-            {settledBanner && (
-              <div className="w-full bg-[#051c13] border border-[#48ddbc]/55 text-white px-4 py-2 rounded-xl shadow-xl flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-10 h-10 rounded-lg border text-white flex flex-col items-center justify-center font-bold shadow ${getPocketBadgeBgClass(
-                      settledBanner.pocket,
-                    )}`}
-                  >
-                    <span className="text-base leading-none font-black">
-                      {settledBanner.pocket}
+            {/* RIGHT: CASINO GREEN FELT BETTING LAYOUT */}
+            <div className="flex-1 w-full max-w-full overflow-x-auto pb-1 flex flex-col gap-2">
+              {/* Felt Header Strip */}
+              <div className="flex items-center justify-between px-1 pb-1.5 border-b border-white/10 text-slate-100">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono-tabular text-[11px] text-amber-300 uppercase font-bold tracking-[0.14em]">
+                    AMERICAN ROULETTE BOARD
+                  </span>
+                  {hoveredSpot && (
+                    <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full bg-emerald-400/15 border border-emerald-400/30 text-emerald-300 font-mono-tabular text-[10px] font-bold">
+                      {hoveredSpot.label}
                     </span>
-                    <span className="text-[8px] uppercase tracking-wider">
-                      {settledBanner.colorCategory}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="font-mono-tabular text-[10px] text-[#00dbe9] tracking-wider uppercase font-bold">
-                      BALL SETTLED IN CYLINDER
-                    </div>
-                    <div
-                      className={`text-sm sm:text-base font-bold ${
-                        settledBanner.won ? 'text-[#6bfad8]' : 'text-white'
-                      }`}
-                    >
-                      {settledBanner.headline}
-                    </div>
-                  </div>
+                  )}
                 </div>
-                <div className="text-right font-mono-tabular">
-                  <div className="text-[10px] text-emerald-200 uppercase">ROUND PAYOUT</div>
-                  <div
-                    className={`text-lg sm:text-xl font-black ${
-                      settledBanner.won ? 'text-[#6bfad8]' : 'text-slate-400'
-                    }`}
+                <div className="flex items-center gap-3">
+                  <span className="font-mono-tabular text-[10px] text-emerald-200/80 uppercase tracking-wider">
+                    STRAIGHT-UP PAYS 35:1
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setShowPaytableModal(true);
+                    }}
+                    className="text-[10px] uppercase font-mono-tabular font-bold px-3 py-1 rounded-full bg-white/[0.08] hover:bg-white/[0.15] border border-amber-300/35 text-amber-300 transition-all cursor-pointer"
                   >
-                    {settledBanner.won
-                      ? `+${settledBanner.payoutAmount.toLocaleString()} ${currencyMode}`
-                      : `0 ${currencyMode}`}
-                  </div>
+                    ? PAYTABLE
+                  </button>
                 </div>
               </div>
-            )}
 
-            {/* SINGLE-ROW INTEGRATED FELT CONTROLS: CHIP TRAY + BET RECAP + ACTIONS */}
-            <div className="pt-2.5 border-t border-[#b88c34]/25 flex flex-wrap lg:flex-nowrap items-center justify-between gap-3">
-              {/* COIN / CHIP TRAY (Inlaid Directly Into Felt Channel) */}
-              <div className="flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 rounded-full bg-[#031b10] border border-[#b88c34]/45 shadow-inner">
-                <span className="font-mono-tabular text-[10px] text-[#f7d77e] uppercase tracking-wider pr-1 font-bold hidden sm:inline">
-                  CHIPS:
-                </span>
-                {AURA_CHIP_RACK.map((chip) => {
-                  const isSelected = selectedChip === chip.value;
+              {/* Technical Betting Grid Board */}
+              <div className="flex gap-1.5 min-w-[620px] text-white font-mono-tabular">
+                {/* Dual Zero Column (0, 0/00 Split, and 00) */}
+                <div className="relative flex flex-col gap-1.5 w-16 shrink-0">
+                  {(['0', '00'] as const).map((zeroPocket) => {
+                    const spotId = `straight:${zeroPocket}`;
+                    const spec = spotRegistry.get(spotId)!;
+                    const isHighlighted =
+                      hoveredPocketSet.has(zeroPocket) || settledBanner?.pocket === zeroPocket;
+                    return (
+                      <button
+                        key={zeroPocket}
+                        type="button"
+                        onMouseEnter={() => setHoveredSpot(spec)}
+                        onMouseLeave={() => setHoveredSpot(null)}
+                        onClick={() => placeChipOnSpot(spotId)}
+                        onContextMenu={(e) => removeSpotBetOnRightClick(e, spotId)}
+                        className={`relative h-16 bg-emerald-700/85 hover:bg-emerald-600/90 active:scale-95 rounded-xl text-white font-bold flex flex-col items-center justify-center border transition-all cursor-pointer ${
+                          isHighlighted
+                            ? 'border-amber-300 ring-2 ring-amber-300/70 brightness-125'
+                            : 'border-emerald-400/40'
+                        }`}
+                      >
+                        <span className="text-lg leading-none font-black">{zeroPocket}</span>
+                        <span className="text-[9px] text-emerald-200 mt-0.5">35:1</span>
+                        {renderSpotChip(spotId)}
+                      </button>
+                    );
+                  })}
+
+                  {/* 0 / 00 Split Hotspot */}
+                  <button
+                    type="button"
+                    title="Split 0 / 00 (17:1)"
+                    onMouseEnter={() => setHoveredSpot(spotRegistry.get('split:0_00') ?? null)}
+                    onMouseLeave={() => setHoveredSpot(null)}
+                    onClick={() => placeChipOnSpot('split:0_00')}
+                    onContextMenu={(e) => removeSpotBetOnRightClick(e, 'split:0_00')}
+                    className="absolute left-2 right-2 top-1/2 -translate-y-1/2 h-3.5 z-20 rounded-full flex items-center justify-center hover:bg-amber-300/35 cursor-pointer"
+                  >
+                    {renderSpotChip('split:0_00', true)}
+                  </button>
+                </div>
+
+                {/* 1 to 36 Grid Matrix (3 Rows x 12 Cols) + Split & Corner Hotspots */}
+                <div className="relative flex-1 flex flex-col gap-1.5">
+                  {TABLE_MATRIX_ROWS.map((rowPockets, rowIdx) => (
+                    <div key={rowIdx} className="grid grid-cols-12 gap-1 h-10">
+                      {rowPockets.map((pocket, colIdx) => {
+                        const spotId = `straight:${pocket}`;
+                        const spec = spotRegistry.get(spotId)!;
+                        const isRed = RED_POCKETS.has(pocket);
+                        const isHighlighted =
+                          hoveredPocketSet.has(pocket) || settledBanner?.pocket === pocket;
+                        const nextColPocket =
+                          colIdx < 11 ? TABLE_MATRIX_ROWS[rowIdx][colIdx + 1] : null;
+                        const belowRowPocket =
+                          rowIdx < 2 ? TABLE_MATRIX_ROWS[rowIdx + 1][colIdx] : null;
+                        const diagPocket =
+                          rowIdx < 2 && colIdx < 11
+                            ? TABLE_MATRIX_ROWS[rowIdx + 1][colIdx + 1]
+                            : null;
+
+                        const hSplitId = nextColPocket
+                          ? `split:h_${pocket}_${nextColPocket}`
+                          : null;
+                        const vSplitId = belowRowPocket
+                          ? `split:v_${belowRowPocket}_${pocket}`
+                          : null;
+                        const cornerId =
+                          belowRowPocket && nextColPocket && diagPocket
+                            ? `corner:${belowRowPocket}_${pocket}_${diagPocket}_${nextColPocket}`
+                            : null;
+
+                        return (
+                          <div key={pocket} className="relative h-full">
+                            <button
+                              type="button"
+                              onMouseEnter={() => setHoveredSpot(spec)}
+                              onMouseLeave={() => setHoveredSpot(null)}
+                              onClick={() => placeChipOnSpot(spotId)}
+                              onContextMenu={(e) => removeSpotBetOnRightClick(e, spotId)}
+                              className={`relative w-full h-full rounded-lg flex items-center justify-center font-bold text-sm border transition-all cursor-pointer ${
+                                isRed
+                                  ? 'bg-rose-700/90 hover:bg-rose-600 border-rose-400/35'
+                                  : 'bg-slate-900/85 hover:bg-slate-800 border-white/15'
+                              } ${
+                                isHighlighted
+                                  ? 'ring-2 ring-amber-300 border-amber-300 brightness-125'
+                                  : ''
+                              }`}
+                            >
+                              <span>{pocket}</span>
+                              {renderSpotChip(spotId)}
+                            </button>
+
+                            {hSplitId && (
+                              <button
+                                type="button"
+                                title={spotRegistry.get(hSplitId)?.label}
+                                onMouseEnter={() =>
+                                  setHoveredSpot(spotRegistry.get(hSplitId) ?? null)
+                                }
+                                onMouseLeave={() => setHoveredSpot(null)}
+                                onClick={() => placeChipOnSpot(hSplitId)}
+                                onContextMenu={(e) => removeSpotBetOnRightClick(e, hSplitId)}
+                                className="absolute -right-1.5 top-1.5 bottom-1.5 w-2.5 z-20 rounded-full hover:bg-amber-300/45 flex items-center justify-center cursor-pointer"
+                              >
+                                {renderSpotChip(hSplitId, true)}
+                              </button>
+                            )}
+
+                            {vSplitId && (
+                              <button
+                                type="button"
+                                title={spotRegistry.get(vSplitId)?.label}
+                                onMouseEnter={() =>
+                                  setHoveredSpot(spotRegistry.get(vSplitId) ?? null)
+                                }
+                                onMouseLeave={() => setHoveredSpot(null)}
+                                onClick={() => placeChipOnSpot(vSplitId)}
+                                onContextMenu={(e) => removeSpotBetOnRightClick(e, vSplitId)}
+                                className="absolute left-1.5 right-1.5 -bottom-1.5 h-2.5 z-20 rounded-full hover:bg-amber-300/45 flex items-center justify-center cursor-pointer"
+                              >
+                                {renderSpotChip(vSplitId, true)}
+                              </button>
+                            )}
+
+                            {cornerId && (
+                              <button
+                                type="button"
+                                title={spotRegistry.get(cornerId)?.label}
+                                onMouseEnter={() =>
+                                  setHoveredSpot(spotRegistry.get(cornerId) ?? null)
+                                }
+                                onMouseLeave={() => setHoveredSpot(null)}
+                                onClick={() => placeChipOnSpot(cornerId)}
+                                onContextMenu={(e) => removeSpotBetOnRightClick(e, cornerId)}
+                                className="absolute -right-2 -bottom-2 w-3.5 h-3.5 z-30 rounded-full hover:bg-emerald-300/60 flex items-center justify-center cursor-pointer"
+                              >
+                                {renderSpotChip(cornerId, true)}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+
+                {/* 2:1 Column Bets */}
+                <div className="flex flex-col gap-1.5 w-14 shrink-0">
+                  {(['col:col3', 'col:col2', 'col:col1'] as const).map((colId) => {
+                    const spec = spotRegistry.get(colId)!;
+                    return (
+                      <button
+                        key={colId}
+                        type="button"
+                        onMouseEnter={() => setHoveredSpot(spec)}
+                        onMouseLeave={() => setHoveredSpot(null)}
+                        onClick={() => placeChipOnSpot(colId)}
+                        onContextMenu={(e) => removeSpotBetOnRightClick(e, colId)}
+                        className="relative h-10 bg-white/[0.06] hover:bg-white/[0.14] rounded-lg flex items-center justify-center font-bold text-xs uppercase tracking-wider text-amber-300 border border-amber-300/30 cursor-pointer transition-colors"
+                      >
+                        <span>2:1</span>
+                        {renderSpotChip(colId)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Outside Bets: Dozens (1st 12, 2nd 12, 3rd 12) */}
+              <div className="flex gap-1.5 min-w-[620px] pl-[70px] pr-[62px] font-mono-tabular">
+                {(
+                  [
+                    { id: 'dozen:1st12', text: '1ST 12 (PAYS 2:1)' },
+                    { id: 'dozen:2nd12', text: '2ND 12 (PAYS 2:1)' },
+                    { id: 'dozen:3rd12', text: '3RD 12 (PAYS 2:1)' },
+                  ] as const
+                ).map((doz) => {
+                  const spec = spotRegistry.get(doz.id)!;
                   return (
                     <button
-                      key={chip.value}
+                      key={doz.id}
                       type="button"
-                      title={`Select ${chip.value.toLocaleString()} ${currencyMode} Chip`}
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setSelectedChip(chip.value);
-                      }}
-                      className={`relative rounded-full flex items-center justify-center transition-transform cursor-pointer ${
-                        isSelected ? 'scale-105' : 'hover:scale-105 opacity-95 hover:opacity-100'
-                      }`}
+                      onMouseEnter={() => setHoveredSpot(spec)}
+                      onMouseLeave={() => setHoveredSpot(null)}
+                      onClick={() => placeChipOnSpot(doz.id)}
+                      onContextMenu={(e) => removeSpotBetOnRightClick(e, doz.id)}
+                      className="relative flex-1 h-9 bg-white/[0.06] hover:bg-white/[0.14] rounded-lg flex items-center justify-center font-bold text-xs uppercase tracking-wider text-slate-100 border border-white/15 cursor-pointer transition-colors"
                     >
-                      <RackPokerChipSvg chip={chip} selected={isSelected} />
+                      <span>{doz.text}</span>
+                      {renderSpotChip(doz.id)}
                     </button>
                   );
                 })}
               </div>
 
-              {/* BET RECAP STATUS ON FELT */}
-              <div className="flex items-center gap-2.5 text-xs font-mono-tabular">
-                <div className="px-3 py-1 rounded-md bg-[#031b10] border border-[#b88c34]/25 flex flex-col items-center min-w-[98px]">
-                  <span className="text-[9px] text-[#f7d77e] uppercase">TOTAL WAGER</span>
-                  <span className="text-white font-bold">
-                    {totalStagedWager.toLocaleString()} {currencyMode}
+              {/* Outside Bets: Even-Money (1-18, EVEN, RED, BLACK, ODD, 19-36) */}
+              <div className="flex gap-1.5 min-w-[620px] pl-[70px] pr-[62px] font-mono-tabular">
+                {(
+                  [
+                    {
+                      id: 'even_money:low',
+                      text: '1-18',
+                      cls: 'bg-white/[0.06] hover:bg-white/[0.14] border-white/15 text-slate-100',
+                      dotCls: '',
+                    },
+                    {
+                      id: 'even_money:even',
+                      text: 'EVEN',
+                      cls: 'bg-white/[0.06] hover:bg-white/[0.14] border-white/15 text-slate-100',
+                      dotCls: '',
+                    },
+                    {
+                      id: 'even_money:red',
+                      text: 'RED',
+                      cls: 'bg-rose-700/90 hover:bg-rose-600 border-rose-400/40 text-white',
+                      dotCls: 'bg-rose-300',
+                    },
+                    {
+                      id: 'even_money:black',
+                      text: 'BLACK',
+                      cls: 'bg-slate-900/90 hover:bg-slate-800 border-white/15 text-white',
+                      dotCls: 'bg-slate-400',
+                    },
+                    {
+                      id: 'even_money:odd',
+                      text: 'ODD',
+                      cls: 'bg-white/[0.06] hover:bg-white/[0.14] border-white/15 text-slate-100',
+                      dotCls: '',
+                    },
+                    {
+                      id: 'even_money:high',
+                      text: '19-36',
+                      cls: 'bg-white/[0.06] hover:bg-white/[0.14] border-white/15 text-slate-100',
+                      dotCls: '',
+                    },
+                  ] as const
+                ).map((ev) => {
+                  const spec = spotRegistry.get(ev.id)!;
+                  return (
+                    <button
+                      key={ev.id}
+                      type="button"
+                      onMouseEnter={() => setHoveredSpot(spec)}
+                      onMouseLeave={() => setHoveredSpot(null)}
+                      onClick={() => placeChipOnSpot(ev.id)}
+                      onContextMenu={(e) => removeSpotBetOnRightClick(e, ev.id)}
+                      className={`relative flex-1 h-9 rounded-lg flex items-center justify-center gap-1.5 font-bold text-xs uppercase tracking-wider border cursor-pointer transition-colors ${ev.cls}`}
+                    >
+                      {ev.dotCls && (
+                        <span className={`w-2.5 h-2.5 rounded-full inline-block ${ev.dotCls}`} />
+                      )}
+                      <span>{ev.text}</span>
+                      {renderSpotChip(ev.id)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* WINNER ANNOUNCEMENT BANNER */}
+          {settledBanner && (
+            <div className="w-full bg-black/45 backdrop-blur-md border border-emerald-400/35 text-white px-4 py-2.5 rounded-2xl flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-10 h-10 rounded-xl border text-white flex flex-col items-center justify-center font-bold ${getPocketBadgeBgClass(
+                    settledBanner.pocket,
+                  )}`}
+                >
+                  <span className="text-base leading-none font-black">
+                    {settledBanner.pocket}
+                  </span>
+                  <span className="text-[8px] uppercase tracking-wider">
+                    {settledBanner.colorCategory}
                   </span>
                 </div>
-                <div className="px-3 py-1 rounded-md bg-[#031b10] border border-[#b88c34]/25 flex flex-col items-center min-w-[88px]">
-                  <span className="text-[9px] text-[#a7f3d0] uppercase">SPOTS ACTIVE</span>
-                  <span className="text-white font-bold">{activeSpotsCount}</span>
+                <div>
+                  <div className="font-mono-tabular text-[10px] text-amber-300 tracking-wider uppercase font-bold">
+                    BALL SETTLED IN CYLINDER
+                  </div>
+                  <div
+                    className={`text-sm sm:text-base font-bold ${
+                      settledBanner.won ? 'text-emerald-400' : 'text-white'
+                    }`}
+                  >
+                    {settledBanner.headline}
+                  </div>
                 </div>
               </div>
-
-              {/* ACTION BUTTON CLUSTER */}
-              <div className="flex items-center gap-2 flex-wrap justify-end">
-                <button
-                  type="button"
-                  disabled={isSpinning || betHistoryStack.length === 0}
-                  onClick={handleUndoBet}
-                  className="roulette-action-btn-3d px-2.5 py-2 disabled:opacity-40 text-[#f1f5f9] rounded font-mono-tabular font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer disabled:cursor-not-allowed"
+              <div className="text-right font-mono-tabular">
+                <div className="text-[10px] text-emerald-200/80 uppercase">ROUND PAYOUT</div>
+                <div
+                  className={`text-lg sm:text-xl font-black ${
+                    settledBanner.won ? 'text-emerald-400' : 'text-slate-400'
+                  }`}
                 >
-                  ↶ UNDO
-                </button>
-                <button
-                  type="button"
-                  disabled={isSpinning || totalStagedWager === 0}
-                  onClick={handleClearBets}
-                  className="roulette-action-btn-3d px-3 py-2 disabled:opacity-40 text-[#f1f5f9] rounded font-mono-tabular font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer disabled:cursor-not-allowed"
-                >
-                  ✕ CLEAR
-                </button>
-                <button
-                  type="button"
-                  disabled={isSpinning || totalStagedWager === 0}
-                  onClick={handleDoubleBets}
-                  className="roulette-action-btn-3d px-3 py-2 disabled:opacity-40 text-[#f1f5f9] rounded font-mono-tabular font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer disabled:cursor-not-allowed"
-                >
-                  +2 DOUBLE
-                </button>
-                <button
-                  type="button"
-                  disabled={isSpinning}
-                  onClick={handleRebet}
-                  className="roulette-action-btn-3d px-3 py-2 disabled:opacity-40 text-[#f1f5f9] rounded font-mono-tabular font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer disabled:cursor-not-allowed"
-                >
-                  ↻ REBET
-                </button>
-
-                {/* GLEAMING 3D GOLD SPIN WHEEL BUTTON */}
-                <button
-                  type="button"
-                  data-casino-spin-roulette-btn="true"
-                  disabled={isSpinning}
-                  onClick={handleSpinWheel}
-                  className="roulette-spin-btn-3d px-5 sm:px-6 py-2.5 disabled:opacity-55 text-[#3b1c04] font-cinzel text-xs sm:text-sm uppercase font-black tracking-[0.12em] rounded-lg flex items-center gap-2 transition-all cursor-pointer disabled:cursor-not-allowed"
-                >
-                  <span>▶</span>
-                  <span>{isSpinning ? 'SPINNING...' : 'SPIN WHEEL'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* INTEGRATED BOTTOM RIM HISTORY BAR */}
-            <div className="pt-2 border-t border-[#b88c34]/20 flex items-center justify-between flex-wrap gap-2 text-[10px] font-mono-tabular text-[#e2e8f0]/75">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[#f7d77e] uppercase tracking-wider font-bold">
-                  RECENT RESULTS:
-                </span>
-                <div className="flex items-center gap-1">
-                  {recentHistory.map((num, idx) => (
-                    <span
-                      key={`${idx}-${num}`}
-                      className={`px-1.5 py-0.5 rounded border text-white font-bold ${getPocketBadgeBgClass(
-                        num,
-                      )} ${idx === 0 ? 'ring-1 ring-[#fde047]' : ''}`}
-                    >
-                      {num}
-                    </span>
-                  ))}
+                  {settledBanner.won
+                    ? `+${settledBanner.payoutAmount.toLocaleString()} ${currencyMode}`
+                    : `0 ${currencyMode}`}
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="text-[#6bfad8] font-semibold">
-                  RIGHT-CLICK A SPOT TO REMOVE CHIPS
-                </span>
-                <span className="text-[#edd587] font-bold">HOUSE EDGE: 5.26%</span>
-              </div>
             </div>
+          )}
+        </div>
+
+        {/* CONTROLS ROW: CHIP TRAY + BET RECAP + ACTIONS */}
+        <div className="rounded-2xl bg-white/[0.05] border border-white/10 p-3 flex flex-wrap lg:flex-nowrap items-center justify-between gap-3">
+          {/* CHIP TRAY */}
+          <div className="flex items-center gap-1.5 sm:gap-2 px-3.5 py-1.5 rounded-full bg-white/[0.04] border border-white/10">
+            <span className="font-mono-tabular text-[10px] text-amber-300 uppercase tracking-wider pr-1 font-bold hidden sm:inline">
+              CHIPS:
+            </span>
+            {AURA_CHIP_RACK.map((chip) => {
+              const isSelected = selectedChip === chip.value;
+              return (
+                <button
+                  key={chip.value}
+                  type="button"
+                  title={`Select ${chip.value.toLocaleString()} ${currencyMode} Chip`}
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    setSelectedChip(chip.value);
+                  }}
+                  className={`relative rounded-full flex items-center justify-center transition-transform cursor-pointer ${
+                    isSelected ? '-translate-y-0.5 scale-110' : 'hover:scale-105 opacity-90 hover:opacity-100'
+                  }`}
+                >
+                  <RackPokerChipSvg chip={chip} selected={isSelected} />
+                </button>
+              );
+            })}
+          </div>
+
+          {/* BET RECAP STATUS */}
+          <div className="flex items-center gap-2 text-xs font-mono-tabular">
+            <div className="px-3.5 py-1.5 rounded-xl bg-white/[0.05] border border-white/10 flex flex-col items-center min-w-[98px]">
+              <span className="text-[9px] text-amber-300 uppercase">TOTAL WAGER</span>
+              <span className="text-white font-bold">
+                {totalStagedWager.toLocaleString()} {currencyMode}
+              </span>
+            </div>
+            <div className="px-3.5 py-1.5 rounded-xl bg-white/[0.05] border border-white/10 flex flex-col items-center min-w-[88px]">
+              <span className="text-[9px] text-emerald-300 uppercase">SPOTS ACTIVE</span>
+              <span className="text-white font-bold">{activeSpotsCount}</span>
+            </div>
+          </div>
+
+          {/* ACTION BUTTON CLUSTER */}
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <button
+              type="button"
+              disabled={isSpinning || betHistoryStack.length === 0}
+              onClick={handleUndoBet}
+              className="px-3 py-2 rounded-full bg-white/[0.07] hover:bg-white/[0.14] border border-white/15 disabled:opacity-35 text-slate-200 font-mono-tabular font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer disabled:cursor-not-allowed"
+            >
+              ↶ UNDO
+            </button>
+            <button
+              type="button"
+              disabled={isSpinning || totalStagedWager === 0}
+              onClick={handleClearBets}
+              className="px-3 py-2 rounded-full bg-white/[0.07] hover:bg-white/[0.14] border border-white/15 disabled:opacity-35 text-slate-200 font-mono-tabular font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer disabled:cursor-not-allowed"
+            >
+              ✕ CLEAR
+            </button>
+            <button
+              type="button"
+              disabled={isSpinning || totalStagedWager === 0}
+              onClick={handleDoubleBets}
+              className="px-3 py-2 rounded-full bg-white/[0.07] hover:bg-white/[0.14] border border-white/15 disabled:opacity-35 text-slate-200 font-mono-tabular font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer disabled:cursor-not-allowed"
+            >
+              +2 DOUBLE
+            </button>
+            <button
+              type="button"
+              disabled={isSpinning}
+              onClick={handleRebet}
+              className="px-3 py-2 rounded-full bg-white/[0.07] hover:bg-white/[0.14] border border-white/15 disabled:opacity-35 text-slate-200 font-mono-tabular font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer disabled:cursor-not-allowed"
+            >
+              ↻ REBET
+            </button>
+
+            {/* SPIN WHEEL PILL BUTTON */}
+            <button
+              type="button"
+              data-casino-spin-roulette-btn="true"
+              disabled={isSpinning}
+              onClick={handleSpinWheel}
+              className="px-6 py-2.5 rounded-full bg-amber-300 hover:bg-amber-200 disabled:opacity-50 text-slate-950 font-cinzel text-xs sm:text-sm uppercase font-black tracking-[0.1em] shadow-md flex items-center gap-2 active:scale-95 transition-all cursor-pointer disabled:cursor-not-allowed"
+            >
+              <span>▶</span>
+              <span>{isSpinning ? 'SPINNING...' : 'SPIN WHEEL'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* BOTTOM HISTORY BAR */}
+        <div className="px-1 flex items-center justify-between flex-wrap gap-2 text-[10px] font-mono-tabular text-slate-400">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-amber-300 uppercase tracking-wider font-bold">
+              RECENT RESULTS:
+            </span>
+            <div className="flex items-center gap-1">
+              {recentHistory.map((num, idx) => (
+                <span
+                  key={`${idx}-${num}`}
+                  className={`px-2 py-0.5 rounded-full border text-white font-bold ${getPocketBadgeBgClass(
+                    num,
+                  )} ${idx === 0 ? 'ring-1 ring-amber-300' : ''}`}
+                >
+                  {num}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-emerald-300 font-semibold">
+              RIGHT-CLICK A SPOT TO REMOVE CHIPS
+            </span>
+            <span className="text-amber-300 font-bold">HOUSE EDGE: 5.26%</span>
           </div>
         </div>
       </div>
@@ -1762,21 +1739,21 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
       {/* PAYTABLE & ODDS MODAL */}
       {showPaytableModal && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={() => setShowPaytableModal(false)}
         >
           <div
-            className="bg-[#161b24] border border-[#b88c34]/50 max-w-xl w-full p-5 rounded-2xl shadow-2xl flex flex-col gap-4 text-white"
+            className="rounded-[26px] bg-[#0e121b]/95 backdrop-blur-2xl border border-white/15 shadow-[0_24px_70px_rgba(0,0,0,0.62)] max-w-xl w-full p-5 flex flex-col gap-4 text-white"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between pb-3 border-b border-slate-700/80">
-              <span className="font-cinzel text-[#fde68a] text-base font-bold tracking-wider uppercase">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <span className="font-cinzel text-amber-300 text-base font-bold tracking-wider uppercase">
                 AMERICAN ROULETTE ODDS &amp; PAYOUTS
               </span>
               <button
                 type="button"
                 onClick={() => setShowPaytableModal(false)}
-                className="w-7 h-7 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold cursor-pointer"
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 font-bold cursor-pointer flex items-center justify-center transition-colors"
               >
                 ✕
               </button>
@@ -1793,12 +1770,12 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
               ].map((item) => (
                 <div
                   key={item.title}
-                  className="bg-[#10141c] p-2.5 rounded-lg border border-slate-700/80"
+                  className="bg-white/[0.05] p-3 rounded-2xl border border-white/10"
                 >
-                  <div className="text-[#7df4ff] font-bold text-[11px]">{item.title}</div>
+                  <div className="text-amber-300 font-bold text-[11px]">{item.title}</div>
                   <div className="flex items-center justify-between mt-1 text-slate-300 text-[11px]">
                     <span>{item.desc}</span>
-                    <span className="text-[#6bfad8] font-bold">{item.odds}</span>
+                    <span className="text-emerald-400 font-bold">{item.odds}</span>
                   </div>
                 </div>
               ))}
@@ -1808,7 +1785,7 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
               <button
                 type="button"
                 onClick={() => setShowPaytableModal(false)}
-                className="px-4 py-1.5 bg-[#00f0ff] text-[#00363a] rounded-lg font-mono-tabular font-bold text-xs uppercase tracking-wider cursor-pointer"
+                className="px-5 py-2 rounded-full bg-amber-300 hover:bg-amber-200 text-slate-950 font-mono-tabular font-bold text-xs uppercase tracking-wider cursor-pointer transition-colors"
               >
                 RETURN TO TABLE
               </button>

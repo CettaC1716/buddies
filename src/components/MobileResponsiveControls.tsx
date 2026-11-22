@@ -384,9 +384,11 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
           {(showMobileJoystick || showQuickPoseButton) && (
             <div
               className={`pointer-events-auto fixed ${
-                isCompactLandscape
-                  ? 'bottom-[64px] left-3.5'
-                  : 'bottom-[74px] left-4 sm:bottom-20 sm:left-6'
+                !showMobileJoystick
+                  ? 'lg:hidden bottom-[112px] left-4'
+                  : isCompactLandscape
+                    ? 'bottom-[104px] left-3.5'
+                    : 'bottom-[112px] left-4 sm:bottom-[116px] sm:left-5'
               } flex flex-col items-start gap-2.5 touch-none`}
             >
               {/* Floating Quick Pose / Action / Dance Popup (opens above/beside Pose Icon button) */}
@@ -652,11 +654,9 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                     soundEngine.playUiClick();
                     onTriggerBuddyAction(primaryContextualAction.actionEvent);
                   }}
-                  className="-skew-x-6 px-3 py-1.5 bg-[#facc15]/90 hover:bg-[#fde047] active:scale-95 text-black border-2 border-[#0d0f12] shadow-[3px_3px_0_#0d0f12] font-black text-[11px] uppercase tracking-wider cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-full bg-[#0d1118]/78 hover:bg-[#171e2b]/90 backdrop-blur-xl active:scale-95 text-white border border-white/25 shadow-[0_8px_24px_rgba(0,0,0,0.45)] font-semibold text-[11px] tracking-wide cursor-pointer"
                 >
-                  <span className="skew-x-6 inline-block">
-                    {primaryContextualAction.label}
-                  </span>
+                  <span>{primaryContextualAction.label}</span>
                 </button>
               )}
 

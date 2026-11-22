@@ -98,80 +98,86 @@ export const InGameWalletConfirmModal: React.FC<InGameWalletConfirmModalProps> =
       aria-modal="true"
       aria-label="Confirm transaction in your in-game wallet"
       data-ingame-wallet-confirm="true"
-      className="fixed inset-0 z-[400] flex items-center justify-center bg-black/70 p-4 select-none"
+      className="fixed inset-0 z-[400] flex items-center justify-center bg-slate-950/50 backdrop-blur-sm p-4 select-none"
     >
-      <div className="relative w-full max-w-sm bg-white border-[4px] border-[#0d0f12] shadow-[8px_8px_0px_#0d0f12] p-5 text-[#0d0f12]">
-        <div className="border-b-[3px] border-[#0d0f12] pb-3">
-          <div className="inline-block px-2 py-0.5 bg-[#b8ff3c] border-2 border-[#0d0f12] text-[10px] font-black uppercase tracking-wider">
-            IN-GAME WALLET
+      <div className="relative w-full max-w-sm rounded-[28px] bg-[#f4f6f9]/96 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] text-slate-900 overflow-hidden">
+        <div className="px-5 py-4 bg-white/95 border-b border-slate-200/80">
+          <div className="inline-block px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-semibold tracking-wide">
+            In-Game Wallet
           </div>
-          <h2 className="mt-1.5 text-xl font-black uppercase tracking-tight leading-none">
+          <h2 className="mt-1.5 text-lg font-semibold tracking-tight text-slate-900 leading-tight">
             Confirm Transaction
           </h2>
-          <div className="mt-1.5 text-[11px] font-mono font-bold text-slate-600 truncate">
+          <div className="mt-1 text-xs font-mono text-slate-500 truncate">
             {request.signerAccountId}
           </div>
         </div>
 
-        <div className="mt-3 space-y-2 text-xs">
-          <div className="flex items-start justify-between gap-3">
-            <span className="font-black uppercase tracking-wider text-slate-500">Action</span>
-            <span className="font-black text-right">
-              {METHOD_LABELS[request.methodName] ?? humanizeMethod(request.methodName)}
-            </span>
-          </div>
-          <div className="flex items-start justify-between gap-3">
-            <span className="font-black uppercase tracking-wider text-slate-500">App</span>
-            <span className="font-mono font-bold text-right truncate max-w-[210px]">
-              {request.receiverId}
-            </span>
-          </div>
-          {details.map(([key, value]) => (
-            <div key={key} className="flex items-start justify-between gap-3">
-              <span className="font-black uppercase tracking-wider text-slate-500">{key}</span>
-              <span className="font-mono font-bold text-right truncate max-w-[210px]">{value}</span>
+        <div className="p-5 space-y-4">
+          <div className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-3.5 space-y-2.5 text-xs">
+            <div className="flex items-start justify-between gap-3">
+              <span className="font-medium text-slate-500">Action</span>
+              <span className="font-semibold text-slate-900 text-right">
+                {METHOD_LABELS[request.methodName] ?? humanizeMethod(request.methodName)}
+              </span>
             </div>
-          ))}
-          {hasDeposit && (
-            <div className="flex items-start justify-between gap-3 p-2 bg-[#f0fdf4] border-2 border-[#0d0f12]">
-              <span className="font-black uppercase tracking-wider">You pay</span>
-              <span className="font-black text-sm">{depositNear} NEAR</span>
+            <div className="flex items-start justify-between gap-3">
+              <span className="font-medium text-slate-500">App</span>
+              <span className="font-mono text-slate-700 text-right truncate max-w-[210px]">
+                {request.receiverId}
+              </span>
             </div>
-          )}
-          <div className="flex items-start justify-between gap-3">
-            <span className="font-black uppercase tracking-wider text-slate-500">Network fee</span>
-            <span className="font-bold text-right">Tiny fee (&lt; 0.01 NEAR, from balance)</span>
+            {details.map(([key, value]) => (
+              <div key={key} className="flex items-start justify-between gap-3">
+                <span className="font-medium text-slate-500">{key}</span>
+                <span className="font-mono text-slate-700 text-right truncate max-w-[210px]">{value}</span>
+              </div>
+            ))}
+            {hasDeposit && (
+              <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200/70">
+                <span className="font-semibold text-emerald-900">You pay</span>
+                <span className="font-mono tabular-nums font-bold text-sm text-emerald-800">
+                  {depositNear} NEAR
+                </span>
+              </div>
+            )}
+            <div className="flex items-start justify-between gap-3 pt-1 border-t border-slate-100">
+              <span className="font-medium text-slate-500">Network fee</span>
+              <span className="font-medium text-slate-700 text-right">
+                Tiny fee (&lt; 0.01 NEAR, from balance)
+              </span>
+            </div>
           </div>
-        </div>
 
-        <div className="mt-4 flex gap-2">
-          <button
-            type="button"
-            data-ingame-wallet-reject="true"
-            onClick={() => {
-              soundEngine.playUiClick();
-              onReject();
-            }}
-            className="flex-1 py-2.5 px-3 bg-white hover:bg-slate-100 text-[#0d0f12] border-2 border-[#0d0f12] shadow-[0_3px_0_#0d0f12] font-black text-xs uppercase tracking-wider cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            data-ingame-wallet-approve="true"
-            onClick={() => {
-              soundEngine.playUiClick();
-              onApprove();
-            }}
-            className="flex-1 py-2.5 px-3 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-2 border-[#0d0f12] shadow-[0_3px_0_#0d0f12] font-black text-xs uppercase tracking-wider cursor-pointer"
-          >
-            Approve
-          </button>
-        </div>
+          <div className="flex gap-2.5">
+            <button
+              type="button"
+              data-ingame-wallet-reject="true"
+              onClick={() => {
+                soundEngine.playUiClick();
+                onReject();
+              }}
+              className="flex-1 py-2.5 px-4 rounded-full bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/90 shadow-xs font-semibold text-xs transition-colors cursor-pointer active:scale-[0.98]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              data-ingame-wallet-approve="true"
+              onClick={() => {
+                soundEngine.playUiClick();
+                onApprove();
+              }}
+              className="flex-1 py-2.5 px-4 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm font-semibold text-xs transition-colors cursor-pointer active:scale-[0.98]"
+            >
+              Approve
+            </button>
+          </div>
 
-        <p className="mt-3 text-[10px] font-bold text-slate-500 text-center leading-snug">
-          Confirmed safely by your in-game wallet. Nothing is sent until you approve.
-        </p>
+          <p className="text-[11px] text-slate-500 text-center leading-relaxed">
+            Confirmed safely by your in-game wallet. Nothing is sent until you approve.
+          </p>
+        </div>
       </div>
     </div>
   );

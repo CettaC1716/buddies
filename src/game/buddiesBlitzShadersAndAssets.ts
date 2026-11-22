@@ -1859,7 +1859,8 @@ export function upgradeMeshToBlitzWorldMaterial(
           float smoothLit = smoothstep(0.04, 0.88, wrapNdl);
           float castShadow = getShadowMask();
           float directSun = smoothLit * mix(0.08, 1.0, castShadow);
-          float shadowBlend = (1.0 - directSun) * 0.76;
+          float nightMix = clamp(uNightFactor01, 0.0, 1.0);
+          float shadowBlend = (1.0 - directSun) * mix(0.76, 0.56, nightMix);
 
           float isShowcaseLit = step(1.5, uBounceStrength);
           float effBounce = mix(uBounceStrength, 0.10, isShowcaseLit);
@@ -1872,9 +1873,12 @@ export function upgradeMeshToBlitzWorldMaterial(
           vec3 colorWithBounce = mix(albedo, uBounceColor, bounceAmt);
 
           float hemiFill = clamp(N.y * 0.5 + 0.5, 0.0, 1.0);
-          vec3 warmShadowTint = mix(vec3(0.60, 0.53, 0.48), vec3(0.69, 0.69, 0.72), hemiFill * 0.55);
+          vec3 warmShadowMul = mix(vec3(0.56, 0.50, 0.46), vec3(0.66, 0.66, 0.70), hemiFill * 0.55);
+          vec3 nightShadowMul = mix(vec3(0.42, 0.45, 0.56), vec3(0.50, 0.54, 0.66), hemiFill * 0.55);
+          vec3 shadowMul = mix(warmShadowMul, nightShadowMul, nightMix);
           vec3 litColor = colorWithBounce * uLightColor * (0.94 + 0.14 * directSun);
-          vec3 shadedColor = colorWithBounce * mix(warmShadowTint, uShadowColor * 1.18, 0.32);
+          // Scale shadedColor by uLightColor so cast/form shadows stay strictly darker than litColor at dawn/day/dusk/night
+          vec3 shadedColor = colorWithBounce * uLightColor * shadowMul;
           vec3 finalRgb = mix(litColor, shadedColor, shadowBlend) + uEmissive;
 
           float showcaseNight = smoothstep(0.05, 0.52, clamp(uNightFactor01, 0.0, 1.0));
@@ -2336,7 +2340,8 @@ function getOrCreateBakedVertexColorWorldMaterial(
         float wrapNdl = clamp((ndl + 0.24) / 1.24, 0.0, 1.0);
         float smoothLit = smoothstep(0.04, 0.88, wrapNdl);
         float directSun = smoothLit * mix(0.08, 1.0, castShadow);
-        float shadowBlend = (1.0 - directSun) * 0.76;
+        float nightMix = clamp(uNightFactor01, 0.0, 1.0);
+        float shadowBlend = (1.0 - directSun) * mix(0.76, 0.56, nightMix);
 
         float downFacing = smoothstep(-0.2, 0.85, -N.y);
         float heightAtten = clamp(1.0 - max(vWorldPos.y, 0.0) / 1.8, 0.0, 1.0);
@@ -2344,9 +2349,12 @@ function getOrCreateBakedVertexColorWorldMaterial(
         vec3 colorWithBounce = mix(albedo, uBounceColor, bounceAmt);
 
         float hemiFill = clamp(N.y * 0.5 + 0.5, 0.0, 1.0);
-        vec3 warmShadowTint = mix(vec3(0.60, 0.53, 0.48), vec3(0.69, 0.69, 0.72), hemiFill * 0.55);
+        vec3 warmShadowMul = mix(vec3(0.56, 0.50, 0.46), vec3(0.66, 0.66, 0.70), hemiFill * 0.55);
+        vec3 nightShadowMul = mix(vec3(0.42, 0.45, 0.56), vec3(0.50, 0.54, 0.66), hemiFill * 0.55);
+        vec3 shadowMul = mix(warmShadowMul, nightShadowMul, nightMix);
         vec3 litColor = colorWithBounce * uLightColor * (0.94 + 0.14 * directSun);
-        vec3 shadedColor = colorWithBounce * mix(warmShadowTint, uShadowColor * 1.18, 0.32);
+        // Scale shadedColor by uLightColor so cast/form shadows stay strictly darker than litColor at dawn/day/dusk/night
+        vec3 shadedColor = colorWithBounce * uLightColor * shadowMul;
         vec3 finalRgb = mix(litColor, shadedColor, shadowBlend);
 
         float showcaseNight = smoothstep(0.05, 0.52, clamp(uNightFactor01, 0.0, 1.0));
@@ -23608,9 +23616,10 @@ export function createCurvedPlanetEnvironment(
           float organicShadow = mix(shadowStrength, smoothstep(0.02, 0.98, shadowStrength), 0.32);
 
           float grassOrPark = smoothstep(0.15, 0.75, max(grassMask, inCentralParkMask));
-          vec3 naturalTint = mix(uDirtShadowTint, uGrassShadowTint, grassOrPark);
+          // Scale ground shadow tints by uGroundLightTint so dirt/grass cast shadows never glow brighter than lit ground at dusk/night
+          vec3 naturalTint = mix(uDirtShadowTint, uGrassShadowTint, grassOrPark) * uGroundLightTint;
           vec3 naturalMul = surfaceCol * mix(vec3(0.56, 0.50, 0.44), vec3(0.48, 0.58, 0.46), grassOrPark);
-          vec3 naturalShadowTarget = mix(naturalTint, naturalMul, 0.55);
+          vec3 naturalShadowTarget = min(mix(naturalTint, naturalMul, 0.55), surfaceCol * 0.78);
 
           vec3 beachSandShadowTarget = surfaceCol * vec3(0.54, 0.51, 0.44);
           naturalShadowTarget = mix(naturalShadowTarget, beachSandShadowTarget, coastalBeachZone * 0.92);

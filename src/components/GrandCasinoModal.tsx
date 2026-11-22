@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { soundEngine } from '../game/audio';
 import {
-  ArcadePushButton,
   CasinoCloseBadgeSvg,
   CasinoCoinCrestSvg,
   CasinoCrownCrestSvg,
@@ -156,31 +155,31 @@ export const GrandCasinoModal: React.FC<GrandCasinoModalProps> = ({
       case 'slots':
         return {
           badgeText: 'SLOT ARCADE',
-          badgeBgClass: 'bg-[#38bdf8]',
+          badgeBgClass: 'bg-sky-400/15 text-sky-300 border-sky-400/30',
           title: activeSlotMeta.title,
         };
       case 'roulette':
         return {
           badgeText: 'ROULETTE',
-          badgeBgClass: 'bg-[#fec83e]',
+          badgeBgClass: 'bg-amber-300/15 text-amber-300 border-amber-300/30',
           title: 'EUROPEAN ROULETTE',
         };
       case 'blackjack':
         return {
           badgeText: 'BLACKJACK 21',
-          badgeBgClass: 'bg-[#38bdf8]',
+          badgeBgClass: 'bg-emerald-400/15 text-emerald-300 border-emerald-400/30',
           title: 'SALON PRIVÉ BLACKJACK',
         };
       case 'cashier':
         return {
           badgeText: 'CASHIER CAGE',
-          badgeBgClass: 'bg-[#b8ff3c]',
+          badgeBgClass: 'bg-emerald-400/15 text-emerald-300 border-emerald-400/30',
           title: 'CHIP VAULT & EXCHANGE',
         };
       case 'bar':
         return {
           badgeText: 'LOUNGE BAR',
-          badgeBgClass: 'bg-[#f472b6]',
+          badgeBgClass: 'bg-amber-300/15 text-amber-300 border-amber-300/30',
           title: 'SIGNATURE COCKTAIL BAR',
         };
     }
@@ -362,7 +361,7 @@ export const GrandCasinoModal: React.FC<GrandCasinoModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label={headerConfig.title}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 select-none pointer-events-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/60 backdrop-blur-sm select-none pointer-events-auto"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           soundEngine.playUiCancel();
@@ -370,30 +369,29 @@ export const GrandCasinoModal: React.FC<GrandCasinoModalProps> = ({
         }
       }}
     >
-      <div aria-hidden="true" className="casino-glassmorph-scrim fixed inset-0 pointer-events-none" />
       <div
-        className="relative z-10 w-full max-w-[660px] max-h-[92vh] flex flex-col bg-[#14161d] text-white border-[4px] border-[#14161d] ring-3 ring-white shadow-[8px_8px_0_#000] rounded-2xl overflow-hidden"
+        className="relative z-10 w-full max-w-[680px] max-h-[92vh] flex flex-col rounded-[26px] bg-[#0e121b]/88 backdrop-blur-2xl border border-white/15 shadow-[0_24px_70px_rgba(0,0,0,0.62)] text-white overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Global Anime-Arcade Header (Aligned with DailyMissionsModal) */}
-        <div className="flex items-center justify-between gap-2 px-4 py-3 bg-[#1e212b] border-b-[3px] border-black">
+        {/* Dark Luxury Frosted Glass Header */}
+        <div className="flex items-center justify-between gap-2 px-5 py-4 bg-white/[0.03] border-b border-white/10">
           <div className="flex items-center gap-2.5 min-w-0">
             <span
-              className={`px-2 py-0.5 text-[#14161d] border-2 border-black text-[10px] font-black uppercase shrink-0 ${headerConfig.badgeBgClass}`}
+              className={`px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-wider shrink-0 ${headerConfig.badgeBgClass}`}
             >
               {headerConfig.badgeText}
             </span>
-            <h2 className="text-base sm:text-lg font-black uppercase tracking-wider text-white truncate">
+            <h2 className="text-base sm:text-lg font-extrabold uppercase tracking-tight text-white truncate">
               {headerConfig.title}
             </h2>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#fec83e] text-[#14161d] border-2 border-black rounded-lg shadow-[2px_2px_0_#000] font-mono-tabular font-black text-xs">
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-300/15 text-amber-300 border border-amber-300/30 font-mono-tabular font-bold text-xs">
               <CasinoCoinCrestSvg className="w-4 h-4 shrink-0" />
               <span>{lulBalance.toLocaleString()} LUL</span>
             </div>
-            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-[#b8ff3c] text-[#14161d] border-2 border-black rounded-lg shadow-[2px_2px_0_#000] font-black text-xs">
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-400/15 text-emerald-300 border border-emerald-400/30 font-bold text-xs">
               <CasinoTrophyCrestSvg className="w-4 h-4 shrink-0" />
               <span>LV.{levelProgress.level}</span>
             </div>
@@ -405,38 +403,38 @@ export const GrandCasinoModal: React.FC<GrandCasinoModalProps> = ({
                 onClose();
               }}
               aria-label="Exit Grand Casino Modal"
-              className="w-9 h-9 bg-gradient-to-b from-[#ff6b6b] to-[#dc2626] hover:brightness-110 text-white border-[2.5px] border-black rounded-lg shadow-[0_3px_0_#000] active:translate-y-[2px] active:shadow-[0_1px_0_#000] font-black flex items-center justify-center cursor-pointer"
+              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white active:scale-95 transition-all flex items-center justify-center cursor-pointer"
             >
-              <CasinoCloseBadgeSvg className="w-4 h-4" />
+              <CasinoCloseBadgeSvg className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
 
         {/* Single-Station Body Content (Zero Cross-Game Tabs) */}
-        <div className="p-4 overflow-y-auto bg-white text-[#14161d]">
+        <div className="p-5 overflow-y-auto">
           {activeStation === 'cashier' && (
-            <div className="space-y-3.5">
-              <div className="p-4 bg-[#f7efe0] border-[3px] border-black rounded-xl shadow-[4px_4px_0_#000] space-y-3">
+            <div className="space-y-4">
+              <div className="p-4 rounded-2xl bg-white/[0.05] border border-white/10 space-y-3.5">
                 <div className="flex items-center gap-2">
                   <CasinoCrownCrestSvg className="w-5 h-5 shrink-0" />
-                  <span className="text-[11px] font-black uppercase tracking-widest text-[#14161d]">
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-amber-300">
                     CASHIER CAGE &amp; RESPITE SLOT VAULT
                   </span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  <div className="p-2.5 bg-white border-2 border-black rounded-lg">
-                    <div className="text-[10px] font-black uppercase text-slate-500">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-3.5 rounded-2xl bg-white/[0.05] border border-white/10">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                       TABLE CHIPS (LUL)
                     </div>
-                    <div className="text-xl font-black font-mono-tabular text-[#14161d]">
+                    <div className="text-xl font-extrabold font-mono-tabular text-amber-300 mt-0.5">
                       {lulBalance.toLocaleString()} LUL
                     </div>
                   </div>
-                  <div className="p-2.5 bg-[#0f172a] border-2 border-black rounded-lg text-white">
-                    <div className="text-[10px] font-black uppercase text-cyan-300">
+                  <div className="p-3.5 rounded-2xl bg-white/[0.05] border border-emerald-400/25">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-300/90">
                       3D ROYALE SLOT CREDITS (RESPITE)
                     </div>
-                    <div className="text-xl font-black font-mono-tabular text-emerald-400">
+                    <div className="text-xl font-extrabold font-mono-tabular text-emerald-400 mt-0.5">
                       {respiteBalance.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
@@ -445,86 +443,90 @@ export const GrandCasinoModal: React.FC<GrandCasinoModalProps> = ({
                     </div>
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                  <ArcadePushButton
+                <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+                  <button
+                    type="button"
+                    data-casino-cashier-voucher-btn="true"
                     onClick={handleCashierVipComplimentaryVoucher}
-                    variant="lime"
-                    dataAttrs={{ 'data-casino-cashier-voucher-btn': 'true' }}
+                    className="flex-1 min-w-[200px] px-4 py-2.5 rounded-full bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs uppercase tracking-wider cursor-pointer active:scale-[0.98] transition-all shadow-sm"
                   >
-                    <span>CLAIM DAILY VIP (+LUL &amp; +15 RESPITE)</span>
-                  </ArcadePushButton>
-                  <ArcadePushButton
+                    CLAIM DAILY VIP (+LUL &amp; +15 RESPITE)
+                  </button>
+                  <button
+                    type="button"
+                    data-casino-cashier-respite-exchange-btn="true"
                     onClick={handleCashierExchangeLulToRespite}
-                    variant="sky"
-                    dataAttrs={{ 'data-casino-cashier-respite-exchange-btn': 'true' }}
+                    className="px-5 py-2.5 rounded-full bg-amber-300/20 hover:bg-amber-300/30 text-amber-200 border border-amber-300/40 font-bold text-xs uppercase tracking-wider cursor-pointer active:scale-[0.98] transition-all"
                   >
-                    <span>50 LUL → +5 RESPITE</span>
-                  </ArcadePushButton>
+                    50 LUL → +5 RESPITE
+                  </button>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 {[
-                  { chip: '1–5 RESPITE', bgClass: 'bg-[#38bdf8]', tier: 'SAPPHIRE SLOT' },
-                  { chip: '10–25 RESPITE', bgClass: 'bg-[#34d399]', tier: 'EMERALD SLOT' },
-                  { chip: '50–100 RESPITE', bgClass: 'bg-[#fb7185]', tier: 'RUBY VIP' },
-                  { chip: '250 RESPITE', bgClass: 'bg-[#fec83e]', tier: 'GRAND ROYALE' },
+                  { chip: '1–5 RESPITE', accentClass: 'text-sky-300 border-sky-400/25', tier: 'SAPPHIRE SLOT' },
+                  { chip: '10–25 RESPITE', accentClass: 'text-emerald-300 border-emerald-400/25', tier: 'EMERALD SLOT' },
+                  { chip: '50–100 RESPITE', accentClass: 'text-rose-300 border-rose-400/25', tier: 'RUBY VIP' },
+                  { chip: '250 RESPITE', accentClass: 'text-amber-300 border-amber-300/30', tier: 'GRAND ROYALE' },
                 ].map((c) => (
                   <div
                     key={c.tier}
-                    className={`p-2.5 border-[3px] border-black rounded-xl shadow-[3px_3px_0_#000] text-center text-[#14161d] ${c.bgClass}`}
+                    className={`p-3 rounded-2xl bg-white/[0.05] border text-center ${c.accentClass}`}
                   >
-                    <div className="text-[9.5px] font-black tracking-wider uppercase">{c.tier}</div>
-                    <div className="text-sm font-black font-mono-tabular mt-0.5">{c.chip}</div>
+                    <div className="text-[9.5px] font-bold tracking-wider uppercase opacity-85">{c.tier}</div>
+                    <div className="text-sm font-extrabold font-mono-tabular text-white mt-0.5">{c.chip}</div>
                   </div>
                 ))}
               </div>
 
-              <div className="px-3 py-2 bg-[#1e212b] text-[#fec83e] border-[3px] border-black rounded-lg text-center text-xs font-black uppercase">
+              <div className="px-4 py-2.5 rounded-2xl bg-white/[0.05] border border-amber-300/25 text-amber-300 text-center text-xs font-bold uppercase tracking-wide">
                 {cashierStatusMsg}
               </div>
             </div>
           )}
 
           {activeStation === 'bar' && (
-            <div className="space-y-3.5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {LOUNGE_BAR_MENU.map((drink) => (
                   <div
                     key={drink.id}
-                    className="flex flex-col justify-between gap-2.5 p-3 bg-[#f7efe0] border-[3px] border-black rounded-xl shadow-[3px_3px_0_#000]"
+                    className="flex flex-col justify-between gap-3 p-3.5 rounded-2xl bg-white/[0.05] border border-white/10 hover:border-amber-300/30 transition-colors"
                   >
-                    <div className="flex items-start gap-2.5">
-                      <LoungeCocktailSvg
-                        glassFill={drink.glassFill}
-                        garnishFill={drink.garnishFill}
-                      />
+                    <div className="flex items-start gap-3">
+                      <div className="w-12 h-12 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center shrink-0">
+                        <LoungeCocktailSvg
+                          glassFill={drink.glassFill}
+                          garnishFill={drink.garnishFill}
+                        />
+                      </div>
                       <div className="min-w-0">
-                        <div className="text-xs font-black uppercase text-[#14161d] leading-snug">
+                        <div className="text-xs font-bold uppercase text-white leading-snug">
                           {drink.name}
                         </div>
-                        <div className="text-[11px] font-bold text-slate-600 mt-0.5 leading-snug">
+                        <div className="text-[11px] font-medium text-slate-300 mt-0.5 leading-snug">
                           {drink.subtitle}
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center justify-between pt-2 border-t-2 border-black/15">
-                      <span className="text-[10.5px] font-black font-mono-tabular text-[#047857]">
+                    <div className="flex items-center justify-between pt-2.5 border-t border-white/10">
+                      <span className="text-[11px] font-bold font-mono-tabular text-emerald-400">
                         +{drink.xpReward} XP
                       </span>
-                      <ArcadePushButton
+                      <button
+                        type="button"
                         onClick={() => handleOrderDrink(drink)}
-                        variant="gold"
-                        className="px-3 py-1.5 text-[11px]"
+                        className="px-4 py-1.5 rounded-full bg-amber-300 hover:bg-amber-200 text-slate-950 font-bold text-[11px] uppercase tracking-wide cursor-pointer active:scale-95 transition-all"
                       >
-                        <span>ORDER ({drink.costLul} LUL)</span>
-                      </ArcadePushButton>
+                        ORDER ({drink.costLul} LUL)
+                      </button>
                     </div>
                   </div>
                 ))}
               </div>
 
-              <div className="px-3 py-2 bg-[#1e212b] text-[#fec83e] border-[3px] border-black rounded-lg text-center text-xs font-black uppercase">
+              <div className="px-4 py-2.5 rounded-2xl bg-white/[0.05] border border-amber-300/25 text-amber-300 text-center text-xs font-bold uppercase tracking-wide">
                 {barStatusMsg}
               </div>
             </div>

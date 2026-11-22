@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { RotateCcw, X } from 'lucide-react';
 import { FISH_SPECIES_CATALOG, computeLengthCmFromWeightKg } from '../game/buddiesFishingMarket';
 import { soundEngine } from '../game/audio';
 import {
@@ -98,10 +99,10 @@ export const Fish3dThumbnail: React.FC<Fish3dThumbnailProps> = ({
 
   const containerStyle =
     variant === 'card'
-      ? 'w-full h-28 bg-gradient-to-br from-[#0f172a] via-[#132338] to-[#09101d] border-2 border-black'
+      ? 'w-full h-28 rounded-xl bg-gradient-to-br from-[#eef4fb] via-[#e4eef8] to-[#dbe7f4] border border-slate-200/80 shadow-xs'
       : variant === 'dark'
-        ? 'w-[88px] h-[54px] bg-gradient-to-br from-[#09111e] to-[#172554] border-2 border-black shrink-0'
-        : 'w-[84px] h-[52px] bg-gradient-to-br from-[#0f172a] to-[#1e293b] border-2 border-black shrink-0';
+        ? 'w-[88px] h-[54px] rounded-xl bg-gradient-to-br from-slate-900/90 to-slate-800/90 border border-white/15 shrink-0'
+        : 'w-[84px] h-[52px] rounded-xl bg-gradient-to-br from-[#eef4fb] to-[#e2ecf6] border border-slate-200/80 shrink-0';
 
   return (
     <button
@@ -113,11 +114,11 @@ export const Fish3dThumbnail: React.FC<Fish3dThumbnailProps> = ({
         soundEngine.playUiClick();
         onInspect();
       }}
-      className={`group relative overflow-hidden flex items-center justify-center cursor-pointer hover:brightness-110 active:scale-[0.98] transition-all select-none ${containerStyle}`}
+      className={`group relative overflow-hidden flex items-center justify-center cursor-pointer hover:brightness-105 active:scale-[0.98] transition-all select-none ${containerStyle}`}
     >
       <div
         style={{
-          background: `radial-gradient(circle at 50% 55%, ${resolvedHex}33 0%, transparent 72%)`,
+          background: `radial-gradient(circle at 50% 55%, ${resolvedHex}28 0%, transparent 72%)`,
         }}
         className="absolute inset-0 pointer-events-none"
       />
@@ -128,7 +129,11 @@ export const Fish3dThumbnail: React.FC<Fish3dThumbnailProps> = ({
           className="relative z-10 w-full h-full object-contain group-hover:scale-105 transition-transform duration-200 pointer-events-none"
         />
       ) : (
-        <span className="relative z-10 text-[10px] font-black uppercase text-white/80 px-1 text-center truncate">
+        <span
+          className={`relative z-10 text-[10px] font-semibold uppercase px-1 text-center truncate ${
+            variant === 'dark' ? 'text-white/80' : 'text-slate-600'
+          }`}
+        >
           {speciesName}
         </span>
       )}
@@ -241,12 +246,12 @@ export const Fish3dPreviewModal: React.FC<Fish3dPreviewModalProps> = ({ fish, on
 
   const rarityBadgeClass =
     fish.rarity === 'Mythic'
-      ? 'bg-[#c084fc] text-black'
+      ? 'bg-purple-100 text-purple-800 border-purple-200/80'
       : fish.rarity === 'Rare'
-        ? 'bg-[#facc15] text-black'
+        ? 'bg-amber-100 text-amber-800 border-amber-200/80'
         : fish.rarity === 'Uncommon'
-          ? 'bg-[#2dd4bf] text-black'
-          : 'bg-slate-200 text-black';
+          ? 'bg-teal-100 text-teal-800 border-teal-200/80'
+          : 'bg-slate-100 text-slate-700 border-slate-200/80';
 
   const modalContent = (
     <div
@@ -255,171 +260,182 @@ export const Fish3dPreviewModal: React.FC<Fish3dPreviewModalProps> = ({ fish, on
       aria-label={`${fish.speciesName} Preview`}
       data-fish-3d-preview-modal="true"
       onClick={onClose}
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/85 pointer-events-auto select-none"
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-950/55 backdrop-blur-sm pointer-events-auto select-none"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl bg-[#0f172a] text-white border-4 border-black shadow-[10px_10px_0_#000] p-4 sm:p-5 space-y-3"
+        className="w-full max-w-xl rounded-[24px] bg-[#edf0f5]/95 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.3)] text-slate-900 overflow-hidden"
       >
         {/* Top Header */}
-        <div className="flex items-center justify-between gap-2 border-b-2 border-white/15 pb-2.5">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span
-              className={`px-2 py-0.5 border border-black text-[10px] font-black uppercase ${rarityBadgeClass}`}
-            >
-              {fish.rarity}
-            </span>
-            {fish.isTrophy && (
-              <span className="px-2 py-0.5 bg-[#facc15] text-black border border-black text-[10px] font-black uppercase">
-                TROPHY
+        <div className="flex items-center justify-between gap-3 px-5 py-3.5 bg-white/95 border-b border-slate-200/80">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap mb-1">
+              <span
+                className={`px-2.5 py-0.5 rounded-full border text-[10px] font-semibold uppercase tracking-wide ${rarityBadgeClass}`}
+              >
+                {fish.rarity}
               </span>
-            )}
-            {fish.isMintedNft && (
-              <span className="px-2 py-0.5 bg-[#b8ff3c] text-black border border-black text-[10px] font-black uppercase">
-                FISH NFT
-              </span>
-            )}
+              {fish.isTrophy && (
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200/80 text-[10px] font-semibold uppercase tracking-wide">
+                  TROPHY
+                </span>
+              )}
+              {fish.isMintedNft && (
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-semibold uppercase tracking-wide">
+                  FISH NFT
+                </span>
+              )}
+            </div>
+            <h3 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 truncate">
+              {fish.speciesName}
+            </h3>
+            <div className="text-xs font-medium text-slate-500">{fish.waterZoneLabel}</div>
           </div>
 
           <button
             type="button"
             data-close-fish-3d-preview="true"
+            aria-label="Close"
             onClick={() => {
               soundEngine.playUiClick();
               onClose();
             }}
-            className="-skew-x-6 px-3 py-1 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-black shadow-[2px_2px_0_#000] font-black text-xs uppercase cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 font-semibold text-xs cursor-pointer transition-colors shrink-0"
           >
-            <span className="skew-x-6 inline-block">CLOSE</span>
+            <X className="w-3.5 h-3.5" aria-hidden="true" />
+            <span>Close</span>
           </button>
         </div>
 
-        {/* Title */}
-        <div>
-          <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white">
-            {fish.speciesName}
-          </h3>
-          <div className="text-xs font-bold text-slate-400">{fish.waterZoneLabel}</div>
-        </div>
-
-        {/* Interactive 360° Fish Canvas Stage */}
-        <div
-          style={{
-            background:
-              'radial-gradient(65% 65% at 50% 50%, rgba(30, 58, 95, 0.55) 0%, rgba(6, 11, 22, 0.95) 100%)',
-          }}
-          onPointerDown={(e) => {
-            e.currentTarget.setPointerCapture(e.pointerId);
-            dragStateRef.current.dragging = true;
-            dragStateRef.current.lastX = e.clientX;
-            dragStateRef.current.lastY = e.clientY;
-          }}
-          onPointerMove={(e) => {
-            if (!dragStateRef.current.dragging) return;
-            const dx = e.clientX - dragStateRef.current.lastX;
-            const dy = e.clientY - dragStateRef.current.lastY;
-            dragStateRef.current.lastX = e.clientX;
-            dragStateRef.current.lastY = e.clientY;
-            dragStateRef.current.yaw += dx * 0.012;
-            dragStateRef.current.pitch = Math.max(
-              -0.75,
-              Math.min(0.75, dragStateRef.current.pitch + dy * 0.008),
-            );
-          }}
-          onPointerUp={() => {
-            dragStateRef.current.dragging = false;
-          }}
-          onPointerCancel={() => {
-            dragStateRef.current.dragging = false;
-          }}
-          onWheel={(e) => {
-            e.preventDefault();
-            dragStateRef.current.zoom = Math.max(
-              1.55,
-              Math.min(3.8, dragStateRef.current.zoom + e.deltaY * 0.002),
-            );
-          }}
-          className="relative w-full h-[220px] sm:h-[260px] border-2 border-black shadow-[inset_0_0_24px_rgba(0,0,0,0.7)] cursor-grab active:cursor-grabbing overflow-hidden touch-none flex items-center justify-center"
-        >
-          <canvas
-            ref={canvasRef}
-            width={680}
-            height={340}
-            className="w-full h-full object-contain pointer-events-none"
-          />
-
-          <div className="absolute bottom-2 left-2.5 text-[10px] font-bold text-slate-300/80 pointer-events-none">
-            Drag to rotate
-          </div>
-
-          <div className="absolute bottom-2 right-2 flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playUiClick();
-                dragStateRef.current.zoom = Math.min(3.8, dragStateRef.current.zoom + 0.3);
+        <div className="p-4 sm:p-5 space-y-3.5">
+          {/* Interactive 360° Fish Canvas Stage */}
+          <div className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-2">
+            <div
+              style={{
+                background:
+                  'radial-gradient(70% 65% at 50% 50%, rgba(186, 230, 253, 0.55) 0%, rgba(226, 236, 248, 0.92) 55%, rgba(210, 224, 240, 0.98) 100%)',
               }}
-              className="px-2 py-0.5 bg-black/75 hover:bg-black text-white border border-white/25 text-[10px] font-black cursor-pointer"
-            >
-              -
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playUiClick();
-                dragStateRef.current.yaw = 0.25;
-                dragStateRef.current.pitch = 0.04;
-                dragStateRef.current.zoom = 2.45;
+              onPointerDown={(e) => {
+                e.currentTarget.setPointerCapture(e.pointerId);
+                dragStateRef.current.dragging = true;
+                dragStateRef.current.lastX = e.clientX;
+                dragStateRef.current.lastY = e.clientY;
               }}
-              className="px-2 py-0.5 bg-black/75 hover:bg-black text-[#38bdf8] border border-white/25 text-[9.5px] font-black uppercase cursor-pointer"
-            >
-              RESET
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playUiClick();
-                dragStateRef.current.zoom = Math.max(1.55, dragStateRef.current.zoom - 0.3);
+              onPointerMove={(e) => {
+                if (!dragStateRef.current.dragging) return;
+                const dx = e.clientX - dragStateRef.current.lastX;
+                const dy = e.clientY - dragStateRef.current.lastY;
+                dragStateRef.current.lastX = e.clientX;
+                dragStateRef.current.lastY = e.clientY;
+                dragStateRef.current.yaw += dx * 0.012;
+                dragStateRef.current.pitch = Math.max(
+                  -0.75,
+                  Math.min(0.75, dragStateRef.current.pitch + dy * 0.008),
+                );
               }}
-              className="px-2 py-0.5 bg-black/75 hover:bg-black text-white border border-white/25 text-[10px] font-black cursor-pointer"
+              onPointerUp={() => {
+                dragStateRef.current.dragging = false;
+              }}
+              onPointerCancel={() => {
+                dragStateRef.current.dragging = false;
+              }}
+              onWheel={(e) => {
+                e.preventDefault();
+                dragStateRef.current.zoom = Math.max(
+                  1.55,
+                  Math.min(3.8, dragStateRef.current.zoom + e.deltaY * 0.002),
+                );
+              }}
+              className="relative w-full h-[220px] sm:h-[260px] rounded-xl cursor-grab active:cursor-grabbing overflow-hidden touch-none flex items-center justify-center"
             >
-              +
-            </button>
-          </div>
-        </div>
+              <canvas
+                ref={canvasRef}
+                width={680}
+                height={340}
+                className="w-full h-full object-contain pointer-events-none"
+              />
 
-        {/* Stats Row */}
-        <div className="grid grid-cols-3 gap-2">
-          <div className="p-2.5 bg-[#1e293b] border-2 border-black">
-            <div className="text-[9.5px] font-black uppercase text-slate-400">WEIGHT</div>
-            <div className="text-sm font-black text-white mt-0.5">
-              {fish.weightKg.toFixed(2)} kg
-            </div>
-            <div className="text-[10px] font-mono text-slate-400">{lengthCm} cm</div>
-          </div>
-
-          <div className="p-2.5 bg-[#1e293b] border-2 border-black">
-            <div className="text-[9.5px] font-black uppercase text-slate-400">HABITAT</div>
-            <div className="text-xs font-black text-[#38bdf8] mt-0.5 truncate">
-              {fish.waterZoneLabel}
-            </div>
-            {fish.ownerOrSellerLabel && (
-              <div className="text-[9.5px] font-mono text-slate-400 truncate mt-0.5">
-                {fish.ownerOrSellerLabel}
+              <div className="absolute bottom-2.5 left-2.5 px-2.5 py-1 rounded-full bg-white/85 backdrop-blur-md border border-slate-200/80 text-[10.5px] font-medium text-slate-600 pointer-events-none shadow-xs">
+                Drag to rotate
               </div>
-            )}
+
+              <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    dragStateRef.current.zoom = Math.min(3.8, dragStateRef.current.zoom + 0.3);
+                  }}
+                  className="w-7 h-7 rounded-full bg-white/90 hover:bg-white text-slate-700 border border-slate-200/80 text-xs font-bold shadow-xs flex items-center justify-center cursor-pointer transition-colors"
+                >
+                  -
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    dragStateRef.current.yaw = 0.25;
+                    dragStateRef.current.pitch = 0.04;
+                    dragStateRef.current.zoom = 2.45;
+                  }}
+                  className="inline-flex items-center gap-1 px-2.5 h-7 rounded-full bg-white/90 hover:bg-white text-sky-700 border border-slate-200/80 text-[10px] font-semibold uppercase shadow-xs cursor-pointer transition-colors"
+                >
+                  <RotateCcw className="w-3 h-3" aria-hidden="true" />
+                  <span>Reset</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    dragStateRef.current.zoom = Math.max(1.55, dragStateRef.current.zoom - 0.3);
+                  }}
+                  className="w-7 h-7 rounded-full bg-white/90 hover:bg-white text-slate-700 border border-slate-200/80 text-xs font-bold shadow-xs flex items-center justify-center cursor-pointer transition-colors"
+                >
+                  +
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div className="p-2.5 bg-[#1e293b] border-2 border-black">
-            <div className="text-[9.5px] font-black uppercase text-slate-400">VALUE</div>
-            <div className="text-sm font-black text-[#b8ff3c] mt-0.5 truncate">
-              {fish.valueLabel || 'In Bag'}
-            </div>
-            {fish.nftTokenId && (
-              <div className="text-[9px] font-mono text-slate-400 truncate mt-0.5">
-                {fish.nftTokenId}
+          {/* Stats Row */}
+          <div className="grid grid-cols-3 gap-2.5">
+            <div className="p-3 rounded-2xl bg-white border border-slate-200/75 shadow-sm">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Weight
               </div>
-            )}
+              <div className="text-sm font-mono tabular-nums font-bold text-slate-900 mt-0.5">
+                {fish.weightKg.toFixed(2)} kg
+              </div>
+              <div className="text-[11px] font-mono tabular-nums text-slate-500">{lengthCm} cm</div>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-white border border-slate-200/75 shadow-sm">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Habitat
+              </div>
+              <div className="text-xs font-semibold text-sky-700 mt-1 truncate">
+                {fish.waterZoneLabel}
+              </div>
+              {fish.ownerOrSellerLabel && (
+                <div className="text-[10px] font-mono text-slate-500 truncate mt-0.5">
+                  {fish.ownerOrSellerLabel}
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 rounded-2xl bg-white border border-slate-200/75 shadow-sm">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Value
+              </div>
+              <div className="text-sm font-mono tabular-nums font-bold text-emerald-700 mt-0.5 truncate">
+                {fish.valueLabel || 'In Bag'}
+              </div>
+              {fish.nftTokenId && (
+                <div className="text-[9.5px] font-mono text-slate-500 truncate mt-0.5">
+                  {fish.nftTokenId}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

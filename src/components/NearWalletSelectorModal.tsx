@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { X } from 'lucide-react';
 import {
   NEAR_CONFIG,
   connectNearWalletSelector,
@@ -144,16 +145,16 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
       aria-modal="true"
       aria-label="Wallet Connection"
       data-near-wallet-selector-modal="true"
-      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/75 p-4 select-none"
+      className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/50 backdrop-blur-sm p-4 select-none"
     >
-      <div className="relative w-full max-w-md bg-white border-[4px] border-[#0d0f12] shadow-[8px_8px_0px_#0d0f12] p-5 text-[#0d0f12] max-h-[92vh] overflow-y-auto">
-        <div className="flex items-start justify-between gap-3 border-b-[3px] border-[#0d0f12] pb-3">
+      <div className="relative w-full max-w-md rounded-[28px] bg-[#f4f6f9]/96 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] text-slate-900 max-h-[92vh] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between gap-3 px-5 py-4 bg-white/95 border-b border-slate-200/80 shrink-0">
           <div>
-            <div className="inline-block px-2 py-0.5 bg-[#b8ff3c] border-2 border-[#0d0f12] text-[10px] font-black uppercase tracking-wider">
-              BUDDIES BLITZ
+            <div className="inline-block px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-800 text-[10px] font-semibold tracking-wide">
+              Buddies Blitz
             </div>
-            <h2 className="mt-1.5 text-xl sm:text-2xl font-black uppercase tracking-tight leading-none">
-              CONNECT WALLET
+            <h2 className="mt-1 text-lg sm:text-xl font-semibold tracking-tight text-slate-900 leading-tight">
+              Connect Wallet
             </h2>
           </div>
 
@@ -164,61 +165,69 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
               soundEngine.playUiClick();
               onClose();
             }}
-            className="w-8 h-8 bg-[#ff3b30] hover:bg-[#ff554a] text-white border-2 border-[#0d0f12] shadow-[0_2px_0_#0d0f12] font-black text-sm flex items-center justify-center cursor-pointer"
+            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer active:scale-95"
             aria-label="Close Wallet Selector"
           >
-            X
+            <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
           </button>
         </div>
 
-        <div className="mt-4 space-y-3">
+        <div className="p-5 space-y-3.5 overflow-y-auto">
           {currentWalletId && (
             <div
-              className={`p-2.5 border-2 border-[#0d0f12] flex items-center justify-between gap-2 ${
-                isReadOnlyObserver ? 'bg-[#fef3c7]' : 'bg-[#ecfdf5]'
+              className={`p-3.5 rounded-2xl border shadow-sm flex items-center justify-between gap-3 ${
+                isReadOnlyObserver
+                  ? 'bg-amber-50/90 border-amber-200/80'
+                  : 'bg-emerald-50/80 border-emerald-200/80'
               }`}
             >
               <div className="min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[9px] font-black uppercase px-1.5 py-0.5 border border-[#0d0f12] bg-white">
-                    {isReadOnlyObserver ? 'VIEW ONLY' : 'CONNECTED'}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span
+                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                      isReadOnlyObserver
+                        ? 'bg-amber-200/80 text-amber-900'
+                        : 'bg-emerald-200/80 text-emerald-900'
+                    }`}
+                  >
+                    {isReadOnlyObserver ? 'View Only' : 'Connected'}
                   </span>
                   <a
                     href={getNearBlocksAccountUrl(currentWalletId, 'testnet')}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-[10px] font-black underline text-[#0284c7]"
+                    className="text-[11px] font-semibold text-sky-600 hover:text-sky-700 hover:underline"
                   >
                     Explorer
                   </a>
                 </div>
-                <div className="mt-1 text-xs font-mono font-black truncate text-[#0d0f12]">
+                <div className="mt-1.5 text-xs font-mono font-semibold truncate text-slate-900">
                   {currentWalletId}
                 </div>
                 {hasCitizenWallet && (
-                  <div className="text-[10px] font-bold text-emerald-900 mt-0.5">
-                    Your in-game wallet name was set when you created it and can't be
+                  <div className="text-[11px] text-emerald-800/90 mt-1 leading-snug">
+                    Your in-game wallet name was set when you created it and can&apos;t be
                     changed. Creating another wallet means a separate new player.
                   </div>
                 )}
                 {isReadOnlyObserver && (
-                  <div className="text-[10px] font-bold text-[#92400e] mt-0.5">
-                    View-only mode cannot sign transactions. Press SWITCH to exit view mode, then connect your own wallet.
+                  <div className="text-[11px] text-amber-900/90 mt-1 leading-snug">
+                    View-only mode cannot sign transactions. Press Switch to exit view mode, then connect your own wallet.
                   </div>
                 )}
               </div>
               <button
                 type="button"
                 onClick={() => void handleDisconnect()}
-                className="px-2 py-1 bg-[#fee2e2] hover:bg-[#fecaca] border-2 border-[#0d0f12] text-[10px] font-black uppercase text-[#991b1b] shrink-0 cursor-pointer"
+                className="px-3 py-1.5 rounded-full bg-rose-100 hover:bg-rose-200 text-rose-700 text-[11px] font-semibold shrink-0 transition-colors cursor-pointer"
               >
-                SWITCH
+                Switch
               </button>
             </div>
           )}
 
           {statusBanner && (
-            <div className="p-2.5 bg-[#ecfeff] border-2 border-[#0891b2] text-[11px] font-bold text-[#0e7490]">
+            <div className="px-3.5 py-2.5 rounded-2xl bg-sky-50 border border-sky-200/80 text-xs font-medium text-sky-800">
               {statusBanner}
             </div>
           )}
@@ -226,7 +235,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
           {errorMessage && (
             <div
               role="alert"
-              className="p-2.5 bg-[#fef2f2] border-2 border-[#ff3b30] text-[11px] font-bold text-[#991b1b]"
+              className="px-3.5 py-2.5 rounded-2xl bg-rose-50 border border-rose-200/80 text-xs font-medium text-rose-700"
             >
               {errorMessage}
             </div>
@@ -234,16 +243,16 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
 
           {!currentWalletId && (<>
           {/* Option 1: Create In-Game Wallet (primary) */}
-          <div className="p-3 bg-[#f0fdf4] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-[#0d0f12]">
-                {hasCitizenWallet ? 'IN-GAME WALLET' : 'CREATE WALLET'}
+          <div className="p-4 rounded-2xl bg-white border border-slate-200/75 shadow-sm space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-slate-900">
+                {hasCitizenWallet ? 'In-Game Wallet' : 'Create Wallet'}
               </span>
-              <span className="px-1.5 py-0.5 bg-[#b8ff3c] border border-[#0d0f12] text-[9px] font-black uppercase">
-                {hasCitizenWallet ? 'PERMANENT' : 'RECOMMENDED'}
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-semibold">
+                {hasCitizenWallet ? 'Permanent' : 'Recommended'}
               </span>
             </div>
-            <p className="text-[11px] font-bold text-[#334155] leading-snug">
+            <p className="text-xs text-slate-500 leading-relaxed">
               {hasCitizenWallet
                 ? 'Your wallet name was set when you created it and can\'t be changed.'
                 : 'Continue with Google for automatic setup, or pick a wallet username below.'}
@@ -259,24 +268,24 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                   onClose();
                   onSelectGoogleAutoRegister();
                 }}
-                className="w-full py-2.5 px-3 bg-[#b8ff3c] hover:bg-[#d2ff7a] text-[#0d0f12] border-2 border-[#0d0f12] shadow-[0_3px_0_#0d0f12] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-2.5 px-4 rounded-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-200 disabled:text-slate-400 text-white shadow-sm font-semibold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer active:scale-[0.98]"
               >
-                <span>CONTINUE WITH GOOGLE</span>
+                <span>Continue with Google</span>
               </button>
             )}
 
             {!hasCitizenWallet && (
-            <form onSubmit={handleProvisionCitizenSubAccount} className="space-y-1.5 pt-1">
-              <label className="block text-[10px] font-black uppercase tracking-wider text-[#0d0f12]">
-                WALLET USERNAME
+            <form onSubmit={handleProvisionCitizenSubAccount} className="space-y-2 pt-1 border-t border-slate-100">
+              <label className="block text-[11px] font-semibold text-slate-600">
+                Wallet Username
               </label>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 <input
                   type="text"
                   value={citizenHandleInput}
                   onChange={(e) => setCitizenHandleInput(e.target.value)}
                   placeholder="sakura01"
-                  className="flex-1 px-2.5 py-1.5 bg-white border-2 border-[#0d0f12] text-xs font-bold text-[#0d0f12] focus:outline-none"
+                  className="flex-1 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400"
                 />
                 <button
                   type="button"
@@ -288,20 +297,20 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                     }
                     setCitizenHandleInput(rnd);
                   }}
-                  className="px-2 py-1.5 bg-slate-200 hover:bg-slate-300 border-2 border-[#0d0f12] text-[10px] font-black uppercase cursor-pointer"
+                  className="px-3 py-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition-colors cursor-pointer"
                 >
-                  RANDOM
+                  Random
                 </button>
                 <button
                   type="submit"
                   disabled={isConnecting || cleanedHandlePreview.length < 2}
-                  className="px-3 py-1.5 bg-[#0f172a] hover:bg-[#1e293b] disabled:bg-slate-400 text-[#b8ff3c] border-2 border-[#0d0f12] text-[11px] font-black uppercase cursor-pointer"
+                  className="px-3.5 py-2 rounded-full bg-slate-900 hover:bg-slate-800 disabled:bg-slate-100 disabled:text-slate-400 text-white text-[11px] font-semibold transition-colors cursor-pointer"
                 >
-                  CREATE
+                  Create
                 </button>
               </div>
               {cleanedHandlePreview.length >= 2 && (
-                <div className="text-[10px] font-mono font-bold text-emerald-800">
+                <div className="text-[11px] font-mono font-medium text-emerald-700">
                   {cleanedHandlePreview}.{NEAR_CONFIG.masterAccountId}
                 </div>
               )}
@@ -310,16 +319,16 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
           </div>
 
           {/* Option 2: External NEAR Wallet (secondary, optional) */}
-          <div className="p-3 bg-[#f8fafc] border-[2.5px] border-[#0d0f12] shadow-[0_3px_0_#0d0f12] space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-black uppercase tracking-wider text-[#0d0f12]">
-                EXTERNAL WALLET
+          <div className="p-4 rounded-2xl bg-white border border-slate-200/75 shadow-sm space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-slate-900">
+                External Wallet
               </span>
-              <span className="px-1.5 py-0.5 bg-slate-300 border border-[#0d0f12] text-[9px] font-black uppercase">
-                OPTIONAL
+              <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-semibold">
+                Optional
               </span>
             </div>
-            <p className="text-[11px] font-bold text-[#334155] leading-snug">
+            <p className="text-xs text-slate-500 leading-relaxed">
               Already have a NEAR wallet? Connect Meteor, MyNearWallet, or Intear instead.
             </p>
 
@@ -328,23 +337,23 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
               data-wallet-option="near-connect-modal"
               disabled={isConnecting}
               onClick={() => void handleOpenNearConnectorPopup()}
-              className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-[#0d0f12] border-2 border-[#0d0f12] shadow-[0_2px_0_#0d0f12] font-black text-[11px] uppercase tracking-wider cursor-pointer"
+              className="w-full py-2.5 px-4 rounded-full bg-sky-100 hover:bg-sky-200 disabled:bg-slate-100 disabled:text-slate-400 text-sky-900 font-semibold text-xs transition-colors cursor-pointer active:scale-[0.98]"
             >
-              {isConnecting ? 'OPENING...' : 'CONNECT EXTERNAL WALLET'}
+              {isConnecting ? 'Opening...' : 'Connect External Wallet'}
             </button>
           </div>
 
           {/* Option 3: View Account */}
-          <div className="p-3 bg-[#f8fafc] border-[2px] border-slate-400 space-y-1.5">
+          <div className="p-4 rounded-2xl bg-white border border-slate-200/75 shadow-sm">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 void handleInspectReadOnlyAccount(accountInput);
               }}
-              className="space-y-1.5"
+              className="space-y-2"
             >
-              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-600">
-                VIEW ACCOUNT (READ ONLY)
+              <label className="block text-[11px] font-semibold text-slate-600">
+                View Account (Read Only)
               </label>
               <div className="flex items-center gap-2">
                 <input
@@ -353,15 +362,15 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
                   value={accountInput}
                   onChange={(e) => setAccountInput(e.target.value)}
                   placeholder="username.buddiesblitz.testnet"
-                  className="flex-1 px-2.5 py-1.5 bg-white border-2 border-[#0d0f12] text-xs font-bold text-[#0d0f12] focus:outline-none"
+                  className="flex-1 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-400/40 focus:border-sky-400"
                 />
                 <button
                   type="submit"
                   disabled={isConnecting || !accountInput.trim()}
                   data-wallet-connect-submit="true"
-                  className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 disabled:bg-slate-100 text-[#0d0f12] border-2 border-[#0d0f12] font-black text-[11px] uppercase cursor-pointer"
+                  className="px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 disabled:bg-slate-100 disabled:text-slate-400 text-slate-800 font-semibold text-xs transition-colors cursor-pointer"
                 >
-                  {isConnecting ? '...' : 'VIEW'}
+                  {isConnecting ? '...' : 'View'}
                 </button>
               </div>
             </form>

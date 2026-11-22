@@ -277,9 +277,9 @@ export const UrbanScooterShowroomModal: React.FC<UrbanScooterShowroomModalProps>
       ctx2d.translate(shCx, shCy);
       ctx2d.scale(shRx, shRy);
       const grad = ctx2d.createRadialGradient(0, 0, 0.08, 0, 0, 1.0);
-      grad.addColorStop(0, 'rgba(2, 6, 15, 0.58)');
-      grad.addColorStop(0.55, 'rgba(2, 6, 15, 0.26)');
-      grad.addColorStop(1, 'rgba(2, 6, 15, 0)');
+      grad.addColorStop(0, 'rgba(15, 23, 42, 0.24)');
+      grad.addColorStop(0.55, 'rgba(15, 23, 42, 0.10)');
+      grad.addColorStop(1, 'rgba(15, 23, 42, 0)');
       ctx2d.fillStyle = grad;
       ctx2d.beginPath();
       ctx2d.arc(0, 0, 1.0, 0, Math.PI * 2);
@@ -376,30 +376,35 @@ export const UrbanScooterShowroomModal: React.FC<UrbanScooterShowroomModalProps>
         soundEngine.playUiCancel();
         onClose();
       }}
-      className="fixed inset-0 z-[210] flex items-center justify-center p-3 sm:p-6 bg-black/80 pointer-events-auto select-none"
+      className="fixed inset-0 z-[210] flex items-center justify-center p-3 sm:p-6 bg-slate-950/55 backdrop-blur-sm pointer-events-auto select-none"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-5xl h-[min(660px,92vh)] bg-[#0f172a] text-white border-[3.5px] border-black ring-2 ring-white shadow-[8px_8px_0px_#000] overflow-hidden flex flex-col"
+        className="relative w-full max-w-5xl h-[min(680px,92vh)] rounded-[26px] bg-[#edf0f5]/95 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.3)] text-slate-900 overflow-hidden flex flex-col"
       >
-        {/* Top Storefront Header Bar (Matches Real Estate & Interior Studio Catalog) */}
-        <div className="flex items-center justify-between gap-4 px-5 py-3.5 bg-[#14161d] border-b-[3px] border-black shrink-0">
-          <div className="min-w-0">
-            <h2 className="text-base sm:text-lg font-black tracking-wide text-white truncate">
-              Urban Scooter Showroom
-            </h2>
-            <p className="text-xs text-slate-300 truncate">
-              Central Plaza Mobility · Exclusive NFT Vehicles · Settled in RESPITE
-            </p>
+        {/* Top Storefront Header Bar */}
+        <div className="flex items-center justify-between gap-4 px-5 py-3.5 bg-white/95 border-b border-slate-200/80 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-2xl bg-sky-50 text-sky-600 border border-sky-200/70 flex items-center justify-center shrink-0">
+              <Bike className="w-5 h-5" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 truncate">
+                Urban Scooter Showroom
+              </h2>
+              <p className="text-xs text-slate-500 truncate">
+                Central Plaza Mobility · Exclusive NFT Vehicles · Settled in RESPITE
+              </p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             <div
               data-testid="scooter-modal-respite-balance"
-              className="flex items-center gap-2 px-3 py-1.5 bg-[#1e293b] border-2 border-black shadow-[2px_2px_0_#000] text-xs font-bold tabular-nums whitespace-nowrap shrink-0"
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-100 border border-slate-200/80 text-xs font-mono tabular-nums font-semibold text-slate-800 whitespace-nowrap shrink-0"
             >
-              <Coins className="w-3.5 h-3.5 text-[#2dd4bf] shrink-0" aria-hidden="true" />
-              <span className="font-black text-[#2dd4bf]">
+              <Coins className="w-3.5 h-3.5 text-teal-600 shrink-0" aria-hidden="true" />
+              <span className="font-bold text-slate-900">
                 {respiteBalance.toLocaleString()} RESPITE
               </span>
             </div>
@@ -411,7 +416,7 @@ export const UrbanScooterShowroomModal: React.FC<UrbanScooterShowroomModalProps>
                   soundEngine.playUiClick();
                   onConnectWallet();
                 }}
-                className="px-3 py-1.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-[#090d16] border-2 border-black shadow-[2px_2px_0_#000] text-xs font-black uppercase cursor-pointer whitespace-nowrap shrink-0"
+                className="px-3.5 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
               >
                 Sign In
               </button>
@@ -425,23 +430,23 @@ export const UrbanScooterShowroomModal: React.FC<UrbanScooterShowroomModalProps>
                 soundEngine.playUiCancel();
                 onClose();
               }}
-              className="w-10 h-10 bg-[#ef4444] hover:bg-[#f87171] text-white border-2 border-black shadow-[3px_3px_0_#000] flex items-center justify-center cursor-pointer active:translate-y-0.5 transition-transform shrink-0"
+              className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center cursor-pointer transition-colors shrink-0"
             >
-              <X className="w-5 h-5 stroke-[2.75]" aria-hidden="true" />
+              <X className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
         </div>
 
-        {/* Category Bar (Matches Real Estate & Interior Studio Catalog) */}
-        <div className="flex items-center justify-between gap-3 px-5 py-2.5 bg-[#111827] border-b-[2.5px] border-black shrink-0">
+        {/* Category Bar */}
+        <div className="flex items-center justify-between gap-3 px-5 py-2.5 bg-white/70 border-b border-slate-200/75 shrink-0">
           <div className="flex items-center gap-2 overflow-x-auto">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 border-2 border-black text-xs font-black tracking-wide bg-[#38bdf8] text-[#090d16] shadow-[2px_2px_0_#000] whitespace-nowrap shrink-0">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold bg-slate-900 text-white shadow-xs whitespace-nowrap shrink-0">
               <Bike className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
               <span>Scooters</span>
             </div>
           </div>
 
-          <div className="hidden md:flex items-center gap-2 text-xs text-slate-400 whitespace-nowrap shrink-0">
+          <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 font-medium whitespace-nowrap shrink-0">
             <span>{URBAN_SCOOTER_CATALOG_ITEMS.length} NFT Vehicles</span>
           </div>
         </div>
@@ -452,56 +457,55 @@ export const UrbanScooterShowroomModal: React.FC<UrbanScooterShowroomModalProps>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
             {/* Left Column: Fixed-Size 360° Interactive Drag-Only 3D Showcase */}
             <div className="lg:col-span-6 flex flex-col">
-              <div
-                ref={viewportBoxRef}
-                data-testid="scooter-showroom-3d-viewport"
-                className="relative w-full h-[260px] sm:h-[320px] lg:h-[360px] shrink-0 bg-gradient-to-b from-[#172338] via-[#101829] to-[#090d16] border-2 border-black overflow-hidden cursor-grab active:cursor-grabbing touch-none"
-                onPointerDown={(e) => {
-                  viewStateRef.current.dragging = true;
-                  viewStateRef.current.lastX = e.clientX;
-                  viewStateRef.current.lastY = e.clientY;
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                }}
-                onPointerMove={(e) => {
-                  if (!viewStateRef.current.dragging) return;
-                  const dx = e.clientX - viewStateRef.current.lastX;
-                  const dy = e.clientY - viewStateRef.current.lastY;
-                  viewStateRef.current.lastX = e.clientX;
-                  viewStateRef.current.lastY = e.clientY;
-                  viewStateRef.current.yaw += dx * 0.011;
-                  viewStateRef.current.pitch = Math.max(
-                    -0.22,
-                    Math.min(0.65, viewStateRef.current.pitch + dy * 0.008),
-                  );
-                  scheduleDrawRef.current?.();
-                }}
-                onPointerUp={(e) => {
-                  viewStateRef.current.dragging = false;
-                  if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                    e.currentTarget.releasePointerCapture(e.pointerId);
-                  }
-                }}
-                onPointerCancel={(e) => {
-                  viewStateRef.current.dragging = false;
-                  if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                    e.currentTarget.releasePointerCapture(e.pointerId);
-                  }
-                }}
-              >
-                <canvas
-                  ref={canvasRef}
-                  data-testid="scooter-showroom-3d-canvas"
-                  className="absolute inset-0 w-full h-full block"
-                />
+              <div className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-2.5 flex-1 flex flex-col">
+                <div
+                  ref={viewportBoxRef}
+                  data-testid="scooter-showroom-3d-viewport"
+                  className="relative w-full h-[250px] sm:h-[310px] lg:h-[348px] shrink-0 rounded-xl bg-gradient-to-b from-[#f7f9fc] via-[#eef2f7] to-[#e4eaf2] overflow-hidden cursor-grab active:cursor-grabbing touch-none"
+                  onPointerDown={(e) => {
+                    viewStateRef.current.dragging = true;
+                    viewStateRef.current.lastX = e.clientX;
+                    viewStateRef.current.lastY = e.clientY;
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    if (!viewStateRef.current.dragging) return;
+                    const dx = e.clientX - viewStateRef.current.lastX;
+                    const dy = e.clientY - viewStateRef.current.lastY;
+                    viewStateRef.current.lastX = e.clientX;
+                    viewStateRef.current.lastY = e.clientY;
+                    viewStateRef.current.yaw += dx * 0.011;
+                    viewStateRef.current.pitch = Math.max(
+                      -0.22,
+                      Math.min(0.65, viewStateRef.current.pitch + dy * 0.008),
+                    );
+                    scheduleDrawRef.current?.();
+                  }}
+                  onPointerUp={(e) => {
+                    viewStateRef.current.dragging = false;
+                    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    }
+                  }}
+                  onPointerCancel={(e) => {
+                    viewStateRef.current.dragging = false;
+                    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    }
+                  }}
+                >
+                  <canvas
+                    ref={canvasRef}
+                    data-testid="scooter-showroom-3d-canvas"
+                    className="absolute inset-0 w-full h-full block"
+                  />
 
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/70 via-black/25 to-transparent" />
-                <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
-                  <span className="pointer-events-none text-xs font-medium text-slate-300/85">
-                    ‹ drag to turn it around ›
-                  </span>
+                  <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
+                    <span className="pointer-events-none px-3 py-1 rounded-full bg-white/85 backdrop-blur-md border border-slate-200/80 text-[11px] font-medium text-slate-600 shadow-xs">
+                      ‹ drag to turn it around ›
+                    </span>
 
-                  {selectedItem.kind === 'push_kick_scooter' && (
-                    <div className="flex items-center gap-1 p-0.5 bg-black/80 border border-slate-600">
+                    {selectedItem.kind === 'push_kick_scooter' && (
                       <button
                         type="button"
                         data-scooter-fold-toggle="true"
@@ -509,35 +513,35 @@ export const UrbanScooterShowroomModal: React.FC<UrbanScooterShowroomModalProps>
                           soundEngine.playUiClick();
                           setKickPreviewFolded((prev) => !prev);
                         }}
-                        className={`px-2.5 py-1 text-[11px] font-bold cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
+                        className={`px-3 py-1 rounded-full text-[11px] font-semibold cursor-pointer transition-colors whitespace-nowrap shrink-0 shadow-xs border ${
                           kickPreviewFolded
-                            ? 'bg-[#38bdf8] text-[#090d16]'
-                            : 'text-slate-200 hover:text-white'
+                            ? 'bg-slate-900 text-white border-slate-900'
+                            : 'bg-white/90 hover:bg-white text-slate-700 border-slate-200/80'
                         }`}
                       >
                         {kickPreviewFolded ? 'Riding State' : 'Folded (85 cm)'}
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Right Column: Contiguous Product Purchase & Preview Details */}
-            <div className="lg:col-span-6 flex flex-col justify-between gap-4">
+            {/* Right Column: Bento Product Purchase & Preview Details */}
+            <div className="lg:col-span-6 rounded-2xl bg-white border border-slate-200/75 shadow-sm p-5 flex flex-col justify-between gap-4">
               <div className="space-y-3">
-                <div className="text-xs font-semibold text-[#2dd4bf]">
+                <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-teal-50 text-teal-700 border border-teal-200/70 text-[11px] font-semibold">
                   {selectedItem.subtitle}
                 </div>
 
-                <h3 className="text-2xl sm:text-3xl font-black text-white leading-tight">
+                <h3 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 leading-tight">
                   {selectedItem.name}
                 </h3>
 
                 <div className="flex items-center justify-between gap-3 pt-0.5">
                   <div
                     data-testid="scooter-selected-price"
-                    className="text-2xl font-black text-[#facc15] tabular-nums whitespace-nowrap"
+                    className="text-2xl font-mono font-bold text-slate-900 tabular-nums whitespace-nowrap"
                   >
                     {selectedItem.priceRespite} RESPITE
                   </div>
@@ -549,22 +553,25 @@ export const UrbanScooterShowroomModal: React.FC<UrbanScooterShowroomModalProps>
                     aria-label={`View ${selectedItem.name} NFT on NEAR Explorer`}
                     data-scooter-nft-explorer-link="true"
                     onClick={() => soundEngine.playSoftTap()}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#1e293b] hover:bg-[#334155] text-[#2dd4bf] border-2 border-black shadow-[2px_2px_0_#000] text-[11px] font-black uppercase tracking-wider cursor-pointer whitespace-nowrap shrink-0"
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80 text-[11px] font-semibold tracking-wide cursor-pointer transition-colors whitespace-nowrap shrink-0"
                   >
                     <span>NFT</span>
-                    <ExternalLink className="w-3 h-3 stroke-[2.5]" aria-hidden="true" />
+                    <ExternalLink className="w-3 h-3" aria-hidden="true" />
                   </a>
                 </div>
 
-                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
                   {selectedItem.description}
                 </p>
 
-                <div className="border-t border-b border-slate-700/80 py-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
+                <div className="grid grid-cols-2 gap-2 pt-1">
                   {selectedItem.specs.map((sp) => (
-                    <div key={sp.label} className="min-w-0">
-                      <div className="text-[11px] text-slate-400 truncate">{sp.label}</div>
-                      <div className="text-xs font-bold text-slate-100 tabular-nums truncate">
+                    <div
+                      key={sp.label}
+                      className="min-w-0 rounded-xl bg-[#f3f5f9] border border-slate-200/60 px-3 py-2"
+                    >
+                      <div className="text-[11px] text-slate-500 truncate">{sp.label}</div>
+                      <div className="text-xs font-semibold text-slate-900 tabular-nums truncate mt-0.5">
                         {sp.value}
                       </div>
                     </div>
@@ -573,14 +580,14 @@ export const UrbanScooterShowroomModal: React.FC<UrbanScooterShowroomModalProps>
               </div>
 
               {/* Action & Wallet Area */}
-              <div className="space-y-2.5">
+              <div className="space-y-2.5 pt-3 border-t border-slate-100">
                 {statusFeedback && (
                   <div
                     role="status"
-                    className={`px-3 py-2 text-xs font-bold border-2 border-black ${
+                    className={`px-3.5 py-2.5 rounded-xl text-xs font-medium border ${
                       statusFeedback.tone === 'success'
-                        ? 'bg-[#14532d] text-[#b8ff3c]'
-                        : 'bg-[#450a0a] text-[#fca5a5]'
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                        : 'bg-rose-50 border-rose-200 text-rose-700'
                     }`}
                   >
                     {statusFeedback.message}
@@ -590,9 +597,9 @@ export const UrbanScooterShowroomModal: React.FC<UrbanScooterShowroomModalProps>
                 {isOwned ? (
                   <div
                     data-testid="scooter-owned-state"
-                    className="w-full h-11 px-4 bg-[#b8ff3c] text-[#0b0d13] border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wide flex items-center justify-center gap-2 whitespace-nowrap"
+                    className="w-full h-11 px-4 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold text-xs flex items-center justify-center gap-2 whitespace-nowrap"
                   >
-                    <Check className="w-4 h-4 stroke-[3] shrink-0" aria-hidden="true" />
+                    <Check className="w-4 h-4 shrink-0" aria-hidden="true" />
                     <span>Owned in Collection · Ready to Equip</span>
                   </div>
                 ) : !walletConnected && respiteBalance < selectedItem.priceRespite ? (
@@ -603,7 +610,7 @@ export const UrbanScooterShowroomModal: React.FC<UrbanScooterShowroomModalProps>
                       soundEngine.playUiClick();
                       onConnectWallet();
                     }}
-                    className="w-full h-11 px-4 bg-[#38bdf8] hover:bg-[#7dd3fc] text-[#090d16] border-2 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-wide flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
+                    className="w-full h-11 px-4 rounded-full bg-sky-600 hover:bg-sky-500 text-white shadow-sm font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
                   >
                     <Wallet className="w-4 h-4 shrink-0" aria-hidden="true" />
                     <span>Connect Wallet to Buy ({selectedItem.priceRespite} RESPITE)</span>
@@ -614,10 +621,10 @@ export const UrbanScooterShowroomModal: React.FC<UrbanScooterShowroomModalProps>
                     data-scooter-buy-btn="true"
                     disabled={isPurchasing}
                     onClick={() => void handleBuyClick()}
-                    className={`w-full h-11 px-4 border-2 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-wide flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+                    className={`w-full h-11 px-4 rounded-full font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap ${
                       canAfford
-                        ? 'bg-[#facc15] hover:bg-[#fde047] text-[#090d16]'
-                        : 'bg-[#1e293b] hover:bg-[#334155] text-slate-200'
+                        ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-sm'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200/80'
                     }`}
                   >
                     <ShoppingBag className="w-4 h-4 shrink-0" aria-hidden="true" />
@@ -632,16 +639,17 @@ export const UrbanScooterShowroomModal: React.FC<UrbanScooterShowroomModalProps>
             </div>
           </div>
 
-          {/* Hairline Divider & Single-Row Visual-Only Vehicle Selector Cards (Matches Property Kiosk) */}
-          <div className="border-t border-slate-700/80 pt-3.5">
+          {/* Bottom Vehicle Selector Cards */}
+          <div className="pt-1">
             <div
               role="tablist"
               aria-label="Select Urban Scooter Model"
-              className="flex flex-nowrap gap-3 overflow-x-auto scroll-smooth pb-1 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-[#0b1120] [&::-webkit-scrollbar-thumb]:bg-slate-600"
+              className="flex flex-nowrap gap-3 overflow-x-auto scroll-smooth pb-1 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-slate-200/60 [&::-webkit-scrollbar-thumb]:bg-slate-400/70 [&::-webkit-scrollbar-thumb]:rounded-full"
             >
               {URBAN_SCOOTER_CATALOG_ITEMS.map((veh) => {
                 const active = veh.kind === selectedItem.kind;
                 const portraitUrl = portraitByKind[veh.kind] || '';
+                const vehOwned = ownedScooterIds.includes(veh.id);
                 return (
                   <button
                     key={veh.id}
@@ -652,13 +660,13 @@ export const UrbanScooterShowroomModal: React.FC<UrbanScooterShowroomModalProps>
                     title={veh.name}
                     data-scooter-tab={veh.kind}
                     onClick={() => handleSelectVehicle(veh.kind)}
-                    className={`group shrink-0 w-[160px] sm:w-[176px] h-[86px] p-1.5 border-2 transition-colors cursor-pointer flex items-center justify-center ${
+                    className={`group shrink-0 w-[184px] sm:w-[208px] rounded-2xl p-2 bg-white border transition-all cursor-pointer flex items-center gap-2.5 text-left ${
                       active
-                        ? 'border-[#2dd4bf] bg-[#16243a] shadow-[3px_3px_0_#000]'
-                        : 'border-black bg-[#141a29] hover:bg-[#1b2438]'
+                        ? 'border-slate-900 ring-2 ring-slate-900/10 shadow-md'
+                        : 'border-slate-200/80 shadow-xs hover:shadow-sm hover:border-slate-300'
                     }`}
                   >
-                    <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-[#0b1120] border border-black/70">
+                    <div className="relative w-[76px] h-[58px] shrink-0 rounded-xl flex items-center justify-center overflow-hidden bg-[#f3f5f9]">
                       {portraitUrl ? (
                         <img
                           src={portraitUrl}
@@ -668,8 +676,16 @@ export const UrbanScooterShowroomModal: React.FC<UrbanScooterShowroomModalProps>
                           className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-150"
                         />
                       ) : (
-                        <Bike className="w-6 h-6 text-[#2dd4bf]" aria-hidden="true" />
+                        <Bike className="w-5 h-5 text-slate-400" aria-hidden="true" />
                       )}
+                    </div>
+                    <div className="min-w-0 flex-1 pr-1">
+                      <div className="text-xs font-semibold text-slate-900 truncate">
+                        {veh.name}
+                      </div>
+                      <div className="text-[11px] font-mono tabular-nums text-slate-500 mt-0.5 truncate">
+                        {vehOwned ? 'Owned' : `${veh.priceRespite} RESPITE`}
+                      </div>
                     </div>
                   </button>
                 );

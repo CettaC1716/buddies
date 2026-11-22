@@ -889,486 +889,432 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
   return (
     <div
       onContextMenu={(e) => e.preventDefault()}
-      className="bj-viewport-3d w-full max-w-[1220px] mx-auto flex flex-col items-center justify-center px-1 sm:px-3 select-none"
+      className="w-full max-w-[1160px] mx-auto rounded-[26px] bg-[#0e121b]/88 backdrop-blur-2xl border border-white/15 shadow-[0_24px_70px_rgba(0,0,0,0.62)] text-white overflow-hidden select-none"
     >
-      {/* 3D Perspective Curved Semi-Circular Blackjack Table Stage */}
-      <div className="bj-tilted-table-stage w-full relative">
-        {/* Outermost Padded Saddle-Leather Semi-Circular Bumper Rail */}
-        <div className="bj-bumper-rail w-full p-2.5 sm:p-4 relative">
-          {/* Metallic Gold-Brass Bevel Channel */}
-          <div className="bj-brass-channel-bevel p-1 sm:p-1.5 w-full">
-            {/* Deep Monte Carlo Emerald Felt Playing Surface */}
-            <div className="bj-felt-surface w-full min-h-[630px] sm:min-h-[680px] flex flex-col justify-between p-3 sm:p-5 relative border border-emerald-800/80 overflow-hidden">
-              {/* Force-Dark-Proof Full-Bleed SVG Monte Carlo Emerald Felt & Gold Pinstripe Rim */}
-              <svg
-                viewBox="0 0 1200 720"
-                preserveAspectRatio="none"
-                className="absolute inset-0 w-full h-full pointer-events-none select-none z-0"
-                aria-hidden="true"
+      {/* 1. TOP DEALER HARDWARE RAIL */}
+      <div className="w-full px-5 py-3.5 bg-white/[0.03] border-b border-white/10 flex items-center justify-between gap-3">
+        {/* Left: 6-Deck Dealing Shoe + Currency Switch + Live Balance */}
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.05] border border-white/10" title="6-Deck Dealing Shoe">
+            <span className="text-[10px] uppercase tracking-wider text-amber-300 font-bold">
+              6-DECK
+            </span>
+            <span className="text-white/25">·</span>
+            <span className="text-xs font-mono-tabular font-bold text-slate-200">{shoeCount} CARDS</span>
+          </div>
+
+          {canUseRespite && (
+            <button
+              type="button"
+              disabled={phase !== 'BETTING'}
+              title="Switch Betting Currency (LUL / RESPITE)"
+              onClick={() => {
+                if (phase !== 'BETTING') return;
+                soundEngine.playUiClick();
+                setAnteBet(0);
+                setTieSideBet(0);
+                setCurrencyMode((prev) => (prev === 'LUL' ? 'RESPITE' : 'LUL'));
+              }}
+              className="px-3 py-1.5 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-amber-300/35 text-amber-300 font-mono-tabular text-[10.5px] font-bold uppercase cursor-pointer disabled:opacity-40 transition-colors"
+            >
+              {currencyMode} ⇄
+            </button>
+          )}
+
+          <div className="flex items-center bg-emerald-400/10 px-3 py-1.5 rounded-full border border-emerald-400/30 font-mono-tabular gap-1.5">
+            <span className="text-[9.5px] uppercase tracking-wider text-emerald-300/85 font-bold hidden sm:inline">
+              BALANCE:
+            </span>
+            <span className="text-emerald-400 font-bold text-xs sm:text-sm">
+              {displayedAvailableBalance.toLocaleString()} {currencyMode}
+            </span>
+          </div>
+        </div>
+
+        {/* Center Title */}
+        <div className="hidden lg:flex flex-col items-center">
+          <span className="text-[11px] font-cinzel tracking-[0.22em] text-amber-300 uppercase font-bold">
+            SALON PRIVÉ BLACKJACK
+          </span>
+        </div>
+
+        {/* Right: Active Bet Readout & Close Button */}
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center bg-amber-300/10 px-3 py-1.5 rounded-full border border-amber-300/30 font-mono-tabular gap-1.5">
+            <span className="text-[9.5px] uppercase tracking-wider text-amber-300/85 font-bold">
+              BET:
+            </span>
+            <span className="text-amber-300 font-bold text-xs sm:text-sm">
+              {totalDisplayedBet.toLocaleString()} {currencyMode}
+            </span>
+          </div>
+
+          {onClose && (
+            <button
+              type="button"
+              data-grand-casino-close-btn="true"
+              onClick={() => {
+                soundEngine.playUiCancel();
+                onClose();
+              }}
+              aria-label="Close Blackjack Table"
+              title="Close Blackjack Table"
+              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white font-bold text-xs flex items-center justify-center active:scale-95 transition-all cursor-pointer"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* BODY: EMERALD FELT TABLE STAGE + CONTROLS */}
+      <div className="p-4 sm:p-5 space-y-4">
+        {/* Deep Monte Carlo Emerald Felt Playing Surface */}
+        <div className="w-full min-h-[500px] sm:min-h-[540px] rounded-2xl flex flex-col justify-between p-4 sm:p-6 relative border border-emerald-400/20 overflow-hidden shadow-inner">
+          {/* Full-Bleed SVG Monte Carlo Emerald Felt & Subtle Champagne-Gold Arc */}
+          <svg
+            viewBox="0 0 1200 720"
+            preserveAspectRatio="none"
+            className="absolute inset-0 w-full h-full pointer-events-none select-none z-0"
+            aria-hidden="true"
+          >
+            <defs>
+              <radialGradient id="bj-emerald-felt-grad" cx="50%" cy="40%" r="66%">
+                <stop offset="0%" stopColor="#146343" />
+                <stop offset="48%" stopColor="#0c462f" />
+                <stop offset="85%" stopColor="#072c1d" />
+                <stop offset="100%" stopColor="#041c13" />
+              </radialGradient>
+            </defs>
+            <rect x="0" y="0" width="1200" height="720" fill="url(#bj-emerald-felt-grad)" />
+            <path
+              d="M 46,88 C 56,520 270,688 600,688 C 930,688 1144,520 1154,88"
+              fill="none"
+              stroke="#fcd34d"
+              strokeOpacity="0.18"
+              strokeWidth="1.5"
+            />
+          </svg>
+
+          {/* 2. DEALER HAND STAGE AREA (Top Center) */}
+          <div className="flex flex-col items-center justify-center relative z-10">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-[11px] font-cinzel uppercase tracking-widest text-amber-300 font-bold">
+                Dealer Hand
+              </span>
+              <span className="bg-black/45 backdrop-blur-md text-amber-300 border border-amber-300/35 text-[11px] px-2.5 py-0.5 rounded-full font-mono-tabular font-bold">
+                {dealerVisibleScore}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-center -space-x-5 min-h-[104px] sm:min-h-[112px]">
+              {dealerHand.map((card, idx) => (
+                <LuxuryPlayingCardSvg
+                  key={`dealer-${idx}-${card.rank}-${card.suit}`}
+                  uid={`dealer-${idx}`}
+                  card={card}
+                  hidden={idx === 1 && dealerHoleHidden}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* 3. CURVED GOLD-FOIL CASINO ARC RULES */}
+          <div className="w-full max-w-[680px] mx-auto relative z-10 pointer-events-none select-none -my-2">
+            <svg
+              viewBox="0 0 860 92"
+              className="w-full h-12 sm:h-14 overflow-visible"
+              aria-hidden="true"
+            >
+              <defs>
+                <path id="bj-felt-arc-title" d="M 110,18 Q 430,72 750,18" />
+                <path id="bj-felt-arc-sub" d="M 65,44 Q 430,104 795,44" />
+              </defs>
+              <path
+                d="M 125,26 Q 430,80 735,26"
+                fill="none"
+                stroke="#fcd34d"
+                strokeOpacity="0.22"
+                strokeWidth="1.2"
+              />
+              <text
+                fill="#fcd34d"
+                fontSize="18"
+                fontWeight="800"
+                letterSpacing="5"
+                fontFamily="Cinzel, Georgia, serif"
               >
-                <defs>
-                  <radialGradient id="bj-emerald-felt-grad" cx="50%" cy="40%" r="66%">
-                    <stop offset="0%" stopColor="#1b7a53" />
-                    <stop offset="42%" stopColor="#0f593b" />
-                    <stop offset="78%" stopColor="#083b27" />
-                    <stop offset="100%" stopColor="#042417" />
-                  </radialGradient>
-                </defs>
-                <rect x="0" y="0" width="1200" height="720" fill="url(#bj-emerald-felt-grad)" />
-                {/* Subtle Gold-Foil Semi-Circular Inner Table Pinstripe */}
-                <path
-                  d="M 46,88 C 56,520 270,688 600,688 C 930,688 1144,520 1154,88"
-                  fill="none"
-                  stroke="#fbbf24"
-                  strokeOpacity="0.22"
-                  strokeWidth="2"
-                />
-                <path
-                  d="M 62,92 C 74,504 282,672 600,672 C 918,672 1126,504 1138,92"
-                  fill="none"
-                  stroke="#fde68a"
-                  strokeOpacity="0.1"
-                  strokeWidth="1"
-                  strokeDasharray="6 6"
-                />
-              </svg>
+                <textPath href="#bj-felt-arc-title" startOffset="50%" textAnchor="middle">
+                  BLACKJACK PAYS 3 TO 2
+                </textPath>
+              </text>
+              <text
+                fill="#fef08a"
+                fillOpacity="0.8"
+                fontSize="11"
+                fontWeight="700"
+                letterSpacing="2"
+                fontFamily="Cinzel, Georgia, serif"
+              >
+                <textPath href="#bj-felt-arc-sub" startOffset="50%" textAnchor="middle">
+                  DEALER MUST DRAW TO 16 AND STAND ON ALL 17S · TIE BONUS 10 TO 1
+                </textPath>
+              </text>
+            </svg>
+          </div>
 
-              {/* 1. TOP DEALER HARDWARE RAIL (6-Deck Shoe, Balance, Dealer Chip Bank, Bet, Discard Tray, Close) */}
-              <div className="bj-dealer-top-bar w-full rounded-lg px-3 py-2 flex items-center justify-between gap-2 border-t border-amber-300/30 relative z-20">
-                {/* Left: 6-Deck Dealing Shoe + Live Balance */}
-                <div className="flex items-center gap-2.5 sm:gap-3">
-                  <div className="flex items-center gap-2" title="6-Deck Dealing Shoe">
-                    <div className="w-13 sm:w-15 h-10 bg-gradient-to-br from-neutral-800 via-neutral-900 to-black rounded border-2 border-amber-600/50 shadow-inner flex flex-col justify-between p-1">
-                      <div className="flex justify-between items-center text-[7px] text-amber-400 font-mono-tabular tracking-tight font-bold">
-                        <span>6-DECK</span>
-                        <span className="text-amber-200/70">VIP</span>
-                      </div>
-                      <div className="w-full h-3 bg-red-900/90 border border-red-500/50 rounded-xs flex items-center justify-center">
-                        <div className="w-7 h-1 bg-white/75 rounded-full" />
-                      </div>
-                    </div>
-                    <div className="hidden sm:flex flex-col text-left font-mono-tabular">
-                      <span className="text-[8px] uppercase tracking-wider text-amber-200/75 font-bold">
-                        SHOE
-                      </span>
-                      <span className="text-xs font-bold text-amber-300">{shoeCount} CARDS</span>
-                    </div>
-                  </div>
-
-                  {canUseRespite && (
-                    <button
-                      type="button"
-                      disabled={phase !== 'BETTING'}
-                      title="Switch Betting Currency (LUL / RESPITE)"
-                      onClick={() => {
-                        if (phase !== 'BETTING') return;
-                        soundEngine.playUiClick();
-                        setAnteBet(0);
-                        setTieSideBet(0);
-                        setCurrencyMode((prev) => (prev === 'LUL' ? 'RESPITE' : 'LUL'));
-                      }}
-                      className="px-2 py-1 rounded bg-black/65 border border-amber-500/45 text-amber-300 hover:border-amber-300 font-mono-tabular text-[10px] font-bold uppercase cursor-pointer disabled:opacity-40"
-                    >
-                      {currencyMode} ⇄
-                    </button>
-                  )}
-
-                  <div className="flex items-center bg-black/65 px-2.5 sm:px-3 py-1 rounded-lg border border-amber-500/40 shadow-inner font-mono-tabular gap-1.5">
-                    <span className="text-[9px] uppercase tracking-widest text-amber-300/85 font-cinzel font-bold hidden sm:inline">
-                      BALANCE:
-                    </span>
-                    <span className="text-emerald-400 font-bold text-xs sm:text-sm">
-                      {displayedAvailableBalance.toLocaleString()} {currencyMode}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Center: Dealer Bank Chip Inventory Tubes */}
-                <div className="hidden lg:flex flex-col items-center">
-                  <div className="text-[8px] font-cinzel tracking-[0.24em] text-amber-300/90 uppercase font-bold mb-0.5">
-                    DEALER BANK INVENTORY
-                  </div>
-                  <div className="bg-neutral-950/90 px-2.5 py-1 rounded-lg border-2 border-amber-600/40 flex items-center gap-1.5">
-                    {[
-                      'bg-blue-600 border-blue-400',
-                      'bg-red-600 border-red-400',
-                      'bg-emerald-500 border-emerald-300',
-                      'bg-neutral-900 border-amber-400',
-                      'bg-purple-700 border-purple-400',
-                    ].map((tubeColor, idx) => (
-                      <div
-                        key={idx}
-                        className="bj-dealer-rack-tube w-6 h-8 rounded-xs flex flex-col-reverse items-center justify-start p-0.5 overflow-hidden"
-                      >
-                        <div className={`w-4.5 h-1.5 rounded-xs mb-0.5 border ${tubeColor}`} />
-                        <div className={`w-4.5 h-1.5 rounded-xs mb-0.5 border ${tubeColor}`} />
-                        <div className={`w-4.5 h-1.5 rounded-xs mb-0.5 border ${tubeColor}`} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Right: Active Bet Readout, Discard Tray & Close Button */}
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center bg-black/65 px-2.5 sm:px-3 py-1 rounded-lg border border-amber-500/40 shadow-inner font-mono-tabular gap-1.5">
-                    <span className="text-[9px] uppercase tracking-widest text-amber-300/85 font-cinzel font-bold">
-                      BET:
-                    </span>
-                    <span className="text-amber-300 font-bold text-xs sm:text-sm">
-                      {totalDisplayedBet.toLocaleString()} {currencyMode}
-                    </span>
-                  </div>
-
-                  <div
-                    className="hidden sm:flex w-12 h-10 bg-neutral-900/85 border-2 border-neutral-700/80 rounded items-end justify-center p-1 shadow-inner"
-                    title="Acrylic Discard Rack"
-                  >
-                    <div className="w-9 h-4.5 bg-red-950/90 border border-red-700/50 rounded-xs flex items-center justify-center text-[7px] font-mono-tabular text-white/60">
-                      USED
-                    </div>
-                  </div>
-
-                  {onClose && (
-                    <button
-                      type="button"
-                      data-grand-casino-close-btn="true"
-                      onClick={() => {
-                        soundEngine.playUiCancel();
-                        onClose();
-                      }}
-                      aria-label="Close Blackjack Table"
-                      title="Close Blackjack Table"
-                      className="w-8 h-8 rounded-lg bg-gradient-to-b from-[#991b1b] to-[#450a0a] hover:brightness-125 border border-[#f87171]/60 text-white font-bold text-xs flex items-center justify-center shadow cursor-pointer"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* 2. DEALER HAND STAGE AREA (Top Center) */}
-              <div className="flex flex-col items-center justify-center relative z-10 pt-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[11px] font-cinzel uppercase tracking-widest text-amber-300 font-bold drop-shadow">
-                    Dealer Hand
-                  </span>
-                  <span className="bg-black/85 text-amber-300 border border-amber-500/50 text-[11px] px-2.5 py-0.5 rounded-full font-mono-tabular font-bold shadow">
-                    {dealerVisibleScore}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-center -space-x-5 min-h-[104px] sm:min-h-[112px]">
-                  {dealerHand.map((card, idx) => (
-                    <LuxuryPlayingCardSvg
-                      key={`dealer-${idx}-${card.rank}-${card.suit}`}
-                      uid={`dealer-${idx}`}
-                      card={card}
-                      hidden={idx === 1 && dealerHoleHidden}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* 3. CURVED GOLD-FOIL CASINO ARC RULES (Dedicated Band — Never Overlaps Cards) */}
-              <div className="w-full max-w-[700px] mx-auto relative z-10 pointer-events-none select-none -my-2">
-                <svg
-                  viewBox="0 0 860 92"
-                  className="w-full h-12 sm:h-14 overflow-visible"
-                  aria-hidden="true"
-                >
-                  <defs>
-                    <path id="bj-felt-arc-title" d="M 110,18 Q 430,72 750,18" />
-                    <path id="bj-felt-arc-sub" d="M 65,44 Q 430,104 795,44" />
-                  </defs>
-                  <path
-                    d="M 125,26 Q 430,80 735,26"
-                    fill="none"
-                    stroke="#fbbf24"
-                    strokeOpacity="0.28"
-                    strokeWidth="1.2"
-                  />
-                  <text
-                    fill="#fde047"
-                    fontSize="19"
-                    fontWeight="800"
-                    letterSpacing="5.5"
-                    fontFamily="Cinzel, Georgia, serif"
-                  >
-                    <textPath href="#bj-felt-arc-title" startOffset="50%" textAnchor="middle">
-                      BLACKJACK PAYS 3 TO 2
-                    </textPath>
-                  </text>
-                  <text
-                    fill="#fef08a"
-                    fillOpacity="0.86"
-                    fontSize="11.5"
-                    fontWeight="700"
-                    letterSpacing="2.2"
-                    fontFamily="Cinzel, Georgia, serif"
-                  >
-                    <textPath href="#bj-felt-arc-sub" startOffset="50%" textAnchor="middle">
-                      DEALER MUST DRAW TO 16 AND STAND ON ALL 17S · TIE BONUS 10 TO 1
-                    </textPath>
-                  </text>
-                </svg>
-              </div>
-
-              {/* Dynamic Center Outcome Banner */}
-              {centerBanner && (
-                <div className="absolute top-[46%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 pointer-events-none">
-                  <div
-                    className={`px-7 py-2 rounded-full text-sm sm:text-lg font-cinzel font-black tracking-widest shadow-2xl border-2 uppercase text-center whitespace-nowrap ${
-                      centerBanner.tone === 'win'
-                        ? 'bg-emerald-700 border-emerald-300 text-amber-100'
-                        : centerBanner.tone === 'loss'
-                          ? 'bg-rose-800 border-rose-300 text-white'
-                          : centerBanner.tone === 'push'
-                            ? 'bg-neutral-800 border-neutral-400 text-amber-300'
-                            : 'bg-neutral-900 border-amber-400 text-amber-300'
-                    }`}
-                  >
-                    {centerBanner.text}
-                  </div>
-                </div>
-              )}
-
-              {/* 4. INTERACTIVE BETTING SPOTS ROW (Tie/Bonus 10:1 · Primary Ante · Raise 2x) */}
-              <div className="w-full max-w-xl mx-auto flex items-center justify-center gap-6 sm:gap-12 relative z-10 my-0.5">
-                {/* Left: Optional Tie / Bonus Side Bet (Pays 10:1) */}
-                <button
-                  type="button"
-                  onClick={handleAddTieChip}
-                  onContextMenu={handleRemoveTieChip}
-                  title="Place Tie / Bonus Side Bet (Pays 10:1 on Push · Right-click to remove)"
-                  className={`flex flex-col items-center transition cursor-pointer ${
-                    safeStagedTie > 0 ? 'opacity-100 scale-105' : 'opacity-75 hover:opacity-100'
-                  }`}
-                >
-                  <div className="w-15 h-15 sm:w-16 sm:h-16 rounded-full border-2 border-dashed border-amber-300/70 bg-emerald-950/75 flex flex-col items-center justify-center shadow-inner relative">
-                    {safeStagedTie > 0 ? (
-                      <ClayStripedChipSvg
-                        spec={tieChipSpec}
-                        displayText={formatCompactVal(safeStagedTie)}
-                        sizeClass="w-11 h-11"
-                      />
-                    ) : (
-                      <>
-                        <span className="text-[8px] sm:text-[9px] font-bold text-amber-200 uppercase tracking-wider">
-                          Tie / Bonus
-                        </span>
-                        <span className="text-[10px] font-mono-tabular text-amber-400 font-bold">
-                          10:1
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </button>
-
-                {/* Center: Primary ANTE Betting Circle */}
-                <div className="flex flex-col items-center relative">
-                  <button
-                    type="button"
-                    onClick={handleAddAnteChip}
-                    onContextMenu={handleRemoveAnteChip}
-                    title="Click to add Ante chip · Right-click to remove"
-                    className="w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 border-amber-400 bg-emerald-950/90 shadow-[0_0_24px_rgba(251,191,36,0.4)] hover:shadow-[0_0_32px_rgba(251,191,36,0.7)] flex flex-col items-center justify-center transition active:scale-95 cursor-pointer relative"
-                  >
-                    <span className="text-[9px] font-bold text-amber-300 uppercase tracking-wider mb-0.5">
-                      ANTE
-                    </span>
-                    {safeStagedAnte > 0 ? (
-                      <ClayStripedChipSvg
-                        spec={anteChipSpec}
-                        displayText={formatCompactVal(safeStagedAnte)}
-                        sizeClass="w-11 h-11 sm:w-13 sm:h-13"
-                      />
-                    ) : (
-                      <span className="text-[10px] font-mono-tabular text-amber-200/70 font-bold">
-                        + CHIP
-                      </span>
-                    )}
-                  </button>
-                  <div className="mt-1 bg-red-900/95 border border-amber-400/80 px-2.5 py-0.5 rounded text-[10px] font-mono-tabular font-bold text-amber-200 shadow tracking-wide">
-                    Ante: {safeStagedAnte.toLocaleString()} {currencyMode}
-                  </div>
-                </div>
-
-                {/* Right: RAISE / DOUBLE Spot */}
-                <button
-                  type="button"
-                  disabled={!canDoubleNow}
-                  onClick={handleDoubleDown}
-                  title="Double Down (2x Ante + Draw 1 Card)"
-                  className={`flex flex-col items-center transition ${
-                    doubledRaiseBet > 0
-                      ? 'opacity-100 scale-105'
-                      : canDoubleNow
-                        ? 'opacity-95 hover:scale-105 cursor-pointer'
-                        : 'opacity-65 cursor-default'
-                  }`}
-                >
-                  <div className="w-15 h-15 sm:w-16 sm:h-16 rounded-xl border-2 border-dashed border-amber-300/70 bg-emerald-950/75 flex flex-col items-center justify-center shadow-inner">
-                    {doubledRaiseBet > 0 ? (
-                      <ClayStripedChipSvg
-                        spec={raiseChipSpec}
-                        displayText={formatCompactVal(doubledRaiseBet)}
-                        sizeClass="w-11 h-11"
-                      />
-                    ) : (
-                      <>
-                        <span className="text-[9px] sm:text-[10px] font-bold text-amber-200 uppercase tracking-widest">
-                          RAISE
-                        </span>
-                        <span className="text-[8px] font-mono-tabular text-emerald-400 font-bold">
-                          2x Ante
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </button>
-              </div>
-
-              {/* 5. PLAYER HAND STAGE AREA (Bottom Center) */}
-              <div className="flex flex-col items-center justify-center relative z-10 pb-1">
-                <div className="flex items-center justify-center -space-x-5 min-h-[108px] sm:min-h-[116px] mb-1.5">
-                  {playerHand.map((card, idx) => (
-                    <LuxuryPlayingCardSvg
-                      key={`player-${idx}-${card.rank}-${card.suit}`}
-                      uid={`player-${idx}`}
-                      card={card}
-                      hidden={false}
-                    />
-                  ))}
-                </div>
-
-                <div className="flex items-center gap-2 flex-wrap justify-center">
-                  <span className="text-[11px] font-cinzel uppercase tracking-widest text-amber-300 font-bold drop-shadow">
-                    Player Total
-                  </span>
-                  <span className="bg-black/85 text-amber-300 border border-amber-500/50 text-[11px] px-2.5 py-0.5 rounded-full font-mono-tabular font-bold shadow">
-                    {playerScoreLabel}
-                  </span>
-                  {(roundBadgeText || (!hasDealtAtLeastOnce && playerEval.isBlackjack)) && (
-                    <span className="bg-gradient-to-r from-amber-500 to-yellow-400 text-amber-950 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider shadow border border-yellow-200">
-                      {roundBadgeText ?? '★ BLACKJACK!'}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* 6. CURVED BRASS CHIP TRAY & FANNED ACTION CONTROLS ALONG BOTTOM RIM */}
-              <div className="w-full max-w-3xl mx-auto bj-chip-groove-tray px-3 py-2.5 sm:px-5 sm:py-3 relative z-30 flex flex-col items-center justify-center gap-2.5">
-                {/* Fanned Action Controls Row */}
-                <div className="flex items-center justify-center gap-2 sm:gap-2.5 flex-wrap relative z-20">
-                  <button
-                    type="button"
-                    disabled={phase !== 'BETTING' || (safeStagedAnte === 0 && safeStagedTie === 0)}
-                    onClick={handleClearBet}
-                    className="bj-tactile-btn px-3 py-1.5 rounded-lg text-amber-200 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 -rotate-3 hover:rotate-0 transition disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    <svg viewBox="0 0 16 16" className="w-3.5 h-3.5 shrink-0" aria-hidden="true">
-                      <path
-                        d="M3 4h10M6 4V2.5h4V4M5 4l.7 9.5h4.6L11 4"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    <span>CLEAR</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={
-                      phase !== 'BETTING' ||
-                      lastRoundBets.ante + lastRoundBets.tie <= 0 ||
-                      lastRoundBets.ante + lastRoundBets.tie > rawVaultBalance
-                    }
-                    onClick={handleRebet}
-                    className="bj-tactile-btn px-3 py-1.5 rounded-lg text-amber-200 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 -rotate-1 hover:rotate-0 transition disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    <svg viewBox="0 0 16 16" className="w-3.5 h-3.5 shrink-0" aria-hidden="true">
-                      <path
-                        d="M13 8a5 5 0 1 1-1.4-3.5M13 2.5v3h-3"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.6"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    <span>REBET</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={!canDoubleNow}
-                    onClick={handleDoubleDown}
-                    className="bj-tactile-btn px-3.5 py-1.5 rounded-lg bg-gradient-to-b from-indigo-600 to-indigo-900 border-indigo-400 text-white text-xs font-black uppercase tracking-wider -rotate-1 hover:rotate-0 transition disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    DOUBLE
-                  </button>
-
-                  <button
-                    type="button"
-                    data-casino-bj-deal-btn="true"
-                    disabled={phase !== 'BETTING' || (safeStagedAnte <= 0 && rawVaultBalance < 1)}
-                    onClick={handleDeal}
-                    className="bj-deal-btn px-6 py-2 rounded-xl text-white font-black text-sm uppercase tracking-widest transition disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    DEAL
-                  </button>
-
-                  <button
-                    type="button"
-                    data-casino-bj-hit-btn="true"
-                    disabled={phase !== 'PLAYER_TURN'}
-                    onClick={handleHit}
-                    className="bj-tactile-btn px-3.5 py-1.5 rounded-lg bg-gradient-to-b from-amber-600 to-amber-800 border-amber-400 text-white text-xs font-black uppercase tracking-wider rotate-1 hover:rotate-0 transition disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    HIT
-                  </button>
-
-                  <button
-                    type="button"
-                    data-casino-bj-stand-btn="true"
-                    disabled={phase !== 'PLAYER_TURN'}
-                    onClick={handleStand}
-                    className="bj-tactile-btn px-3.5 py-1.5 rounded-lg bg-gradient-to-b from-rose-600 to-rose-900 border-rose-400 text-white text-xs font-black uppercase tracking-wider rotate-3 hover:rotate-0 transition disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    STAND
-                  </button>
-                </div>
-
-                {/* 5-Chip Striped Clay Selection Rack */}
-                <div className="flex items-center justify-center gap-2.5 sm:gap-4 px-5 py-1.5 bg-black/55 rounded-full border border-amber-500/40 shadow-inner">
-                  {BJ_CLAY_CHIPS.map((chip) => {
-                    const isSelected = selectedChip === chip.value;
-                    return (
-                      <button
-                        key={chip.value}
-                        type="button"
-                        title={`Select ${chip.value} ${currencyMode} Chip`}
-                        onClick={() => {
-                          soundEngine.playCasinoChipClink(1);
-                          setSelectedChip(chip.value);
-                        }}
-                        className={`relative rounded-full transition-transform cursor-pointer ${
-                          chip.tiltClass
-                        } ${
-                          isSelected
-                            ? '-translate-y-1.5 scale-110'
-                            : 'hover:-translate-y-1 hover:scale-105'
-                        }`}
-                      >
-                        <ClayStripedChipSvg spec={chip} selected={isSelected} />
-                      </button>
-                    );
-                  })}
-                </div>
+          {/* Dynamic Center Outcome Banner */}
+          {centerBanner && (
+            <div className="absolute top-[46%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 pointer-events-none">
+              <div
+                className={`px-7 py-2.5 rounded-full text-sm sm:text-base font-cinzel font-extrabold tracking-widest shadow-2xl border backdrop-blur-xl uppercase text-center whitespace-nowrap ${
+                  centerBanner.tone === 'win'
+                    ? 'bg-emerald-600/90 border-emerald-300/60 text-white'
+                    : centerBanner.tone === 'loss'
+                      ? 'bg-rose-700/90 border-rose-300/50 text-white'
+                      : centerBanner.tone === 'push'
+                        ? 'bg-slate-800/90 border-white/25 text-amber-300'
+                        : 'bg-slate-900/90 border-amber-300/40 text-amber-300'
+                }`}
+              >
+                {centerBanner.text}
               </div>
             </div>
+          )}
+
+          {/* 4. INTERACTIVE BETTING SPOTS ROW (Tie/Bonus 10:1 · Primary Ante · Raise 2x) */}
+          <div className="w-full max-w-xl mx-auto flex items-center justify-center gap-6 sm:gap-12 relative z-10 my-1">
+            {/* Left: Optional Tie / Bonus Side Bet (Pays 10:1) */}
+            <button
+              type="button"
+              onClick={handleAddTieChip}
+              onContextMenu={handleRemoveTieChip}
+              title="Place Tie / Bonus Side Bet (Pays 10:1 on Push · Right-click to remove)"
+              className={`flex flex-col items-center transition cursor-pointer ${
+                safeStagedTie > 0 ? 'opacity-100 scale-105' : 'opacity-80 hover:opacity-100'
+              }`}
+            >
+              <div className="w-15 h-15 sm:w-16 sm:h-16 rounded-full border border-dashed border-amber-300/60 bg-black/25 backdrop-blur-sm flex flex-col items-center justify-center relative">
+                {safeStagedTie > 0 ? (
+                  <ClayStripedChipSvg
+                    spec={tieChipSpec}
+                    displayText={formatCompactVal(safeStagedTie)}
+                    sizeClass="w-11 h-11"
+                  />
+                ) : (
+                  <>
+                    <span className="text-[8px] sm:text-[9px] font-bold text-amber-200 uppercase tracking-wider">
+                      Tie / Bonus
+                    </span>
+                    <span className="text-[10px] font-mono-tabular text-amber-300 font-bold">
+                      10:1
+                    </span>
+                  </>
+                )}
+              </div>
+            </button>
+
+            {/* Center: Primary ANTE Betting Circle */}
+            <div className="flex flex-col items-center relative">
+              <button
+                type="button"
+                onClick={handleAddAnteChip}
+                onContextMenu={handleRemoveAnteChip}
+                title="Click to add Ante chip · Right-click to remove"
+                className="w-20 h-20 sm:w-24 sm:h-24 rounded-full border-2 border-amber-300/80 bg-black/30 backdrop-blur-sm shadow-[0_0_24px_rgba(252,211,77,0.25)] hover:shadow-[0_0_32px_rgba(252,211,77,0.45)] flex flex-col items-center justify-center transition active:scale-95 cursor-pointer relative"
+              >
+                <span className="text-[9px] font-bold text-amber-300 uppercase tracking-wider mb-0.5">
+                  ANTE
+                </span>
+                {safeStagedAnte > 0 ? (
+                  <ClayStripedChipSvg
+                    spec={anteChipSpec}
+                    displayText={formatCompactVal(safeStagedAnte)}
+                    sizeClass="w-11 h-11 sm:w-13 sm:h-13"
+                  />
+                ) : (
+                  <span className="text-[10px] font-mono-tabular text-amber-200/75 font-bold">
+                    + CHIP
+                  </span>
+                )}
+              </button>
+              <div className="mt-1.5 bg-black/45 backdrop-blur-md border border-amber-300/35 px-3 py-0.5 rounded-full text-[10px] font-mono-tabular font-bold text-amber-200 tracking-wide">
+                Ante: {safeStagedAnte.toLocaleString()} {currencyMode}
+              </div>
+            </div>
+
+            {/* Right: RAISE / DOUBLE Spot */}
+            <button
+              type="button"
+              disabled={!canDoubleNow}
+              onClick={handleDoubleDown}
+              title="Double Down (2x Ante + Draw 1 Card)"
+              className={`flex flex-col items-center transition ${
+                doubledRaiseBet > 0
+                  ? 'opacity-100 scale-105'
+                  : canDoubleNow
+                    ? 'opacity-95 hover:scale-105 cursor-pointer'
+                    : 'opacity-55 cursor-default'
+              }`}
+            >
+              <div className="w-15 h-15 sm:w-16 sm:h-16 rounded-full border border-dashed border-emerald-300/60 bg-black/25 backdrop-blur-sm flex flex-col items-center justify-center">
+                {doubledRaiseBet > 0 ? (
+                  <ClayStripedChipSvg
+                    spec={raiseChipSpec}
+                    displayText={formatCompactVal(doubledRaiseBet)}
+                    sizeClass="w-11 h-11"
+                  />
+                ) : (
+                  <>
+                    <span className="text-[9px] sm:text-[10px] font-bold text-amber-200 uppercase tracking-widest">
+                      RAISE
+                    </span>
+                    <span className="text-[8.5px] font-mono-tabular text-emerald-400 font-bold">
+                      2x Ante
+                    </span>
+                  </>
+                )}
+              </div>
+            </button>
+          </div>
+
+          {/* 5. PLAYER HAND STAGE AREA (Bottom Center) */}
+          <div className="flex flex-col items-center justify-center relative z-10">
+            <div className="flex items-center justify-center -space-x-5 min-h-[108px] sm:min-h-[116px] mb-1.5">
+              {playerHand.map((card, idx) => (
+                <LuxuryPlayingCardSvg
+                  key={`player-${idx}-${card.rank}-${card.suit}`}
+                  uid={`player-${idx}`}
+                  card={card}
+                  hidden={false}
+                />
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap justify-center">
+              <span className="text-[11px] font-cinzel uppercase tracking-widest text-amber-300 font-bold">
+                Player Total
+              </span>
+              <span className="bg-black/45 backdrop-blur-md text-amber-300 border border-amber-300/35 text-[11px] px-2.5 py-0.5 rounded-full font-mono-tabular font-bold">
+                {playerScoreLabel}
+              </span>
+              {(roundBadgeText || (!hasDealtAtLeastOnce && playerEval.isBlackjack)) && (
+                <span className="bg-amber-300 text-slate-950 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider">
+                  {roundBadgeText ?? '★ BLACKJACK!'}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* 6. DARK FROSTED GLASS CHIP TRAY & ACTION CONTROLS */}
+        <div className="w-full rounded-2xl bg-white/[0.05] border border-white/10 px-4 py-3 flex flex-col lg:flex-row items-center justify-between gap-3">
+          {/* Action Controls Row */}
+          <div className="flex items-center justify-center gap-2 flex-wrap">
+            <button
+              type="button"
+              disabled={phase !== 'BETTING' || (safeStagedAnte === 0 && safeStagedTie === 0)}
+              onClick={handleClearBet}
+              className="px-3.5 py-2 rounded-full bg-white/[0.07] hover:bg-white/[0.14] border border-white/15 text-slate-200 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <svg viewBox="0 0 16 16" className="w-3.5 h-3.5 shrink-0" aria-hidden="true">
+                <path
+                  d="M3 4h10M6 4V2.5h4V4M5 4l.7 9.5h4.6L11 4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span>CLEAR</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={
+                phase !== 'BETTING' ||
+                lastRoundBets.ante + lastRoundBets.tie <= 0 ||
+                lastRoundBets.ante + lastRoundBets.tie > rawVaultBalance
+              }
+              onClick={handleRebet}
+              className="px-3.5 py-2 rounded-full bg-white/[0.07] hover:bg-white/[0.14] border border-white/15 text-slate-200 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <svg viewBox="0 0 16 16" className="w-3.5 h-3.5 shrink-0" aria-hidden="true">
+                <path
+                  d="M13 8a5 5 0 1 1-1.4-3.5M13 2.5v3h-3"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <span>REBET</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={!canDoubleNow}
+              onClick={handleDoubleDown}
+              className="px-4 py-2 rounded-full bg-indigo-500/25 hover:bg-indigo-500/40 border border-indigo-400/45 text-indigo-200 text-xs font-bold uppercase tracking-wider transition disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+            >
+              DOUBLE
+            </button>
+
+            <button
+              type="button"
+              data-casino-bj-deal-btn="true"
+              disabled={phase !== 'BETTING' || (safeStagedAnte <= 0 && rawVaultBalance < 1)}
+              onClick={handleDeal}
+              className="px-7 py-2.5 rounded-full bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-extrabold text-xs sm:text-sm uppercase tracking-widest shadow-md transition active:scale-95 disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
+            >
+              DEAL
+            </button>
+
+            <button
+              type="button"
+              data-casino-bj-hit-btn="true"
+              disabled={phase !== 'PLAYER_TURN'}
+              onClick={handleHit}
+              className="px-5 py-2 rounded-full bg-amber-300 hover:bg-amber-200 text-slate-950 text-xs font-extrabold uppercase tracking-wider transition active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+            >
+              HIT
+            </button>
+
+            <button
+              type="button"
+              data-casino-bj-stand-btn="true"
+              disabled={phase !== 'PLAYER_TURN'}
+              onClick={handleStand}
+              className="px-5 py-2 rounded-full bg-rose-500/25 hover:bg-rose-500/40 border border-rose-400/45 text-rose-200 text-xs font-extrabold uppercase tracking-wider transition active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+            >
+              STAND
+            </button>
+          </div>
+
+          {/* 5-Chip Striped Clay Selection Rack */}
+          <div className="flex items-center justify-center gap-2 sm:gap-3 px-4 py-1.5 bg-white/[0.04] rounded-full border border-white/10">
+            {BJ_CLAY_CHIPS.map((chip) => {
+              const isSelected = selectedChip === chip.value;
+              return (
+                <button
+                  key={chip.value}
+                  type="button"
+                  title={`Select ${chip.value} ${currencyMode} Chip`}
+                  onClick={() => {
+                    soundEngine.playCasinoChipClink(1);
+                    setSelectedChip(chip.value);
+                  }}
+                  className={`relative rounded-full transition-transform cursor-pointer ${
+                    isSelected
+                      ? '-translate-y-1 scale-110'
+                      : 'hover:-translate-y-0.5 hover:scale-105 opacity-90 hover:opacity-100'
+                  }`}
+                >
+                  <ClayStripedChipSvg spec={chip} selected={isSelected} />
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
