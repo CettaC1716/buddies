@@ -32,10 +32,10 @@ const TIME_PHASE_ITEMS: ReadonlyArray<{
   icon: string;
   label: string;
 }> = [
-  { key: 'dawn', icon: '🌄', label: 'Fajar' },
-  { key: 'day', icon: '☀️', label: 'Siang' },
-  { key: 'dusk', icon: '🌅', label: 'Senja' },
-  { key: 'night', icon: '🌙', label: 'Malam' },
+  { key: 'dawn', icon: '🌄', label: 'Dawn' },
+  { key: 'day', icon: '☀️', label: 'Day' },
+  { key: 'dusk', icon: '🌅', label: 'Dusk' },
+  { key: 'night', icon: '🌙', label: 'Night' },
 ];
 
 const WEATHER_ITEMS: ReadonlyArray<{
@@ -43,17 +43,17 @@ const WEATHER_ITEMS: ReadonlyArray<{
   icon: string;
   label: string;
 }> = [
-  { key: 'cerah', icon: '☀️', label: 'Cerah' },
-  { key: 'berangin', icon: '💨', label: 'Berangin' },
-  { key: 'kabut', icon: '🌫️', label: 'Kabut' },
-  { key: 'hujan', icon: '🌧️', label: 'Hujan' },
+  { key: 'cerah', icon: '☀️', label: 'Clear' },
+  { key: 'berangin', icon: '💨', label: 'Windy' },
+  { key: 'kabut', icon: '🌫️', label: 'Foggy' },
+  { key: 'hujan', icon: '🌧️', label: 'Rain' },
 ];
 
 function getTimePhaseMeta(phase: LightingPresetKey): { icon: string; label: string } {
   return (
     TIME_PHASE_ITEMS.find((item) => item.key === phase) ?? {
       icon: '☀️',
-      label: TIME_PHASE_LABELS[phase] ?? 'Siang',
+      label: TIME_PHASE_LABELS[phase] ?? 'Day',
     }
   );
 }
@@ -62,7 +62,7 @@ function getWeatherMeta(condition: WeatherConditionKey): { icon: string; label: 
   return (
     WEATHER_ITEMS.find((item) => item.key === condition) ?? {
       icon: '☀️',
-      label: WEATHER_PRESETS[condition]?.shortLabel ?? 'Cerah',
+      label: WEATHER_PRESETS[condition]?.shortLabel ?? 'Clear',
     }
   );
 }
@@ -154,7 +154,7 @@ export function HudWeatherAndTimeControl({
       {isOpen && (
         <div
           role="region"
-          aria-label="Cuaca & Waktu Kota"
+          aria-label="City Weather & Time"
           data-hud-weather-popover="true"
           onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
@@ -166,7 +166,7 @@ export function HudWeatherAndTimeControl({
           <div className="flex items-center justify-between border-b border-white/15 pb-1.5 gap-2">
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="text-[11px] font-black tracking-wide text-white whitespace-nowrap">
-                Cuaca &amp; Waktu
+                Weather &amp; Time
               </span>
               <span
                 data-weather-clock-label="true"
@@ -180,15 +180,15 @@ export function HudWeatherAndTimeControl({
                 type="button"
                 data-weather-quick-cycle-btn="true"
                 onClick={() => onCycleTimePhase()}
-                title="Ganti Fase Waktu [L]"
+                title="Cycle Time Phase [L]"
                 className="px-1.5 py-0.5 bg-[#272c3a] hover:bg-[#353c4f] text-[10px] font-black text-[#fde047] border border-white/20 cursor-pointer"
               >
-                ↻ Fase
+                ↻ Phase
               </button>
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                aria-label="Tutup Menu Cuaca & Waktu"
+                aria-label="Close Weather & Time Menu"
                 className="px-1.5 py-0.5 bg-white/10 hover:bg-white/20 text-[10px] font-black text-slate-200 border border-white/20 cursor-pointer"
               >
                 Done
@@ -196,7 +196,7 @@ export function HudWeatherAndTimeControl({
             </div>
           </div>
 
-          {/* Siklus Otomatis Toggle */}
+          {/* Auto Cycle Toggle */}
           <label className="flex items-center justify-between gap-2 px-2 py-1.5 bg-[#1f2430] border border-white/20 cursor-pointer">
             <span className="flex items-center gap-1.5 text-[11px] font-bold text-slate-100">
               <input
@@ -206,7 +206,7 @@ export function HudWeatherAndTimeControl({
                 onChange={(e) => onToggleAutoCycle(e.currentTarget.checked)}
                 className="w-3.5 h-3.5 accent-[#b8ff3c] cursor-pointer"
               />
-              <span>Siklus Otomatis (24 Jam)</span>
+              <span>Auto Cycle (24h)</span>
             </span>
             <span
               className={`text-[9.5px] font-black uppercase px-1.5 py-0.5 border ${
@@ -222,7 +222,7 @@ export function HudWeatherAndTimeControl({
           {/* Time-of-Day Phase Buttons */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-[10px] font-bold text-slate-300">
-              <span>Waktu ({timeMeta.label})</span>
+              <span>Time ({timeMeta.label})</span>
               <span className="font-mono tabular-nums text-[#fde047]">{clockLabel}</span>
             </div>
             <div className="grid grid-cols-4 gap-1">
@@ -253,7 +253,7 @@ export function HudWeatherAndTimeControl({
               min={0}
               max={24}
               step={0.25}
-              aria-label="Jam Dunia (24 Jam)"
+              aria-label="World Clock (24h)"
               data-weather-hour-slider="true"
               value={Number(timeOfDayHours.toFixed(2))}
               onChange={(e) => onChangeTimeOfDayHours(Number(e.currentTarget.value))}
@@ -264,7 +264,7 @@ export function HudWeatherAndTimeControl({
           {/* Weather Buttons */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-[10px] font-bold text-slate-300">
-              <span>Cuaca</span>
+              <span>Weather</span>
               <span className="text-[#38bdf8] font-black">{weatherMeta.label}</span>
             </div>
             <div className="grid grid-cols-4 gap-1">
@@ -303,7 +303,7 @@ export function HudWeatherAndTimeControl({
                       : 'bg-[#1f2430] hover:bg-[#2a3142] text-slate-200 border-white/20'
                   }`}
                 >
-                  🌦️ Hujan Ringan
+                  🌦️ Light Rain
                 </button>
                 <button
                   type="button"
@@ -315,20 +315,20 @@ export function HudWeatherAndTimeControl({
                       : 'bg-[#1f2430] hover:bg-[#2a3142] text-slate-200 border-white/20'
                   }`}
                 >
-                  ⛈️ Hujan Deras
+                  ⛈️ Heavy Rain
                 </button>
               </div>
             )}
           </div>
 
-          {/* Terang Kota / City Lights (50% - 250%) */}
+          {/* City Lights (50% - 250%) */}
           <div className="space-y-1 pt-0.5 border-t border-white/15">
             <div className="flex items-center justify-between gap-2 text-[10.5px]">
               <label
                 htmlFor={`hud-city-lights-${contextId}`}
                 className="font-bold text-slate-100 whitespace-nowrap"
               >
-                💡 Terang Kota / City Lights
+                💡 City Lights
               </label>
               <span
                 data-weather-city-lights-label="true"
@@ -343,7 +343,7 @@ export function HudWeatherAndTimeControl({
               min={50}
               max={250}
               step={5}
-              aria-label="Terang Kota / City Lights"
+              aria-label="City Lights"
               data-weather-city-lights-slider="true"
               value={cityLightsPct}
               onChange={(e) => onChangeCityLightsScale(Number(e.currentTarget.value) / 100)}
@@ -366,7 +366,7 @@ export function HudWeatherAndTimeControl({
             openPopover();
           }
         }}
-        title={`Cuaca & Waktu: ${timeMeta.label} (${clockLabel}) · ${weatherMeta.label} (Tekan [L] untuk ganti fase)`}
+        title={`Weather & Time: ${timeMeta.label} (${clockLabel}) · ${weatherMeta.label} (Press [L] to cycle phase)`}
         className="-skew-x-6 h-10 px-2.5 flex items-center gap-1.5 bg-[#14161d] hover:bg-[#1f2430] text-white border-3 border-black ring-2 ring-white shadow-[3px_3px_0_#000] cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b8ff3c]"
       >
         <span className="skew-x-6 flex items-center gap-1.5 text-[11px] font-black whitespace-nowrap">

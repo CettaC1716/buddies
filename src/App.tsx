@@ -4282,7 +4282,7 @@ export default function App() {
   const handlePrepareCafeOrder = useCallback(
     (selectedItem: CafeMenuItemSpec): { ok: boolean; message: string } => {
       if (cafePrepStatusRef.current) {
-        return { ok: false, message: 'Order sedang disiapkan...' };
+        return { ok: false, message: 'Order is being prepared...' };
       }
       const currentOrder = cafeShiftState.activeOrder;
       if (!cafeShiftState.isWorking || !currentOrder) {
@@ -4412,10 +4412,10 @@ export default function App() {
       if (!res.purchased) {
         soundEngine.playHit();
         if (res.reason === 'still_consuming') {
-          const activeName = res.nextConsumerState.activeItem?.name ?? 'pesananmu';
+          const activeName = res.nextConsumerState.activeItem?.name ?? 'your order';
           return {
             ok: false,
-            message: `Habiskan ${activeName} di tangan dulu sebelum memesan lagi!`,
+            message: `Finish ${activeName} in your hand before ordering again!`,
           };
         }
         if (res.reason === 'insufficient_lul') {
@@ -4424,7 +4424,7 @@ export default function App() {
             message: `Not enough LUL! Need ${res.totalPriceLul} LUL (work a shift or cash out at the ATM).`,
           };
         }
-        return { ok: false, message: 'Pilih minimal 1 menu untuk dipesan.' };
+        return { ok: false, message: 'Select at least 1 item to order.' };
       }
 
       soundEngine.playUiConfirm();
@@ -4444,19 +4444,19 @@ export default function App() {
       }
       const orderTitle =
         res.items.length > 1
-          ? `BATCH (${res.items.length} MENU)`
+          ? `BATCH (${res.items.length} ITEMS)`
           : `ORDER ${res.items[0].name.toUpperCase()}`;
       grantPlayerXp(res.xpGained, orderTitle);
       const talkLabel =
         res.items.length > 1
-          ? `Nikmati batch ${res.items.length} menu (${res.items[0].name}...) +${res.xpGained} XP!`
+          ? `Enjoying a ${res.items.length}-item order (${res.items[0].name}...) +${res.xpGained} XP!`
           : `Enjoying ${res.items[0].name} (+${res.xpGained} XP!)`;
       dispatchBuddyAction(`socialTalk:${talkLabel}`);
       return {
         ok: true,
         message:
           res.items.length > 1
-            ? `Batch ${res.items.length} menu diterima! +${res.xpGained} XP`
+            ? `${res.items.length}-item order received! +${res.xpGained} XP`
             : `Ordered ${res.items[0].name}! +${res.xpGained} XP`,
       };
     },
@@ -8531,12 +8531,12 @@ export default function App() {
                       type="button"
                       aria-label={
                         canOpenCityViewFromMinimap
-                          ? 'Buka City View'
+                          ? 'Open City View'
                           : 'Mini Radar Arena'
                       }
                       title={
                         canOpenCityViewFromMinimap
-                          ? 'Tekan Mini Map untuk melihat City View & pilih lokasi jalan'
+                          ? 'Click the Mini Map to open City View & pick a walking destination'
                           : undefined
                       }
                       disabled={!canOpenCityViewFromMinimap}
@@ -9370,7 +9370,7 @@ export default function App() {
                         ? 'bg-[#4ade80] hover:bg-[#86efac]'
                         : 'bg-[#b8ff3c] hover:bg-[#d9f99d]'
                     } text-[#1a1a1a] border-3 border-[#1a1a1a] ring-2 ring-white shadow-[3px_3px_0_#1a1a1a] transition-transform hover:scale-105 active:scale-95 cursor-pointer`}
-                    title="Open Personal Bag (Joran & Items)"
+                    title="Open Personal Bag (Fishing Rod & Items)"
                   >
                     <span className="skew-x-12 flex items-center gap-1">
                       <Backpack className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
@@ -13469,12 +13469,12 @@ export default function App() {
           <span className="inline-block h-2.5 w-2.5 animate-ping rounded-full bg-amber-400" />
           <span>
             {cafePrepStatus.stage === 'serving'
-              ? `Menyajikan ${cafePrepStatus.itemName} ke counter...`
+              ? `Serving ${cafePrepStatus.itemName} at the counter...`
               : cafePrepStatus.stage === 'moving'
-                ? `Membawa ${cafePrepStatus.itemName} ke counter...`
+                ? `Bringing ${cafePrepStatus.itemName} to the counter...`
                 : cafePrepStatus.category === 'pastry'
-                  ? `Menata ${cafePrepStatus.itemName}...`
-                  : `Membuat ${cafePrepStatus.itemName}...`}
+                  ? `Plating ${cafePrepStatus.itemName}...`
+                  : `Preparing ${cafePrepStatus.itemName}...`}
           </span>
         </div>
       )}
@@ -14166,7 +14166,7 @@ export default function App() {
                   className="mt-0.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#b8ff3c] hover:bg-[#a3e635] text-[#0f131c] border border-[#14161d] text-[10px] font-black tracking-wide shadow-xs cursor-pointer transition-transform active:scale-95"
                 >
                   <Navigation className="w-2.5 h-2.5" />
-                  <span>Jalan ke sini</span>
+                  <span>Walk here</span>
                 </button>
               </div>
             )}
@@ -14206,7 +14206,7 @@ export default function App() {
                       : 'bg-white/10 text-white/85 hover:bg-white/20'
                   }`}
                 >
-                  Kota
+                  City
                 </button>
                 {CITY_VIEW_DISTRICTS.map((dist) => {
                   const isActive = cityViewTarget === dist.id;
@@ -14248,7 +14248,7 @@ export default function App() {
                 </button>
                 <span className="px-1.5 text-[11px] font-mono font-bold text-white/80">
                   {cityViewTarget === 'kota'
-                    ? 'Kota'
+                    ? 'City'
                     : `${
                         CITY_VIEW_DISTRICTS.findIndex((d) => d.id === cityViewTarget) + 1
                       } / ${CITY_VIEW_DISTRICTS.length}`}
@@ -14274,13 +14274,13 @@ export default function App() {
                 }}
                 className="px-3.5 py-2 rounded-full bg-white text-[#0f131c] hover:bg-slate-100 text-[11px] font-black tracking-wide shadow-[0_10px_28px_rgba(0,0,0,0.35)] cursor-pointer transition-transform active:scale-95"
               >
-                &times; Kembali
+                &times; Back
               </button>
             </div>
 
             {/* Bottom-Center Click-to-Walk Hint inside 3D Aerial City View */}
             <div className="pointer-events-none fixed bottom-4 left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full bg-[#0f131c]/90 text-white/90 border border-white/20 shadow-[0_8px_22px_rgba(0,0,0,0.35)] text-[11px] font-semibold tracking-wide whitespace-nowrap">
-              Klik lokasi mana saja di peta 3D untuk berjalan ke sana · Drag untuk geser kamera
+              Click anywhere on the 3D map to walk there · Drag to pan the camera
             </div>
 
             {/* Bottom-Right Weather & Time Pill inside City View */}

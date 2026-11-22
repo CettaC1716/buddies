@@ -610,9 +610,9 @@ test('Underwear slot selection supports underwear + corewear layering and bare o
     slot: 'underwear',
     underwearSubSlot: 'underwear',
     gender: 'female',
-    name: 'Blitz Bra & Celana Dalam Basic Putih',
+    name: 'Blitz Basic White Bra & Briefs',
     subtitle: 'Bra Set',
-    collection: 'Underwear · Pakaian Dalam',
+    collection: 'Underwear · Essentials',
     priceLul: 0,
     isStarterDefault: false,
     glbPath: null,
@@ -623,7 +623,7 @@ test('Underwear slot selection supports underwear + corewear layering and bare o
     ...sampleUw,
     id: 'uw_corewear_f_15463e19',
     underwearSubSlot: 'corewear',
-    name: 'Blitz Bustier Renda Burgundy',
+    name: 'Blitz Burgundy Lace Bustier',
     subtitle: 'Bustier',
   };
   const starterNone = WARDROBE_STUDIO_ITEMS.find((i) => i.id === 'underwear_none')!;

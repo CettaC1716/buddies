@@ -627,7 +627,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
     if (phase !== 'BETTING') return;
     if (safeStagedAnte + safeStagedTie + selectedChip > rawVaultBalance) {
       soundEngine.playUiCancel();
-      triggerCenterBanner(`SALDO ${currencyMode} TIDAK CUKUP`, 'info');
+      triggerCenterBanner(`INSUFFICIENT ${currencyMode} BALANCE`, 'info');
       return;
     }
     soundEngine.playCasinoChipClink(1);
@@ -648,7 +648,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
     if (phase !== 'BETTING') return;
     if (safeStagedAnte + safeStagedTie + selectedChip > rawVaultBalance) {
       soundEngine.playUiCancel();
-      triggerCenterBanner(`SALDO ${currencyMode} TIDAK CUKUP`, 'info');
+      triggerCenterBanner(`INSUFFICIENT ${currencyMode} BALANCE`, 'info');
       return;
     }
     soundEngine.playCasinoChipClink(1);
@@ -678,7 +678,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
     const needed = lastRoundBets.ante + lastRoundBets.tie;
     if (needed <= 0 || needed > rawVaultBalance) {
       soundEngine.playUiCancel();
-      triggerCenterBanner(`SALDO ${currencyMode} TIDAK CUKUP UNTUK REBET`, 'info');
+      triggerCenterBanner(`INSUFFICIENT ${currencyMode} BALANCE TO REBET`, 'info');
       return;
     }
     soundEngine.playCasinoChipClink(2);
@@ -703,7 +703,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
               : 0;
       if (fallback <= 0) {
         soundEngine.playUiCancel();
-        triggerCenterBanner(`PASANG TARUHAN ANTE TERLEBIH DAHULU`, 'info');
+        triggerCenterBanner(`PLACE AN ANTE BET FIRST`, 'info');
         return;
       }
       effectiveAnte = fallback;
@@ -830,7 +830,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
 
     if (!debitRes.ok) {
       soundEngine.playUiCancel();
-      triggerCenterBanner(`SALDO ${curMode} TIDAK CUKUP UNTUK DOUBLE`, 'info');
+      triggerCenterBanner(`INSUFFICIENT ${curMode} BALANCE TO DOUBLE`, 'info');
       return;
     }
 
@@ -959,7 +959,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
                     <button
                       type="button"
                       disabled={phase !== 'BETTING'}
-                      title="Ganti Mata Uang Taruhan (LUL / RESPITE)"
+                      title="Switch Betting Currency (LUL / RESPITE)"
                       onClick={() => {
                         if (phase !== 'BETTING') return;
                         soundEngine.playUiClick();
@@ -1036,8 +1036,8 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
                         soundEngine.playUiCancel();
                         onClose();
                       }}
-                      aria-label="Tutup Meja Blackjack"
-                      title="Tutup Meja Blackjack"
+                      aria-label="Close Blackjack Table"
+                      title="Close Blackjack Table"
                       className="w-8 h-8 rounded-lg bg-gradient-to-b from-[#991b1b] to-[#450a0a] hover:brightness-125 border border-[#f87171]/60 text-white font-bold text-xs flex items-center justify-center shadow cursor-pointer"
                     >
                       ✕
@@ -1139,7 +1139,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
                   type="button"
                   onClick={handleAddTieChip}
                   onContextMenu={handleRemoveTieChip}
-                  title="Pasang Side Bet Tie / Bonus (Membayar 10:1 saat Push · Klik kanan kurangi)"
+                  title="Place Tie / Bonus Side Bet (Pays 10:1 on Push · Right-click to remove)"
                   className={`flex flex-col items-center transition cursor-pointer ${
                     safeStagedTie > 0 ? 'opacity-100 scale-105' : 'opacity-75 hover:opacity-100'
                   }`}
@@ -1170,7 +1170,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
                     type="button"
                     onClick={handleAddAnteChip}
                     onContextMenu={handleRemoveAnteChip}
-                    title="Klik untuk tambah chip Ante · Klik kanan untuk kurangi"
+                    title="Click to add Ante chip · Right-click to remove"
                     className="w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 border-amber-400 bg-emerald-950/90 shadow-[0_0_24px_rgba(251,191,36,0.4)] hover:shadow-[0_0_32px_rgba(251,191,36,0.7)] flex flex-col items-center justify-center transition active:scale-95 cursor-pointer relative"
                   >
                     <span className="text-[9px] font-bold text-amber-300 uppercase tracking-wider mb-0.5">
@@ -1198,7 +1198,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
                   type="button"
                   disabled={!canDoubleNow}
                   onClick={handleDoubleDown}
-                  title="Double Down (2x Ante + Ambil 1 Kartu)"
+                  title="Double Down (2x Ante + Draw 1 Card)"
                   className={`flex flex-col items-center transition ${
                     doubledRaiseBet > 0
                       ? 'opacity-100 scale-105'
@@ -1349,7 +1349,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
                       <button
                         key={chip.value}
                         type="button"
-                        title={`Pilih Chip ${chip.value} ${currencyMode}`}
+                        title={`Select ${chip.value} ${currencyMode} Chip`}
                         onClick={() => {
                           soundEngine.playCasinoChipClink(1);
                           setSelectedChip(chip.value);

@@ -164,7 +164,7 @@ test('computeAdaptiveDprTarget steps down under GPU pressure without dropping be
   assert.equal(inCooldown.nextCooldownFrames, 9);
 });
 
-test('thin anime outline profiles keep >= 1.0px stroke continuity at gameplay distance and taper cleanly far away', () => {
+test('thin anime outline profiles keep crisp fine stroke at gameplay distance and taper cleanly far away', () => {
   for (const kind of ['head', 'skin', 'cloth', 'hair_cutout'] as const) {
     const profile = getAvatarOutlineScreenSpaceProfile(kind);
     const closePx = evaluateAvatarOutlinePixelWidth(profile, 4.0);
@@ -172,15 +172,15 @@ test('thin anime outline profiles keep >= 1.0px stroke continuity at gameplay di
     const farPx = evaluateAvatarOutlinePixelWidth(profile, 60.0);
 
     assert.ok(
-      closePx >= 1.0 && closePx <= 1.5,
-      `${kind}: close-up thin anime outline should stay crisp (1.0-1.5px), got ${closePx}`,
+      closePx >= 0.7 && closePx <= 1.1,
+      `${kind}: close-up thin anime outline should stay crisp and fine (0.7-1.1px), got ${closePx}`,
     );
     assert.ok(
-      thirdPersonPx >= 1.0 && thirdPersonPx <= 1.4,
-      `${kind}: third-person outline must be >= 1.0px to eliminate dotted sub-pixel dropout, got ${thirdPersonPx}`,
+      thirdPersonPx >= 0.7 && thirdPersonPx <= 1.05,
+      `${kind}: third-person outline should stay fine and continuous (0.7-1.05px), got ${thirdPersonPx}`,
     );
     assert.ok(
-      farPx < thirdPersonPx && farPx >= 0.5,
+      farPx < thirdPersonPx && farPx >= 0.35,
       `${kind}: far-distance outline should taper gracefully without blobbing, got ${farPx}`,
     );
     assert.ok(

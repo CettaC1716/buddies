@@ -3657,12 +3657,13 @@ export function buildLShapedGlasshouseArchitecture(
   styler: CafeAssetStyler,
   cfg: LShapedGlasshouseShellConfig,
 ): void {
-  const COL_BRONZE = '#45382e';
-  const COL_BRONZE_DARK = '#2e241d';
-  const COL_BRONZE_LIGHT = '#5e4d3f';
-  const COL_PANEL_INSET = '#544437';
-  const COL_STONE_APRON = '#d6cfc2';
-  const COL_STONE_TRIM = '#b9b0a1';
+  const isExteriorShell = Boolean(cfg.includeStoneApronAndPorch);
+  const COL_BRONZE = isExteriorShell ? '#6d5440' : '#45382e';
+  const COL_BRONZE_DARK = isExteriorShell ? '#654e3c' : '#2e241d';
+  const COL_BRONZE_LIGHT = isExteriorShell ? '#80644c' : '#5e4d3f';
+  const COL_PANEL_INSET = isExteriorShell ? '#745944' : '#544437';
+  const COL_STONE_APRON = isExteriorShell ? '#e1d7c4' : '#d6cfc2';
+  const COL_STONE_TRIM = isExteriorShell ? '#cbbca5' : '#b9b0a1';
 
   const archGlassMat = styler.frostedGlassMat ?? styler.clearGlassMat;
   const prepFrostGeo = (geo: THREE.BufferGeometry): THREE.BufferGeometry =>
@@ -3796,7 +3797,7 @@ export function buildLShapedGlasshouseArchitecture(
       (px >= wingMinX && px <= wingMaxX && pz >= wingMinZ && pz <= wingMaxZ);
 
     const shadeBuckets: [number[], number[], number[]] = [[], [], []];
-    const shadeHexes = ['#d8a164', '#b67d42', '#cc9355'] as const;
+    const shadeHexes = ['#dca567', '#be8448', '#d09658'] as const;
     const colPitch = 0.78;
     const rowPitch = 0.39;
     const halfLen = 0.50;
@@ -3874,6 +3875,8 @@ export function buildLShapedGlasshouseArchitecture(
   addPart(parent, styler, makeOrthoMitredStripGeo(wallPerimeterPts, 0.14, 0.14, 0.018, true, 0.5), COL_BRONZE_DARK, [0, cfg.floorY + 0.11, 0], [0, 0, 0], 0.005, {
     metalness: 0.28,
     roughness: 0.46,
+    castShadow: isExteriorShell,
+    receiveShadow: true,
   });
   const kneeWallH = Math.max(0.18, cfg.kneeH - 0.224);
   addPart(
@@ -3884,19 +3887,25 @@ export function buildLShapedGlasshouseArchitecture(
     [0, cfg.floorY + 0.18 + kneeWallH * 0.5, 0],
     [0, 0, 0],
     0.006,
-    { metalness: 0.24, roughness: 0.52 },
+    { metalness: 0.24, roughness: 0.52, castShadow: isExteriorShell, receiveShadow: true },
   );
   addPart(parent, styler, makeOrthoMitredStripGeo(wallPerimeterPts, 0.135, 0.085, 0.020, true, 0.5), COL_BRONZE_DARK, [0, cfg.floorY + cfg.kneeH, 0], [0, 0, 0], 0.005, {
     metalness: 0.28,
     roughness: 0.45,
+    castShadow: isExteriorShell,
+    receiveShadow: true,
   });
   addPart(parent, styler, makeOrthoMitredStripGeo(wallPerimeterPts, 0.11, 0.14, 0.022, true, 0.5), COL_BRONZE, [0, cfg.floorY + cfg.eavesY, 0], [0, 0, 0], 0.006, {
     metalness: 0.26,
     roughness: 0.46,
+    castShadow: isExteriorShell,
+    receiveShadow: true,
   });
   addPart(parent, styler, makeOrthoMitredStripGeo(wallPerimeterPts, 0.13, 0.06, 0.016, true, 0.5), COL_BRONZE_DARK, [0, cfg.floorY + cfg.eavesY + 0.102, 0], [0, 0, 0], 0.005, {
     metalness: 0.28,
     roughness: 0.45,
+    castShadow: isExteriorShell,
+    receiveShadow: true,
   });
 
   // Single welded corner pilasters seated cleanly between sill coping & eaves beam
@@ -3915,6 +3924,8 @@ export function buildLShapedGlasshouseArchitecture(
     addPart(parent, styler, cornerPilasterGeo, COL_BRONZE, [cx, pilasterY, cz], [0, 0, 0], 0.005, {
       metalness: 0.26,
       roughness: 0.46,
+      castShadow: isExteriorShell,
+      receiveShadow: true,
     });
   }
 
@@ -3959,6 +3970,8 @@ export function buildLShapedGlasshouseArchitecture(
         addPart(wallGrp, styler, bayMullionGeo, COL_BRONZE, [mx, pilasterY - cfg.floorY, 0], [0, 0, 0], 0.005, {
           metalness: 0.26,
           roughness: 0.46,
+          castShadow: isExteriorShell,
+          receiveShadow: true,
         });
       }
       if (b < bays) {
@@ -3966,6 +3979,8 @@ export function buildLShapedGlasshouseArchitecture(
         // Beveled raised dado panel inset cleanly within knee-wall height
         addPart(wallGrp, styler, makeRoundedBoxGeo(Math.max(0.24, bayW - 0.24), dadoH, 0.25, 0.02, 2), COL_PANEL_INSET, [bx, dadoCenterLocalY, 0], [0, 0, 0], 0.004, {
           roughness: 0.55,
+          castShadow: isExteriorShell,
+          receiveShadow: true,
         });
         // Smooth Victorian segmental transom arch tucked inside pilasters
         const archPts: THREE.Vector3[] = [];
@@ -4602,10 +4617,20 @@ export function buildJoinedShiftBoardCounterWing(
   return g;
 }
 
-export function buildSouthPlazaLShapedGlasshouseCafe(styler: CafeAssetStyler): THREE.Group {
+export function buildSouthPlazaLShapedGlasshouseCafe(rawStyler: CafeAssetStyler): THREE.Group {
   const root = new THREE.Group();
   root.name = 'LobbyLShapedBotanicalGlasshouseCafe';
   root.position.set(0, 2.50, 0);
+
+  // Strip heavy black comic outline shells on exterior Glasshouse Cafe while keeping receiveShadow enabled
+  const styler: CafeAssetStyler = {
+    ...rawStyler,
+    styleOpaque: (mesh, geo, colorHex, _strokeW, opts) =>
+      rawStyler.styleOpaque(mesh, geo, colorHex, 0, {
+        ...opts,
+        receiveShadow: opts?.receiveShadow ?? true,
+      }),
+  };
 
   const useTex = styler.preserveTextures !== false && typeof document !== 'undefined';
   const herringboneTex = useTex ? createHerringboneParquetTexture(1.35, 1.35) : null;

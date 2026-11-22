@@ -278,21 +278,21 @@ export function createPbrTimberTextureSet(variant: PbrTimberVariant): PbrTexture
       [222, 182, 132],
     ],
     boardwalk_deck: [
-      [233, 194, 143],
-      [224, 185, 135],
-      [238, 200, 148],
-      [219, 179, 129],
+      [234, 196, 146],
+      [220, 180, 130],
+      [240, 204, 154],
+      [212, 172, 122],
       [229, 190, 140],
-      [222, 182, 132],
-      [236, 197, 146],
-      [218, 178, 128],
+      [224, 184, 134],
+      [238, 200, 150],
+      [216, 176, 126],
     ],
     cabin_cedar: [
-      [216, 158, 120],
-      [209, 152, 114],
-      [224, 168, 130],
-      [204, 148, 110],
-      [212, 156, 118],
+      [214, 154, 116],
+      [204, 144, 108],
+      [224, 166, 128],
+      [196, 136, 100],
+      [218, 160, 122],
     ],
     galleon_hull: [
       [200, 140, 94],
@@ -559,18 +559,25 @@ export function createPbrTerracottaShingleTextures(): PbrTextureTriplet {
     };
   }
 
+  // Hand-painted multi-plank coastal wood roof palette:
+  // Alternating warm burnt-cedar, terracotta-amber, honey-ochre, and sun-bleached pale cream-driftwood planks!
   const shingleTones: readonly [number, number, number][] = [
-    [198, 124, 92],
-    [214, 144, 102],
-    [226, 178, 134],
-    [204, 130, 95],
-    [218, 152, 110],
-    [196, 120, 88],
-    [224, 172, 128],
+    [176, 104, 78],  // Deep burnt cedar plank
+    [198, 126, 92],  // Warm terracotta cedar plank
+    [234, 210, 174], // Sun-bleached pale cream-driftwood accent plank
+    [186, 114, 84],  // Rich chestnut-cedar plank
+    [210, 144, 104], // Warm cinnamon-amber plank
+    [194, 122, 88],  // Terracotta-sienna plank
+    [218, 158, 116], // Honey-ochre plank
+    [228, 202, 164], // Pale driftwood-tan accent plank
+    [182, 110, 82],  // Warm russet-cedar plank
+    [204, 134, 96],  // Sunlit cedar plank
+    [214, 148, 108], // Warm amber-oak plank
+    [190, 118, 86],  // Weathered cedar plank
   ];
 
-  const rows = 10;
-  const cols = 8;
+  const rows = 12;
+  const cols = 2;
   const colW = size / cols;
   const aData = albedoImg.data;
   const bData = bumpImg.data;
@@ -588,51 +595,52 @@ export function createPbrTerracottaShingleTextures(): PbrTextureTriplet {
       const cIdx = Math.min(cols - 1, colFloat | 0);
       const colFrac = colFloat - cIdx;
 
-      // Subtle per-shingle wavy bottom edge offset
+      // Subtle per-plank tone & horizontal wood grain
       const tileSeed = (rIdx * 13 + cIdx * 7) % 19;
-      const tone = shingleTones[(rIdx * 5 + cIdx * 3) % shingleTones.length];
+      const baseTone = shingleTones[rIdx % shingleTones.length];
+      const plankSegMod = cIdx % 2 === 0 ? 1.015 : 0.985;
       const u = px / size;
       const v = py / size;
 
-      const splitGrain = smoothNoise2dPeriodic(u, v, 96, 16, 73);
-      const coarseVar = smoothNoise2dPeriodic(u, v, 16, 16, 91);
-      const shadeGrain = 0.94 + splitGrain * 0.10 + (coarseVar - 0.5) * 0.07;
+      const horizGrain = smoothNoise2dPeriodic(u, v, 14, 84, 73);
+      const coarseVar = smoothNoise2dPeriodic(u, v, 8, 24, 91);
+      const shadeGrain = (0.94 + horizGrain * 0.10 + (coarseVar - 0.5) * 0.06) * plankSegMod;
 
-      // Soft vertical split gap between individual cedar shingles
+      // Subtle staggered butt-joint seam between long horizontal roof planks
       const dSidePx = Math.min(colFrac, 1.0 - colFrac) * colW;
       let sideMul = 1.0;
       let sideBump = 1.0;
       let sideRough = 0.0;
-      if (dSidePx < 2.2) {
-        const st = dSidePx / 2.2;
-        sideMul = 0.72 + st * 0.16;
-        sideBump = 0.52 + st * 0.34;
-        sideRough = 0.09 * (1.0 - st);
-      } else if (dSidePx < 4.8) {
-        const bt = smoothstep01(2.2, 4.8, dSidePx);
-        sideMul = 0.88 + bt * 0.12;
+      if (dSidePx < 2.0) {
+        const st = dSidePx / 2.0;
+        sideMul = 0.76 + st * 0.14;
+        sideBump = 0.56 + st * 0.30;
+        sideRough = 0.08 * (1.0 - st);
+      } else if (dSidePx < 4.5) {
+        const bt = smoothstep01(2.0, 4.5, dSidePx);
+        sideMul = 0.90 + bt * 0.10;
         sideBump = 0.86 + bt * 0.14;
       }
 
-      // Stepped overlapping horizontal shingle lip (`rowFrac = 0.0` top underlap -> `0.90` thick butt -> `1.0` soft shadow)
-      const lipEdge = 0.89 + ((tileSeed % 5) - 2) * 0.008;
+      // Stepped overlapping horizontal roof plank lip (`rowFrac = 0.0` top underlap -> `0.90` sunlit lip -> `1.0` soft shadow)
+      const lipEdge = 0.89 + ((tileSeed % 5) - 2) * 0.005;
       let stepAlbedo = 1.0;
       let stepBump = 0.76;
       let stepRough = 0.84;
 
       if (rowFrac > lipEdge) {
         const dropT = (rowFrac - lipEdge) / (1.0 - lipEdge);
-        stepAlbedo = 0.66 + (1.0 - dropT) * 0.18;
+        stepAlbedo = 0.68 + (1.0 - dropT) * 0.18;
         stepBump = 0.42 + (1.0 - dropT) * 0.24;
         stepRough = 0.93;
       } else if (rowFrac < 0.10) {
         const topT = rowFrac / 0.10;
-        stepAlbedo = 0.86 + topT * 0.14;
+        stepAlbedo = 0.88 + topT * 0.12;
         stepBump = 0.58 + topT * 0.16;
         stepRough = 0.89 - topT * 0.06;
       } else {
         const slopeT = (rowFrac - 0.10) / (lipEdge - 0.10);
-        stepAlbedo = 0.96 + slopeT * 0.06;
+        stepAlbedo = 0.97 + slopeT * 0.05;
         stepBump = 0.68 + slopeT * 0.24;
         stepRough = 0.83 + (1.0 - slopeT) * 0.04;
       }
@@ -640,18 +648,18 @@ export function createPbrTerracottaShingleTextures(): PbrTextureTriplet {
       const finalShade = shadeGrain * stepAlbedo * sideMul;
       const outIdx = (py * size + px) * 4;
 
-      aData[outIdx] = clampByte(tone[0] * finalShade);
-      aData[outIdx + 1] = clampByte(tone[1] * finalShade);
-      aData[outIdx + 2] = clampByte(tone[2] * finalShade);
+      aData[outIdx] = clampByte(baseTone[0] * finalShade);
+      aData[outIdx + 1] = clampByte(baseTone[1] * finalShade);
+      aData[outIdx + 2] = clampByte(baseTone[2] * finalShade);
       aData[outIdx + 3] = 255;
 
-      const bVal = clampByte(Math.min(1, stepBump * sideBump + (splitGrain - 0.5) * 0.045) * 255);
+      const bVal = clampByte(Math.min(1, stepBump * sideBump + (horizGrain - 0.5) * 0.045) * 255);
       bData[outIdx] = bVal;
       bData[outIdx + 1] = bVal;
       bData[outIdx + 2] = bVal;
       bData[outIdx + 3] = 255;
 
-      const rVal = clampByte(Math.min(0.98, stepRough + sideRough + (splitGrain - 0.5) * 0.04) * 255);
+      const rVal = clampByte(Math.min(0.98, stepRough + sideRough + (horizGrain - 0.5) * 0.04) * 255);
       rData[outIdx] = rVal;
       rData[outIdx + 1] = rVal;
       rData[outIdx + 2] = rVal;
@@ -1628,6 +1636,8 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
       return mesh;
     }
 
+    void strokeW;
+    void createBlitzStrokeMesh;
     const effectiveTint = mapTex ? '#ffffff' : colorHex;
     const mesh = new THREE.Mesh(
       geo,
@@ -1642,10 +1652,6 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
     mesh.castShadow = !isSoftwareGl;
     mesh.receiveShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(mesh, windUniforms, effectiveTint, 0.08);
-    if (strokeW > 0) {
-      const st = createBlitzStrokeMesh(geo, strokeW);
-      if (st) mesh.add(st);
-    }
     parent.add(mesh);
     return mesh;
   };
@@ -3169,16 +3175,31 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
       );
     }
 
-    // Terracotta-Cedar Ridge Cap Beam
+    // Warm Timber Ridge Cap Beam + 4 Pale-Driftwood Exterior Roof Battens per slope (1:1 reference roof)
     addBeachPart(
       stiltCabinGrp,
       makeRoundedBoxGeo(roofLenX + 0.10, 0.16, 0.28, 0.035, 2),
-      '#dfc0a0',
+      '#b8926e',
       [cabMidX, ridgeY + 0.09, cabMidZ],
       [0, 0, 0],
       0,
-      shingleRoofTex,
+      coastalTimberDark,
     );
+
+    const roofTopBattenGeo = makeRoundedBoxGeo(0.10, 0.055, roofSlopeW - 0.10, 0.014, 1);
+    for (const bxOff of [-1.85, -0.62, 0.62, 1.85]) {
+      for (const zSide of [-1, 1] as const) {
+        addBeachPart(
+          stiltCabinGrp,
+          roofTopBattenGeo,
+          '#f5e2cc',
+          [cabMidX + bxOff, slopeCenterY + 0.115, cabMidZ + zSide * slopeCenterZOff],
+          [zSide * roofPitch, 0, 0],
+          0,
+          coastalTimberTex,
+        );
+      }
+    }
 
     // Gable Slope Bargeboards (West & East ends) + 9 Full-Slope Exposed Rafter Tails per slope
     const bargeGeo = makeRoundedBoxGeo(0.11, 0.22, roofSlopeW + 0.06, 0.025, 2);

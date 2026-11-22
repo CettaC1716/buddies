@@ -1405,57 +1405,38 @@ export function generateNpcMerchantReply(
     return `Your 0.30 NEAR welcome bonus is ready to claim. Visit Hana at Central Plaza Cafe and click Claim 0.30 NEAR inside the Chat Session tab.`;
   }
 
-  // 5. Specific Place & Direction Queries ("Where is...", "Dimana...", "How do I get to...")
-  const isAskingLocationIndo =
-    /\b(dimana|di mana|lokasi|arah|kemana|ke mana|tempat|pantai|laut|pelabuhan|danau|kolam|kafe|perang|tempur|rumah|kavling|mancing|memancing|ikan|cara ke|mau ke|pergi ke)\b/.test(
-      q,
-    );
+  // 5. Specific Place & Direction Queries ("Where is...", "How do I get to...")
   const isAskingLocation =
-    isAskingLocationIndo ||
-    /\b(where|how to get|how do i get|find|direction|directions|go to|teleport|warp|fast travel)\b/.test(
+    /\b(where|how to get|how do i get|find|direction|directions|go to|teleport|warp|fast travel|dimana|di mana|lokasi|arah|kemana|ke mana|tempat|pantai|laut|pelabuhan|danau|kolam|kafe|perang|tempur|rumah|kavling|mancing|memancing|ikan|cara ke|mau ke|pergi ke)\b/.test(
       q,
     );
 
   if (isAskingLocation && /\b(kai|beach|harbor|ocean|sea|coast|pantai|laut|pelabuhan)\b/.test(q)) {
-    return isAskingLocationIndo
-      ? `Merchant Kai dan pantai tempat memancing laut ada di Beachfront Harbor sebelah tenggara. Kamu bisa klik kotak lokasi di bawah chat ini untuk konfirmasi teleport ke sana, atau lewat Transit Kiosk.`
-      : `Merchant Kai and the ocean fishing dock are at Beachfront Harbor in the southeast. Click the location card below to confirm teleporting there, or use any black Transit Kiosk (press B).`;
+    return `Merchant Kai and the ocean fishing dock are at Beachfront Harbor in the southeast. Click the location card below to confirm teleporting there, or use any black Transit Kiosk (press B).`;
   }
 
   if (isAskingLocation && /\b(lake|oasis|freshwater|pond|danau|kolam)\b/.test(q)) {
-    return isAskingLocationIndo
-      ? `Danau air tawar ada di NW Fishing Lake di sudut barat laut kota. Klik kartu lokasi di bawah untuk langsung teleport ke NW Fishing Lake, atau naik tram dari Transit Kiosk.`
-      : `The freshwater fishing spot is NW Fishing Lake in the northwest corner of the city. Click the location card below to teleport straight there, or use any black Transit Kiosk (press B).`;
+    return `The freshwater fishing spot is NW Fishing Lake in the northwest corner of the city. Click the location card below to teleport straight there, or use any black Transit Kiosk (press B).`;
   }
 
   if (isAskingLocation && /\b(hana|cafe|plaza|center|kafe|tengah)\b/.test(q)) {
-    return isAskingLocationIndo
-      ? `Merchant Hana berada di Central Plaza Cafe tepat di pusat kota. Klik kartu Central Plaza di bawah bila ingin kembali teleport ke kafe.`
-      : `Merchant Hana is at Central Plaza Cafe right in the heart of the city. Click the Central Plaza card below anytime to teleport back to the cafe.`;
+    return `Merchant Hana is at Central Plaza Cafe right in the heart of the city. Click the Central Plaza card below anytime to teleport back to the cafe.`;
   }
 
   if (isAskingLocation && /\b(warzone|arena|combat|battle|fight|perang|tempur)\b/.test(q)) {
-    return isAskingLocationIndo
-      ? `Untuk masuk Warzone Arena, kamu bisa klik kartu Warzone Arena di bawah untuk teleport atau buka black Transit Kiosk (tekan B) dan pilih Blue Team atau Red Team.`
-      : `To enter the Warzone Arena, open any black Transit Kiosk (press B), select Warzone Arena, and pick Blue Team or Red Team—or click the Warzone card below to deploy.`;
+    return `To enter the Warzone Arena, open any black Transit Kiosk (press B), select Warzone Arena, and pick Blue Team or Red Team—or click the Warzone card below to deploy.`;
   }
 
   if (isAskingLocation && /\b(house|home|plot|residential|sample|model|rumah|kavling)\b/.test(q)) {
-    return isAskingLocationIndo
-      ? `Kavling perumahan ada di North Residence dan South Residence, sedangkan Model House terbuka di sisi barat daya. Pilih kartu lokasi di bawah untuk langsung teleport ke area perumahan.`
-      : `Residential house plots line North Residence and South Residence, and you can tour an open Model House on the southwest plot. Pick a location card below to teleport right there.`;
+    return `Residential house plots line North Residence and South Residence, and you can tour an open Model House on the southwest plot. Pick a location card below to teleport right there.`;
   }
 
   if (isAskingLocation && /\b(fish|fishing|mancing|memancing|ikan)\b/.test(q)) {
-    return isAskingLocationIndo
-      ? `Ada dua spot memancing: Beachfront Harbor di tenggara untuk ikan laut (sekalian toko Kai) dan NW Fishing Lake di barat laut untuk ikan air tawar. Pilih kartu lokasinya di bawah untuk langsung teleport.`
-      : `There are two fishing spots: Beachfront Harbor in the southeast for saltwater fish (also where Kai's shop is) and NW Fishing Lake in the northwest for freshwater fish. Click either card below to teleport.`;
+    return `There are two fishing spots: Beachfront Harbor in the southeast for saltwater fish (also where Kai's shop is) and NW Fishing Lake in the northwest for freshwater fish. Click either card below to teleport.`;
   }
 
   if (/\b(kiosk|teleport|portal|tram|train|station|halte|kereta)\b/.test(q)) {
-    return isAskingLocationIndo
-      ? `Kamu bisa langsung pilih tujuan dari kartu teleport di bawah chat ini, atau gunakan black Transit Kiosk (tekan B) di setiap halte tram untuk berpindah distrik dan masuk Warzone Arena.`
-      : `Black Transit Kiosks stand beside every tram shelter across the city. Walk up to a kiosk and press B (or click a location card right in chat) to ride the tram between districts or deploy to the Warzone Arena.`;
+    return `Black Transit Kiosks stand beside every tram shelter across the city. Walk up to a kiosk and press B (or click a location card right in chat) to ride the tram between districts or deploy to the Warzone Arena.`;
   }
 
   // 6. Controls & Keybindings
@@ -1582,10 +1563,6 @@ export function generateNpcMerchantReply(
       q,
     )
   ) {
-    const isIndo = /\b(apa kabar|kabar|gimana|makasih|terima kasih)\b/.test(q);
-    if (isIndo) {
-      return `Kabar baik di ${locName}, Buddy! Aku ${npcName}. Silakan tanya apa saja soal dunia Buddies Blitz atau ngobrol santai kapan saja.`;
-    }
     return `Doing great here at ${locName}, Buddy! I am ${npcName}—feel free to ask me anything about Buddies Blitz or chat anytime.`;
   }
 
@@ -1595,9 +1572,6 @@ export function generateNpcMerchantReply(
       q,
     )
   ) {
-    if (/^(halo|hallo|pagi|siang|sore|malam|selamat)\b/.test(q)) {
-      return `Halo Buddy, selamat datang di ${locName}! Aku ${npcName}. Kamu bisa tanya apa saja ke aku, baik soal cara main, lokasi kota, ekonomi, maupun obrolan santai.`;
-    }
     if (!balances.walletConnected) {
       return `Hi Buddy, welcome to ${locName}. You are in Guest Mode right now—feel free to explore and ask me anything about places, fishing, Fish NFT records, currencies, houses, the Warzone, or anything else on your mind.`;
     }
@@ -1605,13 +1579,6 @@ export function generateNpcMerchantReply(
   }
 
   // 17. Friendly Concierge Fallback
-  const looksIndonesian =
-    /\b(apa|bagaimana|gimana|kenapa|mengapa|siapa|dimana|di mana|kapan|berapa|bisa|tolong|kasih|cerita|rekomendasi|menurut|kamu|aku|saya|tentang)\b/.test(
-      q,
-    );
-  if (looksIndonesian) {
-    return `Aku ${npcName} di ${locName} selalu siap ngobrol. Saat koneksi AI sedang offline, aku tetap bisa langsung jawab pertanyaan soal tempat, ikan termahal, cara tukar LUL dan CYON, rumah, atau Warzone—coba sambungkan kembali atau tanya topik apa saja.`;
-  }
   return `I am ${npcName} at ${locName} and happy to chat about anything! While live AI is offline right now, I can still answer everything about locations, Fish NFT records, how LUL, CYON, and RESPITE work, or how to get a Private House.`;
 }
 
@@ -2524,59 +2491,38 @@ export function parseNpcChatTransactionIntent(
 }
 
 /**
- * Generates an immediate bilingual confirmation line for detected in-chat
+ * Generates an immediate English confirmation line for detected in-chat
  * transaction cards when live AI is offline or omitted an action reply.
  */
 export function buildOfflineChatTransactionAck(
   intent: NpcChatTransactionIntent,
-  userMessage: string,
-  location: MerchantLocationId,
+  _userMessage: string,
+  _location: MerchantLocationId,
   state: MerchantAgentMarketState,
 ): string {
-  const isIndo =
-    /\b(apa|mau|ingin|pengen|beli|tukar|tuker|bisa|tolong|kasih|lihat|buka|rumah|meja|kursi|lampu|pancing|berapa|halo|hai|klaim|suntik|modal|dimana|di mana|pantai|pelabuhan|danau|lokasi|tempat|peta|kemana|ke mana|kesana|kafe|kavling|perang|mancing)\b/i.test(
-      userMessage,
-    );
-  const npcName = location === 'lobby_cafe' ? 'Hana' : 'Kai';
   const quote = evaluateLulToCyonExchangeQuote(state);
 
   switch (intent.kind) {
     case 'exchange_lul_cyon':
-      return isIndo
-        ? `Siap! Kurs saat ini ${quote.lulCostFor10Cyon} LUL untuk ${quote.cyonGranted} CYON. Aku sudah buka kartu tukar di bawah chat, tinggal pilih jumlah dan klik CONFIRM EXCHANGE.`
-        : `Sure! Today's rate is ${quote.lulCostFor10Cyon} LUL for ${quote.cyonGranted} CYON. I opened the quick exchange card right below—pick your amount and confirm.`;
+      return `Sure! Today's rate is ${quote.lulCostFor10Cyon} LUL for ${quote.cyonGranted} CYON. I opened the quick exchange card right below—pick your amount and confirm.`;
     case 'swap_near_respite':
-      return isIndo
-        ? `Oke! Kurs tetap 1 NEAR = 400 RESPITE (0.25 NEAR = 100 RESPITE). Kartu swap sudah muncul di bawah chat, kamu bisa langsung konfirmasi di sini.`
-        : `Got it! The rate is 1 NEAR = 400 RESPITE (0.25 NEAR = 100 RESPITE). Use the quick swap card right below to confirm cleanly.`;
+      return `Got it! The rate is 1 NEAR = 400 RESPITE (0.25 NEAR = 100 RESPITE). Use the quick swap card right below to confirm cleanly.`;
     case 'buy_house':
-      return isIndo
-        ? `Aku siapkan penawaran Private House (100 RESPITE) langsung di kartu bawah chat. Kamu juga bisa intip Model House atau swap RESPITE langsung dari kartu itu.`
-        : `I pulled up the Private House offer (100 RESPITE) right below in chat. You can preview the Model House or buy straight from the card.`;
+      return `I pulled up the Private House offer (100 RESPITE) right below in chat. You can preview the Model House or buy straight from the card.`;
     case 'buy_catalog_item': {
       const item = MERCHANT_CATALOG_ITEMS.find((it) => it.id === intent.itemId);
       const p = item ? evaluateMerchantItemQuote(state, item) : null;
       if (item && p) {
-        return isIndo
-          ? `Ini kartu transaksi untuk ${item.name} (${p.buyPrice} ${item.currency}, stok ${p.stock}). Kamu bisa langsung beli dari kartu di bawah tanpa pindah tab.`
-          : `Here is the quick card for ${item.name} (${p.buyPrice} ${item.currency}, stock ${p.stock}). You can buy it right below without switching tabs.`;
+        return `Here is the quick card for ${item.name} (${p.buyPrice} ${item.currency}, stock ${p.stock}). You can buy it right below without switching tabs.`;
       }
-      return isIndo
-        ? `Aku siapkan kartu transaksi katalog di bawah chat, silakan cek dan klik untuk membeli.`
-        : `I opened the catalog quick card right below in chat—check the details and buy when ready.`;
+      return `I opened the catalog quick card right below in chat—check the details and buy when ready.`;
     }
     case 'browse_catalog':
-      return isIndo
-        ? `Siap, ${npcName} buka toko cepat langsung di sesi chat ini supaya kamu bisa pilih dan transaksi di sini tanpa pindah tab.`
-        : `Opening the Quick Shop modal right inside this chat so you can pick and check out without leaving the conversation.`;
+      return `Opening the Quick Shop modal right inside this chat so you can pick and check out without leaving the conversation.`;
     case 'invest_shop':
-      return isIndo
-        ? `Kamu bisa bantu isi cadangan toko dengan 300 LUL untuk dapat bonus +45 CYON dan diskon 15%. Kartu aksinya ada di bawah chat.`
-        : `You can support the shop reserve with 300 LUL for a +45 CYON bonus and a 15% catalog discount. Confirm on the card below.`;
+      return `You can support the shop reserve with 300 LUL for a +45 CYON bonus and a 15% catalog discount. Confirm on the card below.`;
     case 'claim_welcome':
-      return isIndo
-        ? `Kartu klaim starter pack (0.30 NEAR + 100 LUL + 20 CYON) siap dipakai langsung di bawah chat.`
-        : `Your starter pack claim card (0.30 NEAR + 100 LUL + 20 CYON) is ready right below in chat.`;
+      return `Your starter pack claim card (0.30 NEAR + 100 LUL + 20 CYON) is ready right below in chat.`;
     case 'teleport_places': {
       const targetNameMap: Record<CityTransitStationId, string> = {
         central_plaza: 'Central Plaza',
@@ -2590,13 +2536,9 @@ export function buildOfflineChatTransactionAck(
       };
       const focusName = intent.focusStationId ? targetNameMap[intent.focusStationId] : null;
       if (focusName) {
-        return isIndo
-          ? `Lokasi ${focusName} sudah aku tampilkan di kotak bawah chat. Klik kotaknya lalu pilih YES untuk langsung teleport ke sana!`
-          : `I pulled up ${focusName} right below in chat. Click the destination box and press YES to teleport straight there!`;
+        return `I pulled up ${focusName} right below in chat. Click the destination box and press YES to teleport straight there!`;
       }
-      return isIndo
-        ? `Ini daftar lokasi kota yang bisa kamu kunjungi. Klik kotak mana saja di bawah lalu pilih YES untuk langsung teleport!`
-        : `Here are the city destinations you can travel to. Click any location box below and press YES to teleport!`;
+      return `Here are the city destinations you can travel to. Click any location box below and press YES to teleport!`;
     }
   }
 }

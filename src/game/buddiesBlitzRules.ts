@@ -290,8 +290,8 @@ export interface WeatherPresetConfig {
 export const WEATHER_PRESETS: Record<WeatherConditionKey, WeatherPresetConfig> = {
   cerah: {
     key: 'cerah',
-    label: 'Cerah',
-    shortLabel: 'Cerah',
+    label: 'Clear',
+    shortLabel: 'Clear',
     windStrength: 0.32,
     fogDensity: 0.00045,
     rainRate01: 0,
@@ -300,8 +300,8 @@ export const WEATHER_PRESETS: Record<WeatherConditionKey, WeatherPresetConfig> =
   },
   berangin: {
     key: 'berangin',
-    label: 'Berangin',
-    shortLabel: 'Berangin',
+    label: 'Windy',
+    shortLabel: 'Windy',
     windStrength: 1.45,
     fogDensity: 0.00055,
     rainRate01: 0,
@@ -310,8 +310,8 @@ export const WEATHER_PRESETS: Record<WeatherConditionKey, WeatherPresetConfig> =
   },
   kabut: {
     key: 'kabut',
-    label: 'Kabut',
-    shortLabel: 'Kabut',
+    label: 'Foggy',
+    shortLabel: 'Foggy',
     windStrength: 0.18,
     fogDensity: 0.0125,
     rainRate01: 0,
@@ -320,8 +320,8 @@ export const WEATHER_PRESETS: Record<WeatherConditionKey, WeatherPresetConfig> =
   },
   hujan: {
     key: 'hujan',
-    label: 'Hujan',
-    shortLabel: 'Hujan',
+    label: 'Rainy',
+    shortLabel: 'Rainy',
     windStrength: 0.92,
     fogDensity: 0.0038,
     rainRate01: 0.85,
@@ -331,10 +331,10 @@ export const WEATHER_PRESETS: Record<WeatherConditionKey, WeatherPresetConfig> =
 };
 
 export const TIME_PHASE_LABELS: Record<LightingPresetKey, string> = {
-  dawn: 'Fajar',
-  day: 'Siang',
-  dusk: 'Senja',
-  night: 'Malam',
+  dawn: 'Dawn',
+  day: 'Day',
+  dusk: 'Dusk',
+  night: 'Night',
 };
 
 export const TIME_PHASE_DEFAULT_HOURS: Record<LightingPresetKey, number> = {
@@ -6525,7 +6525,7 @@ export const CITY_TRAFFIC_SIGN_SPECS: readonly CityTrafficSignSpec[] = [
     z: -6.0,
     rotY: -Math.PI / 2,
     label: 'BEACH HARBOR ->',
-    subLabel: '<- TAMAN RIA',
+    subLabel: '<- CARNIVAL PIER',
   },
   {
     id: 'sign_wayfind_north_blvd',
@@ -6535,7 +6535,7 @@ export const CITY_TRAFFIC_SIGN_SPECS: readonly CityTrafficSignSpec[] = [
     z: -56.42,
     rotY: Math.PI,
     label: 'GRAND CASINO ->',
-    subLabel: '<- TAMAN TENGAH',
+    subLabel: '<- CENTRAL PARK',
   },
   {
     id: 'sign_wayfind_south_blvd',
@@ -7215,10 +7215,10 @@ export function evaluateBlitzDeathDrops(
   // Intact unless destroyed by a follow-up/chain explosion (`killedByChainExplosion`)
   if (state.carryingCrate && state.carryingCrate !== 'none' && !state.killedByChainExplosion) {
     const crateLabels: Record<WorldCrateKind, string> = {
-      red: 'Peti Biasa (Kuning/Oranye)',
-      super: 'Peti Senjata Khusus (Biru)',
-      legend: 'Peti Super Weapon (Ungu)',
-      medical: 'Peti Medis Palang Merah (Putih)',
+      red: 'Standard Crate (Yellow/Orange)',
+      super: 'Special Weapon Crate (Blue)',
+      legend: 'Super Weapon Crate (Purple)',
+      medical: 'Red Cross Medical Crate (White)',
       silver_metallic: 'Silver Metallic Supply Box (Indestructible)',
       gold_metallic: 'Shiny Gold Metallic Supply Box (Indestructible)',
     };
@@ -11313,7 +11313,7 @@ export function getVisibleHudWeaponAndTacticalBadges(
       id: 'tactical_hand_grenade',
       kind: 'tactical',
       slotId: 'hand_grenade',
-      label: 'GRANAT',
+      label: 'GRENADE',
       ammoCount: loadout.grenadeCount,
       isActive: false,
       actionEvent: 'useHandGrenade',
@@ -12375,7 +12375,7 @@ export const SAFEZONE_CITY_HALTE_SPAWN = {
   x: -60.52,
   z: 4.6,
   yaw: Math.PI,
-  label: 'HALTE TREM DEPAN CENTRAL PLAZA (SAFEZONE CITY)',
+  label: 'CENTRAL PLAZA TRAM STOP (SAFEZONE CITY)',
 } as const;
 
 export interface CitySafezoneModeRules {
@@ -13961,7 +13961,7 @@ export const CITY_TRANSIT_DESTINATIONS: readonly CityTransitDestinationSpec[] = 
     category: 'district',
     targetWorldMode: 'lobby',
     description:
-      'Main elevated civic promenade featuring Hana Cafe, token exchange, and the central Halte tram station.',
+      'Main elevated civic promenade featuring Hana Cafe, token exchange, and the Central Plaza tram stop.',
     heroImageUrl: '/docs/hero-2-tram-station.jpg',
     thumbnailUrl: '/docs/hero-2-tram-station.jpg',
     kioskX: -59.18,
@@ -15668,7 +15668,7 @@ export const CITY_VIEW_DISTRICTS: readonly CityViewDistrictSpec[] = [
     aliases: ['toko1', 'toko2', 'toko3', 'cafe', 'balai', 'central-plaza'],
     label: 'Plaza',
     fullTitle: 'Central Plaza',
-    subtitle: 'Civic Hall, Shops, Cafe & Halte',
+    subtitle: 'Civic Hall, Shops, Cafe & Tram Stop',
     lookAtPos: { x: -87.75, y: 3.0, z: -2.0 },
     markerHeightOffset: 11.5,
     defaultYaw: 0.95,
@@ -15685,7 +15685,7 @@ export const CITY_VIEW_DISTRICTS: readonly CityViewDistrictSpec[] = [
     aliases: ['grand-casino'],
     label: 'Casino',
     fullTitle: 'Grand Casino',
-    subtitle: 'Resort & Valet Loop Utara',
+    subtitle: 'North Resort & Valet Loop',
     lookAtPos: { x: -83.5, y: 5.0, z: -69.5 },
     markerHeightOffset: 12.8,
     defaultYaw: 0.87,
@@ -15702,7 +15702,7 @@ export const CITY_VIEW_DISTRICTS: readonly CityViewDistrictSpec[] = [
     aliases: ['tenis', 'tennis-court'],
     label: 'Tennis',
     fullTitle: 'Tennis Club',
-    subtitle: 'Arena Tenis Central Plaza',
+    subtitle: 'Central Plaza Tennis Arena',
     lookAtPos: { x: -88.8, y: 1.5, z: 50.6 },
     markerHeightOffset: 6.2,
     defaultYaw: 1.05,
@@ -15717,9 +15717,9 @@ export const CITY_VIEW_DISTRICTS: readonly CityViewDistrictSpec[] = [
     id: 'kai_pantai',
     hashSlug: 'kai-pantai',
     aliases: ['kai', 'pantai', 'beach'],
-    label: 'Kai Pantai',
-    fullTitle: 'Kai Pantai',
-    subtitle: 'Pantai Tenggara & Fish Market',
+    label: 'Kai Beach',
+    fullTitle: 'Kai Beachfront',
+    subtitle: 'Southeast Beach & Fish Market',
     lookAtPos: { x: 88.5, y: 2.2, z: 68.0 },
     markerHeightOffset: 8.5,
     defaultYaw: 0.98,
@@ -15734,9 +15734,9 @@ export const CITY_VIEW_DISTRICTS: readonly CityViewDistrictSpec[] = [
     id: 'dermaga',
     hashSlug: 'dermaga',
     aliases: ['harbor', 'pelabuhan', 'pier'],
-    label: 'Dermaga',
-    fullTitle: 'Dermaga Harbor',
-    subtitle: 'Dermaga Beton & Halte Timur',
+    label: 'Harbor Pier',
+    fullTitle: 'Harbor Pier',
+    subtitle: 'Concrete Quay & East Tram Stop',
     lookAtPos: { x: 86.0, y: 2.5, z: 12.0 },
     markerHeightOffset: 8.5,
     defaultYaw: 1.95,
@@ -15751,9 +15751,9 @@ export const CITY_VIEW_DISTRICTS: readonly CityViewDistrictSpec[] = [
     id: 'taman_ria',
     hashSlug: 'taman-ria',
     aliases: ['amusement', 'park', 'bianglala'],
-    label: 'Taman Ria',
-    fullTitle: 'Taman Ria',
-    subtitle: 'Bianglala & Taman Hiburan Pesisir',
+    label: 'Carnival Pier',
+    fullTitle: 'Harbor Carnival Pier',
+    subtitle: 'Ferris Wheel & Coastal Amusement Park',
     lookAtPos: { x: 95.5, y: 5.2, z: -55.0 },
     markerHeightOffset: 15.5,
     defaultYaw: 2.35,
@@ -15770,7 +15770,7 @@ export const CITY_VIEW_DISTRICTS: readonly CityViewDistrictSpec[] = [
     aliases: ['north', 'utara'],
     label: 'North Residence',
     fullTitle: 'North Residence',
-    subtitle: 'Boulevard & Klaster Hunian Utara',
+    subtitle: 'North Residential Boulevard & Plots',
     lookAtPos: { x: 0.0, y: 3.0, z: -70.0 },
     markerHeightOffset: 10.5,
     defaultYaw: 0.38,
@@ -15787,7 +15787,7 @@ export const CITY_VIEW_DISTRICTS: readonly CityViewDistrictSpec[] = [
     aliases: ['south', 'selatan'],
     label: 'South Residence',
     fullTitle: 'South Residence',
-    subtitle: 'Avenue Selatan & Model Estate',
+    subtitle: 'South Avenue & Model Estate',
     lookAtPos: { x: -12.0, y: 3.0, z: 70.0 },
     markerHeightOffset: 10.5,
     defaultYaw: 2.78,

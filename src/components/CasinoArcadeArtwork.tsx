@@ -392,7 +392,7 @@ export const CasinoPullLeverButton: React.FC<{
     type="button"
     disabled={disabled}
     onClick={onPull}
-    title="Tarik Tuas Mesin Slot"
+    title="Pull Slot Machine Lever"
     aria-label="Pull Slot Machine Lever"
     className={`group relative flex flex-col items-center justify-center w-12 sm:w-14 self-stretch rounded-xl border-[3px] border-[#14161d] bg-[#272b38] shadow-[4px_4px_0_#000] px-1 py-2 cursor-pointer transition-colors hover:bg-[#313647] disabled:cursor-not-allowed shrink-0`}
   >

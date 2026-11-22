@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import {
+  getKioskWarmCanopyRoofTexture,
+  getKioskWarmCedarPlankTexture,
+} from './buddiesFashionKioskBuilder';
 import { REAL_ESTATE_FURNITURE_KIOSK_LAYOUT } from './buddiesRealEstateKioskRules';
 import { computeDeterministicWindowSeed, tagCityWindowMesh } from './buddiesNightLightingRules';
 
@@ -797,14 +801,17 @@ export function buildShowroomFurnitureLoungeVignette(
 export function buildRealEstateAndFurnitureKiosk3D(
   opts: RealEstateKioskBuilderOptions,
 ): THREE.Group {
-  const COL_STEEL = '#2b3036';
-  const COL_STEEL_DARK = '#1e2228';
-  const COL_TIMBER = '#c28a54';
-  const COL_TIMBER_DARK = '#8c5a32';
-  const COL_GRANITE_OUTER = '#c8c5bc';
-  const COL_GRANITE_INNER = '#e4dfd4';
-  const COL_WARM_WALL = '#f4efe4';
+  const COL_STEEL = '#46484d';
+  const COL_STEEL_DARK = '#36383d';
+  const COL_TIMBER = '#cc935a';
+  const COL_TIMBER_DARK = '#99643a';
+  const COL_GRANITE_OUTER = '#d3cdc2';
+  const COL_GRANITE_INNER = '#eae3d6';
+  const COL_WARM_WALL = '#f5efe4';
   const COL_LED_WARM = '#ffefc2';
+  const cedarPlankTex = opts.textures.verticalTimberTex ?? getKioskWarmCedarPlankTexture();
+  const warmTimberTex = opts.textures.timberTex ?? cedarPlankTex;
+  const canopyRoofTex = opts.textures.steelRoofTex ?? getKioskWarmCanopyRoofTexture();
 
   const kioskGrp = new THREE.Group();
   kioskGrp.name = 'LobbyRealEstateAndFurnitureKiosk';
@@ -829,12 +836,10 @@ export function buildRealEstateAndFurnitureKiosk3D(
       bumpScale = 1.35,
       castShad = true,
     ) {
+      void toonStrokeWidth;
       const mesh = opts.addLobbyPart(parent, geo, colorHex, pos, rot, 0, tex, bumpScale);
       mesh.castShadow = !opts.isSoftwareGl && castShad;
-      if (toonStrokeWidth > 0) {
-        const stroke = opts.createBlitzStrokeMesh(geo, toonStrokeWidth);
-        if (stroke) mesh.add(stroke);
-      }
+      mesh.receiveShadow = !opts.isSoftwareGl;
       return mesh;
     },
   };
@@ -1084,7 +1089,7 @@ export function buildRealEstateAndFurnitureKiosk3D(
     [2.12, 1.46, -1.00],
     [0, 0, 0],
     0.010,
-    opts.textures.verticalTimberTex,
+    cedarPlankTex,
     1.5,
   );
   partHelper.addPart(
@@ -1125,7 +1130,7 @@ export function buildRealEstateAndFurnitureKiosk3D(
     [-2.10, 1.46, -0.68],
     [0, 0, 0],
     0.010,
-    opts.textures.verticalTimberTex,
+    cedarPlankTex,
     1.5,
   );
 
@@ -1140,7 +1145,7 @@ export function buildRealEstateAndFurnitureKiosk3D(
     [0, 1.48, -1.52],
     [0, 0, 0],
     0.012,
-    opts.textures.verticalTimberTex,
+    cedarPlankTex,
     1.6,
   );
   // Warm Interior Gallery Drywall Partition lining the front face of the rear wall (`z = -1.39`)
@@ -1245,11 +1250,11 @@ export function buildRealEstateAndFurnitureKiosk3D(
     [0, 0.04, 0],
     [0, 0, 0],
     0.013,
-    opts.textures.steelRoofTex,
+    canopyRoofTex,
     2.2,
   );
-  partHelper.addPart(roofGrp, new THREE.BoxGeometry(5.26, 0.06, 4.28), COL_STEEL_DARK, [0, 0.15, 0], [0, 0, 0], 0.010);
-  partHelper.addPart(roofGrp, new THREE.BoxGeometry(4.92, 0.04, 3.94), '#3b4048', [0, -0.06, 0], [0, 0, 0], 0.008);
+  partHelper.addPart(roofGrp, new THREE.BoxGeometry(5.26, 0.06, 4.28), COL_STEEL_DARK, [0, 0.15, 0], [0, 0, 0], 0.010, canopyRoofTex, 2.0);
+  partHelper.addPart(roofGrp, new THREE.BoxGeometry(4.92, 0.04, 3.94), '#574b41', [0, -0.06, 0], [0, 0, 0], 0.008, warmTimberTex, 1.4);
 
   // Recessed Warm LED Spotlights along Front & Side Canopy Overhang Soffit
   for (const sx of [-1.85, -0.62, 0.62, 1.85]) {

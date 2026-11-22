@@ -1057,7 +1057,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         ) {
           soundEngine.playHit();
           if (playerUnit) {
-            playerUnit.saluteSign.updateText('DUDUK DULU!', 'DUDUK DI KURSI UNTUK BERMAIN', '#facc15', 1);
+            playerUnit.saluteSign.updateText('TAKE A SEAT!', 'SIT IN A CHAIR TO PLAY', '#facc15', 1);
             playerUnit.saluteTimer = 1.6;
             playerUnit.saluteSign.sprite.visible = true;
           }
@@ -2806,12 +2806,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     // removed at the user's request — interiors now match the plaza style.
 
 
-    const hemiLight = new THREE.HemisphereLight('#fffdf0', '#3d7068', 1.2);
+    const hemiLight = new THREE.HemisphereLight('#f8f7ee', '#987e60', 1.12);
     scene.add(hemiLight);
 
-    // Bundled Blitz Sun Spherical Angles: phi = 0.63, theta = 0.72, radius = 50 -> warm afternoon light (#ffe6b1)
+    // Bundled Blitz Sun Spherical Angles: phi = 0.63, theta = 0.72, radius = 50 -> warm coastal sunlit gold (#ffe9bc)
     const blitzSunOffset = getBlitzDefaultLightDirection().multiplyScalar(52);
-    const dirLight = new THREE.DirectionalLight('#ffe6b1', 2.05);
+    const dirLight = new THREE.DirectionalLight('#ffe9bc', 2.18);
     dirLight.position.copy(blitzSunOffset);
     dirLight.castShadow = true;
     const shadowMapRes = isSoftwareGl ? 1024 : 2048;
@@ -2826,15 +2826,31 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       .crossVectors(shadowLightBack, shadowLightRight)
       .normalize();
     dirLight.shadow.camera.near = 2;
-    dirLight.shadow.camera.far = 122;
-    dirLight.shadow.camera.left = -d;
-    dirLight.shadow.camera.right = d;
-    dirLight.shadow.camera.top = d;
-    dirLight.shadow.camera.bottom = -d;
-    dirLight.shadow.bias = -0.00022;
-    dirLight.shadow.normalBias = 0.028;
-    dirLight.shadow.radius = isSoftwareGl ? 1.0 : 2.4;
-    dirLight.shadow.intensity = 0.88;
+    const syncDirShadowCameraEnvelope = (halfSpan: number, far: number, force = false) => {
+      if (
+        !force &&
+        Math.abs(dirLight.shadow.camera.right - halfSpan) <= 0.5 &&
+        Math.abs(dirLight.shadow.camera.far - far) <= 1
+      ) {
+        return;
+      }
+      dirLight.shadow.camera.left = -halfSpan;
+      dirLight.shadow.camera.right = halfSpan;
+      dirLight.shadow.camera.top = halfSpan;
+      dirLight.shadow.camera.bottom = -halfSpan;
+      dirLight.shadow.camera.far = far;
+      const texelWorld = (halfSpan * 2) / shadowMapRes;
+      const depthSpan = Math.max(1, far - dirLight.shadow.camera.near);
+      // Scale normalBias proportionally to shadow texel width (~1.65x texel) and depth bias to ~0.035m
+      // so newly shadow-receiving wooden roofs, facades, and curved tree trunks render soft dappled
+      // leaf shadows with zero shadow acne / striping and zero peter-panning across all camera views.
+      dirLight.shadow.normalBias = Math.min(0.28, Math.max(0.052, texelWorld * 1.65));
+      dirLight.shadow.bias = -Math.min(0.0005, (0.030 + texelWorld * 0.16) / depthSpan);
+      dirLight.shadow.radius = isSoftwareGl ? 1.0 : halfSpan > 100 ? 1.5 : 1.85;
+      dirLight.shadow.camera.updateProjectionMatrix();
+    };
+    syncDirShadowCameraEnvelope(d, 122, true);
+    dirLight.shadow.intensity = 0.9;
     let prevSnappedShadowX = Number.NaN;
     let prevSnappedShadowZ = Number.NaN;
     let lastShadowUpdateFrame = -999;
@@ -2991,8 +3007,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       uWindStrength: { value: 0.32 },
       uWindGust: { value: 0.0 },
       uLightDirection: { value: getBlitzDefaultLightDirection() },
-      uLightColor: { value: new THREE.Color('#fff4c8') },
-      uShadowColor: { value: new THREE.Color('#3b6e52') },
+      uLightColor: { value: new THREE.Color('#fff2c8') },
+      uShadowColor: { value: new THREE.Color('#4e6752') },
       uPlanetPivot: { value: new THREE.Vector3(0, 0, 12.5) },
       uCurvatureStrength: { value: PLANET_CURVATURE_STRENGTH },
       uDirShadowMapSize: { value: shadowMapRes },
@@ -4100,6 +4116,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       bodyGroup.rotation.order = 'YXZ';
       // Cara 1 Lock-Step World Scaling: 0.98 (0.845x of 1.16) makes the entire World +18.4% larger relative to the avatar
       bodyGroup.scale.setScalar(0.98);
+      if (isPlayer) {
+        bodyGroup.userData.enableAvatarCastShadow = !isSoftwareGl;
+      }
       root.add(bodyGroup);
 
       const rig = buildProceduralBuddyAvatar(
@@ -4558,6 +4577,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         bodyGroup.rotation.order = 'YXZ';
         bodyGroup.scale.setScalar(0.98);
         bodyGroup.rotation.set(0, initYaw + Math.PI / 2, 0);
+        bodyGroup.userData.enableAvatarCastShadow = !isSoftwareGl;
         root.add(bodyGroup);
 
         const rig = buildProceduralBuddyAvatar(
@@ -8783,7 +8803,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       if (playerUnit?.nameplate?.updatePlate) {
         playerUnit.nameplate.updatePlate(
           playerCustomDisplayName,
-          cafeWorkShiftActive ? 'PELAYAN CAFE' : '',
+          cafeWorkShiftActive ? 'CAFE SERVER' : '',
         );
       }
       if (typeof detail.isSampleHouse === 'boolean') {
@@ -9468,12 +9488,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         cameraHeightM: camera.position.y,
         isSoftwareGl,
       });
-      dirLight.shadow.camera.left = -d;
-      dirLight.shadow.camera.right = d;
-      dirLight.shadow.camera.top = d;
-      dirLight.shadow.camera.bottom = -d;
-      dirLight.shadow.camera.far = 122;
-      dirLight.shadow.camera.updateProjectionMatrix();
+      syncDirShadowCameraEnvelope(d, 122);
       prevSnappedShadowX = Number.NaN;
       prevSnappedShadowZ = Number.NaN;
     };
@@ -10555,7 +10570,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           );
         } else if (!isPlotActive) {
           padMeshObj.kioskHoloSign.updateText(
-            `KAVLING ${isBlue ? 'BIRU' : 'MERAH'} #${commanderIdx + 1}`,
+            `PLOT ${isBlue ? 'BLUE' : 'RED'} #${commanderIdx + 1}`,
             '[B] CLAIM NEAR BASE',
             '#00ec97',
             1,
@@ -11928,7 +11943,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             const isGold = gi % 3 !== 2;
             spawnWorldPickup(
               isGold ? 'coin_gold' : 'coin_silver',
-              isGold ? 'EMAS WARZONE (+250G)' : 'PERAK WARZONE (+100G)',
+              isGold ? 'WARZONE GOLD (+250G)' : 'WARZONE SILVER (+100G)',
               goldSpot.x,
               goldSpot.z,
               { scoreValue: isGold ? 250 : 100, vy: 3.5 },
@@ -12458,7 +12473,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           const isGold = gi % 3 !== 2;
           spawnWorldPickup(
             isGold ? 'coin_gold' : 'coin_silver',
-            isGold ? 'EMAS WARZONE (+250G)' : 'PERAK WARZONE (+100G)',
+            isGold ? 'WARZONE GOLD (+250G)' : 'WARZONE SILVER (+100G)',
             goldSpot.x,
             goldSpot.z,
             { scoreValue: isGold ? 250 : 100, vy: 3.5 },
@@ -15388,7 +15403,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       for (const b of buddyUnits) {
         if (b.team === 'blue' && !b.isPlayer && b.alive && b.ownerCommanderId === 0) {
           b.saluteTimer = 1.65;
-          b.saluteSign.updateText('HORMAT!', saluteLabel, '#b8ff3c', 1);
+          b.saluteSign.updateText('SALUTE!', saluteLabel, '#b8ff3c', 1);
           b.saluteSign.sprite.visible = true;
         }
       }
@@ -15440,7 +15455,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         syncSquadRoleWithTeamCommand(teamCommand, false);
         const roleUiLabel = formatBuddyRoleUiLabel(teamCommand).toUpperCase();
         playerUnit.saluteTimer = 1.65;
-        playerUnit.saluteSign.updateText('PERAN UNIT', roleUiLabel, '#38bdf8', 1);
+        playerUnit.saluteSign.updateText('UNIT ROLE', roleUiLabel, '#38bdf8', 1);
         playerUnit.saluteSign.sprite.visible = true;
         triggerAlliedSalute(roleUiLabel);
       }
@@ -15495,7 +15510,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       playerUnit.assignedRole = teamCommand;
       playerUnit.saluteTimer = 1.65;
       playerUnit.saluteSign.updateText(
-        `AKTIF: ${playerUnit.classId.toUpperCase()}`,
+        `ACTIVE: ${playerUnit.classId.toUpperCase()}`,
         formatBuddyRoleUiLabel(teamCommand).toUpperCase(),
         '#b4ff39',
         1,
@@ -15523,7 +15538,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         for (const b of buddyUnits) {
           if (b.team === targetTeam && b.ownerCommanderId === replacedId && b.alive) {
             b.saluteTimer = 2.2;
-            b.saluteSign.updateText('PEMAIN JOIN!', `GANTIKAN AI P${replacedId + 1}`, '#38bdf8', 1);
+            b.saluteSign.updateText('PLAYER JOINED!', `REPLACING AI P${replacedId + 1}`, '#38bdf8', 1);
             b.saluteSign.sprite.visible = true;
             spawnBurstParticles(b.x, 1.4, b.z, 14);
           }
@@ -15663,7 +15678,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       if (playerUnit && playerUnit.alive) {
         playerUnit.saluteTimer = 1.8;
         playerUnit.saluteSign.updateText(
-          nextGender === 'male' ? 'KARAKTER PRIA AKTIF' : 'KARAKTER WANITA AKTIF',
+          nextGender === 'male' ? 'MALE AVATAR ACTIVE' : 'FEMALE AVATAR ACTIVE',
           nextGender === 'male' ? 'MANCHARACTERBUDDIES.GLB' : 'CHARACTER_CUSTOM_5ANIMS.GLB',
           nextGender === 'male' ? '#38bdf8' : '#b8ff3c',
           1,
@@ -15850,7 +15865,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         }
         if (wasFishingRod) {
           playerUnit.saluteTimer = 1.6;
-          playerUnit.saluteSign.updateText('JORAN DISIMPAN', 'MASUK KE DALAM TAS', '#94a3b8', 1);
+          playerUnit.saluteSign.updateText('ROD STORED', 'PLACED IN BAG', '#94a3b8', 1);
           playerUnit.saluteSign.sprite.visible = true;
           emitHudImmediately();
         }
@@ -15869,7 +15884,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         spawnBurstParticles(castX, castY, castZ, 12);
         playerUnit.saluteTimer = 2.0;
         playerUnit.saluteSign.updateText(
-          'JORAN FISHING AKTIF',
+          'FISHING ROD ACTIVE',
           'FISHING CAST & FISHING IDLE',
           '#38bdf8',
           1,
@@ -16205,7 +16220,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       }
       soundEngine.playPowerCore();
       kioskStatusMessage =
-        'COMMAND CENTER LV.3 TERBUKA! Nuclear Launcher & CB-24 Cluster Bomb Aktif!';
+        'COMMAND CENTER LV.3 UNLOCKED! Nuclear Launcher & CB-24 Cluster Bomb Active!';
       kioskStatusTimer = 5.0;
     };
 
@@ -16304,7 +16319,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       spawnBurstParticles(launchOrigin.x, launchOrigin.y, launchOrigin.z, 24);
       spawnTargetFireParticles(launchOrigin.x, launchOrigin.y, launchOrigin.z, 18, 1.25);
       soundEngine.playBazookaLaunch();
-      kioskStatusMessage = "ROKET NUKLIR MLRS-MK5 'ATLAS' MELUNCUR KE TITIK TARGET!";
+      kioskStatusMessage = "MLRS-MK5 'ATLAS' NUCLEAR MISSILE LAUNCHING TOWARD TARGET!";
       kioskStatusTimer = 4.5;
       emitHudImmediately();
     };
@@ -18810,7 +18825,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           }
           const targetIdStr = String(payload.targetId ?? '');
           const animId = payload.animId;
-          const animLabel = payload.animLabel || 'Pose Berpasangan';
+          const animLabel = payload.animLabel || 'Paired Pose';
           const initUrl = payload.initiateGlbUrl;
           const recvUrl = payload.receiveGlbUrl;
 
@@ -21814,7 +21829,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         lightingPresetRef.current,
         !showOutdoor,
         isSoftwareGl,
-        '#ffe6b1',
+        '#ffe9bc',
       );
       hemiLight.visible = lightingIsolation.outdoorLightsVisible;
       dirLight.visible = lightingIsolation.outdoorLightsVisible;
@@ -22600,7 +22615,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             const isGoldCoin = Math.random() < 0.68;
             spawnWorldPickup(
               isGoldCoin ? 'coin_gold' : 'coin_silver',
-              isGoldCoin ? 'EMAS WARZONE (+250G)' : 'PERAK WARZONE (+100G)',
+              isGoldCoin ? 'WARZONE GOLD (+250G)' : 'WARZONE SILVER (+100G)',
               spot.x,
               spot.z,
               { scoreValue: isGoldCoin ? 250 : 100, vy: 4.5 },
@@ -22763,8 +22778,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             spawnBurstParticles(dropX, getTerrainElevation(dropX, dropZ) + 1.5, dropZ, 24);
             kioskStatusMessage =
               payload.metallicCrateKind === 'gold_metallic'
-                ? `SUPPLY DROP MENDARAT DI ${payload.locationName}! (SHINY GOLD METALLIC BOX + ${payload.goldCoinCount} KOIN + ${payload.medkitCount} MEDKIT)`
-                : `SUPPLY DROP MENDARAT DI ${payload.locationName}! (SILVER METALLIC BOX + ${payload.goldCoinCount} KOIN + ${payload.medkitCount} MEDKIT)`;
+                ? `SUPPLY DROP LANDED AT ${payload.locationName}! (SHINY GOLD METALLIC BOX + ${payload.goldCoinCount} COINS + ${payload.medkitCount} MEDKITS)`
+                : `SUPPLY DROP LANDED AT ${payload.locationName}! (SILVER METALLIC BOX + ${payload.goldCoinCount} COINS + ${payload.medkitCount} MEDKITS)`;
             kioskStatusTimer = 6.0;
           }
 
@@ -25122,7 +25137,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                   b.saluteTimer = 2.5;
                   b.saluteSign.updateText(
                     harvesterLifecycle.statusLabel,
-                    'MENGANGKUT KOTAK WARZONE',
+                    'FETCHING CRATES IN WARZONE',
                     '#b8ff3c',
                     1,
                   );
@@ -27752,12 +27767,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         camera.updateProjectionMatrix();
         camera.position.set(0, 472, 0.001);
         camera.lookAt(0, 0, 0);
-        dirLight.shadow.camera.left = -176;
-        dirLight.shadow.camera.right = 176;
-        dirLight.shadow.camera.top = 176;
-        dirLight.shadow.camera.bottom = -176;
-        dirLight.shadow.camera.far = 520;
-        dirLight.shadow.camera.updateProjectionMatrix();
+        syncDirShadowCameraEnvelope(176, 520);
       } else if (parkViewMode) {
         editorCursorGroup.visible = false;
         playerUnit.root.visible = false;
@@ -27827,12 +27837,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         if (camera.fov !== prevParkFov) {
           camera.updateProjectionMatrix();
         }
-        dirLight.shadow.camera.left = -85;
-        dirLight.shadow.camera.right = 85;
-        dirLight.shadow.camera.top = 85;
-        dirLight.shadow.camera.bottom = -85;
-        dirLight.shadow.camera.far = 360;
-        dirLight.shadow.camera.updateProjectionMatrix();
+        syncDirShadowCameraEnvelope(85, 360);
       } else if (activeNukePose) {
         camera.up.set(0, 1, 0);
         camera.position.set(
@@ -27962,14 +27967,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         camera.updateMatrixWorld();
 
         const shadowHalfSpan = cityViewTarget === 'kota' ? 128 : 74;
-        if (Math.abs(dirLight.shadow.camera.right - shadowHalfSpan) > 1) {
-          dirLight.shadow.camera.left = -shadowHalfSpan;
-          dirLight.shadow.camera.right = shadowHalfSpan;
-          dirLight.shadow.camera.top = shadowHalfSpan;
-          dirLight.shadow.camera.bottom = -shadowHalfSpan;
-          dirLight.shadow.camera.far = 360;
-          dirLight.shadow.camera.updateProjectionMatrix();
-        }
+        syncDirShadowCameraEnvelope(shadowHalfSpan, 360);
 
         lastRenderedCamPos = { ...cityViewPoseNow.cameraPos };
         lastRenderedLookAt = { ...cityViewPoseNow.lookAtPos };

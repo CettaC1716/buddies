@@ -692,7 +692,13 @@ export function createKaiPalmTrunkGeometry(): {
   const positions = new Float32Array(vertCount * 3);
   const normals = new Float32Array(vertCount * 3);
   const uvs = new Float32Array(vertCount * 2);
+  const colors = new Float32Array(vertCount * 3);
   const indices: number[] = [];
+
+  const smoothstep = (e0: number, e1: number, x: number) => {
+    const k = Math.max(0, Math.min(1, (x - e0) / Math.max(1e-4, e1 - e0)));
+    return k * k * (3 - 2 * k);
+  };
 
   let curY = 0;
   let curZ = 0;
@@ -705,6 +711,18 @@ export function createKaiPalmTrunkGeometry(): {
     const baseFlare = Math.pow(1.0 - t, 3.0) * 0.09;
     const ringSwell = Math.sin(r * Math.PI) * 0.012;
     const radius = 0.28 * (1.0 - t * 0.42) + baseFlare + ringSwell;
+
+    // Zero-GPU-cost vertex-color canopy AO gradient:
+    // subtle warm sand-contact AO at base -> sunlit tawny mid-trunk -> cool-umber canopy shadow under fronds
+    const groundRise = smoothstep(0.0, 0.16, t);
+    const canopyAo = smoothstep(0.60, 1.0, t);
+    const ringMicroAo = 0.965 + 0.035 * Math.sin(r * Math.PI);
+    let colR = (0.89 + (1.0 - 0.89) * groundRise) * (1.0 - canopyAo) + 0.52 * canopyAo;
+    let colG = (0.85 + (0.97 - 0.85) * groundRise) * (1.0 - canopyAo) + 0.48 * canopyAo;
+    let colB = (0.79 + (0.92 - 0.79) * groundRise) * (1.0 - canopyAo) + 0.43 * canopyAo;
+    colR *= ringMicroAo;
+    colG *= ringMicroAo;
+    colB *= ringMicroAo;
 
     const cosT = Math.cos(tilt);
     const sinT = Math.sin(tilt);
@@ -726,6 +744,10 @@ export function createKaiPalmTrunkGeometry(): {
 
       uvs[idx * 2] = u * 2.0;
       uvs[idx * 2 + 1] = t * 3.5;
+
+      colors[idx * 3] = colR;
+      colors[idx * 3 + 1] = colG;
+      colors[idx * 3 + 2] = colB;
     }
 
     if (r < rings) {
@@ -749,6 +771,7 @@ export function createKaiPalmTrunkGeometry(): {
   trunkGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   trunkGeo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
   trunkGeo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  trunkGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   trunkGeo.setIndex(indices);
   return { trunkGeo, topY: curY, topZ: curZ };
 }
@@ -1261,7 +1284,7 @@ function createCarnivalBannerTexture(): THREE.CanvasTexture {
     ctx.font = 'bold 78px Georgia, serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('TAMAN RIA DERMAGA', 512, 110);
+    ctx.fillText('HARBOR CARNIVAL PIER', 512, 110);
 
     ctx.fillStyle = '#0369a1';
     ctx.font = 'bold 34px sans-serif';
@@ -1350,24 +1373,33 @@ function createPalmTrunkBarkTexture(): THREE.CanvasTexture {
   canvas.height = 512;
   const ctx = canvas.getContext('2d');
   if (ctx) {
-    ctx.fillStyle = '#825f42';
+    // Warm sunlit coastal tawny-ochre layered palm bark matching the painterly beach aesthetic
+    ctx.fillStyle = '#b4875e';
     ctx.fillRect(0, 0, 256, 512);
     const ringCount = 22;
     const ringH = 512 / ringCount;
+    const ringHighlightTones = ['#cfa67c', '#c3976d', '#d6ae84', '#be9167', '#cca177'];
+    const ringMidTones = ['#b2845a', '#a67950', '#ba8c62', '#a1744c', '#ae8158'];
     for (let r = 0; r < ringCount; r++) {
       const y = r * ringH;
       const grad = ctx.createLinearGradient(0, y, 0, y + ringH);
-      grad.addColorStop(0, '#96704e');
-      grad.addColorStop(0.55, '#805c3f');
-      grad.addColorStop(0.88, '#694930');
-      grad.addColorStop(1, '#8c6747');
+      grad.addColorStop(0.0, ringHighlightTones[r % ringHighlightTones.length]);
+      grad.addColorStop(0.42, ringMidTones[r % ringMidTones.length]);
+      grad.addColorStop(0.84, '#8d623f');
+      grad.addColorStop(0.95, '#764f31');
+      grad.addColorStop(1.0, '#c2966c');
       ctx.fillStyle = grad;
       ctx.fillRect(0, y, 256, ringH);
-      ctx.fillStyle = 'rgba(72, 48, 28, 0.45)';
-      ctx.fillRect(0, y + ringH - 2.5, 256, 2);
+
+      // Sunlit upper lip bevel + crisp warm umber leaf-scar ring shadow
+      ctx.fillStyle = 'rgba(246, 218, 182, 0.28)';
+      ctx.fillRect(0, y + 1.5, 256, 2.2);
+      ctx.fillStyle = 'rgba(78, 49, 28, 0.44)';
+      ctx.fillRect(0, y + ringH - 2.6, 256, 2.4);
     }
-    ctx.fillStyle = 'rgba(58, 38, 22, 0.14)';
-    for (let x = 4; x < 256; x += 9) {
+    // Delicate fibrous vertical palm bark grain
+    for (let x = 3; x < 256; x += 8) {
+      ctx.fillStyle = x % 16 === 3 ? 'rgba(84, 54, 32, 0.12)' : 'rgba(244, 214, 178, 0.10)';
       ctx.fillRect(x, 0, 2, 512);
     }
   }
@@ -1591,16 +1623,16 @@ function createCarnivalSurfaceAtlasTexture(): THREE.CanvasTexture {
       ctx.fillRect(x0, y0, 256, 256);
 
       for (let y = 0; y < 256; y += 8) {
-        ctx.fillStyle = y % 16 === 0 ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.07)';
+        ctx.fillStyle = y % 16 === 0 ? 'rgba(255,248,236,0.08)' : 'rgba(68,48,28,0.07)';
         ctx.fillRect(x0, y0 + y, 256, 2);
       }
       for (let x = 0; x < 256; x += 8) {
-        ctx.fillStyle = x % 16 === 0 ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)';
+        ctx.fillStyle = x % 16 === 0 ? 'rgba(255,248,236,0.06)' : 'rgba(68,48,28,0.06)';
         ctx.fillRect(x0 + x, y0, 2, 256);
       }
     }
 
-    const sidingPalette = ['#a65414', '#fbcfe8', '#e0f2fe', '#fef3c7'];
+    const sidingPalette = ['#b46a34', '#f7d4e2', '#e0f0f8', '#faedd0'];
     for (let s = 0; s < 4; s++) {
       const x0 = s * 256;
       const y0 = 3 * 256;
@@ -1610,9 +1642,9 @@ function createCarnivalSurfaceAtlasTexture(): THREE.CanvasTexture {
       const sw = 256 / slats;
       for (let k = 0; k < slats; k++) {
         const sx = x0 + k * sw;
-        ctx.fillStyle = 'rgba(255,255,255,0.1)';
+        ctx.fillStyle = 'rgba(255,248,236,0.12)';
         ctx.fillRect(sx + 2, y0, 3, 256);
-        ctx.fillStyle = 'rgba(15,23,42,0.18)';
+        ctx.fillStyle = 'rgba(72,42,18,0.19)';
         ctx.fillRect(sx + sw - 3, y0, 3, 256);
       }
       ctx.fillStyle = 'rgba(255,255,255,0.18)';
@@ -1789,15 +1821,22 @@ export function buildCoastalAmusementPark3D(
     return out;
   };
 
+  void createBlitzStrokeMesh;
+
   // Reusable placeholder MeshStandardMaterial cache so makePart never allocates redundant materials
   const placeholderMatCache = new Map<string, THREE.MeshStandardMaterial>();
-  const getPlaceholderStdMat = (colorHex: string, map?: THREE.Texture): THREE.MeshStandardMaterial => {
-    const key = `${colorHex}_${map ? map.uuid : 'nomap'}`;
+  const getPlaceholderStdMat = (
+    colorHex: string,
+    map?: THREE.Texture,
+    vertexColors = false,
+  ): THREE.MeshStandardMaterial => {
+    const key = `${colorHex}_${map ? map.uuid : 'nomap'}_${vertexColors ? 1 : 0}`;
     let m = placeholderMatCache.get(key);
     if (!m) {
       m = new THREE.MeshStandardMaterial({
         color: map ? '#ffffff' : colorHex,
         map: map ?? null,
+        vertexColors,
         roughness: 0.76,
         metalness: 0.08,
       });
@@ -1845,7 +1884,8 @@ export function buildCoastalAmusementPark3D(
       return mesh;
     }
 
-    const mat = getPlaceholderStdMat(colorHex, opts?.map);
+    const hasVertexColor = Boolean(geo.getAttribute('color'));
+    const mat = getPlaceholderStdMat(colorHex, opts?.map, hasVertexColor);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = !isSoftwareGl && (opts?.castShadow ?? true);
     mesh.receiveShadow = !isSoftwareGl && (opts?.receiveShadow ?? true);
@@ -1859,11 +1899,6 @@ export function buildCoastalAmusementPark3D(
       mesh.material.polygonOffset = true;
       mesh.material.polygonOffsetFactor = -2;
       mesh.material.polygonOffsetUnits = -2;
-    }
-    const sw = opts?.strokeWidth ?? 0.022;
-    if (sw > 0) {
-      const stroke = createBlitzStrokeMesh(geo, sw);
-      if (stroke) mesh.add(stroke);
     }
     return mesh;
   };
@@ -2437,7 +2472,7 @@ export function buildCoastalAmusementPark3D(
     back.rotation.x = -0.15;
     bGrp.add(back);
     for (const lx of [-0.74, 0.74]) {
-      const leg = makePart(makeRoundedParkBoxGeo(0.12, 0.44, 0.52, 0.025, 2), '#1e293b', { strokeWidth: 0.01 });
+      const leg = makePart(makeRoundedParkBoxGeo(0.12, 0.44, 0.52, 0.025, 2), '#46403a', { strokeWidth: 0, receiveShadow: true });
       leg.position.set(lx, 0.22, 0);
       bGrp.add(leg);
     }
@@ -2463,7 +2498,7 @@ export function buildCoastalAmusementPark3D(
       [-1.45, 2.18],
       [1.45, 2.18],
     ]) {
-      const col = makePart(colGeo, '#f8fafc', { strokeWidth: 0.016 });
+      const col = makePart(colGeo, '#faf2e3', { strokeWidth: 0, receiveShadow: true });
       col.position.set(ox, 1.55, oz);
       gazGrp.add(col);
     }
@@ -3118,22 +3153,28 @@ export function buildCoastalAmusementPark3D(
     );
   }
 
-  // Kai Fish Market Coconut Palm Trees (1:1 Ringed Curved Trunks, 5 Coconuts & Alpha-Cutout Swaying Fronds!)
+  // Kai Fish Market Coconut Palm Trees (1:1 Ringed Curved Trunks, Canopy AO, 5 Coconuts & Alpha-Cutout Swaying Fronds!)
   const palmFrondShaderMat = new THREE.ShaderMaterial({
-    uniforms: {
-      uFrondTex: { value: palmFrondMaskTex },
-      uColorA: { value: new THREE.Color('#238c3a') },
-      uColorB: { value: new THREE.Color('#66cc38') },
-      uColorRachis: { value: new THREE.Color('#9be048') },
-      uColorShadow: { value: new THREE.Color('#135924') },
-      uAlphaThreshold: { value: 0.28 },
-      uLightDirection: windUniforms.uLightDirection,
-      uWindPhase: windUniforms.uWindPhase,
-      uWindDirection: windUniforms.uWindDirection,
-      uWindStrength: windUniforms.uWindStrength,
-      uWindGust: windUniforms.uWindGust,
-    },
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      {
+        uFrondTex: { value: palmFrondMaskTex },
+        uColorA: { value: new THREE.Color('#5b9641') },
+        uColorB: { value: new THREE.Color('#9bd054') },
+        uColorRachis: { value: new THREE.Color('#badb6a') },
+        uColorShadow: { value: new THREE.Color('#345e2e') },
+        uAlphaThreshold: { value: 0.28 },
+        uLightDirection: windUniforms.uLightDirection,
+        uLightColor: windUniforms.uLightColor,
+        uWindPhase: windUniforms.uWindPhase,
+        uWindDirection: windUniforms.uWindDirection,
+        uWindStrength: windUniforms.uWindStrength,
+        uWindGust: windUniforms.uWindGust,
+      },
+    ]),
+    fog: true,
     vertexShader: /* glsl */ `
+      #include <fog_pars_vertex>
       uniform float uWindPhase;
       uniform vec2 uWindDirection;
       uniform float uWindStrength;
@@ -3158,10 +3199,13 @@ export function buildCoastalAmusementPark3D(
         worldPos.y += (sin(phase * 0.85) * 0.14 * arcFactor + flutter) * uWindStrength;
 
         vNormalW = normalize(mat3(modelMatrix) * normal);
-        gl_Position = projectionMatrix * viewMatrix * worldPos;
+        vec4 mvPosition = viewMatrix * worldPos;
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
       }
     `,
     fragmentShader: /* glsl */ `
+      #include <fog_pars_fragment>
       uniform sampler2D uFrondTex;
       uniform vec3 uColorA;
       uniform vec3 uColorB;
@@ -3169,6 +3213,7 @@ export function buildCoastalAmusementPark3D(
       uniform vec3 uColorShadow;
       uniform float uAlphaThreshold;
       uniform vec3 uLightDirection;
+      uniform vec3 uLightColor;
 
       varying vec2 vUv;
       varying vec3 vNormalW;
@@ -3178,17 +3223,20 @@ export function buildCoastalAmusementPark3D(
         if (maskSample.r < uAlphaThreshold) discard;
 
         float rawNdl = dot(normalize(vNormalW), normalize(uLightDirection));
-        float litFactor = smoothstep(0.05, 0.88, rawNdl);
-        float shadowFactor = smoothstep(-0.45, 0.28, rawNdl);
+        float tipSun = smoothstep(0.12, 0.94, vUv.y);
+        float litFactor = smoothstep(-0.08, 0.88, rawNdl);
+        float shadowFactor = smoothstep(-0.48, 0.30, rawNdl * 0.82 + tipSun * 0.25);
         float centralStemMask = smoothstep(0.88, 0.99, maskSample.g) * (1.0 - smoothstep(0.0, 0.04, abs(vUv.x - 0.5)));
 
         vec3 leafCol = mix(uColorShadow, uColorA, shadowFactor);
-        leafCol = mix(leafCol, uColorB, litFactor * 0.68);
-        vec3 finalCol = mix(leafCol, uColorRachis, centralStemMask * 0.55);
+        leafCol = mix(leafCol, uColorB, clamp(litFactor * 0.58 + tipSun * 0.34, 0.0, 1.0));
+        vec3 baseCol = mix(leafCol, uColorRachis, centralStemMask * 0.52);
+        vec3 sunMod = mix(vec3(0.86, 0.88, 0.90), uLightColor, 0.74);
 
-        gl_FragColor = vec4(finalCol, 1.0);
+        gl_FragColor = vec4(baseCol * sunMod, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
+        #include <fog_fragment>
       }
     `,
     side: THREE.DoubleSide,
@@ -3196,22 +3244,45 @@ export function buildCoastalAmusementPark3D(
   const palmFrondDepthMat = new THREE.ShaderMaterial({
     uniforms: {
       uFrondTex: { value: palmFrondMaskTex },
-      uAlphaThreshold: { value: 0.36 },
+      uAlphaThreshold: { value: 0.28 },
+      uWindPhase: windUniforms.uWindPhase,
+      uWindDirection: windUniforms.uWindDirection,
+      uWindStrength: windUniforms.uWindStrength,
+      uWindGust: windUniforms.uWindGust,
     },
     vertexShader: /* glsl */ `
+      uniform float uWindPhase;
+      uniform vec2 uWindDirection;
+      uniform float uWindStrength;
+      uniform float uWindGust;
+
       varying vec2 vUv;
       void main() {
         vUv = uv;
-        gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);
+        vec4 worldPos = modelMatrix * vec4(position, 1.0);
+
+        float arcFactor = smoothstep(0.06, 1.0, uv.y);
+        float edgeFlutter = abs(uv.x - 0.5) * 2.0 * smoothstep(0.15, 0.9, uv.y);
+        float seedPhase = worldPos.x * 0.42 + worldPos.z * 0.37 + uv.y * 2.2;
+        float phase = uWindPhase + seedPhase;
+        float sway = (sin(phase) * 0.38 + uWindGust * 0.24) * uWindStrength * arcFactor;
+        float flutter = sin(phase * 2.3 + uv.x * 6.0) * 0.07 * uWindStrength * edgeFlutter;
+
+        worldPos.x += uWindDirection.x * sway;
+        worldPos.z += uWindDirection.y * sway;
+        worldPos.y += (sin(phase * 0.85) * 0.14 * arcFactor + flutter) * uWindStrength;
+
+        gl_Position = projectionMatrix * viewMatrix * worldPos;
       }
     `,
     fragmentShader: /* glsl */ `
+      #include <packing>
       uniform sampler2D uFrondTex;
       uniform float uAlphaThreshold;
       varying vec2 vUv;
       void main() {
         if (texture2D(uFrondTex, vUv).r < uAlphaThreshold) discard;
-        gl_FragColor = vec4(vec3(1.0 - gl_FragCoord.z), 1.0);
+        gl_FragColor = packDepthToRGBA(gl_FragCoord.z);
       }
     `,
     side: THREE.DoubleSide,
@@ -3239,24 +3310,28 @@ export function buildCoastalAmusementPark3D(
       pGrp.scale.setScalar(palmScale);
       staticParkGroup.add(pGrp);
 
-      // 1. Continuous curved ringed trunk
-      const trunkMesh = makePart(sharedPalmTrunkData.trunkGeo, '#846042', {
+      // 1. Continuous curved ringed trunk with top-of-trunk canopy AO vertex gradient + dappled shadow receiving
+      const trunkMesh = makePart(sharedPalmTrunkData.trunkGeo, '#ffffff', {
         map: palmTrunkBarkTex,
-        strokeWidth: 0.018,
+        strokeWidth: 0,
+        castShadow: true,
+        receiveShadow: true,
+        bounceStrength: 0.14,
       });
       pGrp.add(trunkMesh);
 
       // 2. Crownshaft collar & 5 coconuts
       const { topY, topZ } = sharedPalmTrunkData;
-      const shaft = makePart(crownShaftGeo, '#4f7835', { strokeWidth: 0.012 });
+      const shaft = makePart(crownShaftGeo, '#527838', { strokeWidth: 0, receiveShadow: true });
       shaft.position.set(0, topY + 0.06, topZ + 0.02);
       shaft.rotation.x = 0.22;
       pGrp.add(shaft);
 
       for (let c = 0; c < 5; c++) {
         const cAng = (c * Math.PI * 2) / 5;
-        const coco = makePart(coconutGeo, c % 2 === 0 ? '#5c8c38' : '#709e44', {
-          strokeWidth: 0.01,
+        const coco = makePart(coconutGeo, c % 2 === 0 ? '#698c3c' : '#846842', {
+          strokeWidth: 0,
+          receiveShadow: true,
         });
         coco.position.set(Math.cos(cAng) * 0.21, topY - 0.08, topZ + Math.sin(cAng) * 0.21);
         pGrp.add(coco);

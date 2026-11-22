@@ -250,6 +250,31 @@ function createCanvas2D(
   };
 }
 
+const buildingContextTextureCache = new WeakMap<
+  UrbanPlazaBuildingsContext,
+  Map<string, THREE.Texture>
+>();
+
+export function getOrCreateBuildingCanvasTexture(
+  bCtx: UrbanPlazaBuildingsContext,
+  cacheKey: string,
+  w: number,
+  h: number,
+  draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void,
+  repeat = true,
+): THREE.Texture {
+  let ctxMap = buildingContextTextureCache.get(bCtx);
+  if (!ctxMap) {
+    ctxMap = new Map<string, THREE.Texture>();
+    buildingContextTextureCache.set(bCtx, ctxMap);
+  }
+  const existing = ctxMap.get(cacheKey);
+  if (existing) return existing;
+  const tex = makeBuildingCanvasTexture(bCtx, w, h, draw, repeat);
+  ctxMap.set(cacheKey, tex);
+  return tex;
+}
+
 export function makeBuildingCanvasTexture(
   bCtx: UrbanPlazaBuildingsContext,
   w: number,
@@ -431,14 +456,14 @@ function createSweptRectBeamGeometry(
 }
 
 // ============================================================================
-// ARCHITECTURAL PROCEDURAL TEXTURES (NO BLACK WOOD!)
+// ARCHITECTURAL PROCEDURAL TEXTURES (WARM PAINTERLY, CACHED PER CONTEXT <= 512)
 // ============================================================================
 
 export function createHoneyPineDeckTexture(ctx: UrbanPlazaBuildingsContext): THREE.Texture {
-  return makeBuildingCanvasTexture(ctx, 512, 512, (c, w, h) => {
-    c.fillStyle = '#c5925b';
+  return getOrCreateBuildingCanvasTexture(ctx, 'honey_pine_deck_512', 512, 512, (c, w, h) => {
+    c.fillStyle = '#c8955f';
     c.fillRect(0, 0, w, h);
-    const plankTones = ['#cca06c', '#b78655', '#d4a774', '#be8e5b', '#c69562'];
+    const plankTones = ['#d8ae7a', '#c28d59', '#e0b885', '#b98350', '#cfa16c', '#c8945e'];
     const rows = 8;
     const rh = h / rows;
     for (let r = 0; r < rows; r++) {
@@ -446,93 +471,161 @@ export function createHoneyPineDeckTexture(ctx: UrbanPlazaBuildingsContext): THR
       const splitX = ((r * 193 + 96) % (w - 140)) + 70;
       for (const [sx, sw, shadeIdx] of [
         [0, splitX, r * 3],
-        [splitX, w - splitX, r * 3 + 1],
+        [splitX, w - splitX, r * 3 + 2],
       ] as const) {
+        const pw = Math.max(2, sw - 3);
         c.fillStyle = plankTones[shadeIdx % plankTones.length];
-        c.fillRect(sx + 1.5, py + 1.5, Math.max(2, sw - 3), rh - 3);
-        // Sun-warmed upper bevel highlight
-        c.fillStyle = 'rgba(255, 240, 212, 0.22)';
-        c.fillRect(sx + 2, py + 2, Math.max(2, sw - 4), 3.5);
+        c.fillRect(sx + 1.5, py + 1.5, pw, rh - 3);
+
+        // Soft painterly longitudinal sunlight gradient across each plank
+        const plankGrad = c.createLinearGradient(sx, py + 1.5, sx, py + rh - 1.5);
+        plankGrad.addColorStop(0, 'rgba(255, 245, 222, 0.24)');
+        plankGrad.addColorStop(0.28, 'rgba(255, 238, 206, 0.05)');
+        plankGrad.addColorStop(0.82, 'rgba(136, 86, 42, 0.06)');
+        plankGrad.addColorStop(1, 'rgba(122, 74, 34, 0.18)');
+        c.fillStyle = plankGrad;
+        c.fillRect(sx + 1.5, py + 1.5, pw, rh - 3);
+
+        // Soft hand-painted knot whorl on alternating boards
+        if ((r + shadeIdx) % 3 === 0 && pw > 70) {
+          const kx = sx + pw * 0.56;
+          const ky = py + rh * 0.52;
+          c.fillStyle = 'rgba(136, 84, 42, 0.16)';
+          c.beginPath();
+          c.ellipse(kx, ky, 12, 4.2, 0.06, 0, Math.PI * 2);
+          c.fill();
+        }
       }
-      // Subtle honey-amber longitudinal wood grain
-      for (let g = 0; g < 10; g++) {
-        const gy = py + 6 + (g / 10) * (rh - 12);
-        c.strokeStyle = g % 3 === 0 ? 'rgba(138, 92, 46, 0.16)' : 'rgba(255, 234, 198, 0.16)';
-        c.lineWidth = 1.4;
+      // Flowing honey-amber hand-painted wood grain
+      for (let g = 0; g < 11; g++) {
+        const gy = py + 5 + (g / 11) * (rh - 10);
+        c.strokeStyle = g % 3 === 0 ? 'rgba(136, 86, 42, 0.16)' : 'rgba(255, 240, 208, 0.18)';
+        c.lineWidth = g % 4 === 0 ? 1.8 : 1.2;
         c.beginPath();
         c.moveTo(0, gy);
-        c.bezierCurveTo(w * 0.33, gy + Math.sin(r + g) * 2.2, w * 0.66, gy - Math.cos(r + g) * 2.2, w, gy);
+        c.bezierCurveTo(w * 0.33, gy + Math.sin(r + g) * 2.4, w * 0.66, gy - Math.cos(r + g) * 2.4, w, gy);
         c.stroke();
       }
       // Warm cinnamon plank joint groove (NEVER black)
-      c.fillStyle = '#8b5d36';
-      c.fillRect(0, py + rh - 2.5, w, 2.5);
-      c.fillRect(splitX - 1.5, py + 1.5, 2.5, rh - 3);
+      c.fillStyle = '#895a34';
+      c.fillRect(0, py + rh - 2.4, w, 2.4);
+      c.fillRect(splitX - 1.4, py + 1.5, 2.4, rh - 3);
     }
   });
 }
 
 export function createHoneyOakTimberTexture(ctx: UrbanPlazaBuildingsContext): THREE.Texture {
-  return makeBuildingCanvasTexture(ctx, 512, 512, (c, w, h) => {
-    c.fillStyle = '#c48f58';
+  return getOrCreateBuildingCanvasTexture(ctx, 'honey_oak_timber_512', 512, 512, (c, w, h) => {
+    c.fillStyle = '#c8925a';
     c.fillRect(0, 0, w, h);
-    const bandTones = ['#cf9b64', '#b9834e', '#d6a46d', '#c18b55'];
+    const bandTones = ['#d6a36b', '#be8751', '#dfb078', '#b57d49', '#cc975f', '#c28c54'];
     const bands = 6;
     const bh = h / bands;
     for (let b = 0; b < bands; b++) {
       const py = b * bh;
       c.fillStyle = bandTones[b % bandTones.length];
       c.fillRect(0, py, w, bh);
+
+      const bandGrad = c.createLinearGradient(0, py, 0, py + bh);
+      bandGrad.addColorStop(0, 'rgba(255, 244, 218, 0.22)');
+      bandGrad.addColorStop(0.4, 'rgba(255, 236, 202, 0.04)');
+      bandGrad.addColorStop(1, 'rgba(128, 78, 38, 0.18)');
+      c.fillStyle = bandGrad;
+      c.fillRect(0, py, w, bh);
+
       for (let g = 0; g < 14; g++) {
         const gy = py + 4 + (g / 14) * (bh - 8);
-        c.strokeStyle = g % 3 === 0 ? 'rgba(128, 82, 38, 0.16)' : 'rgba(255, 232, 194, 0.18)';
-        c.lineWidth = 1.6;
+        c.strokeStyle = g % 3 === 0 ? 'rgba(128, 78, 38, 0.17)' : 'rgba(255, 238, 202, 0.19)';
+        c.lineWidth = g % 5 === 0 ? 2.0 : 1.4;
         c.beginPath();
         c.moveTo(0, gy);
-        c.lineTo(w * 0.5, gy + Math.sin(b * 1.4 + g) * 2.5);
-        c.lineTo(w, gy);
+        c.bezierCurveTo(
+          w * 0.34,
+          gy + Math.sin(b * 1.4 + g) * 2.6,
+          w * 0.68,
+          gy - Math.cos(b * 1.2 + g) * 2.2,
+          w,
+          gy,
+        );
         c.stroke();
       }
-      c.fillStyle = 'rgba(136, 89, 44, 0.22)';
-      c.fillRect(0, py + bh - 2, w, 2);
+      c.fillStyle = 'rgba(132, 84, 42, 0.26)';
+      c.fillRect(0, py + bh - 2.2, w, 2.2);
     }
   });
 }
 
 function createTerracottaStorefrontTexture(ctx: UrbanPlazaBuildingsContext): THREE.Texture {
-  return makeBuildingCanvasTexture(ctx, 256, 256, (c, w, h) => {
-    c.fillStyle = '#9e3b33';
+  return getOrCreateBuildingCanvasTexture(ctx, 'terracotta_storefront_256', 256, 256, (c, w, h) => {
+    c.fillStyle = '#b45544';
     c.fillRect(0, 0, w, h);
-    const tones = ['#a64139', '#97362e', '#ad473f', '#9e3b33'];
+    const tones = ['#be604d', '#ab4e3e', '#c66a55', '#b25342', '#ba5b49', '#a5493a'];
     for (let i = 0; i < 6; i++) {
+      const py = (i * h) / 6;
+      const rh = h / 6;
       c.fillStyle = tones[i % tones.length];
-      c.fillRect(0, (i * h) / 6, w, h / 6);
-      c.fillStyle = 'rgba(255, 224, 210, 0.08)';
-      c.fillRect(0, (i * h) / 6 + 2, w, 2);
+      c.fillRect(0, py, w, rh);
+      // Warm sunlit lip & subtle terracotta seam
+      c.fillStyle = 'rgba(255, 232, 214, 0.12)';
+      c.fillRect(0, py + 1.5, w, 2.2);
+      c.fillStyle = 'rgba(110, 40, 28, 0.12)';
+      c.fillRect(0, py + rh - 1.5, w, 1.5);
     }
-    for (let s = 0; s < 320; s++) {
-      c.fillStyle = s % 2 === 0 ? 'rgba(255, 216, 200, 0.06)' : 'rgba(85, 24, 18, 0.07)';
+    // Soft hand-painted plaster/trowel washes (cozy coastal terracotta warmth)
+    for (let i = 0; i < 64; i++) {
+      const x = (i * 89 + 19) % w;
+      const y = (i * 149 + 31) % h;
+      const rad = 12 + (i % 18);
+      const grad = c.createRadialGradient(x, y, 1, x, y, rad);
+      grad.addColorStop(0, i % 2 === 0 ? 'rgba(255, 224, 198, 0.10)' : 'rgba(116, 42, 30, 0.09)');
+      grad.addColorStop(1, 'rgba(180, 85, 68, 0)');
+      c.fillStyle = grad;
+      c.beginPath();
+      c.arc(x, y, rad, 0, Math.PI * 2);
+      c.fill();
+    }
+    for (let s = 0; s < 260; s++) {
+      c.fillStyle = s % 2 === 0 ? 'rgba(255, 226, 206, 0.08)' : 'rgba(104, 38, 28, 0.08)';
       c.fillRect((s * 73) % w, (s * 139) % h, 2, 2);
     }
   });
 }
 
 export function createCreamStuccoTexture(ctx: UrbanPlazaBuildingsContext): THREE.Texture {
-  return makeBuildingCanvasTexture(ctx, 256, 256, (c, w, h) => {
-    c.fillStyle = '#efe4ce';
+  return getOrCreateBuildingCanvasTexture(ctx, 'cream_stucco_256', 256, 256, (c, w, h) => {
+    c.fillStyle = '#f3e8d2';
     c.fillRect(0, 0, w, h);
     let seed = 918273;
     const rnd = () => {
       seed = (seed * 16807) % 2147483647;
       return (seed - 1) / 2147483646;
     };
-    for (let i = 0; i < 650; i++) {
+    // Soft sunlit hand-painted Mediterranean plaster trowel washes
+    for (let i = 0; i < 110; i++) {
       const x = rnd() * w;
       const y = rnd() * h;
-      const rw = 4 + rnd() * 14;
-      const rh = 3 + rnd() * 10;
-      c.fillStyle = i % 2 === 0 ? 'rgba(255, 252, 245, 0.14)' : 'rgba(206, 188, 156, 0.11)';
-      c.fillRect(x, y, rw, rh);
+      const rad = 10 + rnd() * 22;
+      const grad = c.createRadialGradient(x, y, 1, x, y, rad);
+      grad.addColorStop(
+        0,
+        i % 3 === 0
+          ? 'rgba(255, 252, 244, 0.18)'
+          : i % 3 === 1
+          ? 'rgba(222, 198, 162, 0.13)'
+          : 'rgba(238, 214, 180, 0.12)',
+      );
+      grad.addColorStop(1, 'rgba(243, 232, 210, 0)');
+      c.fillStyle = grad;
+      c.beginPath();
+      c.arc(x, y, rad, 0, Math.PI * 2);
+      c.fill();
+    }
+    // Fine warm sand-lime mineral stipple
+    for (let i = 0; i < 420; i++) {
+      const x = rnd() * w;
+      const y = rnd() * h;
+      c.fillStyle = i % 2 === 0 ? 'rgba(255, 252, 245, 0.14)' : 'rgba(196, 174, 140, 0.10)';
+      c.fillRect(x, y, 2, 2);
     }
   });
 }
@@ -542,32 +635,44 @@ function createStripedAwningTexture(
   stripeA: string,
   stripeB: string,
 ): THREE.Texture {
-  return makeBuildingCanvasTexture(ctx, 512, 256, (c, w, h) => {
-    const stripeCount = 12;
-    const sw = w / stripeCount;
-    for (let i = 0; i < stripeCount; i++) {
-      c.fillStyle = i % 2 === 0 ? stripeA : stripeB;
-      c.fillRect(i * sw, 0, sw + 0.5, h);
-    }
-    // Subtle woven canvas threads
-    for (let y = 0; y < h; y += 6) {
-      c.fillStyle = y % 12 === 0 ? 'rgba(255,255,255,0.08)' : 'rgba(60,42,20,0.05)';
-      c.fillRect(0, y, w, 2);
-    }
-    const bottomGrad = c.createLinearGradient(0, h * 0.72, 0, h);
-    bottomGrad.addColorStop(0, 'rgba(0,0,0,0)');
-    bottomGrad.addColorStop(1, 'rgba(65,42,18,0.14)');
-    c.fillStyle = bottomGrad;
-    c.fillRect(0, h * 0.72, w, h * 0.28);
-  });
+  return getOrCreateBuildingCanvasTexture(
+    ctx,
+    `striped_awning_${stripeA}_${stripeB}_512x256`,
+    512,
+    256,
+    (c, w, h) => {
+      const stripeCount = 12;
+      const sw = w / stripeCount;
+      for (let i = 0; i < stripeCount; i++) {
+        c.fillStyle = i % 2 === 0 ? stripeA : stripeB;
+        c.fillRect(i * sw, 0, sw + 0.5, h);
+        // Subtle sunlit crease highlight along stripe seam
+        c.fillStyle = 'rgba(255, 248, 232, 0.12)';
+        c.fillRect(i * sw + 1, 0, 2, h);
+        c.fillStyle = 'rgba(104, 72, 36, 0.08)';
+        c.fillRect((i + 1) * sw - 1.5, 0, 1.5, h);
+      }
+      // Subtle woven linen canvas threads
+      for (let y = 0; y < h; y += 5) {
+        c.fillStyle = y % 10 === 0 ? 'rgba(255, 250, 238, 0.09)' : 'rgba(92, 62, 28, 0.05)';
+        c.fillRect(0, y, w, 1.8);
+      }
+      const bottomGrad = c.createLinearGradient(0, h * 0.68, 0, h);
+      bottomGrad.addColorStop(0, 'rgba(0,0,0,0)');
+      bottomGrad.addColorStop(1, 'rgba(84, 54, 24, 0.15)');
+      c.fillStyle = bottomGrad;
+      c.fillRect(0, h * 0.68, w, h * 0.32);
+    },
+  );
 }
 
 export function createWarmWindowGlowTexture(
   ctx: UrbanPlazaBuildingsContext,
   kind: 'boutique' | 'cafe' | 'casement',
 ): THREE.Texture {
-  return makeBuildingCanvasTexture(
+  return getOrCreateBuildingCanvasTexture(
     ctx,
+    `window_glow_${kind}_256`,
     256,
     256,
     (c, w, h) => {
@@ -626,8 +731,9 @@ export function createWarmWindowGlowTexture(
 }
 
 function createClearStorefrontGlassTexture(ctx: UrbanPlazaBuildingsContext): THREE.Texture {
-  return makeBuildingCanvasTexture(
+  return getOrCreateBuildingCanvasTexture(
     ctx,
+    'clear_storefront_glass_256',
     256,
     256,
     (c, w, h) => {
@@ -665,8 +771,9 @@ function createDisplayAlcoveBackdropTexture(
   ctx: UrbanPlazaBuildingsContext,
   kind: 'boutique' | 'cafe',
 ): THREE.Texture {
-  return makeBuildingCanvasTexture(
+  return getOrCreateBuildingCanvasTexture(
     ctx,
+    `display_backdrop_${kind}_256`,
     256,
     256,
     (c, w, h) => {
@@ -892,13 +999,14 @@ function buildSlopedStripedAwning(
   const slopeLen = Math.hypot(opts.depth, opts.dropH);
   const tilt = Math.atan2(opts.dropH, opts.depth);
   const roofGeo = ctx.applyPlanarUvs(new THREE.BoxGeometry(opts.width, 0.048, slopeLen), 1.4);
+  const recvShadow = !ctx.isSoftwareGl;
   ctx.addPart(
     grp,
     roofGeo,
     '#ffffff',
     [0, -opts.dropH * 0.5, opts.depth * 0.5],
     [tilt, 0, 0],
-    { map: opts.stripeTex, castShadow: true },
+    { map: opts.stripeTex, castShadow: !ctx.isSoftwareGl, receiveShadow: recvShadow },
   );
 
   // Side triangular fabric cheek gussets
@@ -915,13 +1023,15 @@ function buildSlopedStripedAwning(
   gussetGeo.rotateY(-Math.PI * 0.5);
   gussetGeo.computeVertexNormals();
   for (const sx of [-opts.width * 0.5 + 0.02, opts.width * 0.5 - 0.02]) {
-    ctx.addPart(grp, gussetGeo.clone(), opts.colorA, [sx, 0, 0]);
+    ctx.addPart(grp, gussetGeo.clone(), opts.colorA, [sx, 0, 0], [0, 0, 0], {
+      receiveShadow: recvShadow,
+    });
   }
   gussetGeo.dispose();
 
-  // Dark-bronze awning arm brackets beneath canopy
+  // Warm espresso-bronze awning arm brackets beneath canopy
   for (const bx of [-opts.width * 0.4, opts.width * 0.4]) {
-    ctx.addPart(grp, new THREE.BoxGeometry(0.036, 0.036, opts.depth * 0.92), '#48413a', [
+    ctx.addPart(grp, new THREE.BoxGeometry(0.036, 0.036, opts.depth * 0.92), '#54483e', [
       bx,
       -opts.dropH * 0.92,
       opts.depth * 0.46,
@@ -965,7 +1075,8 @@ export function buildUrnBoxwoodPlanter(
     new THREE.Vector2(0.0, 0.40),
   ];
   ctx.addPart(grp, new THREE.LatheGeometry(potPts, 14), potColorHex, [0, 0, 0], [0, 0, 0], {
-    castShadow: true,
+    castShadow: !ctx.isSoftwareGl,
+    receiveShadow: !ctx.isSoftwareGl,
   });
   ctx.addPart(grp, new THREE.CylinderGeometry(0.21, 0.21, 0.04, 12), '#5b4331', [0, 0.41, 0]);
 
@@ -1001,25 +1112,33 @@ function buildClassicTeakBench(
   bGrp.scale.setScalar(1.68);
   parent.add(bGrp);
 
+  const recvShadow = !ctx.isSoftwareGl;
   for (const sx of [-0.66, 0.66]) {
-    ctx.addPart(bGrp, createBeveledBox(0.06, 0.46, 0.46, 0.010), '#3d454d', [sx, 0.23, 0], [0, 0, 0], {
-      castShadow: true,
+    ctx.addPart(bGrp, createBeveledBox(0.06, 0.46, 0.46, 0.010), '#474c52', [sx, 0.23, 0], [0, 0, 0], {
+      castShadow: recvShadow,
+      receiveShadow: recvShadow,
     });
-    ctx.addPart(bGrp, createBeveledBox(0.06, 0.52, 0.06, 0.010), '#3d454d', [sx, 0.68, -0.20], [-0.16, 0, 0]);
-    ctx.addPart(bGrp, createBeveledBox(0.06, 0.05, 0.44, 0.010), '#4c5660', [sx, 0.64, 0]);
+    ctx.addPart(bGrp, createBeveledBox(0.06, 0.52, 0.06, 0.010), '#474c52', [sx, 0.68, -0.20], [-0.16, 0, 0], {
+      receiveShadow: recvShadow,
+    });
+    ctx.addPart(bGrp, createBeveledBox(0.06, 0.05, 0.44, 0.010), '#585f66', [sx, 0.64, 0], [0, 0, 0], {
+      receiveShadow: recvShadow,
+    });
   }
   for (const sz of [-0.14, 0.0, 0.14]) {
     const slatGeo = applyGrainUvs(createBeveledBox(1.48, 0.042, 0.11, 0.010), 'x', 1.2);
     ctx.addPart(bGrp, slatGeo, '#ffffff', [0, 0.47, sz], [0, 0, 0], {
       map: timberTex,
-      castShadow: true,
+      castShadow: recvShadow,
+      receiveShadow: recvShadow,
     });
   }
   for (const by of [0.68, 0.84]) {
     const backGeo = applyGrainUvs(createBeveledBox(1.48, 0.11, 0.04, 0.010), 'x', 1.2);
     ctx.addPart(bGrp, backGeo, '#ffffff', [0, by, -0.21], [-0.16, 0, 0], {
       map: timberTex,
-      castShadow: true,
+      castShadow: recvShadow,
+      receiveShadow: recvShadow,
     });
   }
 }
@@ -1096,7 +1215,7 @@ export function buildArchedCasementWindow(
   const trimColor = opts.trimHex ?? '#e2d6be';
   const archColor = opts.trimHex ?? '#dfd2b8';
   const keystoneColor = opts.sillHex ?? '#d6c8ac';
-  const mullionColor = opts.mullionHex ?? '#463f38';
+  const mullionColor = opts.mullionHex ?? '#56493e';
   const audited = computeAuditedFacadeWindowTransform({
     wallFacePos: [0, 0, 0],
     wallNormal: '+Z',
@@ -1203,19 +1322,21 @@ export function buildArchedCasementWindow(
   if (opts.withBalcony) {
     const bW = w + 0.24;
     const bD = 0.38;
+    const recvShadow = !ctx.isSoftwareGl;
     ctx.addPart(grp, new THREE.BoxGeometry(bW, 0.07, bD), '#dcd0b6', [0, 0.035, bD * 0.5 + 0.06], [0, 0, 0], {
-      castShadow: true,
+      castShadow: recvShadow,
+      receiveShadow: recvShadow,
     });
-    // Antique wrought-iron rails (#3c434d, zero strokeWidth so never pitch-black blob)
-    ctx.addPart(grp, new THREE.BoxGeometry(bW, 0.04, 0.04), '#3c434d', [0, 0.56, bD + 0.06]);
+    // Antique wrought-iron rails (#474c52, zero strokeWidth so never pitch-black blob)
+    ctx.addPart(grp, new THREE.BoxGeometry(bW, 0.04, 0.04), '#474c52', [0, 0.56, bD + 0.06]);
     for (const sx of [-bW * 0.48, bW * 0.48]) {
-      ctx.addPart(grp, new THREE.BoxGeometry(0.04, 0.54, 0.04), '#3c434d', [sx, 0.29, bD + 0.06]);
-      ctx.addPart(grp, new THREE.BoxGeometry(0.035, 0.04, bD), '#3c434d', [sx, 0.56, bD * 0.5 + 0.06]);
+      ctx.addPart(grp, new THREE.BoxGeometry(0.04, 0.54, 0.04), '#474c52', [sx, 0.29, bD + 0.06]);
+      ctx.addPart(grp, new THREE.BoxGeometry(0.035, 0.04, bD), '#474c52', [sx, 0.56, bD * 0.5 + 0.06]);
     }
     const barCount = 5;
     for (let b = 0; b < barCount; b++) {
       const bx = -bW * 0.38 + (b / (barCount - 1)) * (bW * 0.76);
-      ctx.addPart(grp, new THREE.BoxGeometry(0.024, 0.50, 0.024), '#3c434d', [bx, 0.29, bD + 0.06]);
+      ctx.addPart(grp, new THREE.BoxGeometry(0.024, 0.50, 0.024), '#474c52', [bx, 0.29, bD + 0.06]);
     }
   }
 
@@ -1309,7 +1430,7 @@ function buildWroughtIronRailingRun(
   const cx = (x1 + x2) * 0.5;
   const cz = (z1 + z2) * 0.5;
   const yaw = Math.atan2(-dz, dx);
-  const railColor = '#3a414b';
+  const railColor = '#474c52';
 
   // Top & bottom horizontal bars
   ctx.addPart(parent, new THREE.BoxGeometry(len, 0.042, 0.042), railColor, [cx, baseY + height, cz], [
@@ -1388,10 +1509,19 @@ export function buildRooftopGardenPlanterBox(
   parent.add(grp);
 
   // Honey-oak timber planter trough + mitered overhanging rim + dark soil bed (ZERO strawberries)
+  const recvShadow = !ctx.isSoftwareGl;
   const boxGeo = applyGrainUvs(createBeveledBox(len, 0.34, depth, 0.012), 'x', 1.2);
-  ctx.addPart(grp, boxGeo, '#ffffff', [0, 0.17, 0], [0, 0, 0], { map: timberTex, castShadow: true });
-  ctx.addPart(grp, createMiteredPerimeterCurbGeo(len + 0.06, depth + 0.06, 0.075, 0.046), '#c9935b', [0, 0.355, 0]);
-  ctx.addPart(grp, new THREE.BoxGeometry(len - 0.10, 0.04, depth - 0.10), '#5a4331', [0, 0.335, 0]);
+  ctx.addPart(grp, boxGeo, '#ffffff', [0, 0.17, 0], [0, 0, 0], {
+    map: timberTex,
+    castShadow: recvShadow,
+    receiveShadow: recvShadow,
+  });
+  ctx.addPart(grp, createMiteredPerimeterCurbGeo(len + 0.06, depth + 0.06, 0.075, 0.046), '#d29c64', [0, 0.355, 0], [0, 0, 0], {
+    receiveShadow: recvShadow,
+  });
+  ctx.addPart(grp, new THREE.BoxGeometry(len - 0.10, 0.04, depth - 0.10), '#5f4633', [0, 0.335, 0], [0, 0, 0], {
+    receiveShadow: recvShadow,
+  });
 
   const shrubCount = Math.max(2, Math.round(len / 0.55));
   const bloomTints = ['#c4b5fd', '#ddd6fe', '#f5f3ff', '#dbeafe', '#f8f4e8'];
@@ -1459,6 +1589,7 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
   // -------------------------------------------------------------------------
   // 1F VENETIAN / TERRACOTTA-RED BOUTIQUE STOREFRONT (`y = 0 .. 4.35m`)
   // -------------------------------------------------------------------------
+  const recvShadow = !ctx.isSoftwareGl;
   // Grounded limestone plinth skirt
   ctx.addPart(
     grp,
@@ -1466,7 +1597,7 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
     '#ffffff',
     [0, 0.17, 0],
     [0, 0, 0],
-    { map: ctx.textures.stoneTex, receiveShadow: true },
+    { map: ctx.textures.stoneTex, receiveShadow: recvShadow },
   );
 
   // Main 1F structural terracotta-red storefront core (inset 0.48m so recessed display windows & mannequins sit completely inside!)
@@ -1476,7 +1607,7 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
     '#ffffff',
     [0, 0.34 + (gfH - 0.68) * 0.5, 0],
     [0, 0, 0],
-    { map: terracottaTex, castShadow: true },
+    { map: terracottaTex, castShadow: recvShadow, receiveShadow: recvShadow },
   );
 
   // Outer terracotta-red wainscoting lower belt (y = 0.34 .. 0.72m)
@@ -1486,7 +1617,7 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
     '#ffffff',
     [0, 0.53, 0],
     [0, 0, 0],
-    { map: terracottaTex, castShadow: true },
+    { map: terracottaTex, castShadow: recvShadow, receiveShadow: recvShadow },
   );
 
   // Solid 1F corner & center pilaster masonry returns connecting core walls cleanly into pilasters (zero corner gaps)
@@ -1501,7 +1632,7 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
         '#ffffff',
         [sx * (halfW - 0.26), return1FY, sz * (halfD - 0.26)],
         [0, 0, 0],
-        { map: terracottaTex, castShadow: true },
+        { map: terracottaTex, castShadow: recvShadow, receiveShadow: recvShadow },
       );
       cornerPier.name = `Boutique1FCornerPier_${sx > 0 ? 'E' : 'W'}_${sz > 0 ? 'S' : 'N'}`;
     }
@@ -1511,7 +1642,7 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
       '#ffffff',
       [sx * (halfW - 0.33), return1FY, 0],
       [0, 0, 0],
-      { map: terracottaTex, castShadow: true },
+      { map: terracottaTex, castShadow: recvShadow, receiveShadow: recvShadow },
     );
     sideCenterReturn.name = `Boutique1FPilasterReturn_${sx > 0 ? 'SidePos' : 'SideNeg'}`;
   }
@@ -1523,7 +1654,7 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
         '#ffffff',
         [px, return1FY, sz * (halfD - 0.33)],
         [0, 0, 0],
-        { map: terracottaTex, castShadow: true },
+        { map: terracottaTex, castShadow: recvShadow, receiveShadow: recvShadow },
       );
       frontRearReturn.name = `Boutique1FPilasterReturn_${sz > 0 ? 'Front' : 'Rear'}_${px > 0 ? 'R' : 'L'}`;
     }
@@ -1536,7 +1667,7 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
       '#ffffff',
       [dx, 2.11, halfD - 0.32],
       [0, 0, 0],
-      { map: terracottaTex, castShadow: true },
+      { map: terracottaTex, castShadow: recvShadow, receiveShadow: recvShadow },
     );
     doorReveal.name = `Boutique1FDoorReveal_${dx > 0 ? 'R' : 'L'}`;
   }
@@ -1546,7 +1677,7 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
     '#ffffff',
     [0, 4.37, halfD - 0.24],
     [0, 0, 0],
-    { map: terracottaTex, castShadow: true },
+    { map: terracottaTex, castShadow: recvShadow, receiveShadow: recvShadow },
   );
   doorSpandrel.name = 'Boutique1FDoorSpandrel';
 
@@ -1556,29 +1687,45 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
   const frontPilasterXs = [-4.48, -1.25, 1.25, 4.48];
   for (const px of frontPilasterXs) {
     for (const pz of [halfD - 0.08, -halfD + 0.08]) {
-      ctx.addPart(grp, createBeveledBox(0.32, pilasterH, 0.24, 0.012), '#a84239', [px, pilasterY, pz], [0, 0, 0], {
-        castShadow: true,
+      ctx.addPart(grp, createBeveledBox(0.32, pilasterH, 0.24, 0.012), '#b85847', [px, pilasterY, pz], [0, 0, 0], {
+        castShadow: recvShadow,
+        receiveShadow: recvShadow,
       });
-      ctx.addPart(grp, createBeveledBox(0.38, 0.14, 0.28, 0.012), '#b85046', [px, pilasterY + pilasterH * 0.5 - 0.04, pz]);
-      ctx.addPart(grp, createBeveledBox(0.38, 0.12, 0.28, 0.012), '#c7beaa', [px, 0.42, pz]);
+      ctx.addPart(grp, createBeveledBox(0.38, 0.14, 0.28, 0.012), '#c66856', [px, pilasterY + pilasterH * 0.5 - 0.04, pz], [0, 0, 0], {
+        receiveShadow: recvShadow,
+      });
+      ctx.addPart(grp, createBeveledBox(0.38, 0.12, 0.28, 0.012), '#d2c6b0', [px, 0.42, pz], [0, 0, 0], {
+        receiveShadow: recvShadow,
+      });
     }
   }
   for (const pz of [-halfD + 0.12, 0.0, halfD - 0.12]) {
     for (const px of [-halfW + 0.08, halfW - 0.08]) {
-      ctx.addPart(grp, createBeveledBox(0.24, pilasterH, 0.32, 0.012), '#a84239', [px, pilasterY, pz], [0, 0, 0], {
-        castShadow: true,
+      ctx.addPart(grp, createBeveledBox(0.24, pilasterH, 0.32, 0.012), '#b85847', [px, pilasterY, pz], [0, 0, 0], {
+        castShadow: recvShadow,
+        receiveShadow: recvShadow,
       });
-      ctx.addPart(grp, createBeveledBox(0.28, 0.14, 0.38, 0.012), '#b85046', [px, pilasterY + pilasterH * 0.5 - 0.04, pz]);
+      ctx.addPart(grp, createBeveledBox(0.28, 0.14, 0.38, 0.012), '#c66856', [px, pilasterY + pilasterH * 0.5 - 0.04, pz], [0, 0, 0], {
+        receiveShadow: recvShadow,
+      });
     }
   }
   void core1FH;
 
   // East Front (+Z_local): Tall 4.02m Clear Glass Double Entrance Doors (scaled for 3.30m outdoor avatars)
-  ctx.addPart(grp, createBeveledBox(2.45, 0.08, 0.52, 0.014), '#dfd4be', [0, 0.04, halfD + 0.18]);
+  ctx.addPart(grp, createBeveledBox(2.45, 0.08, 0.52, 0.014), '#e4d8c2', [0, 0.04, halfD + 0.18], [0, 0, 0], {
+    receiveShadow: recvShadow,
+  });
   for (const dx of [-1.08, 1.08]) {
-    ctx.addPart(grp, createBeveledBox(0.16, 4.06, 0.24, 0.014), '#543c2c', [dx, 2.11, halfD - 0.04]);
+    ctx.addPart(grp, applyGrainUvs(createBeveledBox(0.16, 4.06, 0.24, 0.014), 'y', 1.4), '#966b46', [dx, 2.11, halfD - 0.04], [0, 0, 0], {
+      map: honeyOakTex,
+      receiveShadow: recvShadow,
+    });
   }
-  ctx.addPart(grp, createBeveledBox(2.32, 0.18, 0.24, 0.014), '#543c2c', [0, 4.11, halfD - 0.04]);
+  ctx.addPart(grp, applyGrainUvs(createBeveledBox(2.32, 0.18, 0.24, 0.014), 'x', 1.4), '#966b46', [0, 4.11, halfD - 0.04], [0, 0, 0], {
+    map: honeyOakTex,
+    receiveShadow: recvShadow,
+  });
   // Double glass entrance door leaves (3.94m clear opening) + transom rail + bent tubular brass pulls
   const frontDoorGlass = ctx.addPart(
     glassHost,
@@ -1592,8 +1739,8 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
     ...createCityWindowSpec('boutique-1f-entry-door', 'civic', '#e8f4fc', 1, 0),
     intensityScale: 0.65,
   });
-  ctx.addPart(grp, createBeveledBox(0.085, 3.94, 0.06, 0.008), '#543c2c', [0, 2.05, halfD + 0.01]);
-  ctx.addPart(grp, createBeveledBox(2.02, 0.075, 0.06, 0.008), '#543c2c', [0, 3.24, halfD + 0.01]);
+  ctx.addPart(grp, createBeveledBox(0.085, 3.94, 0.06, 0.008), '#684a34', [0, 2.05, halfD + 0.01]);
+  ctx.addPart(grp, createBeveledBox(2.02, 0.075, 0.06, 0.008), '#684a34', [0, 3.24, halfD + 0.01]);
   for (const hx of [-0.14, 0.14]) {
     buildTubularDoorPull(grp, ctx, [hx, 1.66, halfD + 0.035], 0.56, '#d4a644', 0.085);
   }
@@ -1625,9 +1772,13 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
     const clearW = bayW - 0.08;
 
     // Molded wainscoting frame + warm window sill spanning full depth (`z = -0.03 .. +0.46`) into core & pilasters
-    const sillMesh = ctx.addPart(bayGrp, createBeveledBox(bayW + 0.02, 0.12, 0.49, 0.012), '#dfd3bb', [0, 0.76, 0.215]);
+    const sillMesh = ctx.addPart(bayGrp, createBeveledBox(bayW + 0.02, 0.12, 0.49, 0.012), '#e3d7bf', [0, 0.76, 0.215], [0, 0, 0], {
+      receiveShadow: recvShadow,
+    });
     sillMesh.name = 'Boutique1FDisplaySill';
-    ctx.addPart(bayGrp, createBeveledBox(clearW - 0.10, 0.26, 0.06, 0.008), '#883029', [0, 0.54, 0.40]);
+    ctx.addPart(bayGrp, createBeveledBox(clearW - 0.10, 0.26, 0.06, 0.008), '#a0473a', [0, 0.54, 0.40], [0, 0, 0], {
+      receiveShadow: recvShadow,
+    });
 
     // Warm illuminated boutique gallery alcove backing wall behind the mannequins (`z = -0.010 .. +0.016`)
     const backdropMesh = ctx.addPart(
@@ -1679,20 +1830,22 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
       createCityWindowSpec(`boutique-1f-bay-${bayIdx}`, 'storefront', '#d6f4ff', 1, bayIdx + 1),
     );
 
-    // Full-depth dark-bronze side jamb returns (`z = -0.03 .. +0.46`, embedded +4.5cm inside flanking pilasters)
+    // Full-depth warm-bronze side jamb returns (`z = -0.03 .. +0.46`, embedded +4.5cm inside flanking pilasters)
     for (const jx of [-clearW * 0.5, clearW * 0.5]) {
-      const jambMesh = ctx.addPart(bayGrp, new THREE.BoxGeometry(0.09, 3.28, 0.49), '#463f38', [jx, 2.42, 0.215]);
+      const jambMesh = ctx.addPart(bayGrp, new THREE.BoxGeometry(0.09, 3.28, 0.49), '#56493e', [jx, 2.42, 0.215]);
       jambMesh.name = 'Boutique1FDisplayJamb';
     }
-    // Slim dark-bronze exterior window mullions, transom, head & sill rails embedded into side jambs & pilasters
-    ctx.addPart(bayGrp, new THREE.BoxGeometry(0.05, 3.22, 0.055), '#463f38', [0, 2.42, 0.435]);
-    const transomMesh = ctx.addPart(bayGrp, new THREE.BoxGeometry(bayW, 0.05, 0.055), '#463f38', [0, 3.24, 0.435]);
+    // Slim warm-bronze exterior window mullions, transom, head & sill rails embedded into side jambs & pilasters
+    ctx.addPart(bayGrp, new THREE.BoxGeometry(0.05, 3.22, 0.055), '#56493e', [0, 2.42, 0.435]);
+    const transomMesh = ctx.addPart(bayGrp, new THREE.BoxGeometry(bayW, 0.05, 0.055), '#56493e', [0, 3.24, 0.435]);
     transomMesh.name = 'Boutique1FDisplayTransom';
-    const topRailMesh = ctx.addPart(bayGrp, new THREE.BoxGeometry(bayW, 0.05, 0.055), '#463f38', [0, 3.935, 0.435]);
+    const topRailMesh = ctx.addPart(bayGrp, new THREE.BoxGeometry(bayW, 0.05, 0.055), '#56493e', [0, 3.935, 0.435]);
     topRailMesh.name = 'Boutique1FDisplayTopRail';
-    const bottomRailMesh = ctx.addPart(bayGrp, new THREE.BoxGeometry(bayW, 0.05, 0.055), '#463f38', [0, 0.845, 0.435]);
+    const bottomRailMesh = ctx.addPart(bayGrp, new THREE.BoxGeometry(bayW, 0.05, 0.055), '#56493e', [0, 0.845, 0.435]);
     bottomRailMesh.name = 'Boutique1FDisplayBottomRail';
-    const headerMesh = ctx.addPart(bayGrp, createBeveledBox(bayW + 0.02, 0.14, 0.49, 0.010), '#7e2d26', [0, 4.02, 0.215]);
+    const headerMesh = ctx.addPart(bayGrp, createBeveledBox(bayW + 0.02, 0.14, 0.49, 0.010), '#964035', [0, 4.02, 0.215], [0, 0, 0], {
+      receiveShadow: recvShadow,
+    });
     headerMesh.name = 'Boutique1FDisplayHeader';
   };
 
@@ -1707,7 +1860,14 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
   // West Rear Facade Bays (clear 2.91m between ±1.41 and ±4.32 pilasters + wall-seated 3.65m service door)
   addStoreDisplayBay([-2.865, 0, -halfD + 0.46], Math.PI, 2.99, ['#e8d8be', '#73a8a2']);
   addStoreDisplayBay([2.865, 0, -halfD + 0.46], Math.PI, 2.99, ['#d87a90', '#e8d8be']);
-  ctx.addPart(grp, createBeveledBox(1.36, 3.65, 0.14, 0.010), '#792d27', [0, 1.88, -halfD + 0.43]);
+  ctx.addPart(
+    grp,
+    applyGrainUvs(createBeveledBox(1.36, 3.65, 0.14, 0.010), 'y', 1.4),
+    '#a36f45',
+    [0, 1.88, -halfD + 0.43],
+    [0, 0, 0],
+    { map: honeyOakTex, receiveShadow: recvShadow },
+  );
   ctx.addPart(grp, new THREE.SphereGeometry(0.044, 8, 6), '#d4a644', [0.46, 1.66, -halfD + 0.34]);
 
   // Yellow & Cream Striped Scalloped Awnings clearing 3.30m avatars (bottom ~3.92m)
@@ -1956,7 +2116,14 @@ export function buildBoutiqueRooftopTower3D(ctx: UrbanPlazaBuildingsContext): vo
     withAwning: { stripeTex: yellowAwningTex, colorA: '#efc24c', colorB: '#fcf2da' },
   });
   // 2F Wing-to-Terrace Door centered cleanly at z = 1.11 between tower junction (0.75) and corner quoins (1.47)
-  ctx.addPart(grp, createBeveledBox(0.08, 2.02, 0.66, 0.010), '#7a5638', [wingMinX - 0.042, gfH + 1.05, 1.11]);
+  ctx.addPart(
+    grp,
+    applyGrainUvs(createBeveledBox(0.08, 2.02, 0.66, 0.010), 'y', 1.2),
+    '#ffffff',
+    [wingMinX - 0.042, gfH + 1.05, 1.11],
+    [0, 0, 0],
+    { map: honeyOakTex, receiveShadow: recvShadow },
+  );
   const terraceDoorGlass = ctx.addPart(
     glassHost,
     new THREE.BoxGeometry(0.028, 1.48, 0.50),
@@ -2302,18 +2469,34 @@ export function buildCozyBitesCafePavilion3D(ctx: UrbanPlazaBuildingsContext): v
   }
 
   // Stepped Classical Frieze, Cornice & Flat Limestone Roof (`y = 5.28 .. 7.25m`)
-  ctx.addPart(grp, createBeveledBox(W + 0.26, 0.24, D + 0.26, 0.016), '#dfd0b4', [0, 5.40, 0]);
+  const recvShadow = !ctx.isSoftwareGl;
+  ctx.addPart(grp, createBeveledBox(W + 0.26, 0.24, D + 0.26, 0.016), '#dfd0b4', [0, 5.40, 0], [0, 0, 0], {
+    receiveShadow: recvShadow,
+  });
   ctx.addPart(grp, createBeveledBox(W + 0.18, 0.96, D + 0.18, 0.018), '#ebe0cb', [0, 6.00, 0], [0, 0, 0], {
-    castShadow: true,
+    castShadow: recvShadow,
+    receiveShadow: recvShadow,
   });
   ctx.addPart(grp, createBeveledBox(W + 0.44, 0.24, D + 0.44, 0.018), '#e2d4b8', [0, 6.60, 0], [0, 0, 0], {
-    castShadow: true,
+    castShadow: recvShadow,
+    receiveShadow: recvShadow,
   });
   // Recessed flat limestone roof (`#d7c8ab`) + continuous 45°-mitered perimeter parapet (`y = 6.72 .. 7.25m`)
-  ctx.addPart(grp, new THREE.BoxGeometry(W + 0.16, 0.14, D + 0.16), '#d7c8ab', [0, 6.79, 0], [0, 0, 0], {
-    receiveShadow: true,
+  ctx.addPart(
+    grp,
+    ctx.applyPlanarUvs(new THREE.BoxGeometry(W + 0.16, 0.14, D + 0.16), 2.0),
+    '#ffffff',
+    [0, 6.79, 0],
+    [0, 0, 0],
+    {
+      map: ctx.textures.stoneTex,
+      receiveShadow: recvShadow,
+    },
+  );
+  ctx.addPart(grp, createMiteredPerimeterCurbGeo(W + 0.44, D + 0.44, 0.26, 0.44), '#dfd2b8', [0, 7.03, 0], [0, 0, 0], {
+    castShadow: recvShadow,
+    receiveShadow: recvShadow,
   });
-  ctx.addPart(grp, createMiteredPerimeterCurbGeo(W + 0.44, D + 0.44, 0.26, 0.44), '#dfd2b8', [0, 7.03, 0]);
   // Rooftop skylight & HVAC architectural vent trim
   ctx.addPart(grp, createBeveledBox(2.35, 0.20, 1.75, 0.014), '#cec0a4', [-0.7, 6.95, 0]);
   const cafeSkylightMesh = ctx.addPart(
@@ -2354,8 +2537,17 @@ export function buildCozyBitesCafePavilion3D(ctx: UrbanPlazaBuildingsContext): v
   ctx.addPart(grp, createMiteredSignFrameGeo(5.4, 0.72, 0.11, 0.08), '#d8cbb2', [-halfW - 0.11, 6.00, 0], [0, -Math.PI * 0.5, 0]);
 
   // West Front Entrance (`+Z_local`, facing Fountain): Tall 4.02m Clear Timber-Framed Glazed Entry Door
-  ctx.addPart(grp, createBeveledBox(1.90, 0.08, 0.48, 0.014), '#d8cbb2', [0.85, 0.04, halfD + 0.14]);
-  ctx.addPart(grp, createBeveledBox(1.68, 4.08, 0.24, 0.016), '#a57144', [0.85, 2.12, halfD - 0.10]);
+  ctx.addPart(grp, createBeveledBox(1.90, 0.08, 0.48, 0.014), '#d8cbb2', [0.85, 0.04, halfD + 0.14], [0, 0, 0], {
+    receiveShadow: recvShadow,
+  });
+  ctx.addPart(
+    grp,
+    applyGrainUvs(createBeveledBox(1.68, 4.08, 0.24, 0.016), 'y', 1.5),
+    '#ffffff',
+    [0.85, 2.12, halfD - 0.10],
+    [0, 0, 0],
+    { map: honeyOakTex, receiveShadow: recvShadow },
+  );
   const cafeDoorGlass = ctx.addPart(
     cafeGlassHost,
     new THREE.BoxGeometry(1.32, 3.30, 0.028),
@@ -2534,12 +2726,22 @@ export function buildCozyBitesCafePavilion3D(ctx: UrbanPlazaBuildingsContext): v
   afGrp.rotation.y = 0.32;
   afGrp.scale.setScalar(1.45);
   grp.add(afGrp);
-  ctx.addPart(afGrp, createBeveledBox(0.66, 0.96, 0.05, 0.008), '#8c5f3b', [0, 0.48, 0.14], [-0.22, 0, 0], {
-    castShadow: true,
-  });
-  ctx.addPart(afGrp, createBeveledBox(0.66, 0.96, 0.05, 0.008), '#8c5f3b', [0, 0.48, -0.14], [0.22, 0, 0], {
-    castShadow: true,
-  });
+  ctx.addPart(
+    afGrp,
+    applyGrainUvs(createBeveledBox(0.66, 0.96, 0.05, 0.008), 'y', 1.1),
+    '#ffffff',
+    [0, 0.48, 0.14],
+    [-0.22, 0, 0],
+    { map: honeyOakTex, castShadow: recvShadow, receiveShadow: recvShadow },
+  );
+  ctx.addPart(
+    afGrp,
+    applyGrainUvs(createBeveledBox(0.66, 0.96, 0.05, 0.008), 'y', 1.1),
+    '#ffffff',
+    [0, 0.48, -0.14],
+    [0.22, 0, 0],
+    { map: honeyOakTex, castShadow: recvShadow, receiveShadow: recvShadow },
+  );
   ctx.addPart(afGrp, new THREE.PlaneGeometry(0.56, 0.78), '#ffffff', [0, 0.52, 0.17], [-0.22, 0, 0], {
     map: menuTex,
   });

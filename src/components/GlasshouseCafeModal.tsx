@@ -297,7 +297,7 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
       soundEngine.playHit();
       setFeedback({
         ok: false,
-        text: 'Habiskan makanan/minuman di tangan dulu sebelum memesan lagi!',
+        text: 'Finish the food/drink in your hand before ordering again!',
       });
       return;
     }
@@ -382,12 +382,12 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
               </div>
               <div className="min-w-0">
                 <div className="text-xs font-black uppercase truncate">
-                  Habiskan {consumerSummary.activeItem.name} di tangan dulu sebelum memesan lagi!
+                  Finish the {consumerSummary.activeItem.name} in your hand before ordering again!
                 </div>
                 <div className="text-[11px] font-bold text-amber-900">
-                  Sisa {Math.max(1, Math.ceil(consumerSummary.remainingActiveMs / 1000))}d
+                  {Math.max(1, Math.ceil(consumerSummary.remainingActiveMs / 1000))}s left
                   {consumerSummary.queuedCount > 0
-                    ? ` • +${consumerSummary.queuedCount} menu lagi di antrean batch`
+                    ? ` • +${consumerSummary.queuedCount} more item${consumerSummary.queuedCount === 1 ? '' : 's'} in batch queue`
                     : ''}
                 </div>
               </div>
@@ -444,7 +444,7 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
             {!selectedItem && totalBatchQty === 0 ? (
               <div className="my-auto px-2 space-y-1.5">
                 <p className="text-xs font-extrabold text-[#14161d] leading-relaxed">
-                  Pilih menu untuk pesan langsung atau masukkan ke Batch Order (maks. {CAFE_MAX_BATCH_ORDER_ITEMS} item)
+                  Select an item to order immediately or add it to a Batch Order (max {CAFE_MAX_BATCH_ORDER_ITEMS} items)
                 </p>
               </div>
             ) : (
@@ -517,7 +517,7 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                     className="w-full mb-2 p-2 bg-white border-2 border-black rounded-lg text-left space-y-1 max-h-24 overflow-y-auto"
                   >
                     <div className="flex items-center justify-between text-[10px] font-black uppercase text-slate-700">
-                      <span>Keranjang Batch ({totalBatchQty} item)</span>
+                      <span>Batch Cart ({totalBatchQty} {totalBatchQty === 1 ? 'item' : 'items'})</span>
                       <span className="text-emerald-700">+{totalBatchXp} XP</span>
                     </div>
                     <div className="flex flex-wrap gap-1">
@@ -527,7 +527,7 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                           type="button"
                           onClick={() => updateBatchQty(item.id, -qty)}
                           className="px-1.5 py-0.5 bg-[#fef3c7] hover:bg-[#fee2e2] border border-black rounded text-[10px] font-extrabold flex items-center gap-1 cursor-pointer"
-                          title="Hapus dari batch"
+                          title="Remove from batch"
                         >
                           <span>
                             {item.name} ×{qty}
@@ -560,12 +560,12 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                   className="w-full py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] disabled:bg-slate-300 disabled:text-slate-600 text-[#14161d] border-[3px] border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-y-0.5"
                 >
                   {isConsuming
-                    ? 'HABISKAN DULU...'
+                    ? 'FINISH CURRENT ITEM...'
                     : totalBatchQty > 0
                       ? `ORDER BATCH (${totalBatchQty} • ${totalBatchLul} LUL)`
                       : selectedItem
                         ? `ORDER (${selectedItem.priceLul} LUL)`
-                        : 'PILIH MENU'}
+                        : 'SELECT AN ITEM'}
                 </button>
               </>
             )}
@@ -1032,7 +1032,7 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
                 <span className="w-6 h-6 bg-[#fb7185] text-[#0b0d13] border-2 border-black flex items-center justify-center shrink-0">
                   <Users className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
                 </span>
-                <span className="flex-1 text-left text-[#fb7185]">Interaksi</span>
+                <span className="flex-1 text-left text-[#fb7185]">Interact</span>
               </div>
             </button>
           )}

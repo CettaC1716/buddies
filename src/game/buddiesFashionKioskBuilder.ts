@@ -56,6 +56,8 @@ export interface KioskPartHelper {
 }
 
 let _cachedFashionAFrameSignTex: THREE.Texture | null = null;
+let _cachedKioskWarmCedarPlankTex: THREE.Texture | null = null;
+let _cachedKioskWarmCanopyRoofTex: THREE.Texture | null = null;
 
 function createCanvas2D(w: number, h: number): {
   canvas: HTMLCanvasElement | OffscreenCanvas;
@@ -82,6 +84,74 @@ function makeFallbackDataTex(r: number, g: number, b: number): THREE.DataTexture
   const tex = new THREE.DataTexture(data, 1, 1);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
+  return tex;
+}
+
+export function getKioskWarmCedarPlankTexture(): THREE.Texture {
+  if (_cachedKioskWarmCedarPlankTex) return _cachedKioskWarmCedarPlankTex;
+  const { canvas, ctx } = createCanvas2D(512, 512);
+  if (!ctx) {
+    _cachedKioskWarmCedarPlankTex = makeFallbackDataTex(206, 150, 96);
+    return _cachedKioskWarmCedarPlankTex;
+  }
+  ctx.fillStyle = '#cc945b';
+  ctx.fillRect(0, 0, 512, 512);
+  const planks = ['#d9a670', '#c28a52', '#e1b07a', '#b87f49', '#cf9b63', '#c68f58'];
+  const cols = 8;
+  const cw = 512 / cols;
+  for (let c = 0; c < cols; c++) {
+    const px = c * cw;
+    ctx.fillStyle = planks[c % planks.length];
+    ctx.fillRect(px + 1, 0, cw - 2, 512);
+    ctx.fillStyle = 'rgba(255, 244, 218, 0.22)';
+    ctx.fillRect(px + 1.5, 0, 2.5, 512);
+    for (let g = 0; g < 10; g++) {
+      const gx = px + 5 + (g / 10) * (cw - 10);
+      ctx.strokeStyle = g % 3 === 0 ? 'rgba(130, 80, 36, 0.16)' : 'rgba(255, 238, 204, 0.17)';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(gx, 0);
+      ctx.bezierCurveTo(gx + Math.sin(c + g) * 2.2, 170, gx - Math.cos(c + g) * 2.2, 340, gx, 512);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(132, 84, 42, 0.26)';
+    ctx.fillRect(px + cw - 2.2, 0, 2.2, 512);
+  }
+  const tex = new THREE.CanvasTexture(canvas as HTMLCanvasElement);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.needsUpdate = true;
+  _cachedKioskWarmCedarPlankTex = tex;
+  return tex;
+}
+
+export function getKioskWarmCanopyRoofTexture(): THREE.Texture {
+  if (_cachedKioskWarmCanopyRoofTex) return _cachedKioskWarmCanopyRoofTex;
+  const { canvas, ctx } = createCanvas2D(512, 512);
+  if (!ctx) {
+    _cachedKioskWarmCanopyRoofTex = makeFallbackDataTex(86, 82, 78);
+    return _cachedKioskWarmCanopyRoofTex;
+  }
+  ctx.fillStyle = '#58534e';
+  ctx.fillRect(0, 0, 512, 512);
+  const panels = 8;
+  const pw = 512 / panels;
+  const tones = ['#645e58', '#5a544f', '#6c6660', '#544f4a'];
+  for (let p = 0; p < panels; p++) {
+    ctx.fillStyle = tones[p % tones.length];
+    ctx.fillRect(p * pw + 2, 0, pw - 4, 512);
+    ctx.fillStyle = 'rgba(255, 245, 226, 0.15)';
+    ctx.fillRect(p * pw + 3, 0, 2.5, 512);
+    ctx.fillStyle = 'rgba(42, 38, 34, 0.22)';
+    ctx.fillRect((p + 1) * pw - 2, 0, 2, 512);
+  }
+  const tex = new THREE.CanvasTexture(canvas as HTMLCanvasElement);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.needsUpdate = true;
+  _cachedKioskWarmCanopyRoofTex = tex;
   return tex;
 }
 
@@ -812,15 +882,18 @@ export function buildFashionAccessoriesShelving(
 export function buildFashionAndApparelKiosk3D(
   opts: FashionKioskBuilderOptions,
 ): THREE.Group {
-  const COL_STEEL = '#2b3036';
-  const COL_STEEL_DARK = '#1e2228';
-  const COL_TIMBER = '#c28a54';
-  const COL_TIMBER_DARK = '#8c5a32';
-  const COL_OAK_LIGHT = '#d8ad7c';
-  const COL_GRANITE_OUTER = '#c8c5bc';
-  const COL_GRANITE_INNER = '#e6e0d4';
-  const COL_WARM_WALL = '#f5efe4';
+  const COL_STEEL = '#46484d';
+  const COL_STEEL_DARK = '#36383d';
+  const COL_TIMBER = '#cc935a';
+  const COL_TIMBER_DARK = '#99643a';
+  const COL_OAK_LIGHT = '#dfb380';
+  const COL_GRANITE_OUTER = '#d3cdc2';
+  const COL_GRANITE_INNER = '#ebe4d8';
+  const COL_WARM_WALL = '#f6f0e5';
   const COL_LED_WARM = '#ffefc2';
+  const cedarPlankTex = opts.textures.verticalTimberTex ?? getKioskWarmCedarPlankTexture();
+  const warmTimberTex = opts.textures.timberTex ?? cedarPlankTex;
+  const canopyRoofTex = opts.textures.steelRoofTex ?? getKioskWarmCanopyRoofTexture();
 
   const kioskGrp = new THREE.Group();
   kioskGrp.name = 'LobbyFashionAndApparelKiosk';
@@ -845,12 +918,10 @@ export function buildFashionAndApparelKiosk3D(
       bumpScale = 1.35,
       castShad = true,
     ) {
+      void toonStrokeWidth;
       const mesh = opts.addLobbyPart(parent, geo, colorHex, pos, rot, 0, tex, bumpScale);
       mesh.castShadow = !opts.isSoftwareGl && castShad;
-      if (toonStrokeWidth > 0) {
-        const stroke = opts.createBlitzStrokeMesh(geo, toonStrokeWidth);
-        if (stroke) mesh.add(stroke);
-      }
+      mesh.receiveShadow = !opts.isSoftwareGl;
       return mesh;
     },
   };
@@ -1119,7 +1190,7 @@ export function buildFashionAndApparelKiosk3D(
     [-2.10, 1.46, -0.68],
     [0, 0, 0],
     0.010,
-    opts.textures.verticalTimberTex,
+    cedarPlankTex,
     1.5,
   );
 
@@ -1134,7 +1205,7 @@ export function buildFashionAndApparelKiosk3D(
     [0, 1.48, -1.52],
     [0, 0, 0],
     0.012,
-    opts.textures.verticalTimberTex,
+    cedarPlankTex,
     1.6,
   );
   // Warm Interior Gallery Drywall Partition (`z = -1.39`) + subtle interior fitting-room door architrave (`x = 0.36`, Quadrant 1)
@@ -1250,11 +1321,11 @@ export function buildFashionAndApparelKiosk3D(
     [0, 0.04, 0],
     [0, 0, 0],
     0.013,
-    opts.textures.steelRoofTex,
+    canopyRoofTex,
     2.2,
   );
-  partHelper.addPart(roofGrp, new THREE.BoxGeometry(5.26, 0.06, 4.28), COL_STEEL_DARK, [0, 0.15, 0], [0, 0, 0], 0.010);
-  partHelper.addPart(roofGrp, new THREE.BoxGeometry(4.92, 0.04, 3.94), '#3b4048', [0, -0.06, 0], [0, 0, 0], 0.008);
+  partHelper.addPart(roofGrp, new THREE.BoxGeometry(5.26, 0.06, 4.28), COL_STEEL_DARK, [0, 0.15, 0], [0, 0, 0], 0.010, canopyRoofTex, 2.0);
+  partHelper.addPart(roofGrp, new THREE.BoxGeometry(4.92, 0.04, 3.94), '#574b41', [0, -0.06, 0], [0, 0, 0], 0.008, warmTimberTex, 1.4);
 
   for (const sx of [-1.85, -0.62, 0.62, 1.85]) {
     for (const sz of [1.72, -1.72]) {

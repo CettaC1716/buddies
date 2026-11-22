@@ -439,7 +439,7 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                     <div className="grid grid-cols-4 gap-1">
                       {(
                         [
-                          { id: 'all', label: 'Semua' },
+                          { id: 'all', label: 'All' },
                           { id: 'style_pose', label: 'Pose' },
                           { id: 'style_action', label: 'Action' },
                           { id: 'style_dance', label: 'Dance' },
@@ -469,7 +469,7 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                       type="text"
                       value={poseSearch}
                       onChange={(e) => setPoseSearch(e.target.value)}
-                      placeholder="Cari pose / action / dance..."
+                      placeholder="Search pose / action / dance..."
                       className="w-full h-7 px-2.5 rounded-full bg-white/[0.08] border border-white/15 text-[11px] text-white placeholder:text-white/45 focus:outline-none focus:border-[#8ad8ff]/70"
                     />
                   </div>
@@ -477,7 +477,7 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                   <div className="flex-1 overflow-y-auto p-2 space-y-1">
                     {filteredQuickPoseItems.length === 0 ? (
                       <div className="py-6 text-center text-[11px] text-white/55">
-                        Tidak ada pose/action yang cocok.
+                        No matching poses or actions.
                       </div>
                     ) : (
                       filteredQuickPoseItems.map((item) => {
@@ -525,7 +525,7 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                             </div>
                             {isPlaying && (
                               <span className="px-1.5 py-0.5 rounded-full bg-[#8ad8ff] text-slate-950 text-[9px] font-black uppercase shrink-0">
-                                Aktif
+                                Active
                               </span>
                             )}
                           </button>

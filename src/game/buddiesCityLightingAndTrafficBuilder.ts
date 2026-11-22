@@ -686,9 +686,9 @@ function createWickerPbrSet(): PbrMapTriplet {
 
 function createFoliageTexture(): THREE.Texture {
   const setup = makeCanvas(256, 256);
-  if (!setup) return createSolidFallbackTexture(74, 148, 72, 255, THREE.SRGBColorSpace);
+  if (!setup) return createSolidFallbackTexture(82, 146, 68, 255, THREE.SRGBColorSpace);
   const { canvas, ctx } = setup;
-  ctx.fillStyle = '#3c8646';
+  ctx.fillStyle = '#447d3d';
   ctx.fillRect(0, 0, 256, 256);
   for (let i = 0; i < 240; i++) {
     const lx = hash2D(i, 5.2) * 256;
@@ -698,11 +698,11 @@ function createFoliageTexture(): THREE.Texture {
     ctx.save();
     ctx.translate(lx, ly);
     ctx.rotate(ang);
-    ctx.fillStyle = light ? '#64b358' : '#32723c';
+    ctx.fillStyle = light ? '#79b34f' : '#336330';
     ctx.beginPath();
     ctx.ellipse(0, 0, 13, 7, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(182, 232, 134, 0.35)';
+    ctx.strokeStyle = 'rgba(202, 232, 134, 0.38)';
     ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.moveTo(-10, 0);
@@ -2362,7 +2362,7 @@ function buildTier4ChandelierGeos() {
 export function buildCityLightingAndTrafficSystem(
   scene: THREE.Scene,
   _windUniforms?: BlitzWindUniforms,
-  _isSoftwareGl = false,
+  isSoftwareGl = false,
 ): CityLightingAndTrafficSystemHandle {
   const rootGroup = new THREE.Group();
   rootGroup.name = 'CityLightingAndTrafficRoot';
@@ -2372,14 +2372,6 @@ export function buildCityLightingAndTrafficSystem(
   const disposeMats: THREE.Material[] = [];
   const disposeTexs: THREE.Texture[] = [];
   let instancedMeshCount = 0;
-
-  // Shared 3-step cel gradient map (used for Tier 3 modern LED poles)
-  const toonSteps = new Uint8Array([108, 196, 255]);
-  const toonGradTex = new THREE.DataTexture(toonSteps, 3, 1, THREE.RedFormat);
-  toonGradTex.minFilter = THREE.NearestFilter;
-  toonGradTex.magFilter = THREE.NearestFilter;
-  toonGradTex.needsUpdate = true;
-  disposeTexs.push(toonGradTex);
 
   const ironPbr = createForgedIronPbrSet();
   const brickPbr = createBrickMasonryPbrSet();
@@ -2476,6 +2468,8 @@ export function buildCityLightingAndTrafficSystem(
       colors?: readonly THREE.ColorRepresentation[];
       strokeWidth?: number;
       strokeColor?: string;
+      castShadow?: boolean;
+      receiveShadow?: boolean;
       renderOrder?: number;
       padding?: number;
     },
@@ -2487,7 +2481,7 @@ export function buildCityLightingAndTrafficSystem(
       const stroke = createBlitzStrokeMesh(
         geometry,
         options.strokeWidth,
-        options.strokeColor ?? '#12121e',
+        options.strokeColor ?? '#3a4352',
       );
       if (stroke) {
         outlineGeo = stroke.geometry;
@@ -2503,6 +2497,8 @@ export function buildCityLightingAndTrafficSystem(
       colors: options?.colors,
       outlineGeometry: outlineGeo,
       outlineMaterial: outlineMat,
+      castShadow: !isSoftwareGl && Boolean(options?.castShadow),
+      receiveShadow: !isSoftwareGl && Boolean(options?.receiveShadow),
       renderOrder: options?.renderOrder ?? 0,
       padding: options?.padding ?? 0.4,
       lockStaticMatrix: true,
@@ -2510,6 +2506,8 @@ export function buildCityLightingAndTrafficSystem(
     rootGroup.add(batch.mesh);
     instancedMeshCount++;
     if (batch.strokeMesh) {
+      // Hide harsh comic outline shell at render time (0 GPU cost) while preserving 34-batch scene hierarchy invariant
+      batch.strokeMesh.visible = false;
       rootGroup.add(batch.strokeMesh);
       instancedMeshCount++;
     }
@@ -2551,8 +2549,10 @@ export function buildCityLightingAndTrafficSystem(
       return composePose(l.x, l.y, l.z, l.rotY, TIER1_INSTANCE_SCALE);
     });
     createStaticBatch('CityLamp_Tier1_Metal', t1Geos.metalGeo, forgedIronPbrMat, t1Mats, {
-      strokeWidth: 0.005,
-      strokeColor: '#2d333b',
+      strokeWidth: 0.004,
+      strokeColor: '#3a4048',
+      castShadow: true,
+      receiveShadow: true,
     });
     createStaticBatch('CityLamp_Tier1_Bulb', t1Geos.bulbGeo, lanternBulbMat, t1Mats);
     createStaticBatch('CityLamp_Tier1_Glass', t1Geos.glassGeo, lanternGlassMat, t1Mats, {
@@ -2599,12 +2599,20 @@ export function buildCityLightingAndTrafficSystem(
         });
         return composePose(l.x, l.y, l.z, l.rotY, TIER2_INSTANCE_SCALE);
       });
-      createStaticBatch('CityLamp_Tier2_Brick', t2Geos.brickGeo, t2BrickMat, t2Mats);
-      createStaticBatch('CityLamp_Tier2_Stone', t2Geos.stoneGeo, t2StoneMat, t2Mats, {
-        strokeWidth: 0.006,
-        strokeColor: '#5c5448',
+      createStaticBatch('CityLamp_Tier2_Brick', t2Geos.brickGeo, t2BrickMat, t2Mats, {
+        castShadow: true,
+        receiveShadow: true,
       });
-      createStaticBatch('CityLamp_Tier2_Iron', t2Geos.ironFrameGeo, forgedIronPbrMat, t2Mats);
+      createStaticBatch('CityLamp_Tier2_Stone', t2Geos.stoneGeo, t2StoneMat, t2Mats, {
+        strokeWidth: 0.004,
+        strokeColor: '#665d50',
+        castShadow: true,
+        receiveShadow: true,
+      });
+      createStaticBatch('CityLamp_Tier2_Iron', t2Geos.ironFrameGeo, forgedIronPbrMat, t2Mats, {
+        castShadow: true,
+        receiveShadow: true,
+      });
       createStaticBatch('CityLamp_Tier2_Bulb', t2Geos.bulbGeo, lanternBulbMat, t2Mats);
       createStaticBatch('CityLamp_Tier2_Glass', t2Geos.glassGeo, lanternGlassMat, t2Mats, {
         renderOrder: 1,
@@ -2622,7 +2630,10 @@ export function buildCityLightingAndTrafficSystem(
         });
         return composePose(l.x, l.y, l.z, l.rotY, TIER2_INSTANCE_SCALE);
       });
-      createStaticBatch('CityLamp_Tier2_Pier_Iron', t2PierGeos.ironFrameGeo, forgedIronPbrMat, t2PierMats);
+      createStaticBatch('CityLamp_Tier2_Pier_Iron', t2PierGeos.ironFrameGeo, forgedIronPbrMat, t2PierMats, {
+        castShadow: true,
+        receiveShadow: true,
+      });
       createStaticBatch('CityLamp_Tier2_Pier_Bulb', t2PierGeos.bulbGeo, lanternBulbMat, t2PierMats);
       createStaticBatch('CityLamp_Tier2_Pier_Glass', t2PierGeos.glassGeo, lanternGlassMat, t2PierMats, {
         renderOrder: 1,
@@ -2631,19 +2642,15 @@ export function buildCityLightingAndTrafficSystem(
   }
 
   // -------------------------------------------------------------------------
-  // TIER 3: Modern Navy-Charcoal LED Streetlamps (4.62m geo, ~6.93m world @ 1.50x)
+  // TIER 3: Modern Warm Slate-Anodized LED Streetlamps (4.62m geo, ~6.93m world @ 1.50x)
   // -------------------------------------------------------------------------
   if (lampsByTier[3].length > 0) {
-    const t3ToonSteps = new Uint8Array([165, 218, 255]);
-    const t3GradTex = new THREE.DataTexture(t3ToonSteps, 3, 1, THREE.RedFormat);
-    t3GradTex.minFilter = THREE.NearestFilter;
-    t3GradTex.magFilter = THREE.NearestFilter;
-    t3GradTex.needsUpdate = true;
-    disposeTexs.push(t3GradTex);
-
-    const t3PoleMat = new THREE.MeshToonMaterial({
-      color: '#2a3448',
-      gradientMap: t3GradTex,
+    const t3PoleMat = new THREE.MeshStandardMaterial({
+      color: '#454e5d',
+      roughness: 0.56,
+      metalness: 0.34,
+      envMap: metalEnvTex,
+      envMapIntensity: 0.72,
     });
     disposeMats.push(t3PoleMat);
 
@@ -2677,7 +2684,10 @@ export function buildCityLightingAndTrafficSystem(
         return composePose(l.x, l.y, l.z, l.rotY, TIER3_INSTANCE_SCALE);
       });
       createStaticBatch(metalBatchName, geos.metalGeo, t3PoleMat, mats, {
-        strokeWidth: 0.018,
+        strokeWidth: 0.005,
+        strokeColor: '#3a4352',
+        castShadow: true,
+        receiveShadow: true,
       });
       createStaticBatch(bulbBatchName, geos.bulbGeo, lanternBulbMat, mats);
       createStaticBatch(glassBatchName, geos.glassGeo, lanternGlassMat, mats, {
@@ -2784,10 +2794,15 @@ export function buildCityLightingAndTrafficSystem(
     });
 
     createStaticBatch('CityLamp_Tier4_Granite', t4Geos.graniteBaseGeo, t4GraniteMat, t4Mats, {
-      strokeWidth: 0.006,
-      strokeColor: '#3f454e',
+      strokeWidth: 0.004,
+      strokeColor: '#4a5059',
+      castShadow: true,
+      receiveShadow: true,
     });
-    createStaticBatch('CityLamp_Tier4_Iron', t4Geos.ironGeo, forgedIronPbrMat, t4Mats);
+    createStaticBatch('CityLamp_Tier4_Iron', t4Geos.ironGeo, forgedIronPbrMat, t4Mats, {
+      castShadow: true,
+      receiveShadow: true,
+    });
     createStaticBatch('CityLamp_Tier4_Bulb', t4Geos.bulbGeo, lanternBulbMat, t4Mats);
     createStaticBatch('CityLamp_Tier4_Glass', t4Geos.glassGeo, lanternGlassMat, t4Mats, {
       renderOrder: 1,
@@ -2795,13 +2810,17 @@ export function buildCityLightingAndTrafficSystem(
     createStaticBatch('CityLamp_Tier4_Wicker', t4Geos.basketGeo, t4WickerMat, basketMats, {
       strokeWidth: 0.0015,
       strokeColor: '#7a522d',
+      castShadow: true,
+      receiveShadow: true,
     });
     createStaticBatch('CityLamp_Tier4_Ivy', t4Geos.foliageGeo, t4IvyMat, basketMats, {
       strokeWidth: 0.0015,
       strokeColor: '#3f763a',
+      receiveShadow: true,
     });
     createStaticBatch('CityLamp_Tier4_Blooms', t4Geos.bloomGeo, t4BloomMat, basketMats, {
       colors: bloomColors,
+      receiveShadow: true,
     });
   }
 

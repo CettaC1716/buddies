@@ -2733,7 +2733,7 @@ test('Blitz BaseDoll stays 100% watertight (zero holes) and recesses only covere
     bodyGroup.traverse((node) => {
       if (!(node as THREE.Mesh).isMesh) return;
       const mesh = node as THREE.Mesh;
-      if (!/^blitz_basedoll_female_mesh_(?:3|4)$/i.test(mesh.name)) return;
+      if (!/^blitz_basedoll_female_mesh_(?:3|4|bodyskin)$/i.test(mesh.name)) return;
       const pos = mesh.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
       const idx = mesh.geometry.getIndex();
       if (!pos || !idx) return;

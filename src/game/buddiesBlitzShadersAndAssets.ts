@@ -1660,27 +1660,45 @@ export function createFallbackFoliageMaskTexture(): THREE.CanvasTexture {
   ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, 256, 256);
 
-  ctx.fillStyle = '#ffffff';
-  const blobs = [
-    [128, 128, 72],
-    [82, 108, 52],
-    [174, 108, 52],
-    [94, 162, 50],
-    [164, 162, 50],
-    [128, 78, 54],
-    [66, 138, 42],
-    [190, 138, 42],
-  ];
-  for (const [bx, by, br] of blobs) {
-    const grad = ctx.createRadialGradient(bx, by, br * 0.35, bx, by, br);
-    grad.addColorStop(0, 'rgba(255,255,255,1)');
-    grad.addColorStop(0.75, 'rgba(220,220,220,0.92)');
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
+  const drawLeafBlade = (cx: number, cy: number, rx: number, ry: number, ang: number, alpha = 1.0) => {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(ang);
+    const grad = ctx.createRadialGradient(0, 0, Math.min(rx, ry) * 0.2, 0, 0, Math.max(rx, ry));
+    grad.addColorStop(0.0, `rgba(255,255,255,${alpha})`);
+    grad.addColorStop(0.72, `rgba(240,240,240,${alpha * 0.94})`);
+    grad.addColorStop(1.0, 'rgba(0,0,0,0)');
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.arc(bx, by, br, 0, Math.PI * 2);
+    ctx.moveTo(0, -ry);
+    ctx.quadraticCurveTo(rx * 1.15, -ry * 0.15, 0, ry);
+    ctx.quadraticCurveTo(-rx * 1.15, -ry * 0.15, 0, -ry);
+    ctx.closePath();
     ctx.fill();
+    ctx.restore();
+  };
+
+  // Organic multi-lobed leaf cluster silhouette with scalloped outer leaflet notches (never a flat solid circle)
+  const outerCount = 11;
+  for (let i = 0; i < outerCount; i++) {
+    const a = (i / outerCount) * Math.PI * 2 + (i % 2 === 0 ? 0.08 : -0.06);
+    const dist = i % 2 === 0 ? 64 : 52;
+    const lx = 128 + Math.cos(a) * dist;
+    const ly = 128 + Math.sin(a) * dist;
+    drawLeafBlade(lx, ly, 24, 44, a + Math.PI * 0.5 + ((i % 3) - 1) * 0.22, 0.96);
   }
+  const midCount = 7;
+  for (let i = 0; i < midCount; i++) {
+    const a = (i / midCount) * Math.PI * 2 + 0.35;
+    const lx = 128 + Math.cos(a) * 32;
+    const ly = 128 + Math.sin(a) * 32;
+    drawLeafBlade(lx, ly, 26, 42, a + Math.PI * 0.5, 1.0);
+  }
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + 0.2;
+    drawLeafBlade(128 + Math.cos(a) * 12, 128 + Math.sin(a) * 12, 24, 34, a, 1.0);
+  }
+
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.ClampToEdgeWrapping;
   tex.wrapT = THREE.ClampToEdgeWrapping;
@@ -1741,19 +1759,24 @@ export function upgradeMeshToBlitzWorldMaterial(
     uniformCache = new Map<string, THREE.ShaderMaterial>();
     blitzWorldMaterialCache.set(windUniforms, uniformCache);
   }
+  const hasVertexColor = Boolean(
+    (srcMat as THREE.Material & { vertexColors?: boolean })?.vertexColors ||
+      mesh.geometry?.getAttribute('color'),
+  );
   const showcaseNightUniform = getSharedShowcaseNightUniform(windUniforms);
-  const cacheKey = `${baseColor.getHexString()}_${mapTex ? mapTex.uuid : 'nomap'}_${bounceStrength.toFixed(3)}`;
+  const cacheKey = `${baseColor.getHexString()}_${mapTex ? mapTex.uuid : 'nomap'}_${bounceStrength.toFixed(3)}_${hasVertexColor ? 1 : 0}`;
   let mat = uniformCache.get(cacheKey);
 
   if (!mat) {
     mat = new THREE.ShaderMaterial({
       uniforms: {
         ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
+        ...THREE.UniformsUtils.clone(THREE.UniformsLib.lights),
         uMap: { value: mapTex },
         uHasMap: { value: mapTex ? 1.0 : 0.0 },
         uBaseColor: { value: baseColor },
-        uShadowColor: { value: new THREE.Color('#2a2b36') },
-        uBounceColor: { value: new THREE.Color('#75d424') },
+        uShadowColor: { value: new THREE.Color('#5a4f48') },
+        uBounceColor: { value: new THREE.Color('#a4c968') },
         uBounceStrength: { value: bounceStrength },
         uLightDirection: windUniforms.uLightDirection,
         uLightColor: windUniforms.uLightColor,
@@ -1763,12 +1786,18 @@ export function upgradeMeshToBlitzWorldMaterial(
         uNightFactor01: showcaseNightUniform,
       },
       fog: true,
+      lights: true,
+      vertexColors: hasVertexColor,
       vertexShader: /* glsl */ `
+        #include <common>
+        #include <color_pars_vertex>
+        #include <fog_pars_vertex>
+        #include <shadowmap_pars_vertex>
         varying vec2 vUv;
         varying vec3 vWorldNormal;
         varying vec3 vWorldPos;
-        #include <fog_pars_vertex>
         void main() {
+          #include <color_vertex>
           vUv = uv;
           #ifdef USE_INSTANCING
             mat4 worldMat = modelMatrix * instanceMatrix;
@@ -1777,13 +1806,23 @@ export function upgradeMeshToBlitzWorldMaterial(
           #endif
           vec4 worldPosition = worldMat * vec4(position, 1.0);
           vWorldPos = worldPosition.xyz;
-          vWorldNormal = normalize(mat3(worldMat) * normal);
+          vec3 worldNorm = normalize(mat3(worldMat) * normal);
+          vWorldNormal = worldNorm;
           vec4 mvPosition = viewMatrix * worldPosition;
           gl_Position = projectionMatrix * mvPosition;
+          vec3 transformedNormal = normalize(mat3(viewMatrix) * worldNorm);
+          #include <shadowmap_vertex>
           #include <fog_vertex>
         }
       `,
       fragmentShader: /* glsl */ `
+        #include <common>
+        #include <color_pars_fragment>
+        #include <fog_pars_fragment>
+        uniform bool receiveShadow;
+        #include <shadowmap_pars_fragment>
+        #include <shadowmask_pars_fragment>
+
         uniform sampler2D uMap;
         uniform float uHasMap;
         uniform vec3 uBaseColor;
@@ -1800,17 +1839,6 @@ export function upgradeMeshToBlitzWorldMaterial(
         varying vec2 vUv;
         varying vec3 vWorldNormal;
         varying vec3 vWorldPos;
-        #include <fog_pars_fragment>
-
-        // 45-degree halftone dot grid for cel-shaded shadow transitions
-        float blitzHalftone(vec2 coord, float scale, float radius) {
-          float c = cos(0.785398);
-          float s = sin(0.785398);
-          vec2 rot = vec2(coord.x * c - coord.y * s, coord.x * s + coord.y * c) * scale;
-          float dist = length(fract(rot) - 0.5);
-          float r = radius * 0.7071;
-          return smoothstep(r - 0.08, r + 0.08, dist);
-        }
 
         void main() {
           vec3 albedo = uBaseColor;
@@ -1818,32 +1846,35 @@ export function upgradeMeshToBlitzWorldMaterial(
             vec4 texCol = texture2D(uMap, vUv);
             albedo *= texCol.rgb;
           }
+          #if defined( USE_COLOR ) || defined( USE_COLOR_ALPHA )
+            albedo *= vColor.rgb;
+          #endif
 
           vec3 N = normalize(vWorldNormal);
           vec3 L = normalize(uLightDirection);
           float ndl = dot(N, L);
 
-          // Cel-shaded step (uShadowStep = 0.15, uHighlightStep = 0.60)
-          float litFactor = clamp((ndl - uShadowStep) / max(0.001, uHighlightStep - uShadowStep), 0.0, 1.0);
-          float shadowFactor = 1.0 - litFactor;
+          // Warm painterly wrap diffuse + real-time dappled directional cast shadows (zero halftone dots)
+          float wrapNdl = clamp((ndl + 0.24) / 1.24, 0.0, 1.0);
+          float smoothLit = smoothstep(0.04, 0.88, wrapNdl);
+          float castShadow = getShadowMask();
+          float directSun = smoothLit * mix(0.08, 1.0, castShadow);
+          float shadowBlend = (1.0 - directSun) * 0.76;
 
           float isShowcaseLit = step(1.5, uBounceStrength);
           float effBounce = mix(uBounceStrength, 0.10, isShowcaseLit);
           float showcaseGlow = isShowcaseLit * clamp(uBounceStrength - 2.0, 0.0, 1.4);
 
-          // Ground bounce light from Blitz's Yn.initOutputNode (lightBounceDistance = 1.5, lightBounceMultiplier = 0.4)
+          // Warm ground & sky bounce light
           float downFacing = smoothstep(-0.2, 0.85, -N.y);
           float heightAtten = clamp(1.0 - max(vWorldPos.y, 0.0) / 1.8, 0.0, 1.0);
           float bounceAmt = downFacing * heightAtten * heightAtten * effBounce;
           vec3 colorWithBounce = mix(albedo, uBounceColor, bounceAmt);
 
-          // Subtle cel-shaded shadow modulation (avoids large polka-dot holes on solid crate faces)
-          vec2 screenCoord = gl_FragCoord.xy * 0.0045;
-          float dots = blitzHalftone(screenCoord, 34.0, shadowFactor * 0.45);
-          float shadowBlend = clamp(shadowFactor * (1.0 - dots * 0.06), 0.0, 1.0) * 0.62;
-
-          vec3 litColor = colorWithBounce * uLightColor * (0.95 + 0.12 * litFactor);
-          vec3 shadedColor = colorWithBounce * mix(vec3(0.66, 0.68, 0.74), uShadowColor * 1.45, 0.48);
+          float hemiFill = clamp(N.y * 0.5 + 0.5, 0.0, 1.0);
+          vec3 warmShadowTint = mix(vec3(0.60, 0.53, 0.48), vec3(0.69, 0.69, 0.72), hemiFill * 0.55);
+          vec3 litColor = colorWithBounce * uLightColor * (0.94 + 0.14 * directSun);
+          vec3 shadedColor = colorWithBounce * mix(warmShadowTint, uShadowColor * 1.18, 0.32);
           vec3 finalRgb = mix(litColor, shadedColor, shadowBlend) + uEmissive;
 
           float showcaseNight = smoothstep(0.05, 0.52, clamp(uNightFactor01, 0.0, 1.0));
@@ -1877,15 +1908,19 @@ export function upgradeMeshToBlitzWorldMaterial(
 /**
  * Port of Blitz's StrokeManager.prototype.initStrokeGeometry & Nn (StrokeMaterial)
  * Merges vertices with tolerance 1e-4, recomputes smooth normals, and extrudes BackSide along normal.
+ * Softened to a delicate warm-umber painterly edge so remaining world outlines never appear as thick black comic shells.
  */
 const blitzStrokeMaterialCache = new Map<string, THREE.ShaderMaterial>();
 
 export function createBlitzStrokeMesh(
   sourceGeometry: THREE.BufferGeometry,
-  strokeWidth = 0.032,
-  strokeColorHex = '#12121e',
+  strokeWidth = 0.012,
+  strokeColorHex = '#3b2f27',
 ): THREE.Mesh | null {
-  if (!sourceGeometry || !sourceGeometry.attributes.position) return null;
+  if (!sourceGeometry || !sourceGeometry.attributes.position || strokeWidth <= 0) return null;
+  const effectiveStrokeWidth = Math.min(strokeWidth * 0.45, 0.011);
+  const effectiveColorHex =
+    strokeColorHex.toLowerCase() === '#12121e' ? '#3b2f27' : strokeColorHex;
   try {
     let merged = sourceGeometry.userData.__blitzMergedStrokeGeo as THREE.BufferGeometry | undefined;
     if (!merged) {
@@ -1902,14 +1937,14 @@ export function createBlitzStrokeMesh(
       sourceGeometry.userData.__blitzMergedStrokeGeo = merged;
     }
 
-    const matKey = `${strokeWidth.toFixed(4)}_${strokeColorHex}`;
+    const matKey = `${effectiveStrokeWidth.toFixed(4)}_${effectiveColorHex}`;
     let strokeMat = blitzStrokeMaterialCache.get(matKey);
     if (!strokeMat) {
       strokeMat = new THREE.ShaderMaterial({
         uniforms: {
           ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
-          uStrokeWidth: { value: strokeWidth },
-          uStrokeColor: { value: new THREE.Color(strokeColorHex) },
+          uStrokeWidth: { value: effectiveStrokeWidth },
+          uStrokeColor: { value: new THREE.Color(effectiveColorHex) },
         },
         fog: true,
         vertexShader: /* glsl */ `
@@ -1955,7 +1990,7 @@ let sharedBakedStrokeMat: THREE.MeshBasicMaterial | null = null;
 function getSharedBakedStrokeMaterial(): THREE.MeshBasicMaterial {
   if (!sharedBakedStrokeMat) {
     sharedBakedStrokeMat = new THREE.MeshBasicMaterial({
-      color: 0x12121e,
+      color: 0x3b2f27,
       side: THREE.BackSide,
       fog: true,
     });
@@ -2149,8 +2184,9 @@ function getOrCreateBakedVertexColorWorldMaterial(
   cached = new THREE.ShaderMaterial({
     uniforms: {
       ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
-      uShadowColor: { value: new THREE.Color('#2a2b36') },
-      uBounceColor: { value: new THREE.Color('#75d424') },
+      ...THREE.UniformsUtils.clone(THREE.UniformsLib.lights),
+      uShadowColor: { value: new THREE.Color('#5a4f48') },
+      uBounceColor: { value: new THREE.Color('#a4c968') },
       uLightDirection: srcMat.uniforms.uLightDirection,
       uLightColor: srcMat.uniforms.uLightColor,
       uShadowStep: { value: 0.15 },
@@ -2162,7 +2198,11 @@ function getOrCreateBakedVertexColorWorldMaterial(
       uWindGust: sharedWind?.uWindGust ?? { value: 0 },
     },
     fog: true,
+    lights: true,
     vertexShader: /* glsl */ `
+      #include <common>
+      #include <fog_pars_vertex>
+      #include <shadowmap_pars_vertex>
       attribute vec4 aColorAndBounce;
       uniform float uWindPhase;
       uniform vec2 uWindDirection;
@@ -2176,7 +2216,6 @@ function getOrCreateBakedVertexColorWorldMaterial(
       varying vec3 vWorldPos;
       varying vec2 vBotanicalUv;
       varying float vBotanicalLeafMask;
-      #include <fog_pars_vertex>
 
       void main() {
         vBaseColor = aColorAndBounce.rgb;
@@ -2229,10 +2268,18 @@ function getOrCreateBakedVertexColorWorldMaterial(
         vWorldNormal = worldNorm;
         vec4 mvPosition = viewMatrix * worldPosition;
         gl_Position = projectionMatrix * mvPosition;
+        vec3 transformedNormal = normalize(mat3(viewMatrix) * worldNorm);
+        #include <shadowmap_vertex>
         #include <fog_vertex>
       }
     `,
     fragmentShader: /* glsl */ `
+      #include <common>
+      #include <fog_pars_fragment>
+      uniform bool receiveShadow;
+      #include <shadowmap_pars_fragment>
+      #include <shadowmask_pars_fragment>
+
       uniform vec3 uShadowColor;
       uniform vec3 uBounceColor;
       uniform vec3 uLightDirection;
@@ -2248,16 +2295,6 @@ function getOrCreateBakedVertexColorWorldMaterial(
       varying vec3 vWorldPos;
       varying vec2 vBotanicalUv;
       varying float vBotanicalLeafMask;
-      #include <fog_pars_fragment>
-
-      float blitzHalftone(vec2 coord, float scale, float radius) {
-        float c = cos(0.785398);
-        float s = sin(0.785398);
-        vec2 rot = vec2(coord.x * c - coord.y * s, coord.x * s + coord.y * c) * scale;
-        float dist = length(fract(rot) - 0.5);
-        float r = radius * 0.7071;
-        return smoothstep(r - 0.08, r + 0.08, dist);
-      }
 
       void main() {
         vec3 albedo = vBaseColor;
@@ -2267,11 +2304,12 @@ function getOrCreateBakedVertexColorWorldMaterial(
           N = -N;
         }
         float ndl = dot(N, L);
+        float castShadow = getShadowMask();
 
         if (vBotanicalLeafMask > 0.5) {
           // Kai's Beach 3-tone curved V-fold leaf shading + subtle warm lime midrib & lateral veins
-          float leafLit = smoothstep(0.02, 0.86, ndl);
-          float leafShadow = smoothstep(-0.48, 0.28, ndl);
+          float leafLit = smoothstep(0.02, 0.86, ndl) * mix(0.35, 1.0, castShadow);
+          float leafShadow = smoothstep(-0.48, 0.28, ndl) * mix(0.55, 1.0, castShadow);
           vec3 deepEmerald = albedo * vec3(0.46, 0.64, 0.48);
           vec3 sunlitLime = mix(albedo * vec3(1.24, 1.32, 0.88), vec3(0.45, 0.82, 0.24), 0.34);
           vec3 midribLime = mix(sunlitLime, vec3(0.74, 0.94, 0.42), 0.52);
@@ -2294,20 +2332,21 @@ function getOrCreateBakedVertexColorWorldMaterial(
           return;
         }
 
-        float litFactor = clamp((ndl - uShadowStep) / max(0.001, uHighlightStep - uShadowStep), 0.0, 1.0);
-        float shadowFactor = 1.0 - litFactor;
+        // Warm painterly wrap diffuse + real-time dappled directional cast shadows (zero halftone dots)
+        float wrapNdl = clamp((ndl + 0.24) / 1.24, 0.0, 1.0);
+        float smoothLit = smoothstep(0.04, 0.88, wrapNdl);
+        float directSun = smoothLit * mix(0.08, 1.0, castShadow);
+        float shadowBlend = (1.0 - directSun) * 0.76;
 
         float downFacing = smoothstep(-0.2, 0.85, -N.y);
         float heightAtten = clamp(1.0 - max(vWorldPos.y, 0.0) / 1.8, 0.0, 1.0);
         float bounceAmt = downFacing * heightAtten * heightAtten * vBounceStrength;
         vec3 colorWithBounce = mix(albedo, uBounceColor, bounceAmt);
 
-        vec2 screenCoord = gl_FragCoord.xy * 0.0045;
-        float dots = blitzHalftone(screenCoord, 34.0, shadowFactor * 0.45);
-        float shadowBlend = clamp(shadowFactor * (1.0 - dots * 0.06), 0.0, 1.0) * 0.62;
-
-        vec3 litColor = colorWithBounce * uLightColor * (0.95 + 0.12 * litFactor);
-        vec3 shadedColor = colorWithBounce * mix(vec3(0.66, 0.68, 0.74), uShadowColor * 1.45, 0.48);
+        float hemiFill = clamp(N.y * 0.5 + 0.5, 0.0, 1.0);
+        vec3 warmShadowTint = mix(vec3(0.60, 0.53, 0.48), vec3(0.69, 0.69, 0.72), hemiFill * 0.55);
+        vec3 litColor = colorWithBounce * uLightColor * (0.94 + 0.14 * directSun);
+        vec3 shadedColor = colorWithBounce * mix(warmShadowTint, uShadowColor * 1.18, 0.32);
         vec3 finalRgb = mix(litColor, shadedColor, shadowBlend);
 
         float showcaseNight = smoothstep(0.05, 0.52, clamp(uNightFactor01, 0.0, 1.0));
@@ -2448,15 +2487,22 @@ export function bakeStaticGroupMeshes(
           if (isUntexturedWorldShader) {
             const baseCol = shaderMat.uniforms.uBaseColor.value as THREE.Color;
             const bounceVal = Number(shaderMat.uniforms.uBounceStrength?.value ?? 0.35);
+            const vertColAttr = g.getAttribute('color') as THREE.BufferAttribute | undefined;
             const colBounceArr = new Float32Array(pos.count * 4);
             const r = baseCol.r;
             const gr = baseCol.g;
             const b = baseCol.b;
             for (let i = 0; i < pos.count; i++) {
               const idx = i * 4;
-              colBounceArr[idx] = r;
-              colBounceArr[idx + 1] = gr;
-              colBounceArr[idx + 2] = b;
+              if (vertColAttr && i < vertColAttr.count) {
+                colBounceArr[idx] = r * vertColAttr.getX(i);
+                colBounceArr[idx + 1] = gr * vertColAttr.getY(i);
+                colBounceArr[idx + 2] = b * vertColAttr.getZ(i);
+              } else {
+                colBounceArr[idx] = r;
+                colBounceArr[idx + 1] = gr;
+                colBounceArr[idx + 2] = b;
+              }
               colBounceArr[idx + 3] = bounceVal;
             }
             g.setAttribute('aColorAndBounce', new THREE.BufferAttribute(colBounceArr, 4));
@@ -2862,13 +2908,13 @@ export function createBlitzInfiniteGrassSystem(
       uWindDirection: windUniforms.uWindDirection,
       uWindStrength: windUniforms.uWindStrength,
       uWindGust: windUniforms.uWindGust,
-      // Sunlit & shadowed cel-shaded grass palette
-      uSunBottom: { value: new THREE.Color('#1b6e1e') },
-      uSunMid: { value: new THREE.Color('#75d424') },
-      uSunTop: { value: new THREE.Color('#d1f542') },
-      uShadowBottom: { value: new THREE.Color('#083d12') },
-      uShadowMid: { value: new THREE.Color('#1a7a24') },
-      uShadowTop: { value: new THREE.Color('#57b825') },
+      // Sunlit & shadowed warm painterly grass palette
+      uSunBottom: { value: new THREE.Color('#237324') },
+      uSunMid: { value: new THREE.Color('#74d028') },
+      uSunTop: { value: new THREE.Color('#d2f24b') },
+      uShadowBottom: { value: new THREE.Color('#195420') },
+      uShadowMid: { value: new THREE.Color('#318432') },
+      uShadowTop: { value: new THREE.Color('#6ec03a') },
       uFloorBlend: { value: 0.65 },
       uTrailDarkening: { value: 0.80 },
     },
@@ -3102,7 +3148,7 @@ export function createBlitzInfiniteGrassSystem(
         float patchFactor = smoothstep(0.18, 0.78, clamp(vNoise * 0.5 + 0.5, 0.0, 1.0));
         // Hardware-bilinear 2x2 PCF shadow lookup per grass blade (soft anti-aliased shadow edges at 60 FPS)
         float castShadow = sampleBlitzCastShadowFast(vWorldPos);
-        float litFactor = patchFactor * mix(0.16, 1.0, castShadow);
+        float litFactor = patchFactor * mix(0.24, 1.0, castShadow);
 
         vec3 bottomCol = mix(uShadowBottom, uSunBottom, litFactor);
         vec3 midCol = mix(uShadowMid, uSunMid, litFactor);
@@ -3603,6 +3649,63 @@ const DEFAULT_TREE_1B_MARKERS: ReadonlyArray<{ pos: [number, number, number]; sc
 ];
 
 /**
+ * Bakes a 0%-GPU-cost vertex-color gradient onto tree trunk geometry:
+ * - Subtle root-flare ground contact shading at the base (`t < 0.10`)
+ * - Warm sunlit cinnamon/amber bark mid-trunk (`t ~ 0.15..0.55`) + subtle vertical/ring bark variation
+ * - Smooth top-of-trunk canopy AO darkening right beneath the leafy crown (`t > 0.54..1.0`)
+ * Idempotent on cached geometries so GPU instancing (`canShareTrunkGeo`) stays 100% intact.
+ */
+export function applyTreeTrunkCanopyAoVertexColors(
+  geo: THREE.BufferGeometry,
+  minHeightOverride?: number,
+  maxHeightOverride?: number,
+): THREE.BufferGeometry {
+  if (!geo || geo.userData.__hasCanopyAoVCol) return geo;
+  const pos = geo.getAttribute('position') as THREE.BufferAttribute | undefined;
+  if (!pos || pos.count === 0) return geo;
+
+  let minY = minHeightOverride ?? Infinity;
+  let maxY = maxHeightOverride ?? -Infinity;
+  if (minHeightOverride === undefined || maxHeightOverride === undefined) {
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i);
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  const spanY = Math.max(0.1, maxY - minY);
+  const colors = new Float32Array(pos.count * 3);
+  const smooth01 = (e0: number, e1: number, x: number) => {
+    const u = Math.max(0, Math.min(1, (x - e0) / Math.max(1e-5, e1 - e0)));
+    return u * u * (3 - 2 * u);
+  };
+
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const t = Math.max(0, Math.min(1, (y - minY) / spanY));
+    const theta = Math.atan2(z, x);
+
+    const rootAo = 0.88 + 0.12 * smooth01(0.0, 0.10, t);
+    const midWindow = Math.max(0, Math.min(1, (t - 0.05) / 0.58));
+    const midSun = Math.sin(midWindow * Math.PI) * 0.13;
+    const canopyT = smooth01(0.52, 0.95, t);
+    const barkGrain =
+      Math.sin(theta * 5.0 + t * 14.0) * 0.04 + Math.cos(t * 24.0 + theta * 2.0) * 0.035;
+
+    const shadeBase = rootAo * (1.0 + midSun + barkGrain);
+    colors[i * 3] = Math.max(0.32, shadeBase * (1.04 - canopyT * 0.48));
+    colors[i * 3 + 1] = Math.max(0.28, shadeBase * (1.00 - canopyT * 0.52));
+    colors[i * 3 + 2] = Math.max(0.25, shadeBase * (0.94 - canopyT * 0.55));
+  }
+
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.userData.__hasCanopyAoVCol = true;
+  return geo;
+}
+
+/**
  * Exact port of Blitz's TreeLeaves (TreeLeaves + TreeLeavesMaterial):
  * - Merges 64 random spherical leaf planes per foliage cluster
  * - Rotates each plane to face camera with per-plane random spin
@@ -3624,7 +3727,7 @@ export function populateRealBlitzTreeFromGlb(
     if (ch.name !== 'ContactShadowDisc') {
       targetGroup.remove(ch);
     } else {
-      // Hide flat circular disc so real directional leaf-canopy cast shadow + halftone dot edge shines cleanly
+      // Hide flat circular disc so real directional leaf-canopy cast shadow shines cleanly
       ch.visible = false;
     }
   }
@@ -3650,19 +3753,16 @@ export function populateRealBlitzTreeFromGlb(
 
     if ((sourceRoot as THREE.Mesh).isMesh) {
       const srcTrunk = sourceRoot as THREE.Mesh;
-      const cleanTrunkGeo = stripDetachedTreeBaseCollarGeometry(srcTrunk.geometry);
+      const cleanTrunkGeo = applyTreeTrunkCanopyAoVertexColors(
+        stripDetachedTreeBaseCollarGeometry(srcTrunk.geometry),
+      );
       const trunkMesh = new THREE.Mesh(cleanTrunkGeo, srcTrunk.material);
       trunkMesh.name = srcTrunk.name;
       trunkMesh.scale.setScalar(refScale);
       trunkMesh.frustumCulled = true;
-      trunkMesh.castShadow = true;
-      trunkMesh.receiveShadow = true;
-      upgradeMeshToBlitzWorldMaterial(trunkMesh, windUniforms, '#755341');
-      const stroke = createBlitzStrokeMesh(trunkMesh.geometry, 0.036);
-      if (stroke) {
-        stroke.frustumCulled = true;
-        trunkMesh.add(stroke);
-      }
+      trunkMesh.castShadow = !isSoftwareGl;
+      trunkMesh.receiveShadow = !isSoftwareGl;
+      upgradeMeshToBlitzWorldMaterial(trunkMesh, windUniforms, '#8c6446');
       trunkGroup.add(trunkMesh);
     }
 
@@ -3686,15 +3786,17 @@ export function populateRealBlitzTreeFromGlb(
       pos: [number, number, number],
       rot: [number, number, number] = [0, 0, 0],
     ) => {
-      const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#755341' }));
+      applyTreeTrunkCanopyAoVertexColors(geo, -0.18, 6.10);
+      const m = new THREE.Mesh(
+        geo,
+        new THREE.MeshStandardMaterial({ color: '#8c6446', vertexColors: true }),
+      );
       m.position.set(pos[0] * fallbackTrunkScale, pos[1] * fallbackTrunkScale, pos[2] * fallbackTrunkScale);
       m.rotation.set(rot[0], rot[1], rot[2]);
       m.scale.setScalar(fallbackTrunkScale);
-      m.castShadow = true;
-      m.receiveShadow = true;
-      upgradeMeshToBlitzWorldMaterial(m, windUniforms, '#755341');
-      const stroke = createBlitzStrokeMesh(geo, 0.032);
-      if (stroke) m.add(stroke);
+      m.castShadow = !isSoftwareGl;
+      m.receiveShadow = !isSoftwareGl;
+      upgradeMeshToBlitzWorldMaterial(m, windUniforms, '#8c6446');
       trunkGroup.add(m);
     };
     // Flared root-buttress Lathe trunk + 3 curved TubeGeometry primary boughs seated deeply into canopy cores
@@ -3761,9 +3863,9 @@ export function populateRealBlitzTreeFromGlb(
 
   let foliageMaterial = isPurpleTree ? matCache.purpleMat : matCache.greenMat;
   if (!foliageMaterial) {
-    // Original Blitz palette: Purple/Pink (#a369ff -> #ff75d8) & Golden/Green (#2cb84b -> #ffd23f)
-    const colorA = new THREE.Color(isPurpleTree ? '#a369ff' : '#2cb84b');
-    const colorB = new THREE.Color(isPurpleTree ? '#ff75d8' : '#ffd23f');
+    // Warm sunlit painterly foliage palette: Purple/Pink (#a369ff -> #ff75d8) & Warm Meadow Green (#3e9c3c -> #c4da52)
+    const colorA = new THREE.Color(isPurpleTree ? '#a369ff' : '#3e9c3c');
+    const colorB = new THREE.Color(isPurpleTree ? '#ff75d8' : '#c4da52');
 
     foliageMaterial = new THREE.ShaderMaterial({
       uniforms: {
@@ -3774,6 +3876,7 @@ export function populateRealBlitzTreeFromGlb(
         uLeafScale: { value: 1.38 },
         uAlphaThreshold: { value: 0.28 },
         uLightDirection: windUniforms.uLightDirection,
+        uLightColor: windUniforms.uLightColor,
         uWindPhase: windUniforms.uWindPhase,
         uWindDirection: windUniforms.uWindDirection,
         uWindStrength: windUniforms.uWindStrength,
@@ -3852,6 +3955,7 @@ export function populateRealBlitzTreeFromGlb(
         uniform vec3 uColorB;
         uniform float uAlphaThreshold;
         uniform vec3 uLightDirection;
+        uniform vec3 uLightColor;
 
         varying vec2 vUv;
         varying vec3 vSphereNormal;
@@ -3861,10 +3965,11 @@ export function populateRealBlitzTreeFromGlb(
           float mask = texture2D(uLeafTex, vUv).r;
           if (mask < uAlphaThreshold) discard;
 
-          float ndl = smoothstep(-0.15, 0.85, dot(normalize(vSphereNormal), normalize(uLightDirection)));
+          float ndl = smoothstep(-0.18, 0.86, dot(normalize(vSphereNormal), normalize(uLightDirection)));
           vec3 baseCol = mix(uColorA, uColorB, ndl);
-          vec3 shadowCol = uColorA * 0.72;
-          vec3 finalCol = mix(shadowCol, baseCol, smoothstep(0.0, 0.45, ndl));
+          vec3 shadowCol = uColorA * vec3(0.68, 0.74, 0.64);
+          vec3 finalCol = mix(shadowCol, baseCol, smoothstep(0.0, 0.48, ndl));
+          finalCol *= mix(vec3(1.0), uLightColor, 0.45);
 
           gl_FragColor = vec4(finalCol, 1.0);
           #include <tonemapping_fragment>
@@ -3953,6 +4058,7 @@ export function populateRealBlitzTreeFromGlb(
         }
       `,
       fragmentShader: /* glsl */ `
+        #include <packing>
         uniform sampler2D uLeafTex;
         uniform float uAlphaThreshold;
         varying vec2 vUv;
@@ -3960,7 +4066,7 @@ export function populateRealBlitzTreeFromGlb(
         void main() {
           if (fract(vSeed * 19.0) > 0.66) discard;
           if (texture2D(uLeafTex, vUv).r < uAlphaThreshold) discard;
-          gl_FragColor = vec4(vec3(1.0 - gl_FragCoord.z), 1.0);
+          gl_FragColor = packDepthToRGBA(gl_FragCoord.z);
         }
       `,
       side: THREE.DoubleSide,
@@ -6096,7 +6202,7 @@ export async function loadAllRealBlitzAssets(
       return gltf;
     },
   );
-  const playerFemaleGlbPromise = loadOptionalGltf('/assets/avatars/new-female-player.glb').then(
+  const playerFemaleGlbPromise = loadOptionalGltf('/assets/avatars/blitz-female-03.glb').then(
     (gltf) => {
       if (gltf?.scene) {
         gltf.scene.userData.useMixamoLocomotionSuite = true;
@@ -6104,7 +6210,7 @@ export async function loadAllRealBlitzAssets(
       return gltf;
     },
   );
-  const playerMaleGlbPromise = loadOptionalGltf('/assets/avatars/new-male-player.glb').then(
+  const playerMaleGlbPromise = loadOptionalGltf('/assets/avatars/blitz-male-player.glb').then(
     (gltf) => {
       if (gltf?.scene) {
         gltf.scene.userData.useMixamoLocomotionSuite = true;
@@ -11936,6 +12042,16 @@ export function setBlitzStylizedCharViewportSize(width: number, height: number):
   blitzStylizedCharUniforms.uViewportSize.value.set(safeW, safeH);
 }
 
+export function syncBlitzStylizedCharLighting(
+  lightDir: THREE.Vector3,
+  lightColor: THREE.Color,
+): void {
+  if (lightDir.lengthSq() > 1e-6) {
+    blitzStylizedCharUniforms.uLightDirection.value.copy(lightDir).normalize();
+  }
+  blitzStylizedCharUniforms.uLightColor.value.copy(lightColor);
+}
+
 function injectScreenSpaceOutlineClipExpansion(
   shader: { uniforms: Record<string, { value: unknown }>; vertexShader: string },
   profile: AvatarOutlineScreenSpaceProfile,
@@ -12498,28 +12614,28 @@ function convertToStylizedPlayerCharacterMaterial(
       // Blend world sun with an elevated camera-front-3/4 key vector so top of forearms, backs of hands,
       // inner palms, fingers, and face stay cleanly lit while still holding soft dimensional cel shadow
       vec3 camKeyL = normalize( viewWorld + vec3( 0.14, 0.78, 0.0 ) );
-      vec3 L = normalize( mix( worldL, camKeyL, 0.50 ) );
+      vec3 L = normalize( mix( worldL, camKeyL, 0.22 ) );
       float ndl = dot( N, L );
-      float celLit = smoothstep( -0.34, 0.30, ndl );
+      float celLit = smoothstep( -0.18, 0.34, ndl );
       float hemi = clamp( N.y * 0.5 + 0.5, 0.0, 1.0 );
-      float hemiShade = mix( 0.965, 1.02, hemi );
-      vec3 shadowTint = vec3( 0.935, 0.842, 0.824 );
-      vec3 litTint = mix( vec3( 1.022 ), uStylizedLightColor, 0.11 );
+      float hemiShade = mix( 0.84, 1.03, hemi );
+      vec3 shadowTint = vec3( 0.785, 0.648, 0.608 );
+      vec3 litTint = mix( vec3( 1.015 ), uStylizedLightColor, 0.30 );
       vec3 shadedCol = baseCol * mix( shadowTint, litTint, celLit ) * hemiShade;
-      float rim = pow( clamp( 1.0 - abs( dot( N, viewWorld ) ), 0.0, 1.0 ), 3.6 ) * smoothstep( -0.05, 0.85, N.y );
-      vec3 rimScale = vec3( 0.030, 0.026, 0.028 );
+      float rim = pow( clamp( 1.0 - abs( dot( N, viewWorld ) ), 0.0, 1.0 ), 3.2 ) * smoothstep( -0.05, 0.85, N.y );
+      vec3 rimScale = vec3( 0.055, 0.048, 0.042 );
       `
           : /* glsl */ `
       vec3 L = worldL;
       float ndl = dot( N, L );
-      float celLit = smoothstep( ${isHairMat ? '-0.12, 0.22' : '-0.08, 0.16'}, ndl );
+      float celLit = smoothstep( ${isHairMat ? '-0.14, 0.28' : '-0.14, 0.28'}, ndl );
       float hemi = clamp( N.y * 0.5 + 0.5, 0.0, 1.0 );
-      float hemiShade = mix( ${isHairMat ? '0.92' : '0.90'}, 1.04, hemi );
-      vec3 shadowTint = ${isHairMat ? 'vec3( 0.78, 0.75, 0.82 )' : 'vec3( 0.72, 0.74, 0.83 )'};
-      vec3 litTint = mix( vec3( 1.00 ), uStylizedLightColor, 0.22 );
+      float hemiShade = mix( ${isHairMat ? '0.84' : '0.82'}, 1.04, hemi );
+      vec3 shadowTint = ${isHairMat ? 'vec3( 0.70, 0.66, 0.72 )' : 'vec3( 0.68, 0.66, 0.73 )'};
+      vec3 litTint = mix( vec3( 1.00 ), uStylizedLightColor, 0.38 );
       vec3 shadedCol = baseCol * mix( shadowTint, litTint, celLit ) * hemiShade;
-      float rim = pow( clamp( 1.0 - abs( dot( N, viewWorld ) ), 0.0, 1.0 ), 3.4 ) * smoothstep( -0.1, 0.8, N.y );
-      vec3 rimScale = ${isHairMat ? 'vec3( 0.06, 0.055, 0.05 )' : 'vec3( 0.04, 0.045, 0.055 )'};
+      float rim = pow( clamp( 1.0 - abs( dot( N, viewWorld ) ), 0.0, 1.0 ), 3.2 ) * smoothstep( -0.1, 0.8, N.y );
+      vec3 rimScale = ${isHairMat ? 'vec3( 0.085, 0.075, 0.062 )' : 'vec3( 0.055, 0.052, 0.056 )'};
       `
       }
       outgoingLight = min( shadedCol + baseCol * rimScale * rim, vec3( 1.02 ) );
@@ -12548,28 +12664,46 @@ function createSmoothedOutlineGeometry(srcGeo: THREE.BufferGeometry): THREE.Buff
   const nrmAttr = outGeo.getAttribute('normal');
   if (!posAttr || !nrmAttr || posAttr.count === 0) return outGeo;
 
-  const sumByKey = new Map<string, [number, number, number]>();
+  // Group coincident vertices by same-hemisphere clusters so UV seams & hard edges smooth cleanly
+  // while double-walled cloth shells (front +N and inner lining -N at the same vertex) never cancel out.
+  const bucketsByKey = new Map<
+    string,
+    Array<{ refX: number; refY: number; refZ: number; sx: number; sy: number; sz: number }>
+  >();
+  const vertCluster = new Array<{ sx: number; sy: number; sz: number }>(posAttr.count);
   for (let i = 0; i < posAttr.count; i++) {
     const k = `${Math.round(posAttr.getX(i) * 10000)},${Math.round(posAttr.getY(i) * 10000)},${Math.round(posAttr.getZ(i) * 10000)}`;
     const nx = nrmAttr.getX(i);
     const ny = nrmAttr.getY(i);
     const nz = nrmAttr.getZ(i);
-    const acc = sumByKey.get(k);
-    if (acc) {
-      acc[0] += nx;
-      acc[1] += ny;
-      acc[2] += nz;
-    } else {
-      sumByKey.set(k, [nx, ny, nz]);
+    let clusters = bucketsByKey.get(k);
+    if (!clusters) {
+      clusters = [];
+      bucketsByKey.set(k, clusters);
     }
+    let matched: (typeof clusters)[number] | null = null;
+    for (let c = 0; c < clusters.length; c++) {
+      const cl = clusters[c];
+      if (cl.refX * nx + cl.refY * ny + cl.refZ * nz > 0.05) {
+        cl.sx += nx;
+        cl.sy += ny;
+        cl.sz += nz;
+        matched = cl;
+        break;
+      }
+    }
+    if (!matched) {
+      matched = { refX: nx, refY: ny, refZ: nz, sx: nx, sy: ny, sz: nz };
+      clusters.push(matched);
+    }
+    vertCluster[i] = matched;
   }
   for (let i = 0; i < posAttr.count; i++) {
-    const k = `${Math.round(posAttr.getX(i) * 10000)},${Math.round(posAttr.getY(i) * 10000)},${Math.round(posAttr.getZ(i) * 10000)}`;
-    const acc = sumByKey.get(k);
-    if (!acc) continue;
-    const len = Math.hypot(acc[0], acc[1], acc[2]);
+    const cl = vertCluster[i];
+    if (!cl) continue;
+    const len = Math.hypot(cl.sx, cl.sy, cl.sz);
     if (len > 1e-6) {
-      nrmAttr.setXYZ(i, acc[0] / len, acc[1] / len, acc[2] / len);
+      nrmAttr.setXYZ(i, cl.sx / len, cl.sy / len, cl.sz / len);
     }
   }
   nrmAttr.needsUpdate = true;
@@ -12596,7 +12730,7 @@ function createBackSideOutlineMaterial(
     const hairOutMat = new THREE.MeshBasicMaterial({
       name: `${stdMat.name}_Outline`,
       map: baseMap,
-      color: new THREE.Color(hairProfile.inkHex),
+      color: stdMat.color ? stdMat.color.clone() : new THREE.Color(0xffffff),
       side: THREE.BackSide,
       transparent: false,
       opacity: 1,
@@ -12608,8 +12742,9 @@ function createBackSideOutlineMaterial(
       polygonOffsetUnits: 1.0,
       toneMapped: false,
     });
-    hairOutMat.customProgramCacheKey = () => 'blitz-runtime-hair-backside-outline-v2';
+    hairOutMat.customProgramCacheKey = () => 'blitz-runtime-hair-tinted-outline-v3';
     hairOutMat.onBeforeCompile = (shader) => {
+      shader.uniforms.uStylizedLightColor = blitzStylizedCharUniforms.uLightColor;
       shader.vertexShader = shader.vertexShader.replace(
         '#include <begin_vertex>',
         /* glsl */ `
@@ -12618,6 +12753,26 @@ function createBackSideOutlineMaterial(
         `,
       );
       injectScreenSpaceOutlineClipExpansion(shader, hairProfile, 1);
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          '#include <common>',
+          /* glsl */ `
+          #include <common>
+          uniform vec3 uStylizedLightColor;
+          `,
+        )
+        .replace(
+          '#include <opaque_fragment>',
+          /* glsl */ `
+          vec3 tintedInk = clamp(
+            pow( max( outgoingLight, vec3( 0.0 ) ), vec3( 1.15 ) ) * vec3( 0.42, 0.39, 0.42 ),
+            vec3( 0.050, 0.045, 0.060 ),
+            vec3( 0.42, 0.35, 0.30 )
+          );
+          outgoingLight = tintedInk * mix( vec3( 1.0 ), uStylizedLightColor, 0.32 );
+          #include <opaque_fragment>
+          `,
+        );
     };
     hairOutMat.needsUpdate = true;
     return hairOutMat;
@@ -12630,9 +12785,20 @@ function createBackSideOutlineMaterial(
     : isSkinMat
       ? ANATOMICAL_SKIN_SHADER_PARAMS.skinOutlineNormalOffsetM
       : ANATOMICAL_SKIN_SHADER_PARAMS.clothOutlineNormalOffsetM;
+
+  // Tinted Ink Outline:
+  // - Skin/Head uses a warm soft terracotta-cocoa ink that harmonizes with skin & ambient world light
+  // - Cloth/Hair samples the garment's own albedo and darkens it into a cohesive colored ink outline
+  const useAlbedoTint = !isSkinMat;
+  const solidInkHex = isHeadMat ? '#6b4c46' : '#76544b';
   const outMat = new THREE.MeshBasicMaterial({
     name: `${stdMat.name}_Outline`,
-    color: new THREE.Color(profile.inkHex),
+    map: useAlbedoTint ? baseMap : null,
+    color: useAlbedoTint
+      ? stdMat.color
+        ? stdMat.color.clone()
+        : new THREE.Color(0xffffff)
+      : new THREE.Color(solidInkHex),
     side: THREE.BackSide,
     transparent: false,
     opacity: 1,
@@ -12644,11 +12810,14 @@ function createBackSideOutlineMaterial(
   });
   outMat.customProgramCacheKey = () =>
     isHeadMat
-      ? 'blitz-runtime-head-outline-v2'
+      ? 'blitz-runtime-head-tinted-outline-v3'
       : isSkinMat
-        ? 'blitz-runtime-skin-outline-v2'
-        : 'blitz-runtime-cloth-outline-v2';
+        ? 'blitz-runtime-skin-tinted-outline-v3'
+        : isHairMeshHint
+          ? 'blitz-runtime-hair-solid-tinted-outline-v3'
+          : 'blitz-runtime-cloth-tinted-outline-v3';
   outMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uStylizedLightColor = blitzStylizedCharUniforms.uLightColor;
     shader.vertexShader = shader.vertexShader.replace(
       '#include <begin_vertex>',
       /* glsl */ `
@@ -12657,6 +12826,33 @@ function createBackSideOutlineMaterial(
       `,
     );
     injectScreenSpaceOutlineClipExpansion(shader, profile, 1);
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        /* glsl */ `
+        #include <common>
+        uniform vec3 uStylizedLightColor;
+        `,
+      )
+      .replace(
+        '#include <opaque_fragment>',
+        useAlbedoTint
+          ? /* glsl */ `
+          vec3 tintedInk = clamp(
+            pow( max( outgoingLight, vec3( 0.0 ) ), vec3( 1.18 ) ) * ${
+              isHairMeshHint ? 'vec3( 0.42, 0.39, 0.42 )' : 'vec3( 0.46, 0.44, 0.48 )'
+            },
+            vec3( 0.055, 0.050, 0.065 ),
+            ${isHairMeshHint ? 'vec3( 0.42, 0.35, 0.30 )' : 'vec3( 0.44, 0.41, 0.45 )'}
+          );
+          outgoingLight = tintedInk * mix( vec3( 1.0 ), uStylizedLightColor, 0.32 );
+          #include <opaque_fragment>
+          `
+          : /* glsl */ `
+          outgoingLight = outgoingLight * mix( vec3( 1.0 ), uStylizedLightColor, 0.30 );
+          #include <opaque_fragment>
+          `,
+      );
   };
   outMat.needsUpdate = true;
   return outMat;
@@ -13503,12 +13699,13 @@ function applySkinnedMeshSafeBounds(mesh: THREE.SkinnedMesh): void {
 function getMeshMaterialMatchSignature(mat: THREE.Material | THREE.Material[]): string | null {
   if (Array.isArray(mat) || !mat) return null;
   const mb = mat as THREE.MeshBasicMaterial;
-  if (!mb.isMeshBasicMaterial || mb.map || mb.transparent) return null;
+  if (!mb.isMeshBasicMaterial || mb.transparent) return null;
   const cacheKey =
     typeof mb.customProgramCacheKey === 'function' ? mb.customProgramCacheKey() : mb.type;
   return [
     cacheKey,
     mb.color ? mb.color.getHexString() : 'ffffff',
+    mb.map ? mb.map.uuid : 'nomap',
     mb.side,
     mb.opacity,
     mb.alphaTest,
@@ -13767,7 +13964,6 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
   let hasMixamoHips = false;
   let hasCustomPelvisRoot = false;
   let hasToonInkOutlineMat = false;
-  let hasAnyOutlineMesh = false;
   let isMaleCustomCharacter = false;
   const isBlitzModular = isBlitzModularModel(gltf.scene);
   gltf.scene.traverse((node) => {
@@ -13781,7 +13977,6 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
       }
       if (stripMixamoPrefix(node.name) === 'Hips') hasMixamoHips = true;
       if (node.name === 'PelvisRoot') hasCustomPelvisRoot = true;
-      if (node.name.toLowerCase().includes('outline')) hasAnyOutlineMesh = true;
       if (
         /^head_1\d\d/i.test(node.name) ||
         /(?:1m|2m)(?:highres)?(?:pbr|_|$)/i.test(node.name) ||
@@ -13832,11 +14027,59 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
     isHairMeshHint: boolean;
     origMaterials: THREE.Material[];
   }> = [];
+  const bakedOutlineMeshesToRemove: THREE.Mesh[] = [];
+  const unifyWithRuntimeBackSideOutlines = isCustomSkeleton && isBlitzModular;
+  let blitzHeadSkinAtlasMap: THREE.Texture | null = null;
+  if (isBlitzModular) {
+    gltf.scene.traverse((node) => {
+      if (blitzHeadSkinAtlasMap || !(node as THREE.Mesh).isMesh) return;
+      const mList = Array.isArray((node as THREE.Mesh).material)
+        ? ((node as THREE.Mesh).material as THREE.Material[])
+        : (node as THREE.Mesh).material
+          ? [(node as THREE.Mesh).material as THREE.Material]
+          : [];
+      for (const m of mList) {
+        if (/blitz_mask_head/i.test(m?.name || '')) {
+          const std = m as THREE.MeshStandardMaterial;
+          if (std.map) {
+            blitzHeadSkinAtlasMap = std.map;
+            break;
+          }
+        }
+      }
+    });
+    if (blitzHeadSkinAtlasMap) {
+      gltf.scene.traverse((node) => {
+        if (!(node as THREE.Mesh).isMesh) return;
+        const mList = Array.isArray((node as THREE.Mesh).material)
+          ? ((node as THREE.Mesh).material as THREE.Material[])
+          : (node as THREE.Mesh).material
+            ? [(node as THREE.Mesh).material as THREE.Material]
+            : [];
+        for (const m of mList) {
+          if (/blitz_mask_/i.test(m?.name || '') && !/blitz_mask_head/i.test(m?.name || '')) {
+            const std = m as THREE.MeshStandardMaterial;
+            if (!std.map) {
+              std.map = blitzHeadSkinAtlasMap;
+              if (std.color) {
+                std.color.setHex(0xffffff);
+              }
+              std.needsUpdate = true;
+            }
+          }
+        }
+      });
+    }
+  }
   gltf.scene.traverse((node) => {
     if ((node as THREE.Mesh).isMesh) {
       const mesh = node as THREE.Mesh;
       const lowerMeshName = (mesh.name || '').toLowerCase();
       const isOutlineMesh = lowerMeshName.includes('outline');
+      if (unifyWithRuntimeBackSideOutlines && isOutlineMesh) {
+        bakedOutlineMeshesToRemove.push(mesh);
+        return;
+      }
       const isHairMeshHint = lowerMeshName.includes('hair') && !isOutlineMesh;
       const isBodySkinMeshHint = isBodySkinMeshName(mesh.name);
       const origMats = Array.isArray(mesh.material)
@@ -13845,10 +14088,7 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
           ? [mesh.material]
           : [];
       if (
-        isCustomSkeleton &&
-        isBlitzModular &&
-        !hasToonInkOutlineMat &&
-        !hasAnyOutlineMesh &&
+        unifyWithRuntimeBackSideOutlines &&
         !isOutlineMesh &&
         (mesh as THREE.SkinnedMesh).isSkinnedMesh &&
         mesh.parent
@@ -13886,12 +14126,20 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
       hipsBindZ = node.position.z;
     }
   });
-  // Merge homogeneous Blitz_BaseDoll_*_Mesh_1..10 body-skin submeshes (preserving Head intact)
-  // so base + outline body skin render in 2 draw calls instead of 20.
-  if (isCustomSkeleton && isBlitzModular && pendingRuntimeOutlines.length >= 2) {
-    const bodySkinItems = pendingRuntimeOutlines.filter((item) =>
-      /^Blitz_BaseDoll_(?:Female|Male)_Mesh_\d+$/i.test(item.baseMesh.name || ''),
-    );
+  for (const bakedOutline of bakedOutlineMeshesToRemove) {
+    bakedOutline.parent?.remove(bakedOutline);
+    bakedOutline.geometry?.dispose();
+  }
+  // Merge homogeneous Blitz_BaseDoll_*_Mesh body-skin submeshes (preserving Head intact so
+  // head is never recessed; updateBlitzBaseDollBodySkinTrim protects vy > 1.335 for neck/head).
+  if (unifyWithRuntimeBackSideOutlines && pendingRuntimeOutlines.length >= 2) {
+    const bodySkinItems = pendingRuntimeOutlines.filter((item) => {
+      if (!/^Blitz_BaseDoll_(?:Female|Male)_Mesh_\d+$/i.test(item.baseMesh.name || '')) {
+        return false;
+      }
+      const hasHead = item.origMaterials.some((m) => /blitz_mask_head/i.test(m?.name || ''));
+      return !hasHead;
+    });
     if (bodySkinItems.length >= 2) {
       const mergedName = bodySkinItems[0].baseMesh.name.replace(/_\d+$/, '_BodySkin');
       const mergedBodySkin = mergeCompatibleSkinnedMeshes(
@@ -15747,9 +15995,11 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
         ensurePerRigUniqueSkinGeometry(mesh);
       }
       mesh.visible = true;
-      // Disable shadow-map pass on SkinnedMesh submeshes (characters use ContactShadowDisc on the ground)
-      // to eliminate 65-bone GPU vertex skinning duplication in the directional shadow pass
-      mesh.castShadow = false;
+      // Enable directional ground/furniture cast shadow for local player & ambient city NPCs (non-outline meshes only)
+      const allowCastShadow = Boolean(rig.bodyGroupRef?.userData?.enableAvatarCastShadow);
+      glbRoot.userData.enableAvatarCastShadow = allowCastShadow;
+      mesh.castShadow =
+        allowCastShadow && !lowerMeshName.includes('outline') && !mesh.userData?.isRuntimeOutlineMesh;
       mesh.receiveShadow = false;
       if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) {
         applySkinnedMeshSafeBounds(mesh as THREE.SkinnedMesh);
@@ -16852,14 +17102,23 @@ function cloneAndBindModularSkinnedMeshes(
     }
   >();
 
+  const useRuntimeOutlinesForBlitz = isBlitzModularModel(controller.glbRoot);
+
   const existingOutlineStems = new Set<string>();
-  for (const srcSm of orderedSources) {
-    if ((srcSm.name || '').toLowerCase().includes('outline')) {
-      existingOutlineStems.add(resolveModularMeshCompanionStem(srcSm.name || ''));
+  if (!useRuntimeOutlinesForBlitz) {
+    for (const srcSm of orderedSources) {
+      if ((srcSm.name || '').toLowerCase().includes('outline')) {
+        existingOutlineStems.add(resolveModularMeshCompanionStem(srcSm.name || ''));
+      }
     }
   }
 
   for (const srcSm of orderedSources) {
+    const meshName = srcSm.name || `CustomEquipped_${slotTag}`;
+    const isOutlineMesh = meshName.toLowerCase().includes('outline');
+    if (useRuntimeOutlinesForBlitz && isOutlineMesh) {
+      continue;
+    }
     const srcBones = srcSm.skeleton?.bones ?? [];
     if (srcBones.length === 0) continue;
 
@@ -16875,8 +17134,6 @@ function cloneAndBindModularSkinnedMeshes(
       (b) => targetProfile.boneBindPosByName.get(b.name) ?? null,
     );
 
-    const meshName = srcSm.name || `CustomEquipped_${slotTag}`;
-    const isOutlineMesh = meshName.toLowerCase().includes('outline');
     const isNativeBlitzGarment = /(?:^|_)blitz_/i.test(meshName);
     const resolvedMat = resolveModularBodySkinFallbackMaterial(
       meshName,
@@ -16965,10 +17222,55 @@ function cloneAndBindModularSkinnedMeshes(
     clonedMesh.userData.wardrobeClearanceM = appliedClearance;
     clonedMesh.userData.wardrobeScaleMultiplier = syncResult.appliedScaleMultiplier;
 
-    clonedMesh.castShadow = false;
+    clonedMesh.castShadow = Boolean(controller.glbRoot.userData?.enableAvatarCastShadow) && !isOutlineMesh;
     clonedMesh.receiveShadow = false;
     applySkinnedMeshSafeBoundingSphere(clonedMesh, 1.85, 0.75);
     clonedMesh.bindMode = targetProfile.bindMode;
+
+    // Seal open ankle rim on built-in OpenFootSkin_Mesh so it overlaps cleanly ~5mm inside BaseDoll Calf (zero 1mm dotted gap)
+    if (!isOutlineMesh && meshName.toLowerCase().includes('openfootskin')) {
+      const sp = clonedGeom.getAttribute('position') as THREE.BufferAttribute | undefined;
+      if (sp && sp.count > 0) {
+        let maxRimY = -Infinity;
+        for (let i = 0; i < sp.count; i++) {
+          const py = sp.getY(i);
+          if (py > maxRimY) maxRimY = py;
+        }
+        if (maxRimY >= 0.088 && maxRimY <= 0.108) {
+          let lSumX = 0, lSumZ = 0, lCnt = 0;
+          let rSumX = 0, rSumZ = 0, rCnt = 0;
+          const rimThreshY = maxRimY - 0.014;
+          for (let i = 0; i < sp.count; i++) {
+            if (sp.getY(i) >= rimThreshY) {
+              const px = sp.getX(i);
+              const pz = sp.getZ(i);
+              if (px >= 0) { lSumX += px; lSumZ += pz; lCnt++; }
+              else { rSumX += px; rSumZ += pz; rCnt++; }
+            }
+          }
+          const lCx = lCnt > 0 ? lSumX / lCnt : 0.072;
+          const lCz = lCnt > 0 ? lSumZ / lCnt : -0.056;
+          const rCx = rCnt > 0 ? rSumX / rCnt : -0.072;
+          const rCz = rCnt > 0 ? rSumZ / rCnt : -0.056;
+          for (let i = 0; i < sp.count; i++) {
+            const py = sp.getY(i);
+            if (py >= rimThreshY) {
+              const px = sp.getX(i);
+              const pz = sp.getZ(i);
+              const cx = px >= 0 ? lCx : rCx;
+              const cz = px >= 0 ? lCz : rCz;
+              const dx = px - cx;
+              const dz = pz - cz;
+              const dist = Math.hypot(dx, dz);
+              const pull = dist > 1e-4 ? Math.min(0.00025, dist * 0.01) / dist : 0;
+              const t = Math.max(0, Math.min(1, (py - rimThreshY) / 0.014));
+              sp.setXYZ(i, px - dx * pull, Math.max(py + 0.005 * t, py < 0.105 ? py + 0.006 * t : py), pz - dz * pull);
+            }
+          }
+          sp.needsUpdate = true;
+        }
+      }
+    }
 
     const boundSkeleton = new THREE.Skeleton(resolution.mappedBones, syncResult.syncedInverses);
     clonedMesh.bind(boundSkeleton, syncResult.syncedBindMatrix);
@@ -16987,6 +17289,26 @@ function cloneAndBindModularSkinnedMeshes(
       const outMat = Array.isArray(clonedMesh.material) ? outMats : outMats[0];
       if (outMat) {
         const outGeo = createSmoothedOutlineGeometry(clonedGeom);
+        if (meshName.toLowerCase().includes('openfootskin')) {
+          const op = outGeo.getAttribute('position') as THREE.BufferAttribute | undefined;
+          const on = outGeo.getAttribute('normal') as THREE.BufferAttribute | undefined;
+          if (op && on && op.count > 0) {
+            let maxRimY = -Infinity;
+            for (let i = 0; i < op.count; i++) {
+              const py = op.getY(i);
+              if (py > maxRimY) maxRimY = py;
+            }
+            const rimCutoffY = maxRimY - 0.011;
+            for (let i = 0; i < op.count; i++) {
+              const py = op.getY(i);
+              if (py >= rimCutoffY) {
+                // Zero outline expansion along open ankle cut rim so no dotted seam line appears across the ankle
+                on.setXYZ(i, 0, 0, 0);
+              }
+            }
+            on.needsUpdate = true;
+          }
+        }
         const outMesh = new THREE.SkinnedMesh(outGeo, outMat);
         outMesh.name = `${meshName}_Outline`;
         outMesh.userData.isRuntimeOutlineMesh = true;
@@ -17542,13 +17864,16 @@ function getBlitzBaseDollBodySkinStates(
     const mesh = node as THREE.Mesh;
     const lower = (mesh.name || '').toLowerCase();
     const mats = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
-    const isHeadOrNeckMat = mats.some((m) => /blitz_mask_(?:head|neck)/i.test(m?.name || ''));
+    const isBodySkinMerged = /_bodyskin(?:_outline)?$/i.test(lower);
+    const isHeadOrNeckMat =
+      !isBodySkinMerged && mats.some((m) => /blitz_mask_(?:head|neck)/i.test(m?.name || ''));
     if (isHeadOrNeckMat) return;
-    const outMatch = lower.match(/_mesh_outline_(\d+)$/i);
-    if (outMatch && excludedOutlineSuffixes.has(outMatch[1])) return;
+    const outMatch = lower.match(/_mesh_(?:outline_(\d+)|(\d+)_outline)$/i);
+    const outIdx = outMatch ? (outMatch[1] ?? outMatch[2]) : null;
+    if (outIdx && excludedOutlineSuffixes.has(outIdx)) return;
     if (
       /^blitz_basedoll_(?:male|female)(?:_mesh)?_bodyskin(?:_outline)?$/i.test(lower) ||
-      /^blitz_basedoll_(?:male|female)_mesh_(?:\d+|outline)(?:_\d+)?$/i.test(lower)
+      /^blitz_basedoll_(?:male|female)_mesh_(?:\d+(?:_outline)?|outline(?:_\d+)?)$/i.test(lower)
     ) {
       ensurePerRigUniqueSkinGeometry(mesh);
       found.push({ mesh, originalIndex: getOrCapturePristineSkinIndex(mesh.geometry) });
@@ -17595,6 +17920,7 @@ function updateBlitzBaseDollBodySkinTrim<K extends keyof BlitzBodySkinActiveTrim
 
   // 1. Always restore 100% watertight pristine indices & pristine positions first
   for (const entry of bodySkinEntries) {
+    entry.mesh.visible = true;
     const geo = ensurePerRigUniqueSkinGeometry(entry.mesh);
     if (entry.originalIndex && geo.getIndex() !== entry.originalIndex) {
       geo.setIndex(entry.originalIndex);
@@ -17628,14 +17954,39 @@ function updateBlitzBaseDollBodySkinTrim<K extends keyof BlitzBodySkinActiveTrim
   };
 
   let clothSampleCount = 0;
+  let openFootSkinMinY = Infinity;
+  let openFootSkinMaxY = -Infinity;
+  let openFootSkinMaxZ = -Infinity;
+  const openFootSkinMeshes: THREE.Mesh[] = [];
+  let activeFootwearMaxY = -Infinity;
+  let activeFootwearLowZ = -Infinity;
+  let activeFootwearMinSoleY = Infinity;
+  let hasActiveFootwearMesh = false;
   glbRoot.traverse((node) => {
     if (!(node as THREE.Mesh).isMesh) return;
     const mesh = node as THREE.Mesh;
-    if (!mesh.visible) return;
     const lower = (mesh.name || '').toLowerCase();
+    if (lower.includes('openfootskin')) {
+      openFootSkinMeshes.push(mesh);
+      if (!lower.includes('outline')) {
+        const osPos = mesh.geometry?.getAttribute('position') as THREE.BufferAttribute | undefined;
+        if (osPos && osPos.count > 0) {
+          for (let i = 0; i < osPos.count; i++) {
+            const py = osPos.getY(i);
+            const pz = osPos.getZ(i);
+            if (py < openFootSkinMinY) openFootSkinMinY = py;
+            if (py > openFootSkinMaxY) openFootSkinMaxY = py;
+            if (pz > openFootSkinMaxZ) openFootSkinMaxZ = pz;
+          }
+        }
+      }
+      return;
+    }
+    if (!mesh.visible) return;
     if (
       lower.includes('basedoll') ||
       lower.includes('_skin') ||
+      lower.includes('openfootskin') ||
       lower.includes('outline') ||
       lower.includes('hair') ||
       lower.startsWith('head_') ||
@@ -17649,6 +18000,31 @@ function updateBlitzBaseDollBodySkinTrim<K extends keyof BlitzBodySkinActiveTrim
     const geo = mesh.geometry;
     const pos = geo.getAttribute('position') as THREE.BufferAttribute | undefined;
     if (!pos || pos.count < 3) return;
+    const isFootwearMesh =
+      mesh.userData?.customEquippedSlot === 'feet' ||
+      classifyDefaultAvatarSlotFromMeshName(mesh.name) === 'feet';
+    if (isFootwearMesh) {
+      let localMaxY = -Infinity;
+      let localLowZ = -Infinity;
+      let localMinY = Infinity;
+      for (let i = 0; i < pos.count; i++) {
+        const py = pos.getY(i);
+        const pz = pos.getZ(i);
+        if (py > localMaxY) localMaxY = py;
+        if (py < localMinY) localMinY = py;
+        if (py <= 0.075 && pz > localLowZ) localLowZ = pz;
+      }
+      if (Number.isFinite(localMaxY)) {
+        hasActiveFootwearMesh = true;
+        if (localMaxY > activeFootwearMaxY) activeFootwearMaxY = localMaxY;
+        if (Number.isFinite(localLowZ) && localLowZ > activeFootwearLowZ) {
+          activeFootwearLowZ = localLowZ;
+        }
+        if (Number.isFinite(localMinY) && localMinY < activeFootwearMinSoleY) {
+          activeFootwearMinSoleY = localMinY;
+        }
+      }
+    }
     if (!geo.getAttribute('normal')) {
       geo.computeVertexNormals();
     }
@@ -17689,6 +18065,109 @@ function updateBlitzBaseDollBodySkinTrim<K extends keyof BlitzBodySkinActiveTrim
 
   if (clothSampleCount === 0) return;
 
+  // 2.5 Footwear mode classification + procedural high-heel foot arching (BEFORE cloth recessing):
+  // - Mode A: Shoes with a full built-in OpenFootSkin_Mesh (>= 0.082m ankle height, not a protruding flat duplicate)
+  //   -> Keep OpenFootSkin visible & trim BaseDoll foot cleanly at 0.104m (zero sawtooth gap, zero double foot).
+  // - Mode B: Arched high heels WITHOUT a full OpenFootSkin_Mesh (low-Z toe box < 0.072m, including hollow strappy
+  //   heels like Gladiator Heels & Couture 4, and tiny toe-only OpenFootSkin heels)
+  //   -> Procedurally arch BaseDoll's own Blitz_Mask_Feet into a high-heel arch before cloth recessing so open
+  //      strappy heels show a natural sculpted arched foot seamlessly welded to the calf, while closed heels/boots
+  //      recess cleanly inside with zero protruding flat toes and zero hollow ankle gaps!
+  // - Mode C: Flat sneakers / trainers / loafers / flat boots (low-Z >= 0.072m, no full OpenFootSkin)
+  //   -> Keep BaseDoll's flat foot 100% untrimmed so the ankle stays completely sealed inside low-top sneaker collars.
+  // Flat sandals carrying a flat OpenFootSkin_Mesh (maxY < 0.115, z >= 0.072): prefer BaseDoll's own
+  // 100% seamlessly welded Blitz_Mask_Feet (gently lifted onto the sandal footbed) so there is ZERO
+  // ankle seam/line around the bare ankle!
+  const isFlatSandalPreferBaseDollFoot =
+    openFootSkinMeshes.length > 0 &&
+    hasActiveFootwearMesh &&
+    activeFootwearMaxY < 0.115 &&
+    Number.isFinite(openFootSkinMaxZ) &&
+    openFootSkinMaxZ >= 0.072;
+  const isDuplicateOrTinyOpenFootSkin =
+    isFlatSandalPreferBaseDollFoot ||
+    (openFootSkinMeshes.length > 0 &&
+      hasActiveFootwearMesh &&
+      ((Number.isFinite(openFootSkinMaxZ) &&
+        Number.isFinite(activeFootwearLowZ) &&
+        openFootSkinMaxZ > activeFootwearLowZ + 0.015) ||
+        (activeFootwearMaxY >= 0.14 && Number.isFinite(openFootSkinMaxZ) && openFootSkinMaxZ > 0.065) ||
+        (activeFootwearMaxY >= 0.13 && openFootSkinMaxY < 0.075)));
+  for (const osMesh of openFootSkinMeshes) {
+    osMesh.visible = !isDuplicateOrTinyOpenFootSkin;
+  }
+
+  // On flat sandals where we keep BaseDoll's seamless bare foot, gently lift the sole up onto the sandal footbed
+  if (isFlatSandalPreferBaseDollFoot && Number.isFinite(openFootSkinMinY) && openFootSkinMinY > 0.003) {
+    const footbedLift = Math.min(0.032, openFootSkinMinY);
+    for (const entry of bodySkinEntries) {
+      const geo = ensurePerRigUniqueSkinGeometry(entry.mesh);
+      const pos = geo.getAttribute('position') as THREE.BufferAttribute | undefined;
+      if (!pos) continue;
+      let changed = false;
+      for (let i = 0; i < pos.count; i++) {
+        const py = pos.getY(i);
+        if (py >= 0.102) continue;
+        const u = Math.max(0, Math.min(1, (0.102 - py) / 0.102));
+        pos.setY(i, py + footbedLift * u);
+        changed = true;
+      }
+      if (changed) pos.needsUpdate = true;
+    }
+  }
+
+  const hasFullOpenFootSkin = !isDuplicateOrTinyOpenFootSkin && openFootSkinMaxY >= 0.082;
+  const needsProceduralHighHeelArch =
+    activeTrims.feet !== null &&
+    hasActiveFootwearMesh &&
+    !hasFullOpenFootSkin &&
+    Number.isFinite(activeFootwearLowZ) &&
+    activeFootwearLowZ < 0.072;
+
+  if (needsProceduralHighHeelArch) {
+    const targetToeZ = Math.max(-0.002, Math.min(0.056, activeFootwearLowZ - 0.006));
+    const soleFloorY = Number.isFinite(activeFootwearMinSoleY)
+      ? Math.max(0.006, Math.min(0.022, activeFootwearMinSoleY + 0.011))
+      : 0.010;
+    // Higher arch lift for shorter-Z stilettos (e.g. z=0.005..0.04 -> ~6.2cm lift), gentler for mid heels
+    const heelLiftM = Math.max(0.036, Math.min(0.064, 0.064 - Math.max(0, targetToeZ - 0.025) * 0.65));
+    const smoothstep = (e0: number, e1: number, x: number): number => {
+      const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+      return t * t * (3 - 2 * t);
+    };
+    for (const entry of bodySkinEntries) {
+      const geo = ensurePerRigUniqueSkinGeometry(entry.mesh);
+      const pos = geo.getAttribute('position') as THREE.BufferAttribute | undefined;
+      if (!pos) continue;
+      let changed = false;
+      for (let i = 0; i < pos.count; i++) {
+        const py = pos.getY(i);
+        if (py >= 0.102) continue;
+        const px = pos.getX(i);
+        const pz = pos.getZ(i);
+        const u = Math.max(0, Math.min(1, (0.102 - py) / 0.102));
+        const s = Math.max(0, Math.min(1, (pz - -0.090) / (0.088 - -0.090)));
+        const archLift = (1 - smoothstep(0.02, 0.76, s)) * heelLiftM * smoothstep(0.0, 0.55, u);
+        const mappedZ = -0.084 + s * (targetToeZ - -0.084);
+        const zBlend = smoothstep(0.0, 0.45, u);
+        const nextZ = pz + (mappedZ - pz) * zBlend;
+        let nextY = Math.min(0.101, py + archLift);
+        if (s > 0.45 && nextY < soleFloorY) {
+          nextY = soleFloorY + (nextY - 0) * 0.25;
+        }
+        // Subtle toe-box width taper so foot fits cleanly inside narrow strappy heels
+        const footCenterX = px >= 0 ? 0.078 : -0.078;
+        const widthScale = 1.0 - 0.10 * smoothstep(0.35, 1.0, s) * smoothstep(0.0, 0.5, u);
+        const nextX = footCenterX + (px - footCenterX) * widthScale;
+        pos.setXYZ(i, nextX, nextY, nextZ);
+        changed = true;
+      }
+      if (changed) {
+        pos.needsUpdate = true;
+      }
+    }
+  }
+
   // Pair base skin submeshes with their 1:1 companion outline submeshes
   const outlineByLowerName = new Map<string, StoredRigDefaultTorsoState['skinMeshes'][number]>();
   const pairedOutlines = new Set<THREE.Mesh>();
@@ -17712,12 +18191,6 @@ function updateBlitzBaseDollBodySkinTrim<K extends keyof BlitzBodySkinActiveTrim
     const norm = geo.getAttribute('normal') as THREE.BufferAttribute | undefined;
     if (!norm) return null;
 
-    const mats = Array.isArray(entry.mesh.material)
-      ? entry.mesh.material
-      : entry.mesh.material
-        ? [entry.mesh.material]
-        : [];
-    const limitWristOnly = mats.some((m) => /blitz_mask_hands/i.test(m?.name || ''));
     const nv = pos.count;
     const rawPush = new Float32Array(nv);
     const maxD2 = SKIN_RECESS_SEARCH_R * SKIN_RECESS_SEARCH_R;
@@ -17729,8 +18202,15 @@ function updateBlitzBaseDollBodySkinTrim<K extends keyof BlitzBodySkinActiveTrim
       const vx = pos.getX(i);
       const vy = pos.getY(i);
       const vz = pos.getZ(i);
-      if (limitWristOnly && Math.abs(vx) > 0.655) continue;
+      if (Math.abs(vx) > 0.655) continue; // always protect hands/fingers on merged _BodySkin
       if (vy > 1.335) continue; // never recess neck/head boundary
+      // Protect the Calf <-> Feet ankle seam (y ~ 0.1017m) from recess-pinching on low-top sneakers/loafers
+      let ankleSeamScale = 1.0;
+      if (vy >= 0.072 && vy <= 0.128) {
+        const dAnkle = Math.abs(vy - 0.1017);
+        ankleSeamScale = Math.max(0, Math.min(1, (dAnkle - 0.014) / 0.016));
+        if (ankleSeamScale <= 1e-4) continue;
+      }
 
       const nx = norm.getX(i) * nSign;
       const ny = norm.getY(i) * nSign;
@@ -17767,10 +18247,11 @@ function updateBlitzBaseDollBodySkinTrim<K extends keyof BlitzBodySkinActiveTrim
       }
 
       if (bestSigned > SKIN_RECESS_SIGNED_THRESH) {
-        const push = Math.min(
-          SKIN_RECESS_MAX_PUSH,
-          Math.max(0, bestSigned + SKIN_RECESS_TARGET_CLEARANCE),
-        );
+        const push =
+          Math.min(
+            SKIN_RECESS_MAX_PUSH,
+            Math.max(0, bestSigned + SKIN_RECESS_TARGET_CLEARANCE),
+          ) * ankleSeamScale;
         rawPush[i] = push;
         if (push > maxPush) maxPush = push;
       }
@@ -17854,11 +18335,12 @@ function updateBlitzBaseDollBodySkinTrim<K extends keyof BlitzBodySkinActiveTrim
     if (lower.includes('outline')) continue;
     const disp = computeAndApplyRecess(entry, false);
 
-    // Find companion outline (`_mesh_3` -> `_mesh_outline_3`, or `_bodyskin` -> `_bodyskin_outline`)
-    const companionKey = /_mesh_\d+$/i.test(lower)
+    // Find companion outline (`_mesh_3_outline`, `_mesh_outline_3`, or `_bodyskin_outline`)
+    const altCompanionKey = /_mesh_\d+$/i.test(lower)
       ? lower.replace(/_mesh_(\d+)$/i, '_mesh_outline_$1')
       : `${lower}_outline`;
-    const companion = outlineByLowerName.get(companionKey);
+    const companion =
+      outlineByLowerName.get(`${lower}_outline`) ?? outlineByLowerName.get(altCompanionKey);
     if (companion) {
       pairedOutlines.add(companion.mesh);
       if (disp) {
@@ -17884,6 +18366,59 @@ function updateBlitzBaseDollBodySkinTrim<K extends keyof BlitzBodySkinActiveTrim
     const lower = (entry.mesh.name || '').toLowerCase();
     if (!lower.includes('outline') || pairedOutlines.has(entry.mesh)) continue;
     computeAndApplyRecess(entry, true);
+  }
+
+  // 4. For footwear with a full built-in OpenFootSkin_Mesh (sandals & open-toe heels), cleanly remove
+  //    BaseDoll's redundant flat foot mesh below 0.104m (just above the Calf seam at 0.1017m) AND
+  //    suppress the bottom open-rim outline normal on Calf_Outline (y <= 0.107m) so no dark horizontal
+  //    ring appears across the ankle where Calf meets OpenFootSkin.
+  for (const entry of bodySkinEntries) {
+    const lower = (entry.mesh.name || '').toLowerCase();
+    if (!lower.includes('outline')) continue;
+    const geo = ensurePerRigUniqueSkinGeometry(entry.mesh);
+    const origNrm = geo.userData.__pristineOutlineNormal as Float32Array | undefined;
+    const nrm = geo.getAttribute('normal') as THREE.BufferAttribute | undefined;
+    if (origNrm && nrm && nrm.array.length === origNrm.length) {
+      (nrm.array as Float32Array).set(origNrm);
+      nrm.needsUpdate = true;
+    }
+  }
+  if (hasFullOpenFootSkin) {
+    const minKeepFootY = 0.104;
+    for (const entry of bodySkinEntries) {
+      const geo = ensurePerRigUniqueSkinGeometry(entry.mesh);
+      if (entry.originalIndex) {
+        const trimmed = createTrimmedSlotSkinIndexBuffer(
+          geo,
+          entry.originalIndex,
+          (avgY) => avgY >= minKeepFootY,
+        );
+        geo.setIndex(trimmed);
+        if (trimmed.count === 0) {
+          entry.mesh.visible = false;
+        }
+      }
+      const lower = (entry.mesh.name || '').toLowerCase();
+      if (lower.includes('outline') && entry.mesh.visible) {
+        const pos = geo.getAttribute('position') as THREE.BufferAttribute | undefined;
+        const nrm = geo.getAttribute('normal') as THREE.BufferAttribute | undefined;
+        if (pos && nrm) {
+          if (!geo.userData.__pristineOutlineNormal) {
+            geo.userData.__pristineOutlineNormal = new Float32Array(nrm.array as Float32Array);
+          }
+          let nrmChanged = false;
+          for (let i = 0; i < pos.count; i++) {
+            const py = pos.getY(i);
+            if (py >= 0.095 && py <= 0.108) {
+              // Suppress horizontal rim outline right at the open Calf<->OpenFootSkin ankle join
+              nrm.setXYZ(i, 0, 0, 0);
+              nrmChanged = true;
+            }
+          }
+          if (nrmChanged) nrm.needsUpdate = true;
+        }
+      }
+    }
   }
 }
 
@@ -21773,14 +22308,14 @@ function paintTrafficSignFaceCanvas(
       ctx.font = '900 62px "Helvetica Neue", Arial, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('TREM ONLY', 256, 408);
+      ctx.fillText('TRAM ONLY', 256, 408);
     } else if (kind === 'halte_stop') {
       drawVectorTramPictogram(ctx, 256, 174, 1.02, '#ffffff', '#19549c', true);
       ctx.fillStyle = '#ffffff';
-      ctx.font = '900 78px "Helvetica Neue", Arial, sans-serif';
+      ctx.font = '900 62px "Helvetica Neue", Arial, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('HALTE', 256, 356);
+      ctx.fillText('TRAM STOP', 256, 356);
       ctx.font = '800 46px "Helvetica Neue", Arial, sans-serif';
       ctx.fillText('LINE T1', 256, 424);
     } else {
@@ -22168,7 +22703,7 @@ export function buildCityTrafficSignsGroup(
       // Twin Stacked Rounded Blades: Emerald Green Upper (y=5.25m) + Highway Blue Lower (y=4.65m)
       const rows: ReadonlyArray<{ dy: number; variant: 'green' | 'blue'; text: string }> = [
         { dy: 5.25, variant: 'green', text: sSpec.label ?? 'CENTRAL PLAZA ->' },
-        { dy: 4.65, variant: 'blue', text: sSpec.subLabel ?? '<- HALTE TREM T1' },
+        { dy: 4.65, variant: 'blue', text: sSpec.subLabel ?? '<- TRAM STOP T1' },
       ];
       for (const row of rows) {
         addMountBracketAt(row.dy, 1.42 * 1.20, true);
@@ -22357,8 +22892,8 @@ export function createCurvedPlanetEnvironment(
       uGrassEdge: { value: new THREE.Color('#68b836') },
       uGrassFloor: { value: new THREE.Color('#4ea832') },
       uGrassBright: { value: new THREE.Color('#75d424') },
-      uDirtShadowTint: { value: new THREE.Color('#94682e') },
-      uGrassShadowTint: { value: new THREE.Color('#1a6620') },
+      uDirtShadowTint: { value: new THREE.Color('#a47c48') },
+      uGrassShadowTint: { value: new THREE.Color('#2f7836') },
       // San Francisco Coastal Hill & Stratified Sandstone Cut-Cliff Palette
       uCliffCream: { value: new THREE.Color('#ebe2cf') },
       uCliffBuff: { value: new THREE.Color('#d5c2a0') },
@@ -23064,27 +23599,29 @@ export function createCurvedPlanetEnvironment(
         surfaceCol *= mix(1.0 - slopeContrast, 1.0 + slopeContrast * 0.22, ndl);
 
         // Soft real-time 9-tap Vogel-disk PCF cast shadows from palm fronds, trees, stilt cabin, vehicles & buildings
+        // (Smooth organic dappled cast-shadow treatment across the entire map — zero comic halftone dot noise)
         float castShadow = sampleBlitzCastShadow(vFlatWorldPos);
         float shadowStrength = 1.0 - castShadow;
         if (shadowStrength > 0.005) {
-          float halftone = blitzHalftoneGrid(p, 2.4);
-          float edgeMask = smoothstep(0.08, 0.52, shadowStrength) * (1.0 - smoothstep(0.52, 0.92, shadowStrength));
           float pavedMask = clamp(roadMask + concreteMask + westPlantMask, 0.0, 1.0);
           float underwaterShadowMask = clamp(seaMask + lakeWaterMask, 0.0, 1.0);
-          // Smooth organic dappled shadows on beach sand, grass & shallow water without harsh halftone dots
-          float softOrganicMask = clamp(coastalBeachZone + underwaterShadowMask, 0.0, 1.0);
-          float halftoneWeight = (1.0 - softOrganicMask) * mix(0.02, 0.07, pavedMask);
-          float stylizedShadow = clamp(shadowStrength + (halftone - 0.5) * edgeMask * halftoneWeight, 0.0, 1.0);
-          vec3 naturalShadowTarget = mix(uDirtShadowTint, uGrassShadowTint, smoothstep(0.15, 0.75, max(grassMask, inCentralParkMask)));
-          vec3 beachSandShadowTarget = surfaceCol * vec3(0.32, 0.36, 0.46);
-          naturalShadowTarget = mix(naturalShadowTarget, beachSandShadowTarget, coastalBeachZone * 0.90);
-          vec3 shadowTarget = mix(
-            naturalShadowTarget,
-            surfaceCol * vec3(0.42, 0.48, 0.56),
-            max(pavedMask, underwaterShadowMask)
-          );
-          float shadowOpacity = mix(0.48, 0.62, coastalBeachZone);
-          surfaceCol = mix(surfaceCol, shadowTarget, stylizedShadow * shadowOpacity);
+          float organicShadow = mix(shadowStrength, smoothstep(0.02, 0.98, shadowStrength), 0.32);
+
+          float grassOrPark = smoothstep(0.15, 0.75, max(grassMask, inCentralParkMask));
+          vec3 naturalTint = mix(uDirtShadowTint, uGrassShadowTint, grassOrPark);
+          vec3 naturalMul = surfaceCol * mix(vec3(0.56, 0.50, 0.44), vec3(0.48, 0.58, 0.46), grassOrPark);
+          vec3 naturalShadowTarget = mix(naturalTint, naturalMul, 0.55);
+
+          vec3 beachSandShadowTarget = surfaceCol * vec3(0.54, 0.51, 0.44);
+          naturalShadowTarget = mix(naturalShadowTarget, beachSandShadowTarget, coastalBeachZone * 0.92);
+
+          vec3 pavedShadowTarget = surfaceCol * vec3(0.50, 0.50, 0.52);
+          vec3 waterShadowTarget = surfaceCol * vec3(0.42, 0.50, 0.56);
+          vec3 shadowTarget = mix(naturalShadowTarget, pavedShadowTarget, pavedMask);
+          shadowTarget = mix(shadowTarget, waterShadowTarget, underwaterShadowMask);
+
+          float shadowOpacity = mix(0.52, 0.58, coastalBeachZone);
+          surfaceCol = mix(surfaceCol, shadowTarget, organicShadow * shadowOpacity);
         }
 
         gl_FragColor = vec4(surfaceCol, 1.0);
@@ -23182,8 +23719,6 @@ export function createCurvedPlanetEnvironment(
     quayWallMesh.castShadow = !isSoftwareGl;
     quayWallMesh.receiveShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(quayWallMesh, windUniforms, '#646b75');
-    const quayWallStroke = createBlitzStrokeMesh(quayWallGeo, 0.028);
-    if (quayWallStroke) quayWallMesh.add(quayWallStroke);
     quayGroup.add(quayWallMesh);
 
     const copingBeamGeo = new THREE.BoxGeometry(segLength, 0.36, 1.58);
@@ -23195,8 +23730,6 @@ export function createCurvedPlanetEnvironment(
     copingBeamMesh.castShadow = !isSoftwareGl;
     copingBeamMesh.receiveShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(copingBeamMesh, windUniforms, '#858d99');
-    const copingStroke = createBlitzStrokeMesh(copingBeamGeo, 0.026);
-    if (copingStroke) copingBeamMesh.add(copingStroke);
     quayGroup.add(copingBeamMesh);
 
     const hazardCurbGeo = new THREE.BoxGeometry(segLength - 0.4, 0.14, 0.62);
@@ -23220,8 +23753,6 @@ export function createCurvedPlanetEnvironment(
     tidalLedgeMesh.castShadow = !isSoftwareGl;
     tidalLedgeMesh.receiveShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(tidalLedgeMesh, windUniforms, '#3b424d');
-    const ledgeStroke = createBlitzStrokeMesh(tidalLedgeGeo, 0.024);
-    if (ledgeStroke) tidalLedgeMesh.add(ledgeStroke);
     quayGroup.add(tidalLedgeMesh);
   };
   addQuayWallSegment(92.4, 0.0, 30);
@@ -23245,40 +23776,42 @@ export function createCurvedPlanetEnvironment(
     const plinth = new THREE.Mesh(bollardPlinthGeo, new THREE.MeshStandardMaterial({ color: '#525866' }));
     plinth.position.y = 0.11;
     plinth.castShadow = !isSoftwareGl;
+    plinth.receiveShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(plinth, windUniforms, '#525866');
     bollardGrp.add(plinth);
 
-    const post = new THREE.Mesh(bollardPostGeo, new THREE.MeshStandardMaterial({ color: '#1e222d' }));
+    const post = new THREE.Mesh(bollardPostGeo, new THREE.MeshStandardMaterial({ color: '#262b38' }));
     post.position.y = 0.48;
     post.castShadow = !isSoftwareGl;
-    upgradeMeshToBlitzWorldMaterial(post, windUniforms, '#1e222d');
-    const postStroke = createBlitzStrokeMesh(bollardPostGeo, 0.02);
-    if (postStroke) post.add(postStroke);
+    post.receiveShadow = !isSoftwareGl;
+    upgradeMeshToBlitzWorldMaterial(post, windUniforms, '#262b38');
     bollardGrp.add(post);
 
     const cap = new THREE.Mesh(bollardCapGeo, new THREE.MeshStandardMaterial({ color: '#facc15' }));
     cap.position.y = 0.80;
     cap.castShadow = !isSoftwareGl;
+    cap.receiveShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(cap, windUniforms, '#facc15');
     bollardGrp.add(cap);
 
-    const horn = new THREE.Mesh(bollardHornGeo, new THREE.MeshStandardMaterial({ color: '#1e222d' }));
+    const horn = new THREE.Mesh(bollardHornGeo, new THREE.MeshStandardMaterial({ color: '#262b38' }));
     horn.position.y = 0.62;
-    upgradeMeshToBlitzWorldMaterial(horn, windUniforms, '#1e222d');
+    horn.receiveShadow = !isSoftwareGl;
+    upgradeMeshToBlitzWorldMaterial(horn, windUniforms, '#262b38');
     bollardGrp.add(horn);
 
     if (includeFender) {
       const fx = bx + 3.2;
-      const fender = new THREE.Mesh(fenderCylGeo, new THREE.MeshStandardMaterial({ color: '#181b24' }));
+      const fender = new THREE.Mesh(fenderCylGeo, new THREE.MeshStandardMaterial({ color: '#222630' }));
       fender.position.set(fx, -0.22, 0.68);
       fender.castShadow = !isSoftwareGl;
-      upgradeMeshToBlitzWorldMaterial(fender, windUniforms, '#181b24');
-      const fenderStroke = createBlitzStrokeMesh(fenderCylGeo, 0.024);
-      if (fenderStroke) fender.add(fenderStroke);
+      fender.receiveShadow = !isSoftwareGl;
+      upgradeMeshToBlitzWorldMaterial(fender, windUniforms, '#222630');
       quayGroup.add(fender);
 
       const bracket = new THREE.Mesh(fenderChainBracketGeo, new THREE.MeshStandardMaterial({ color: '#facc15' }));
       bracket.position.set(fx, 0.34, 0.42);
+      bracket.receiveShadow = !isSoftwareGl;
       upgradeMeshToBlitzWorldMaterial(bracket, windUniforms, '#facc15');
       quayGroup.add(bracket);
     }
@@ -23303,8 +23836,6 @@ export function createCurvedPlanetEnvironment(
     landCurb.castShadow = !isSoftwareGl;
     landCurb.receiveShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(landCurb, windUniforms, '#78808c');
-    const landCurbStroke = createBlitzStrokeMesh(landwardCurbBeamGeo, 0.024);
-    if (landCurbStroke) landCurb.add(landCurbStroke);
     quayGroup.add(landCurb);
 
     for (let seg = 0; seg < 7; seg++) {
@@ -23317,8 +23848,6 @@ export function createCurvedPlanetEnvironment(
       pillar.castShadow = !isSoftwareGl;
       pillar.receiveShadow = !isSoftwareGl;
       upgradeMeshToBlitzWorldMaterial(pillar, windUniforms, '#68707c');
-      const pillarStroke = createBlitzStrokeMesh(seawallPillarGeo, 0.024);
-      if (pillarStroke) pillar.add(pillarStroke);
       quayGroup.add(pillar);
 
       const parapet = new THREE.Mesh(
@@ -23329,8 +23858,6 @@ export function createCurvedPlanetEnvironment(
       parapet.castShadow = !isSoftwareGl;
       parapet.receiveShadow = !isSoftwareGl;
       upgradeMeshToBlitzWorldMaterial(parapet, windUniforms, '#8c94a0');
-      const parapetStroke = createBlitzStrokeMesh(seawallParapetGeo, 0.024);
-      if (parapetStroke) parapet.add(parapetStroke);
       quayGroup.add(parapet);
 
       if (seg % 2 === 0) {
@@ -28071,7 +28598,7 @@ export function createCurvedPlanetEnvironment(
   // Spawn the 3 Rail-Aligned Halte Tram Shelters (each with 1 Black Transit Kiosk):
   buildModernUrbanTramStopShelter(
     'central_plaza',
-    'HALTE CENTRAL PLAZA',
+    'CENTRAL PLAZA STOP',
     'TRAM T1 -> NORTH / SOUTH RESIDENCE',
     -61.03,
     0.0,
@@ -28079,7 +28606,7 @@ export function createCurvedPlanetEnvironment(
   );
   buildModernUrbanTramStopShelter(
     'north_residence',
-    'HALTE NORTH RESIDENCE',
+    'NORTH RESIDENCE STOP',
     'TRAM T1 -> CENTRAL PLAZA / SOUTH',
     3.5,
     -43.0,
@@ -28087,7 +28614,7 @@ export function createCurvedPlanetEnvironment(
   );
   buildModernUrbanTramStopShelter(
     'south_residence',
-    'HALTE SOUTH RESIDENCE',
+    'SOUTH RESIDENCE STOP',
     'TRAM T1 -> CENTRAL PLAZA / NORTH',
     -36.5,
     43.0,
@@ -28122,7 +28649,7 @@ export function createCurvedPlanetEnvironment(
 
   buildModernUrbanTramStopShelter(
     'beachfront_harbor',
-    'HALTE BEACHFRONT HARBOR',
+    'BEACHFRONT HARBOR STOP',
     'TRAM T1 -> CENTRAL PLAZA / PIER',
     77.5,
     29.5,
@@ -28524,26 +29051,39 @@ export function createCurvedPlanetEnvironment(
     canvas.height = 512;
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      ctx.fillStyle = '#825f42';
+      ctx.fillStyle = '#9f7550';
       ctx.fillRect(0, 0, 256, 512);
-      const ringCount = 22;
+      const ringTones: readonly [string, string, string, string][] = [
+        ['#cba178', '#b0845c', '#8e6442', '#614129'],
+        ['#be946b', '#a37750', '#835a3b', '#593b25'],
+        ['#d2a97f', '#b78b62', '#956a47', '#66452c'],
+        ['#c3986e', '#a97d56', '#885f3e', '#5d3e27'],
+      ];
+      const ringCount = 20;
       const ringH = 512 / ringCount;
       for (let r = 0; r < ringCount; r++) {
         const y = r * ringH;
+        const [colHighlight, colMid, colLower, colCrevice] = ringTones[r % ringTones.length];
         const grad = ctx.createLinearGradient(0, y, 0, y + ringH);
-        grad.addColorStop(0, '#96704e');
-        grad.addColorStop(0.55, '#805c3f');
-        grad.addColorStop(0.88, '#694930');
-        grad.addColorStop(1, '#8c6747');
+        grad.addColorStop(0.0, colHighlight);
+        grad.addColorStop(0.24, colMid);
+        grad.addColorStop(0.68, colLower);
+        grad.addColorStop(0.88, colCrevice);
+        grad.addColorStop(1.0, colHighlight);
         ctx.fillStyle = grad;
         ctx.fillRect(0, y, 256, ringH);
-        // Subtle organic horizontal leaf-scar ring line
-        ctx.fillStyle = 'rgba(72, 48, 28, 0.45)';
-        ctx.fillRect(0, y + ringH - 2.5, 256, 2);
+
+        // Warm sunlit upper ring shoulder highlight
+        ctx.fillStyle = 'rgba(248, 218, 182, 0.24)';
+        ctx.fillRect(0, y + 1.5, 256, 3.0);
+
+        // Hand-painted organic leaf-scar ring recess
+        ctx.fillStyle = 'rgba(66, 42, 24, 0.56)';
+        ctx.fillRect(0, y + ringH - 3.2, 256, 2.6);
       }
-      // Vertical fibrous bark streaks
-      ctx.fillStyle = 'rgba(58, 38, 22, 0.14)';
-      for (let x = 4; x < 256; x += 9) {
+      // Subtle vertical fibrous bark texture strokes
+      for (let x = 3; x < 256; x += 8) {
+        ctx.fillStyle = x % 16 === 3 ? 'rgba(68, 44, 26, 0.14)' : 'rgba(245, 214, 178, 0.10)';
         ctx.fillRect(x, 0, 2, 512);
       }
     }
@@ -28557,17 +29097,18 @@ export function createCurvedPlanetEnvironment(
   const palmFrondMaskTex = createPalmFrondAlphaMaskTexture();
   const palmTrunkBarkTex = createPalmTrunkBarkTexture();
 
-  // Custom Blitz Palm Frond ShaderMaterial (lush tropical emerald #238c3a -> sunlit lime-green #66cc38 + deep canopy shadow #135924)
+  // Warm Painterly Palm Frond ShaderMaterial (warm olive-leaf midtones #4d963d -> sunlit golden-green tips #a6cf54 + cozy shaded crown heart #2e642c)
   const palmFrondShaderMat = new THREE.ShaderMaterial({
     uniforms: {
       ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
       uFrondTex: { value: palmFrondMaskTex },
-      uColorA: { value: new THREE.Color('#238c3a') },
-      uColorB: { value: new THREE.Color('#66cc38') },
-      uColorRachis: { value: new THREE.Color('#9be048') },
-      uColorShadow: { value: new THREE.Color('#135924') },
+      uColorA: { value: new THREE.Color('#4d963d') },
+      uColorB: { value: new THREE.Color('#a6cf54') },
+      uColorRachis: { value: new THREE.Color('#c8e070') },
+      uColorShadow: { value: new THREE.Color('#2e642c') },
       uAlphaThreshold: { value: 0.28 },
       uLightDirection: windUniforms.uLightDirection,
+      uLightColor: windUniforms.uLightColor,
       uWindPhase: windUniforms.uWindPhase,
       uWindDirection: windUniforms.uWindDirection,
       uWindStrength: windUniforms.uWindStrength,
@@ -28615,6 +29156,7 @@ export function createCurvedPlanetEnvironment(
       uniform vec3 uColorShadow;
       uniform float uAlphaThreshold;
       uniform vec3 uLightDirection;
+      uniform vec3 uLightColor;
 
       varying vec2 vUv;
       varying vec3 vNormalW;
@@ -28624,16 +29166,18 @@ export function createCurvedPlanetEnvironment(
         vec4 maskSample = texture2D(uFrondTex, vUv);
         if (maskSample.r < uAlphaThreshold) discard;
 
-        // Lush tropical green shading across the curved V-fold palm fronds
+        // Warm sunlit tropical green shading across the curved V-fold palm fronds + crown heart AO
         float rawNdl = dot(normalize(vNormalW), normalize(uLightDirection));
-        float litFactor = smoothstep(0.05, 0.88, rawNdl);
-        float shadowFactor = smoothstep(-0.45, 0.28, rawNdl);
-        // Only the central stem (where maskSample.g > 0.92) gets a subtle warm lime-green stem highlight
+        float litFactor = smoothstep(0.02, 0.86, rawNdl);
+        float shadowFactor = smoothstep(-0.48, 0.30, rawNdl);
+        float crownHeartAo = mix(0.74, 1.0, smoothstep(0.0, 0.26, vUv.y));
+        float tipSunWarmth = smoothstep(0.45, 0.98, vUv.y) * 0.18;
         float centralStemMask = smoothstep(0.88, 0.99, maskSample.g) * (1.0 - smoothstep(0.0, 0.04, abs(vUv.x - 0.5)));
 
         vec3 leafCol = mix(uColorShadow, uColorA, shadowFactor);
-        leafCol = mix(leafCol, uColorB, litFactor * 0.68);
-        vec3 finalCol = mix(leafCol, uColorRachis, centralStemMask * 0.55);
+        leafCol = mix(leafCol, uColorB, clamp(litFactor * 0.72 + tipSunWarmth, 0.0, 1.0));
+        vec3 finalCol = mix(leafCol, uColorRachis, centralStemMask * 0.58) * crownHeartAo;
+        finalCol *= mix(vec3(1.0), uLightColor, 0.45);
 
         gl_FragColor = vec4(finalCol, 1.0);
         #include <tonemapping_fragment>
@@ -28679,12 +29223,13 @@ export function createCurvedPlanetEnvironment(
       }
     `,
     fragmentShader: /* glsl */ `
+      #include <packing>
       uniform sampler2D uFrondTex;
       uniform float uAlphaThreshold;
       varying vec2 vUv;
       void main() {
         if (texture2D(uFrondTex, vUv).r < uAlphaThreshold) discard;
-        gl_FragColor = vec4(vec3(1.0 - gl_FragCoord.z), 1.0);
+        gl_FragColor = packDepthToRGBA(gl_FragCoord.z);
       }
     `,
     side: THREE.DoubleSide,
@@ -28800,32 +29345,44 @@ export function createCurvedPlanetEnvironment(
     return merged;
   };
 
-  // Builds a single continuous, smoothly curving 14-ring organic tapered palm trunk geometry (no disjoint cylinders!)
+  // Builds a single continuous, smoothly curving 24-ring organic tapered palm trunk geometry with
+  // subtle convex leaf-scar ring undulations + vertex-color ringed bark variation & top-of-trunk canopy AO!
   const createContinuousCurvedPalmTrunkGeometry = (): {
     trunkGeo: THREE.BufferGeometry;
     topY: number;
     topZ: number;
   } => {
-    const rings = 14;
-    const radialSegs = 10;
+    const rings = 24;
+    const radialSegs = 12;
     const vertCount = (rings + 1) * (radialSegs + 1);
     const positions = new Float32Array(vertCount * 3);
     const normals = new Float32Array(vertCount * 3);
     const uvs = new Float32Array(vertCount * 2);
+    const colors = new Float32Array(vertCount * 3);
     const indices: number[] = [];
 
     let curY = 0;
     let curZ = 0;
     const totalH = 5.15;
     const stepH = totalH / rings;
+    const smooth01 = (e0: number, e1: number, x: number) => {
+      const u = Math.max(0, Math.min(1, (x - e0) / Math.max(1e-5, e1 - e0)));
+      return u * u * (3 - 2 * u);
+    };
 
     for (let r = 0; r <= rings; r++) {
       const t = r / rings;
       const tilt = 0.07 + t * 0.17;
-      // Organic base flare + subtle leaf-scar ring undulation + gradual upward taper
+      // Organic base flare + real alternating leaf-scar ring undulation + gradual upward taper
       const baseFlare = Math.pow(1.0 - t, 3.0) * 0.09;
-      const ringSwell = Math.sin(r * Math.PI) * 0.012;
+      const ringSwell = (r % 2 === 0 ? 0.015 : -0.008) * (1.0 - t * 0.25);
       const radius = 0.28 * (1.0 - t * 0.42) + baseFlare + ringSwell;
+
+      // Top-of-trunk canopy AO (darker warm umber right under frond crown) + sunlit mid-trunk boost + ringed variation
+      const rootAo = 0.88 + 0.12 * smooth01(0.0, 0.09, t);
+      const midSun = Math.sin(Math.max(0, Math.min(1, (t - 0.04) / 0.62)) * Math.PI) * 0.14;
+      const canopyAo = smooth01(0.60, 0.96, t);
+      const ringToneMod = r % 2 === 0 ? 1.04 : 0.94;
 
       const cosT = Math.cos(tilt);
       const sinT = Math.sin(tilt);
@@ -28845,15 +29402,22 @@ export function createCurvedPlanetEnvironment(
         positions[idx * 3 + 1] = wy;
         positions[idx * 3 + 2] = wz;
 
-        const nx = Math.cos(theta);
-        const ny = -Math.sin(theta) * sinT;
-        const nz = Math.sin(theta) * cosT;
-        normals[idx * 3] = nx;
-        normals[idx * 3 + 1] = ny;
-        normals[idx * 3 + 2] = nz;
+        const ringSlopeNy = (r % 2 === 0 ? 0.14 : -0.14) * (1.0 - t * 0.3);
+        const rawNx = Math.cos(theta);
+        const rawNy = -Math.sin(theta) * sinT + ringSlopeNy;
+        const rawNz = Math.sin(theta) * cosT;
+        const nLen = Math.hypot(rawNx, rawNy, rawNz) || 1;
+        normals[idx * 3] = rawNx / nLen;
+        normals[idx * 3 + 1] = rawNy / nLen;
+        normals[idx * 3 + 2] = rawNz / nLen;
 
         uvs[idx * 2] = u * 2.0;
         uvs[idx * 2 + 1] = t * 3.5;
+
+        const baseShade = rootAo * (1.0 + midSun) * ringToneMod;
+        colors[idx * 3] = Math.max(0.36, baseShade * (1.06 - canopyAo * 0.54));
+        colors[idx * 3 + 1] = Math.max(0.30, baseShade * (1.01 - canopyAo * 0.58));
+        colors[idx * 3 + 2] = Math.max(0.26, baseShade * (0.94 - canopyAo * 0.60));
       }
 
       if (r < rings) {
@@ -28877,7 +29441,9 @@ export function createCurvedPlanetEnvironment(
     trunkGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     trunkGeo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
     trunkGeo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    trunkGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     trunkGeo.setIndex(indices);
+    trunkGeo.userData.__hasCanopyAoVCol = true;
     return { trunkGeo, topY: curY, topZ: curZ };
   };
 
@@ -29020,10 +29586,10 @@ export function createCurvedPlanetEnvironment(
     uniforms: {
       ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
       uAtlasTex: { value: coastalFlowerAtlasTex },
-      uLeafShadow: { value: new THREE.Color('#135924') },
-      uLeafMain: { value: new THREE.Color('#238c3a') },
-      uLeafSun: { value: new THREE.Color('#66cc38') },
-      uLeafRachis: { value: new THREE.Color('#9be048') },
+      uLeafShadow: { value: new THREE.Color('#2e642c') },
+      uLeafMain: { value: new THREE.Color('#4d963d') },
+      uLeafSun: { value: new THREE.Color('#a6cf54') },
+      uLeafRachis: { value: new THREE.Color('#c8e070') },
       uStamenColor: { value: new THREE.Color('#ffe033') },
       uAlphaThreshold: { value: 0.30 },
       uLightDirection: windUniforms.uLightDirection,
@@ -29403,6 +29969,8 @@ export function createCurvedPlanetEnvironment(
 
   const sharedPalmTrunkData = createContinuousCurvedPalmTrunkGeometry();
   const sharedPalmCrownFrondsGeo = createMergedPalmCrownFrondsGeometry();
+  const sharedPalmCollarGeo = new THREE.CylinderGeometry(0.22, 0.17, 0.42, 8);
+  const sharedPalmCoconutGeo = new THREE.SphereGeometry(0.17, 8, 8);
 
   // Also instantiate Blitz's exact camera-facing TreeLeaves sub-canopy puffs inside each palm crown heart!
   const buildCoastalCoconutPalm = (wx: number, wz: number, leanYaw: number, scale: number) => {
@@ -29413,14 +29981,14 @@ export function createCurvedPlanetEnvironment(
     palmGrp.scale.setScalar(palmScale);
     seBeachGroup.add(palmGrp);
 
-    // 1. Single Continuous Curved Organic Ringed Palm Trunk (no segmented cylinder boxes!)
+    // 1. Single Continuous Curved Organic Ringed Palm Trunk (vertex-color canopy AO + dappled cast shadow receiving, zero black outline)
     addBeachPart(
       palmGrp,
       sharedPalmTrunkData.trunkGeo,
-      '#846042',
+      '#ffffff',
       [0, 0, 0],
       [0, 0, 0],
-      0.018,
+      0,
       palmTrunkBarkTex,
     );
 
@@ -29428,21 +29996,21 @@ export function createCurvedPlanetEnvironment(
     const { topY, topZ } = sharedPalmTrunkData;
     addBeachPart(
       palmGrp,
-      new THREE.CylinderGeometry(0.22, 0.17, 0.42, 8),
-      '#4f7835',
+      sharedPalmCollarGeo,
+      '#58823c',
       [0, topY + 0.06, topZ + 0.02],
       [0.22, 0, 0],
-      0.012,
+      0,
     );
     for (let c = 0; c < 5; c++) {
       const cAng = (c * Math.PI * 2) / 5;
       addBeachPart(
         palmGrp,
-        new THREE.SphereGeometry(0.17, 8, 8),
-        c % 2 === 0 ? '#5c8c38' : '#709e44',
+        sharedPalmCoconutGeo,
+        c % 2 === 0 ? '#679642' : '#7ba64e',
         [Math.cos(cAng) * 0.21, topY - 0.08, topZ + Math.sin(cAng) * 0.21],
         [0, 0, 0],
-        0.010,
+        0,
       );
     }
 
@@ -29464,7 +30032,7 @@ export function createCurvedPlanetEnvironment(
     spawnCoastalFlowerBouquetWorld(wx, 0.02, wz, scale * 1.38, sandFlowerCounter++);
   };
 
-  // Place 7 Coastal Coconut Palms & 8 Tropical Flower & Palm-Fern Clusters around the Beachfront Park (Sheet 5)
+  // Place Coastal Coconut Palms & Tropical Flower & Palm-Fern Clusters around the Beachfront Park & Stilt Cabin
   buildCoastalCoconutPalm(93.8, 48.2, 1.2, 1.08);
   buildCoastalCoconutPalm(96.0, 52.0, 1.6, 0.92);
   buildCoastalCoconutPalm(93.6, 62.5, 1.4, 1.12);
@@ -29472,6 +30040,11 @@ export function createCurvedPlanetEnvironment(
   buildCoastalCoconutPalm(93.6, 100.5, 1.3, 1.06);
   buildCoastalCoconutPalm(98.5, 47.5, 1.5, 0.96);
   buildCoastalCoconutPalm(98.2, 101.2, 1.1, 0.98);
+  // Twin beach-sand palms right beside the NW corner of BeachfrontStiltTimberCabin + sunward SE/South palms casting dappled frond shadows across the multi-plank wooden cabin roof
+  buildCoastalCoconutPalm(103.3, 80.3, 0.72, 1.12);
+  buildCoastalCoconutPalm(104.5, 79.0, 0.92, 1.22);
+  buildCoastalCoconutPalm(110.2, 87.2, -2.35, 1.40);
+  buildCoastalCoconutPalm(107.6, 89.35, -2.72, 1.36);
 
   buildSandDuneAndSeaOats(94.4, 50.0, 1.15);
   buildSandDuneAndSeaOats(94.6, 63.8, 1.10);
@@ -29481,6 +30054,7 @@ export function createCurvedPlanetEnvironment(
   buildSandDuneAndSeaOats(98.2, 74.2, 0.92);
   buildSandDuneAndSeaOats(94.8, 100.0, 1.15);
   buildSandDuneAndSeaOats(98.5, 88.5, 1.02);
+  buildSandDuneAndSeaOats(102.6, 79.4, 1.05);
 
   // Populate all Pots, Window Boxes & Planter Boxes across the Beachfront Buildings & Boardwalk!
   // 1) 4 West Boardwalk Concrete Planter Boxes (20 lush flowering tropical bushes along x = 78.55)
@@ -29652,8 +30226,6 @@ export function createCurvedPlanetEnvironment(
     bodyMesh.castShadow = !isSoftwareGl;
     bodyMesh.receiveShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(bodyMesh, windUniforms, '#ffffff');
-    const stroke = createBlitzStrokeMesh(containerGeo, 0.032);
-    if (stroke) bodyMesh.add(stroke);
     grp.add(bodyMesh);
 
     // 2. 6 Raised 3D Corrugation Ribs wrapping the roof & side walls (gives crisp 3D corrugated profile from top & side!)
@@ -29801,8 +30373,8 @@ export function createCurvedPlanetEnvironment(
     bushGrp.rotation.y = rotY;
     bushGrp.scale.setScalar(scale);
 
-    const mainColor = seed % 2 === 0 ? '#4ca632' : '#58b438';
-    const subColor = seed % 2 === 0 ? '#62be3e' : '#3e8e28';
+    const mainColor = seed % 2 === 0 ? '#54a23e' : '#62b046';
+    const subColor = seed % 2 === 0 ? '#6eba4e' : '#468c36';
 
     const mainMesh = new THREE.Mesh(
       bushLobeMainGeo,
@@ -29811,8 +30383,6 @@ export function createCurvedPlanetEnvironment(
     mainMesh.castShadow = !isSoftwareGl;
     mainMesh.receiveShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(mainMesh, windUniforms, mainColor);
-    const mainStroke = createBlitzStrokeMesh(bushLobeMainGeo, 0.032);
-    if (mainStroke) mainMesh.add(mainStroke);
     bushGrp.add(mainMesh);
 
     const lobeOffsets: [number, number, number, number][] = [
@@ -29830,8 +30400,6 @@ export function createCurvedPlanetEnvironment(
       lobeMesh.castShadow = !isSoftwareGl;
       lobeMesh.receiveShadow = !isSoftwareGl;
       upgradeMeshToBlitzWorldMaterial(lobeMesh, windUniforms, subColor);
-      const lobeStroke = createBlitzStrokeMesh(bushLobeSideGeo, 0.030);
-      if (lobeStroke) lobeMesh.add(lobeStroke);
       bushGrp.add(lobeMesh);
     }
 
@@ -29846,8 +30414,8 @@ export function createCurvedPlanetEnvironment(
     boulderGrp.rotation.y = rotY;
     boulderGrp.scale.setScalar(scale);
 
-    const bodyCol = seed % 2 === 0 ? '#cbb694' : '#bfa882';
-    const topCol = '#e7dcc6';
+    const bodyCol = seed % 2 === 0 ? '#cbb89a' : '#c0ac8c';
+    const topCol = '#e6dbc7';
 
     const baseMesh = new THREE.Mesh(
       flatBoulderBaseGeo,
@@ -29856,8 +30424,6 @@ export function createCurvedPlanetEnvironment(
     baseMesh.castShadow = !isSoftwareGl;
     baseMesh.receiveShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(baseMesh, windUniforms, bodyCol);
-    const baseStroke = createBlitzStrokeMesh(flatBoulderBaseGeo, 0.034);
-    if (baseStroke) baseMesh.add(baseStroke);
     boulderGrp.add(baseMesh);
 
     const topMesh = new THREE.Mesh(
@@ -29869,8 +30435,6 @@ export function createCurvedPlanetEnvironment(
     topMesh.castShadow = !isSoftwareGl;
     topMesh.receiveShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(topMesh, windUniforms, topCol);
-    const topStroke = createBlitzStrokeMesh(flatBoulderTopGeo, 0.030);
-    if (topStroke) topMesh.add(topStroke);
     boulderGrp.add(topMesh);
 
     const sideStone = new THREE.Mesh(
@@ -29882,8 +30446,6 @@ export function createCurvedPlanetEnvironment(
     sideStone.castShadow = !isSoftwareGl;
     sideStone.receiveShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(sideStone, windUniforms, bodyCol);
-    const sideStroke = createBlitzStrokeMesh(companionStoneGeo, 0.030);
-    if (sideStroke) sideStone.add(sideStroke);
     boulderGrp.add(sideStone);
 
     embankmentGroup.add(boulderGrp);
@@ -30272,10 +30834,8 @@ export function createCurvedPlanetEnvironment(
           float castShadow = sampleBlitzCastShadow(vWorldPos);
           float shadowStrength = 1.0 - castShadow;
           if (shadowStrength > 0.005) {
-            float halftone = blitzHalftoneGrid(p, 2.4);
-            float edgeMask = smoothstep(0.08, 0.52, shadowStrength) * (1.0 - smoothstep(0.52, 0.92, shadowStrength));
-            float stylizedShadow = clamp(shadowStrength + (halftone - 0.5) * edgeMask * 0.07, 0.0, 1.0);
-            asphaltCol = mix(asphaltCol, asphaltCol * vec3(0.42, 0.48, 0.56), stylizedShadow * 0.48);
+            float organicShadow = mix(shadowStrength, smoothstep(0.02, 0.98, shadowStrength), 0.32);
+            asphaltCol = mix(asphaltCol, asphaltCol * vec3(0.50, 0.50, 0.52), organicShadow * 0.52);
           }
 
           gl_FragColor = vec4(asphaltCol, 1.0);
@@ -30689,8 +31249,6 @@ export function createCurvedPlanetEnvironment(
         curbMesh.receiveShadow = !isSoftwareGl;
         curbMesh.raycast = () => {};
         upgradeMeshToBlitzWorldMaterial(curbMesh, windUniforms, curbMatchedTint, 0.08);
-        const curbStroke = createBlitzStrokeMesh(curbGeo, 0.009);
-        if (curbStroke) curbMesh.add(curbStroke);
         targetGroup.add(curbMesh);
       };
 

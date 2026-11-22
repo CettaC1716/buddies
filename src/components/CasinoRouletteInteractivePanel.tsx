@@ -779,7 +779,7 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
       if (totalStagedWager + selectedChip > rawVaultBalance) {
         soundEngine.playUiCancel();
         setBallStatusText(
-          `SALDO ${currencyMode} TIDAK CUKUP UNTUK CHIP ${selectedChip.toLocaleString()} ${currencyMode}`,
+          `INSUFFICIENT ${currencyMode} BALANCE FOR ${selectedChip.toLocaleString()} ${currencyMode} CHIP`,
         );
         return;
       }
@@ -841,7 +841,7 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
     if (isSpinning || totalStagedWager === 0) return;
     if (totalStagedWager * 2 > rawVaultBalance) {
       soundEngine.playUiCancel();
-      setBallStatusText(`SALDO ${currencyMode} TIDAK CUKUP UNTUK DOUBLE`);
+      setBallStatusText(`INSUFFICIENT ${currencyMode} BALANCE TO DOUBLE`);
       return;
     }
     soundEngine.playUiConfirm();
@@ -869,7 +869,7 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
     }
     if (prevTotal > rawVaultBalance) {
       soundEngine.playUiCancel();
-      setBallStatusText(`SALDO ${currencyMode} TIDAK CUKUP UNTUK REBET`);
+      setBallStatusText(`INSUFFICIENT ${currencyMode} BALANCE TO REBET`);
       return;
     }
     soundEngine.playUiConfirm();
@@ -992,7 +992,7 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
                 <button
                   type="button"
                   disabled={isSpinning}
-                  title="Ganti Mata Uang Taruhan (LUL / RESPITE)"
+                  title="Switch Betting Currency (LUL / RESPITE)"
                   onClick={() => {
                     if (isSpinning) return;
                     soundEngine.playUiClick();
@@ -1023,8 +1023,8 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
                     soundEngine.playUiCancel();
                     onClose();
                   }}
-                  aria-label="Tutup Meja Roulette"
-                  title="Tutup Meja Roulette"
+                  aria-label="Close Roulette Table"
+                  title="Close Roulette Table"
                   className="w-7 h-7 rounded-lg bg-gradient-to-b from-[#991b1b] to-[#450a0a] hover:brightness-125 border border-[#f87171]/60 text-white font-bold text-xs flex items-center justify-center shadow cursor-pointer"
                 >
                   ✕
@@ -1750,7 +1750,7 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-[#6bfad8] font-semibold">
-                  KLIK KANAN SPOT UNTUK KURANGI CHIP
+                  RIGHT-CLICK A SPOT TO REMOVE CHIPS
                 </span>
                 <span className="text-[#edd587] font-bold">HOUSE EDGE: 5.26%</span>
               </div>
@@ -1784,12 +1784,12 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs font-mono-tabular">
               {[
-                { title: 'STRAIGHT UP (1 ANGKA)', desc: '0, 00, atau 1–36', odds: '35 to 1' },
-                { title: 'SPLIT (2 ANGKA)', desc: '0/00 atau 2 angka bersebelahan', odds: '17 to 1' },
-                { title: 'CORNER (4 ANGKA)', desc: 'Titik temu 4 angka', odds: '8 to 1' },
-                { title: 'DOZENS (1ST, 2ND, 3RD 12)', desc: '1–12, 13–24, atau 25–36', odds: '2 to 1' },
-                { title: 'COLUMNS (2:1)', desc: '12 angka per baris kolom', odds: '2 to 1' },
-                { title: 'RED / BLACK / EVEN / ODD / 1-18 / 19-36', desc: 'Taruhan luar 18 angka', odds: '1 to 1' },
+                { title: 'STRAIGHT UP (1 NUMBER)', desc: '0, 00, or 1–36', odds: '35 to 1' },
+                { title: 'SPLIT (2 NUMBERS)', desc: '0/00 or 2 adjacent numbers', odds: '17 to 1' },
+                { title: 'CORNER (4 NUMBERS)', desc: 'Intersection of 4 numbers', odds: '8 to 1' },
+                { title: 'DOZENS (1ST, 2ND, 3RD 12)', desc: '1–12, 13–24, or 25–36', odds: '2 to 1' },
+                { title: 'COLUMNS (2:1)', desc: '12 numbers per column row', odds: '2 to 1' },
+                { title: 'RED / BLACK / EVEN / ODD / 1-18 / 19-36', desc: '18-number outside bet', odds: '1 to 1' },
               ].map((item) => (
                 <div
                   key={item.title}

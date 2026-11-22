@@ -364,25 +364,25 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     parent.remove(anchor);
   };
 
-  // Beaux-Arts / Second Empire Palette (matching 4-View Model Sheet)
-  const COL_LIMESTONE_WARM = '#e4d6bc';
-  const COL_LIMESTONE_PLINTH = '#d4c5a8';
-  const COL_LIMESTONE_TRIM = '#f6efe0';
-  const COL_GRANITE_CURB = '#cbc6bc';
-  const COL_COPPER_VERDIGRIS = '#6eb09b';
-  const COL_COPPER_DEEP = '#508c79';
-  const COL_COPPER_HIGHLIGHT = '#89c7b2';
-  const COL_GOLD_MAIN = '#d8a83e';
-  const COL_GOLD_BRIGHT = '#f0c764';
-  const COL_GOLD_BRONZE = '#9a7224';
+  // Beaux-Arts / Second Empire Palette (warm sunlit hand-painted harmony)
+  const COL_LIMESTONE_WARM = '#eadcc3';
+  const COL_LIMESTONE_PLINTH = '#dacbad';
+  const COL_LIMESTONE_TRIM = '#f8f1e2';
+  const COL_GRANITE_CURB = '#d2cbc0';
+  const COL_COPPER_VERDIGRIS = '#72b49f';
+  const COL_COPPER_DEEP = '#56917e';
+  const COL_COPPER_HIGHLIGHT = '#8dcbb6';
+  const COL_GOLD_MAIN = '#daa940';
+  const COL_GOLD_BRIGHT = '#f2c968';
+  const COL_GOLD_BRONZE = '#a17728';
   const COL_RED_CARPET = '#b8262e';
-  const COL_WROUGHT_IRON = '#2d3640';
-  const COL_WINDOW_FRAME = '#3d372e';
+  const COL_WROUGHT_IRON = '#434850';
+  const COL_WINDOW_FRAME = '#52463a';
   const COL_CASINO_DAY_GLASS = '#c6e2f7';
   const COL_WARM_LOBBY_GLOW = '#ffe094';
   const COL_WARM_WINDOW = '#f5d284';
-  const COL_SERVICE_DOOR = '#785437';
-  const COL_SOIL_DARK = '#59402b';
+  const COL_SERVICE_DOOR = '#8c6240';
+  const COL_SOIL_DARK = '#5e4530';
 
   // Procedural Beaux-Arts Architectural CanvasTextures (stone pavers, ashlar masonry, slate, copper, frieze & glass)
   const makeCasinoTex = (
@@ -406,24 +406,28 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
   };
 
   const sidewalkPaverTex = makeCasinoTex(256, 256, (ctx) => {
-    ctx.fillStyle = '#ddd6c7';
+    ctx.fillStyle = '#e0d8c8';
     ctx.fillRect(0, 0, 256, 256);
-    const shades = ['#e5dfd1', '#d7d0c0', '#dfd8c9', '#cfc7b6'];
+    const shades = ['#e8e1d2', '#dad2c2', '#e4dccb', '#d4ccb9'];
     const n = 4;
     const cell = 256 / n;
     for (let r = 0; r < n; r++) {
       const off = (r % 2) * (cell * 0.5);
       for (let col = -1; col <= n; col++) {
+        const bx = col * cell + off + 2;
+        const by = r * cell + 2;
         ctx.fillStyle = shades[(r * 3 + col + 4) % shades.length];
-        ctx.fillRect(col * cell + off + 2, r * cell + 2, cell - 4, cell - 4);
+        ctx.fillRect(bx, by, cell - 4, cell - 4);
+        ctx.fillStyle = 'rgba(255, 250, 240, 0.22)';
+        ctx.fillRect(bx, by, cell - 4, 2);
       }
     }
   });
 
   const valetCobbleTex = makeCasinoTex(512, 512, (ctx) => {
-    ctx.fillStyle = '#c4c9d1';
+    ctx.fillStyle = '#cfc9c0';
     ctx.fillRect(0, 0, 512, 512);
-    const cols = ['#d5dae2', '#bfc5ce', '#dce0e7', '#b4bac4'];
+    const cols = ['#ddd7ce', '#c9c2b8', '#e3ddd4', '#bfb8ae'];
     const sx = 128;
     const sy = 86;
     for (let row = -1; row <= 7; row++) {
@@ -440,7 +444,7 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
           ctx.stroke();
           ctx.beginPath();
           ctx.arc(cx, cy, rad + 7, Math.PI * 1.1, Math.PI * 1.9);
-          ctx.strokeStyle = '#8b919c';
+          ctx.strokeStyle = '#978f84';
           ctx.lineWidth = 2.0;
           ctx.stroke();
         }
@@ -448,11 +452,11 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     }
   });
 
-  // 1. Dressed French Limestone Ashlar Masonry (fine mortar courses + subtle travertine variation)
+  // 1. Dressed French Limestone Ashlar Masonry (warm sunlit travertine variation + soft hand-painted trowel washes)
   const limestoneAshlarTex = makeCasinoTex(512, 512, (ctx, w, h) => {
-    ctx.fillStyle = '#cbbca0';
+    ctx.fillStyle = '#d3c4a6';
     ctx.fillRect(0, 0, w, h);
-    const tones = ['#efe5d0', '#ebe0c8', '#f3ead8', '#e5d8bd'];
+    const tones = ['#f4ead4', '#efe3cb', '#f8f0df', '#e8dbbE', '#f1e6cf'];
     const rows = 8;
     const cols = 4;
     const rh = h / rows;
@@ -464,19 +468,31 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
         const by = r * rh;
         ctx.fillStyle = tones[(r * 5 + c * 3 + 16) % tones.length];
         ctx.fillRect(bx + 2, by + 2, cw - 4, rh - 4);
-        ctx.fillStyle = 'rgba(255,252,245,0.28)';
+        ctx.fillStyle = 'rgba(255,252,245,0.32)';
         ctx.fillRect(bx + 2, by + 2, cw - 4, 3);
-        ctx.fillStyle = 'rgba(130,115,90,0.16)';
+        ctx.fillStyle = 'rgba(138,118,90,0.14)';
         ctx.fillRect(bx + 2, by + rh - 5, cw - 4, 3);
       }
     }
+    for (let i = 0; i < 60; i++) {
+      const x = (i * 113 + 19) % w;
+      const y = (i * 179 + 37) % h;
+      const rad = 16 + (i % 22);
+      const grad = ctx.createRadialGradient(x, y, 1, x, y, rad);
+      grad.addColorStop(0, i % 2 === 0 ? 'rgba(255, 250, 238, 0.14)' : 'rgba(176, 152, 118, 0.09)');
+      grad.addColorStop(1, 'rgba(240, 228, 204, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(x, y, rad, 0, Math.PI * 2);
+      ctx.fill();
+    }
   });
 
-  // 2. Second-Empire Scalloped / Stepped Slate Roof Shingles
+  // 2. Second-Empire Scalloped / Stepped Slate Roof Shingles (warm hand-painted slate variation)
   const mansardSlateTex = makeCasinoTex(512, 512, (ctx, w, h) => {
-    ctx.fillStyle = '#333d48';
+    ctx.fillStyle = '#404854';
     ctx.fillRect(0, 0, w, h);
-    const slates = ['#4d5b6a', '#44515f', '#576676', '#3d4956'];
+    const slates = ['#586473', '#4e5968', '#626f7e', '#475260', '#54606e'];
     const rows = 14;
     const cols = 12;
     const rh = h / rows;
@@ -490,9 +506,9 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
         ctx.beginPath();
         ctx.roundRect(px + 1.5, py + 1.5, cw - 3, rh - 3, 4);
         ctx.fill();
-        ctx.fillStyle = 'rgba(210,225,240,0.14)';
-        ctx.fillRect(px + 3, py + 2.5, cw - 6, 2);
-        ctx.fillStyle = 'rgba(20,26,33,0.34)';
+        ctx.fillStyle = 'rgba(236,232,224,0.16)';
+        ctx.fillRect(px + 3, py + 2.5, cw - 6, 2.2);
+        ctx.fillStyle = 'rgba(32,38,46,0.28)';
         ctx.fillRect(px + 1.5, py + rh - 3.5, cw - 3, 3);
       }
     }
@@ -714,6 +730,8 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     emissiveHex?: string,
     bounceStrength = 0.28,
   ): THREE.Mesh => {
+    void strokeWidth;
+    void createBlitzStrokeMesh;
     const mat = new THREE.MeshStandardMaterial({
       color: tex ? 0xffffff : colorHex,
       map: tex ?? null,
@@ -730,10 +748,6 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     mesh.raycast = () => {};
     upgradeMeshToBlitzWorldMaterial(mesh, windUniforms, colorHex, bounceStrength);
     mat.dispose();
-    if (strokeWidth > 0) {
-      const st = createBlitzStrokeMesh(geo, strokeWidth);
-      if (st) mesh.add(st);
-    }
     parent.add(mesh);
     return mesh;
   };

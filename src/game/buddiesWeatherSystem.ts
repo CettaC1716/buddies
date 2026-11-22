@@ -8,7 +8,11 @@ import {
   type WeatherConditionKey,
 } from './buddiesBlitzRules';
 import { buildCoastalHillGlslSnippet } from './buddiesCoastalHillsRules';
-import type { BlitzWindUniforms } from './buddiesBlitzShadersAndAssets';
+import {
+  getBlitzDefaultLightDirection,
+  syncBlitzStylizedCharLighting,
+  type BlitzWindUniforms,
+} from './buddiesBlitzShadersAndAssets';
 import { SHARED_PBR_WOOD_LIGHTING_UNIFORM } from './buddiesCoastalBeachBuilder';
 
 /**
@@ -339,7 +343,7 @@ const SOLAR_KEYFRAMES: readonly SolarKeyframe[] = [
     dirLightHex: '#ffd4a3',
     dirLightIntensity: 1.28,
     hemiSkyHex: '#ffdfd1',
-    hemiGroundHex: '#3f486b',
+    hemiGroundHex: '#544e66',
     hemiIntensity: 0.95,
     windLightHex: '#ffd9b0',
     fogHex: '#f2c1b0',
@@ -362,12 +366,12 @@ const SOLAR_KEYFRAMES: readonly SolarKeyframe[] = [
     cloudShadowHex: '#a4b9e0',
     cloudMatHex: '#fffbf2',
     cloudEmissiveHex: '#7ea6db',
-    dirLightHex: '#ffe3b3',
-    dirLightIntensity: 1.78,
+    dirLightHex: '#ffe4b5',
+    dirLightIntensity: 1.82,
     hemiSkyHex: '#fff3de',
-    hemiGroundHex: '#3e6268',
-    hemiIntensity: 1.1,
-    windLightHex: '#ffefc7',
+    hemiGroundHex: '#846e5a',
+    hemiIntensity: 1.08,
+    windLightHex: '#ffefc4',
     fogHex: '#c4e4ff',
     groundTintHex: '#fff1db',
     groundTintScale: 0.95,
@@ -388,12 +392,12 @@ const SOLAR_KEYFRAMES: readonly SolarKeyframe[] = [
     cloudShadowHex: '#a6c2e8',
     cloudMatHex: '#ffffff',
     cloudEmissiveHex: '#78b0e8',
-    dirLightHex: '#ffe6b1',
-    dirLightIntensity: 2.05,
-    hemiSkyHex: '#fffdf0',
-    hemiGroundHex: '#3d7068',
-    hemiIntensity: 1.2,
-    windLightHex: '#fff4c8',
+    dirLightHex: '#ffe8b8',
+    dirLightIntensity: 2.16,
+    hemiSkyHex: '#f8f6ec',
+    hemiGroundHex: '#947b5e',
+    hemiIntensity: 1.12,
+    windLightHex: '#fff1c6',
     fogHex: '#bae2ff',
     groundTintHex: '#ffffff',
     groundTintScale: 1.0,
@@ -414,12 +418,12 @@ const SOLAR_KEYFRAMES: readonly SolarKeyframe[] = [
     cloudShadowHex: '#a6c2e8',
     cloudMatHex: '#ffffff',
     cloudEmissiveHex: '#78b0e8',
-    dirLightHex: '#ffe6b1',
-    dirLightIntensity: 2.05,
-    hemiSkyHex: '#fffdf0',
-    hemiGroundHex: '#3d7068',
-    hemiIntensity: 1.2,
-    windLightHex: '#fff4c8',
+    dirLightHex: '#ffe9bc',
+    dirLightIntensity: 2.18,
+    hemiSkyHex: '#f8f7ee',
+    hemiGroundHex: '#987e60',
+    hemiIntensity: 1.12,
+    windLightHex: '#fff2c8',
     fogHex: '#bae2ff',
     groundTintHex: '#ffffff',
     groundTintScale: 1.0,
@@ -440,15 +444,15 @@ const SOLAR_KEYFRAMES: readonly SolarKeyframe[] = [
     cloudShadowHex: '#9eb6db',
     cloudMatHex: '#fff8ed',
     cloudEmissiveHex: '#7ca7de',
-    dirLightHex: '#ffdfa6',
-    dirLightIntensity: 1.88,
-    hemiSkyHex: '#fff4db',
-    hemiGroundHex: '#426863',
-    hemiIntensity: 1.14,
-    windLightHex: '#ffebc0',
-    fogHex: '#bcdfff',
-    groundTintHex: '#fff0d6',
-    groundTintScale: 0.96,
+    dirLightHex: '#ffdd9e',
+    dirLightIntensity: 2.0,
+    hemiSkyHex: '#fff1d8',
+    hemiGroundHex: '#937155',
+    hemiIntensity: 1.08,
+    windLightHex: '#ffe8b8',
+    fogHex: '#c2dffa',
+    groundTintHex: '#fff2dc',
+    groundTintScale: 0.97,
   },
   {
     hour: 17.4,
@@ -466,12 +470,12 @@ const SOLAR_KEYFRAMES: readonly SolarKeyframe[] = [
     cloudShadowHex: '#78628f',
     cloudMatHex: '#ffebd1',
     cloudEmissiveHex: '#87638c',
-    dirLightHex: '#ffbe80',
-    dirLightIntensity: 1.42,
-    hemiSkyHex: '#ffd1ab',
-    hemiGroundHex: '#4e3959',
-    hemiIntensity: 1.0,
-    windLightHex: '#ffc994',
+    dirLightHex: '#ffbe7a',
+    dirLightIntensity: 1.54,
+    hemiSkyHex: '#ffd2aa',
+    hemiGroundHex: '#73524f',
+    hemiIntensity: 0.98,
+    windLightHex: '#ffca92',
     fogHex: '#eca679',
     groundTintHex: '#ffd1a8',
     groundTintScale: 0.86,
@@ -492,12 +496,12 @@ const SOLAR_KEYFRAMES: readonly SolarKeyframe[] = [
     cloudShadowHex: '#6e5082',
     cloudMatHex: '#ffe2bf',
     cloudEmissiveHex: '#8a527a',
-    dirLightHex: '#ffa86e',
-    dirLightIntensity: 1.08,
-    hemiSkyHex: '#ffb896',
-    hemiGroundHex: '#492b59',
+    dirLightHex: '#ffa86c',
+    dirLightIntensity: 1.14,
+    hemiSkyHex: '#ffb996',
+    hemiGroundHex: '#5e3e52',
     hemiIntensity: 0.88,
-    windLightHex: '#ffb580',
+    windLightHex: '#ffb57e',
     fogHex: '#f1925c',
     groundTintHex: '#f2a88d',
     groundTintScale: 0.74,
@@ -791,12 +795,12 @@ export function createReusableEvaluatedAtmosphereState(): EvaluatedAtmosphereSta
     },
     lighting: {
       dirColor: new THREE.Color(),
-      dirIntensity: 2.05,
+      dirIntensity: 2.18,
       hemiSkyColor: new THREE.Color(),
       hemiGroundColor: new THREE.Color(),
-      hemiIntensity: 1.2,
+      hemiIntensity: 1.12,
       windLightColor: new THREE.Color(),
-      lightDir: new THREE.Vector3(0.45, 0.81, 0.38).normalize(),
+      lightDir: getBlitzDefaultLightDirection(),
     },
     fog: {
       color: new THREE.Color('#bae2ff'),
@@ -848,6 +852,9 @@ const _tmpColorA = new THREE.Color();
 const _tmpColorB = new THREE.Color();
 const _tmpColorC = new THREE.Color();
 const _fogDisplayColor = new THREE.Color();
+const _indoorCharLightDir = getBlitzDefaultLightDirection();
+const _indoorCharLightColor = new THREE.Color('#fff4dc');
+const _showcaseCharLightColor = new THREE.Color('#fff2c8');
 
 /**
  * Computes Linear `THREE.Fog` near/far bounds by composing the camera-mode clear baseline
@@ -1017,9 +1024,11 @@ export function evaluateWeatherAndTimeState(
       .normalize();
   }
 
-  // Subtle cohesive key-light tilt keeping shadow hemisphere upward (y >= 0.56)
+  // Subtle cohesive key-light tilt keeping shadow hemisphere upward (y >= 0.56) and aligned with
+  // getBlitzDefaultLightDirection() (~0.389, 0.808, 0.443) at default noon so avatar cel shading,
+  // foliage/terrain slope lighting, and real directional shadow casting share the exact same sun.
   const azimuthShift = hours >= 5.5 && hours <= 18.75 ? Math.cos(dayArcT * Math.PI) * 0.35 : 0.15;
-  out.lighting.lightDir.set(0.32 + azimuthShift, 0.81, 0.44).normalize();
+  out.lighting.lightDir.set(0.45 + azimuthShift, 0.808, 0.443).normalize();
 
   // Stars / twilight sparkles fade in cleanly during dusk/night/dawn & hide behind thick clouds
   const rawStarVis = clamp01(nightByClock * 0.95 + duskDawnFactor01 * 0.45);
@@ -1367,7 +1376,7 @@ export function buildDynamicWeatherSystem3D(params: {
   const uLeafIntensity = { value: 0.0 };
   const uRainColor = { value: new THREE.Color('#dbeafe') };
   const uSplashColor = { value: new THREE.Color('#eef6ff') };
-  const uLeafLightColor = { value: new THREE.Color('#fff4c8') };
+  const uLeafLightColor = { value: new THREE.Color('#fff2c8') };
 
   const rng = createDeterministicRng(20261118);
 
@@ -1904,9 +1913,11 @@ export function buildDynamicWeatherSystem3D(params: {
   ) => {
     // Always publish cross-system contract on scene.userData
     scene.userData.weatherEnvState = state.envState;
+    // Calibrated with the warm sandy hemisphere ground bounce (#987e60) so coastal timber roofs
+    // and decks keep cozy sunlit wood warmth while preserving crisp dappled palm-frond shadows.
     SHARED_PBR_WOOD_LIGHTING_UNIFORM.uWoodFillScale.value = Math.max(
       0.08,
-      (1.0 - state.envState.nightFactor01 * 0.9) * (1.0 - state.envState.rainFactor01 * 0.25),
+      0.62 * (1.0 - state.envState.nightFactor01 * 0.88) * (1.0 - state.envState.rainFactor01 * 0.25),
     );
 
     // 1. Update GPU weather particles (adaptive span fills full camera viewport in gameplay & City View)
@@ -1935,11 +1946,13 @@ export function buildDynamicWeatherSystem3D(params: {
     leafMesh.visible = !hideWeatherMeshes && state.particles.leafIntensity01 > 0.02;
 
     if (opts.isShowcaseMode) {
+      syncBlitzStylizedCharLighting(_indoorCharLightDir, _showcaseCharLightColor);
       return;
     }
 
     // 2. Indoor fog isolation (linear THREE.Fog pushed safely past indoor geometry)
     if (opts.isFlatIndoorRoomMode) {
+      syncBlitzStylizedCharLighting(_indoorCharLightDir, _indoorCharLightColor);
       if (scene.fog instanceof THREE.Fog) {
         scene.fog.near = 5000;
         scene.fog.far = 6000;
@@ -2017,7 +2030,8 @@ export function buildDynamicWeatherSystem3D(params: {
     hemiLight.groundColor.copy(state.lighting.hemiGroundColor);
     hemiLight.intensity = state.lighting.hemiIntensity;
 
-    // 5. Shared World/Wind Shader Uniforms
+    // 5. Shared World/Wind & Stylized Character Shader Uniforms
+    syncBlitzStylizedCharLighting(state.lighting.lightDir, state.lighting.windLightColor);
     if (opts.windUniforms) {
       opts.windUniforms.uLightColor.value.copy(state.lighting.windLightColor);
       opts.windUniforms.uLightDirection.value.copy(state.lighting.lightDir);
@@ -2190,8 +2204,9 @@ export function buildDynamicWeatherSystem3D(params: {
   scene.userData.weatherEnvState = evaluated.envState;
   SHARED_PBR_WOOD_LIGHTING_UNIFORM.uWoodFillScale.value = Math.max(
     0.08,
-    (1.0 - evaluated.envState.nightFactor01 * 0.9) * (1.0 - evaluated.envState.rainFactor01 * 0.25),
+    0.62 * (1.0 - evaluated.envState.nightFactor01 * 0.88) * (1.0 - evaluated.envState.rainFactor01 * 0.25),
   );
+  syncBlitzStylizedCharLighting(evaluated.lighting.lightDir, evaluated.lighting.windLightColor);
 
   return {
     rootGroup,

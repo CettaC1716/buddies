@@ -14,7 +14,7 @@ export interface PairedInteractionStatusState {
 }
 
 export interface PairedInteractionOverlayProps {
-  /** Strictly non-null ONLY when the user clicked "Interaksi" on a nearby player or NPC */
+  /** Strictly non-null ONLY when the user clicked "Interact" on a nearby player or NPC */
   targetEntity: NearbyEntityUser | null;
   ownedPairedItems: readonly WardrobeCatalogItem[];
   pairedStatus: PairedInteractionStatusState | null;
@@ -62,7 +62,7 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
       {/* 1. Left-Side Paired Animation List Popup — STRICTLY ONLY VISIBLE when interacting */}
       {targetEntity && (
         <aside
-          aria-label={`Interaksi Berpasangan dengan ${cleanTargetName}`}
+          aria-label={`Paired Interaction with ${cleanTargetName}`}
           data-paired-interaction-popup="true"
           onPointerDown={(e) => e.stopPropagation()}
           className="fixed left-3 sm:left-5 top-1/2 -translate-y-1/2 z-[46] w-[268px] sm:w-[292px] max-h-[64vh] flex flex-col rounded-2xl bg-[#12151e]/92 backdrop-blur-md border-2 border-[#fb7185]/70 shadow-[0_18px_46px_rgba(0,0,0,0.68)] text-white select-none overflow-hidden"
@@ -73,11 +73,11 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
               <div className="flex items-center gap-1.5">
                 <Users className="w-4 h-4 text-[#fb7185] shrink-0" aria-hidden="true" />
                 <span className="text-[11px] font-black uppercase tracking-wider text-[#fb7185]">
-                  Interaksi Berpasangan
+                  Paired Interaction
                 </span>
               </div>
               <div className="text-xs font-bold text-white truncate mt-0.5">
-                dengan {cleanTargetName}
+                with {cleanTargetName}
               </div>
             </div>
             <button
@@ -87,7 +87,7 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
                 soundEngine.playUiClick();
                 onClosePopup();
               }}
-              aria-label="Tutup daftar interaksi berpasangan"
+              aria-label="Close paired interaction list"
               className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/85 shrink-0 cursor-pointer"
             >
               <X className="w-4 h-4" />
@@ -99,9 +99,9 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
             <div className="grid grid-cols-3 gap-1">
               {(
                 [
-                  { id: 'all', label: 'Semua' },
-                  { id: 'pose', label: 'Pose Duo' },
-                  { id: 'dance', label: 'Dance Duo' },
+                  { id: 'all', label: 'All' },
+                  { id: 'pose', label: 'Duo Pose' },
+                  { id: 'dance', label: 'Duo Dance' },
                 ] as const
               ).map((pill) => {
                 const active = subFilter === pill.id;
@@ -128,7 +128,7 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari animasi berpasangan..."
+              placeholder="Search paired animations..."
               className="w-full h-7 px-2.5 rounded-full bg-white/[0.08] border border-white/15 text-[11px] text-white placeholder:text-white/45 focus:outline-none focus:border-[#fb7185]/70"
             />
           </div>
@@ -138,8 +138,8 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
             {filteredItems.length === 0 ? (
               <div className="py-8 text-center text-[11px] text-white/55 px-3">
                 {ownedPairedItems.length === 0
-                  ? 'Belum memiliki animasi berpasangan. Buka Wardrobe Studio → Style → Paired.'
-                  : 'Tidak ada animasi berpasangan yang cocok.'}
+                  ? 'No paired animations owned yet. Open Wardrobe Studio → Style → Paired.'
+                  : 'No matching paired animations found.'}
               </div>
             ) : (
               filteredItems.map((item) => {
@@ -182,12 +182,12 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
                         {item.name}
                       </div>
                       <div className="text-[9.5px] text-white/55 truncate mt-0.5">
-                        {isDance ? 'Dance Berpasangan' : 'Pose Berpasangan'}
+                        {isDance ? 'Paired Dance' : 'Paired Pose'}
                       </div>
                     </div>
                     {isActive && (
                       <span className="px-1.5 py-0.5 rounded-full bg-[#fb7185] text-slate-950 text-[9px] font-black uppercase shrink-0">
-                        Aktif
+                        Active
                       </span>
                     )}
                   </button>
@@ -208,10 +208,10 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
           <Users className="w-3.5 h-3.5 text-[#fb7185] shrink-0" />
           <span className="font-semibold max-w-[260px] truncate">
             {pairedStatus.active
-              ? `${pairedStatus.animLabel} · bersama ${pairedStatus.partnerName}`
+              ? `${pairedStatus.animLabel} · with ${pairedStatus.partnerName}`
               : pairedStatus.status === 'pending'
-                ? `Menunggu ${pairedStatus.partnerName} menerima ajakan...`
-                : `${pairedStatus.partnerName} menolak ajakan pose.`}
+                ? `Waiting for ${pairedStatus.partnerName} to accept...`
+                : `${pairedStatus.partnerName} declined the pose invite.`}
           </span>
           {pairedStatus.active && (
             <button
@@ -224,7 +224,7 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
               className="h-6 px-2.5 rounded-full bg-[#fb7185] hover:bg-[#fda4af] text-slate-950 text-[10px] font-black uppercase flex items-center gap-1 cursor-pointer shrink-0"
             >
               <Square className="w-2.5 h-2.5 fill-current" />
-              <span>Hentikan</span>
+              <span>Stop</span>
             </button>
           )}
         </div>
@@ -242,7 +242,7 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
           </span>
           <div className="min-w-0">
             <div className="text-xs font-extrabold text-white truncate max-w-[220px]">
-              {incomingInvite.fromDisplayName} mengajak pose berpasangan!
+              {incomingInvite.fromDisplayName} invited you to a paired pose!
             </div>
             <div className="text-[11px] text-[#fda4af] font-semibold truncate max-w-[220px]">
               {incomingInvite.animLabel}
@@ -259,7 +259,7 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
               className="h-8 px-3 rounded-full bg-[#b8ff3c] hover:bg-[#d9ff80] text-slate-950 text-[11px] font-black uppercase flex items-center gap-1 cursor-pointer"
             >
               <Check className="w-3.5 h-3.5 stroke-[3]" />
-              <span>Terima</span>
+              <span>Accept</span>
             </button>
             <button
               type="button"
@@ -270,7 +270,7 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
               }}
               className="h-8 px-2.5 rounded-full bg-white/12 hover:bg-white/22 text-white/90 text-[11px] font-bold cursor-pointer"
             >
-              Tolak
+              Decline
             </button>
           </div>
         </div>

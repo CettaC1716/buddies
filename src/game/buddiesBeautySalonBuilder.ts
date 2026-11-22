@@ -17,6 +17,7 @@ import {
   createMiteredPerimeterCurbGeo,
   createMiteredSignFrameGeo,
   createWarmWindowGlowTexture,
+  getOrCreateBuildingCanvasTexture,
   makeBuildingCanvasTexture,
   type UrbanPlazaBuildingsContext,
 } from './buddiesUrbanPlazaBuildingsBuilder';
@@ -25,13 +26,13 @@ import {
 // BEAUTY SALON PALETTE & GEOMETRIC CONSTANTS
 // ============================================================================
 
-const COL_SALON_BLUSH = '#dcb6a4';
-const COL_SALON_BLUSH_DARK = '#c89b87';
-const COL_SALON_OAK = '#cfa16e';
-const COL_SALON_BRONZE = '#3e3733';
+const COL_SALON_BLUSH = '#e0baa8';
+const COL_SALON_BLUSH_DARK = '#cca08c';
+const COL_SALON_OAK = '#d4a672';
+const COL_SALON_BRONZE = '#4f433b';
 const COL_SALON_BRASS = '#d8ab4c';
-const COL_SALON_AWNING = '#f4ecde';
-const COL_SALON_AWNING_TRIM = '#d7beaa';
+const COL_SALON_AWNING = '#f6eee0';
+const COL_SALON_AWNING_TRIM = '#dcc3ae';
 const COL_SALON_MARBLE = '#f7f1e8';
 
 const PODIUM_HALF_W = 4.20;
@@ -335,10 +336,10 @@ function createCurvedPodiumRingGeo(
 // ============================================================================
 
 function createBlushSandstoneTexture(ctx: UrbanPlazaBuildingsContext): THREE.Texture {
-  return makeBuildingCanvasTexture(ctx, 512, 512, (c, w, h) => {
-    c.fillStyle = '#dcb6a4';
+  return getOrCreateBuildingCanvasTexture(ctx, 'salon_blush_sandstone_512', 512, 512, (c, w, h) => {
+    c.fillStyle = '#e0baa8';
     c.fillRect(0, 0, w, h);
-    const tones = ['#e2bfb0', '#d6ae9c', '#e8c9ba', '#cfa592'];
+    const tones = ['#e8c6b6', '#daB29f', '#eed0c2', '#d3a895', '#e4c0b0'];
     const rows = 8;
     const cols = 4;
     const cw = w / cols;
@@ -350,19 +351,35 @@ function createBlushSandstoneTexture(ctx: UrbanPlazaBuildingsContext): THREE.Tex
         const y = r * ch;
         c.fillStyle = tones[(r * 3 + col * 5 + 24) % tones.length];
         c.fillRect(x + 2, y + 2, cw - 4, ch - 4);
-        c.fillStyle = 'rgba(255, 245, 238, 0.20)';
-        c.fillRect(x + 2, y + 2, cw - 4, 2.5);
+        // Soft sunlit top bevel & warm underside shadow
+        c.fillStyle = 'rgba(255, 248, 240, 0.24)';
+        c.fillRect(x + 2, y + 2, cw - 4, 2.8);
+        c.fillStyle = 'rgba(138, 92, 74, 0.14)';
+        c.fillRect(x + 2, y + ch - 4.5, cw - 4, 2.5);
       }
     }
-    for (let s = 0; s < 540; s++) {
-      c.fillStyle = s % 2 === 0 ? 'rgba(130, 88, 72, 0.10)' : 'rgba(255, 248, 242, 0.16)';
+    // Soft hand-painted blush travertine trowel blooms
+    for (let i = 0; i < 72; i++) {
+      const x = (i * 107 + 23) % w;
+      const y = (i * 163 + 41) % h;
+      const rad = 14 + (i % 20);
+      const grad = c.createRadialGradient(x, y, 1, x, y, rad);
+      grad.addColorStop(0, i % 2 === 0 ? 'rgba(255, 246, 238, 0.14)' : 'rgba(164, 112, 92, 0.10)');
+      grad.addColorStop(1, 'rgba(224, 186, 168, 0)');
+      c.fillStyle = grad;
+      c.beginPath();
+      c.arc(x, y, rad, 0, Math.PI * 2);
+      c.fill();
+    }
+    for (let s = 0; s < 360; s++) {
+      c.fillStyle = s % 2 === 0 ? 'rgba(140, 96, 78, 0.08)' : 'rgba(255, 248, 242, 0.14)';
       c.fillRect((s * 97) % w, (s * 173) % h, 2, 2);
     }
   });
 }
 
 function createSalonTerrazzoFloorTexture(ctx: UrbanPlazaBuildingsContext): THREE.Texture {
-  return makeBuildingCanvasTexture(ctx, 512, 512, (c, w, h) => {
+  return getOrCreateBuildingCanvasTexture(ctx, 'salon_terrazzo_floor_512', 512, 512, (c, w, h) => {
     c.fillStyle = '#f5ede2';
     c.fillRect(0, 0, w, h);
     const chips = ['#e5bba9', '#d8a68a', '#ffffff', '#cfb29a', '#edd4c6'];
@@ -390,13 +407,25 @@ function createSalonTerrazzoFloorTexture(ctx: UrbanPlazaBuildingsContext): THREE
 }
 
 function createSalonRooftopTurfTexture(ctx: UrbanPlazaBuildingsContext): THREE.Texture {
-  return makeBuildingCanvasTexture(ctx, 256, 256, (c, w, h) => {
-    c.fillStyle = '#63a652';
+  return getOrCreateBuildingCanvasTexture(ctx, 'salon_rooftop_turf_256', 256, 256, (c, w, h) => {
+    c.fillStyle = '#6db056';
     c.fillRect(0, 0, w, h);
-    const blades = ['#72b85f', '#549345', '#7dc469', '#5a9c49'];
-    for (let i = 0; i < 1200; i++) {
+    for (let i = 0; i < 64; i++) {
+      const x = (i * 83 + 17) % w;
+      const y = (i * 139 + 29) % h;
+      const rad = 12 + (i % 18);
+      const grad = c.createRadialGradient(x, y, 1, x, y, rad);
+      grad.addColorStop(0, i % 2 === 0 ? 'rgba(154, 214, 108, 0.22)' : 'rgba(72, 134, 58, 0.18)');
+      grad.addColorStop(1, 'rgba(109, 176, 86, 0)');
+      c.fillStyle = grad;
+      c.beginPath();
+      c.arc(x, y, rad, 0, Math.PI * 2);
+      c.fill();
+    }
+    const blades = ['#7cc064', '#5c9c4b', '#87ca70', '#63a450'];
+    for (let i = 0; i < 720; i++) {
       c.fillStyle = blades[i % blades.length];
-      c.fillRect((i * 73) % w, (i * 131) % h, 2, 4);
+      c.fillRect((i * 73) % w, (i * 131) % h, 2, 3.5);
     }
   });
 }
@@ -516,16 +545,19 @@ function buildSleekCreamAwning(
 
   const slopeLen = Math.hypot(depth, dropH);
   const tilt = Math.atan2(dropH, depth);
+  const recvShadow = !ctx.isSoftwareGl;
   ctx.addPart(
     grp,
     createBeveledBox(width, 0.055, slopeLen, 0.010),
     COL_SALON_AWNING,
     [0, -dropH * 0.5, depth * 0.5],
     [tilt, 0, 0],
-    { castShadow: true },
+    { castShadow: recvShadow, receiveShadow: recvShadow },
   );
   // Crisp front valance band & side cheek returns
-  ctx.addPart(grp, createBeveledBox(width + 0.02, 0.09, 0.045, 0.008), COL_SALON_AWNING_TRIM, [0, -dropH - 0.025, depth]);
+  ctx.addPart(grp, createBeveledBox(width + 0.02, 0.09, 0.045, 0.008), COL_SALON_AWNING_TRIM, [0, -dropH - 0.025, depth], [0, 0, 0], {
+    receiveShadow: recvShadow,
+  });
   for (const sx of [-width * 0.45, width * 0.45]) {
     ctx.addPart(grp, createBeveledBox(0.035, 0.035, depth * 0.90, 0.006), COL_SALON_BRONZE, [sx, -dropH * 0.90, depth * 0.45]);
   }
@@ -543,6 +575,7 @@ function buildModernGlazedDoorway(
     windowId: string;
     windowCol: number;
     clearGlassMat: THREE.Material;
+    oakTex?: THREE.Texture;
     handleOnLeft?: boolean;
   },
 ): void {
@@ -553,18 +586,48 @@ function buildModernGlazedDoorway(
 
   const w = opts.width;
   const h = opts.height;
+  const recvShadow = !ctx.isSoftwareGl;
   // Stone threshold step
   ctx.addPart(grp, createBeveledBox(w + 0.36, 0.06, 0.44, 0.012), COL_SALON_BLUSH, [0, 0.03, 0.14], [0, 0, 0], {
-    receiveShadow: true,
+    receiveShadow: recvShadow,
   });
-  // Champagne-oak door frame (outer jambs, top header, lower kick-rail & upper transom)
+  // Champagne-oak door frame (outer jambs, top header, lower kick-rail & upper transom) with warm timber grain
   const jambW = 0.11;
+  const frameColor = opts.oakTex ? '#ffffff' : COL_SALON_OAK;
   for (const sx of [-w * 0.5 + jambW * 0.5, w * 0.5 - jambW * 0.5]) {
-    ctx.addPart(grp, createBeveledBox(jambW, h, 0.24, 0.010), COL_SALON_OAK, [sx, h * 0.5 + 0.05, -0.02]);
+    ctx.addPart(
+      grp,
+      applyGrainUvs(createBeveledBox(jambW, h, 0.24, 0.010), 'y', 1.4),
+      frameColor,
+      [sx, h * 0.5 + 0.05, -0.02],
+      [0, 0, 0],
+      { map: opts.oakTex, receiveShadow: recvShadow },
+    );
   }
-  ctx.addPart(grp, createBeveledBox(w, 0.14, 0.24, 0.010), COL_SALON_OAK, [0, h - 0.02, -0.02]);
-  ctx.addPart(grp, createBeveledBox(w - jambW * 2 + 0.02, 0.42, 0.09, 0.008), COL_SALON_OAK, [0, 0.27, 0.01]);
-  ctx.addPart(grp, createBeveledBox(w - jambW * 2 + 0.02, 0.065, 0.09, 0.008), COL_SALON_OAK, [0, h - 0.62, 0.01]);
+  ctx.addPart(
+    grp,
+    applyGrainUvs(createBeveledBox(w, 0.14, 0.24, 0.010), 'x', 1.4),
+    frameColor,
+    [0, h - 0.02, -0.02],
+    [0, 0, 0],
+    { map: opts.oakTex, receiveShadow: recvShadow },
+  );
+  ctx.addPart(
+    grp,
+    applyGrainUvs(createBeveledBox(w - jambW * 2 + 0.02, 0.42, 0.09, 0.008), 'x', 1.2),
+    frameColor,
+    [0, 0.27, 0.01],
+    [0, 0, 0],
+    { map: opts.oakTex, receiveShadow: recvShadow },
+  );
+  ctx.addPart(
+    grp,
+    applyGrainUvs(createBeveledBox(w - jambW * 2 + 0.02, 0.065, 0.09, 0.008), 'x', 1.2),
+    frameColor,
+    [0, h - 0.62, 0.01],
+    [0, 0, 0],
+    { map: opts.oakTex, receiveShadow: recvShadow },
+  );
 
   // C-shaped brass pull handle on stile
   const handleX = (opts.handleOnLeft ?? true) ? -w * 0.26 : w * 0.26;
@@ -640,11 +703,13 @@ function buildRainwaterDownspout(
   grp.rotation.y = rotY;
   parent.add(grp);
 
-  const col = '#686b70';
+  const col = '#766d64';
   const shaftH = topY - 0.36;
+  const recvShadow = !ctx.isSoftwareGl;
   // Main vertical metal pipe + flared collector hopper at cornice + outward ground shoe
   ctx.addPart(grp, new THREE.CylinderGeometry(0.052, 0.052, shaftH, 10), col, [0, 0.24 + shaftH * 0.5, 0.06], [0, 0, 0], {
-    castShadow: true,
+    castShadow: recvShadow,
+    receiveShadow: recvShadow,
   });
   ctx.addPart(grp, new THREE.CylinderGeometry(0.11, 0.06, 0.16, 10), col, [0, topY - 0.08, 0.06]);
   // Offset neck entering cornice
@@ -653,8 +718,8 @@ function buildRainwaterDownspout(
   ctx.addPart(grp, new THREE.CylinderGeometry(0.054, 0.058, 0.22, 8), col, [0, 0.15, 0.12], [Math.PI * 0.34, 0, 0]);
   // Wall mounting collar straps
   for (const sy of [0.95, 2.25, 3.55]) {
-    ctx.addPart(grp, new THREE.CylinderGeometry(0.068, 0.068, 0.045, 10), '#4a4d52', [0, sy, 0.06]);
-    ctx.addPart(grp, new THREE.BoxGeometry(0.16, 0.04, 0.05), '#4a4d52', [0, sy, 0.02]);
+    ctx.addPart(grp, new THREE.CylinderGeometry(0.068, 0.068, 0.045, 10), '#5a524b', [0, sy, 0.06]);
+    ctx.addPart(grp, new THREE.BoxGeometry(0.16, 0.04, 0.05), '#5a524b', [0, sy, 0.02]);
   }
 }
 
@@ -1128,6 +1193,7 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
 
   const gfH = bs.groundFloorHeight; // 4.92
   const sfH = bs.secondFloorHeight; // 8.35
+  const recvShadow = !ctx.isSoftwareGl;
 
   // =========================================================================
   // 1. GROUND FLOOR PODIUM, CURVED PANORAMIC WINDOWS & FACADE ("GLOW STUDIO")
@@ -1138,8 +1204,8 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
   ctx.applyPlanarUvs(plinthGeo, 2.0);
   ctx.addPart(grp, plinthGeo, '#ffffff', [0, 0, 0], [0, 0, 0], {
     map: blushStoneTex,
-    castShadow: true,
-    receiveShadow: true,
+    castShadow: recvShadow,
+    receiveShadow: recvShadow,
   });
 
   // Curved panoramic window span: Left (-X, z=-1.65) -> Front-Left curve -> Front (+Z, x=+1.25)
@@ -1148,24 +1214,28 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
   // Curved blush-stone lower bulkhead (y = 0.24 .. 0.74m) + molded overhanging sill (y = 0.70 .. 0.82m)
   ctx.addPart(grp, createSweptCurvePrismGeo(showcaseCurve, -0.24, 0.0, 0.24, 0.74, 1.8), '#ffffff', [0, 0, 0], [0, 0, 0], {
     map: blushStoneTex,
-    castShadow: true,
-    receiveShadow: true,
+    castShadow: recvShadow,
+    receiveShadow: recvShadow,
   });
   ctx.addPart(grp, createSweptCurvePrismGeo(showcaseCurve, -0.26, 0.065, 0.70, 0.82, 1.8), '#ffffff', [0, 0, 0], [0, 0, 0], {
     map: blushStoneTex,
-    castShadow: true,
+    castShadow: recvShadow,
+    receiveShadow: recvShadow,
   });
   // Curved oak bottom & top window frame rails
   ctx.addPart(grp, createSweptCurvePrismGeo(showcaseCurve, -0.13, -0.02, 0.82, 0.88, 1.4), '#ffffff', [0, 0, 0], [0, 0, 0], {
     map: oakTex,
+    receiveShadow: recvShadow,
   });
   ctx.addPart(grp, createSweptCurvePrismGeo(showcaseCurve, -0.13, -0.02, 3.46, 3.53, 1.4), '#ffffff', [0, 0, 0], [0, 0, 0], {
     map: oakTex,
+    receiveShadow: recvShadow,
   });
   // Curved blush-stone window head lintel (y = 3.52 .. 3.74m)
   ctx.addPart(grp, createSweptCurvePrismGeo(showcaseCurve, -0.24, 0.04, 3.52, 3.74, 1.8), '#ffffff', [0, 0, 0], [0, 0, 0], {
     map: blushStoneTex,
-    castShadow: true,
+    castShadow: recvShadow,
+    receiveShadow: recvShadow,
   });
 
   // Split panoramic transparent 3D glass into 5 clean seamless segments tagged with cityWindowSpec
@@ -1246,6 +1316,7 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
     windowId: 'beauty-salon-1f-door-front',
     windowCol: 10,
     clearGlassMat: clearStorefrontGlassMat,
+    oakTex,
     handleOnLeft: true,
   });
   buildSleekCreamAwning(grp, ctx, 2.10, 0.78, 0.28, [2.53, 3.74, PODIUM_HALF_D], 0);
@@ -1258,6 +1329,7 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
     windowId: 'beauty-salon-1f-door-side',
     windowCol: 11,
     clearGlassMat: clearStorefrontGlassMat,
+    oakTex,
     handleOnLeft: false,
   });
   buildSleekCreamAwning(grp, ctx, 2.02, 0.74, 0.28, [PODIUM_HALF_W, 3.74, 0.0], Math.PI * 0.5);
@@ -1270,6 +1342,7 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
     windowId: 'beauty-salon-1f-door-rear',
     windowCol: 12,
     clearGlassMat: clearStorefrontGlassMat,
+    oakTex,
     handleOnLeft: true,
   });
   buildSleekCreamAwning(grp, ctx, 1.92, 0.72, 0.28, [0.0, 3.74, -PODIUM_HALF_D], Math.PI);
@@ -1277,23 +1350,35 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
   // Continuous 1F Curved Architrave, "GLOW STUDIO" Frieze Band & Projecting 2F Balcony Cornice (`y = 3.54..4.94m`)
   const architraveGeo = createCurvedPodiumRingGeo(-0.24, 0.075, 3.56, 3.74, 0.008);
   ctx.applyPlanarUvs(architraveGeo, 2.0);
-  ctx.addPart(grp, architraveGeo, '#ffffff', [0, 0, 0], [0, 0, 0], { map: blushStoneTex, castShadow: true });
+  ctx.addPart(grp, architraveGeo, '#ffffff', [0, 0, 0], [0, 0, 0], {
+    map: blushStoneTex,
+    castShadow: recvShadow,
+    receiveShadow: recvShadow,
+  });
 
   const friezeGeo = createCurvedPodiumRingGeo(-0.24, 0.02, 3.74, 4.68, 0.008);
   ctx.applyPlanarUvs(friezeGeo, 2.2);
-  ctx.addPart(grp, friezeGeo, '#ffffff', [0, 0, 0], [0, 0, 0], { map: stuccoTex, castShadow: true });
+  ctx.addPart(grp, friezeGeo, '#ffffff', [0, 0, 0], [0, 0, 0], {
+    map: stuccoTex,
+    castShadow: recvShadow,
+    receiveShadow: recvShadow,
+  });
 
   const corniceMidGeo = createCurvedPodiumRingGeo(-0.24, 0.12, 4.68, 4.82, 0.010);
   ctx.applyPlanarUvs(corniceMidGeo, 2.0);
-  ctx.addPart(grp, corniceMidGeo, '#ffffff', [0, 0, 0], [0, 0, 0], { map: blushStoneTex, castShadow: true });
+  ctx.addPart(grp, corniceMidGeo, '#ffffff', [0, 0, 0], [0, 0, 0], {
+    map: blushStoneTex,
+    castShadow: recvShadow,
+    receiveShadow: recvShadow,
+  });
 
   // 2F Balcony Terrace Slab (`y = 4.82 .. 4.94m`, projecting `+0.18m` outward)
   const terraceSlabGeo = createCurvedPodiumSlabGeo(0.18, 4.82, gfH + 0.02, 0.012);
   ctx.applyPlanarUvs(terraceSlabGeo, 2.0);
   ctx.addPart(grp, terraceSlabGeo, '#e9d7c5', [0, 0, 0], [0, 0, 0], {
     map: blushStoneTex,
-    castShadow: true,
-    receiveShadow: true,
+    castShadow: recvShadow,
+    receiveShadow: recvShadow,
   });
 
   // Crisp "GLOW STUDIO" Signboards on Front (+Z) & Left (-X) Frieze
@@ -1350,7 +1435,11 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
   // Continuous curved-corner stone parapet curb + dark-bronze top/bottom balustrade rails
   const terraceCurbGeo = createCurvedPodiumRingGeo(0.0, 0.14, deckY, deckY + 0.14, 0.008);
   ctx.applyPlanarUvs(terraceCurbGeo, 1.8);
-  ctx.addPart(grp, terraceCurbGeo, '#ffffff', [0, 0, 0], [0, 0, 0], { map: blushStoneTex, castShadow: true });
+  ctx.addPart(grp, terraceCurbGeo, '#ffffff', [0, 0, 0], [0, 0, 0], {
+    map: blushStoneTex,
+    castShadow: recvShadow,
+    receiveShadow: recvShadow,
+  });
 
   const railBottomGeo = createCurvedPodiumRingGeo(0.045, 0.095, deckY + 0.18, deckY + 0.22, 0.004);
   ctx.addPart(grp, railBottomGeo, COL_SALON_BRONZE, [0, 0, 0]);
@@ -1516,7 +1605,7 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
     '#ffffff',
     [0, sfH - 0.14, 0],
     [0, 0, 0],
-    { map: blushStoneTex, castShadow: true },
+    { map: blushStoneTex, castShadow: recvShadow, receiveShadow: recvShadow },
   );
   ctx.addPart(
     grp,
@@ -1524,7 +1613,7 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
     '#ffffff',
     [0, sfH, 0],
     [0, 0, 0],
-    { map: blushStoneTex, castShadow: true },
+    { map: blushStoneTex, castShadow: recvShadow, receiveShadow: recvShadow },
   );
 
   // Continuous 45-degree mitered attic parapet wall (`y = 8.42 .. 9.58m`) + coping cap (`y = 9.56 .. 9.70m`)
@@ -1534,7 +1623,7 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
     '#ffffff',
     [0, 9.01, 0],
     [0, 0, 0],
-    { map: stuccoTex, castShadow: true },
+    { map: stuccoTex, castShadow: recvShadow, receiveShadow: recvShadow },
   );
   ctx.addPart(
     grp,
@@ -1542,7 +1631,7 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
     '#ffffff',
     [0, 9.63, 0],
     [0, 0, 0],
-    { map: blushStoneTex, castShadow: true },
+    { map: blushStoneTex, castShadow: recvShadow, receiveShadow: recvShadow },
   );
 
   // Top Parapet Signage: "BEAUTY & GLOW" (Front + Rear) and "BEAUTY & CARE" (Left 3/4 Isometric side)

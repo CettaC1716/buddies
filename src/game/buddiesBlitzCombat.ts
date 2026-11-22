@@ -363,7 +363,7 @@ export function buildArenaRaycastColliders(params: {
       layer: RAYCAST_LAYERS.ENEMY_CHARACTER,
       targetKind: 'enemy_character',
       team: b.team,
-      label: b.team === 'red' ? `Musuh ${b.classId}` : `Sekutu ${b.classId}`,
+      label: b.team === 'red' ? `Enemy ${b.classId}` : `Ally ${b.classId}`,
       shape: 'cylinder',
       center: { x: b.x, y: by, z: b.z },
       radius: 1.02,
@@ -382,12 +382,12 @@ export function buildArenaRaycastColliders(params: {
       tv.vehicleKind === 'truck' ? 1.76 : tv.vehicleKind === 'tank' ? 1.66 : 2.48;
     const vehLabel =
       tv.vehicleKind === 'plane'
-        ? 'Pesawat Tempur Musuh'
+        ? 'Enemy Fighter Plane'
         : tv.vehicleKind === 'truck'
-          ? 'Dump Truck Musuh'
+          ? 'Enemy Dump Truck'
           : tv.isSuper
-            ? 'Tyrant Tank Musuh'
-            : 'Tank Tempur Musuh';
+            ? 'Enemy Tyrant Tank'
+            : 'Enemy Battle Tank';
     colliders.push({
       id: `veh_${tv.id}`,
       layer: RAYCAST_LAYERS.VEHICLE,
@@ -438,7 +438,7 @@ export function buildArenaRaycastColliders(params: {
         id: `crate_${c.id}`,
         layer: RAYCAST_LAYERS.PROP,
         targetKind: 'prop',
-        label: `Peti ${c.kind.toUpperCase()}`,
+        label: `${c.kind.toUpperCase()} Crate`,
         shape: 'obb',
         center: { x: c.x, y: c.y + crateHalfY, z: c.z },
         halfExtents: { x: crateHalfXZ, y: crateHalfY, z: crateHalfXZ },

@@ -847,7 +847,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   ) : (
                     <span className="px-2.5 py-1 bg-white text-black border-[2.5px] border-black text-[11px] font-black uppercase shadow-[2px_2px_0px_#000]">
                       {selectedDestination.hasHalteShelter
-                        ? 'HALTE RAIL STATION'
+                        ? 'RAIL TRANSIT STATION'
                         : 'STANDALONE TRANSIT KIOSK'}
                     </span>
                   )}

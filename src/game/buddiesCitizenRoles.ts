@@ -331,7 +331,7 @@ export const CITIZEN_PROFILES: readonly CitizenProfile[] = [
       ],
       roleTips: [
         'East Beach catches fetch strong value here, and I never say no to an ocean gift.',
-        'Hop the Coastal Pier Halte tram if you want to bounce swiftly back to Central Plaza.',
+        'Hop the Coastal Pier tram if you want to bounce swiftly back to Central Plaza.',
       ],
       giftReactions: {
         loved: ['Whoa, look at the craftsmanship on this! Worth its weight in trophy marlin!'],
@@ -358,7 +358,7 @@ export const CITIZEN_PROFILES: readonly CitizenProfile[] = [
     lovedFishZones: [],
     perkAtTwoHearts: 'Shares Shortcut & District Landmarks',
     perkAtFourHearts: 'Honorary Plaza Steward Pin',
-    roleActionLabel: 'Open Halte Transit Map',
+    roleActionLabel: 'Open City Transit Map',
     roleActionDescription: 'Fast-travel between Plaza, Harbor, Oasis Lake, and Warzone.',
     roleActionType: 'open_guide_map',
     roleActionStationId: 'central_plaza',
@@ -389,10 +389,10 @@ export const CITIZEN_PROFILES: readonly CitizenProfile[] = [
         ],
         night: [
           'Streetlamps along the central spine stay bright till dawn. Safe travels across town!',
-          'Night trams glide effortlessly past Taman Ria under the harbor glow.',
+          'Night trams glide effortlessly past Carnival Pier under the harbor glow.',
         ],
         rainy: [
-          'Checked the Halte canopy drains—everyone stays dry waiting at the tram shelters!',
+          'Checked the tram stop canopy drains—everyone stays dry waiting at the shelters!',
           'Wet stone adds extra shine to the scooter lane, so watch your braking distance.',
         ],
       },
@@ -401,7 +401,7 @@ export const CITIZEN_PROFILES: readonly CitizenProfile[] = [
         'Bima tuned the tram signal bells last month—now they chime almost musically.',
       ],
       roleTips: [
-        'Tap the Halte Transit action below if you want a quick overview of all city stations.',
+        'Tap the City Transit action below if you want a quick overview of all city stations.',
         'Kenji guards the southeastern gate—check in with him before jumping into Warzone.',
       ],
       giftReactions: {
@@ -1141,7 +1141,7 @@ export function getCitizenQuickPrompts(rawCitizenId: string): readonly string[] 
     case 'arena_quartermaster':
       return ['Inspect Warzone Gate', 'What gifts do you like?', 'Any patrol stories?'];
     case 'city_guide':
-      return ['Open Halte Transit Map', 'Where does everyone hang out?', 'What gifts do you like?'];
+      return ['Open City Transit Map', 'Where does everyone hang out?', 'What gifts do you like?'];
     case 'park_photographer':
       return ['Best photo spots?', 'Visit Coastal Harbor', 'Tell me a town story'];
     default:

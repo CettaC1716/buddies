@@ -756,8 +756,8 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       const cached = getCachedLoadedBlitzAssets();
       const baseGlbUrl =
         characterGender === 'female'
-          ? '/assets/avatars/new-female-player.glb'
-          : '/assets/avatars/new-male-player.glb';
+          ? '/assets/avatars/blitz-female-03.glb'
+          : '/assets/avatars/blitz-male-player.glb';
       const baseGltf =
         (characterGender === 'female' ? cached?.playerFemaleGlb : cached?.playerMaleGlb) ??
         (await loadModularApparelGltf(baseGlbUrl));
@@ -1557,7 +1557,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                   : activeStyleCategory === 'style_action'
                     ? 'Style · Actions'
                     : activeStyleCategory === 'style_paired'
-                      ? 'Style · Berpasangan (Duo)'
+                      ? 'Style · Paired (Duo)'
                       : 'Style · Garment Dye'
             : activeBottomTab === 'shop'
               ? 'Boutique Shop'
@@ -1621,7 +1621,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
             ) : (
               <div className="flex flex-col items-center justify-center gap-0.5 text-white/90 drop-shadow-[0_3px_8px_rgba(0,0,0,0.4)]">
                 <UnderwearGlyphIcon className="w-7 h-7" />
-                <span className="text-[9px] font-semibold tracking-wide uppercase">Polos</span>
+                <span className="text-[9px] font-semibold tracking-wide uppercase">Bare</span>
               </div>
             )
           ) : item.slot === 'style_paired' ? (
@@ -2391,8 +2391,8 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                         <div className="grid grid-cols-2 gap-1.5">
                           {(
                             [
-                              { id: 'initiate', label: 'Preview: Inisiator' },
-                              { id: 'receive', label: 'Preview: Penerima' },
+                              { id: 'initiate', label: 'Preview: Initiator' },
+                              { id: 'receive', label: 'Preview: Receiver' },
                             ] as const
                           ).map((role) => {
                             const active = pairedPreviewRole === role.id;
@@ -2416,7 +2416,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                           })}
                         </div>
                         <p className="text-[10px] text-white/55 leading-snug">
-                          Dekati Player / NPC di kota lalu pilih <span className="text-white/85 font-semibold">Interaksi</span> untuk pose berpasangan.
+                          Approach a player or NPC in the city and select <span className="text-white/85 font-semibold">Interact</span> for paired poses.
                         </p>
                       </div>
                     )}
@@ -2530,8 +2530,8 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                     >
                       {(
                         [
-                          { id: 'all', label: 'Semua' },
-                          { id: 'underwear', label: 'Pakaian Dalam' },
+                          { id: 'all', label: 'All' },
+                          { id: 'underwear', label: 'Underwear' },
                           {
                             id: 'corewear',
                             label: characterGender === 'female' ? 'Bustier' : 'Singlet',
@@ -2571,9 +2571,9 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                             ? 'bg-white/20 text-white border border-white/30'
                             : 'bg-white/[0.06] text-white/65 border border-white/10 hover:bg-white/[0.12]'
                         }`}
-                        title="Sembunyikan baju luar sementara untuk melihat pakaian dalam"
+                        title="Temporarily hide outer clothing to preview underwear"
                       >
-                        {underwearPreviewBare ? 'Preview: Tanpa Baju' : 'Preview: Pakai Baju'}
+                        {underwearPreviewBare ? 'Preview: Outer Off' : 'Preview: Outer On'}
                       </button>
                       <button
                         type="button"
@@ -2589,8 +2589,8 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                           );
                           showNotice(
                             nextBare
-                              ? 'Mode Tanpa Baju Luar aktif (Bikini/Swimsuit/Underwear tampil di kota)'
-                              : 'Baju luar kembali tampil di kota',
+                              ? 'Outerwear-off mode active (bikini/swimsuit/underwear visible in the city)'
+                              : 'Outerwear is visible in the city again',
                           );
                         }}
                         className={`h-7 rounded-full text-[10px] font-medium transition-colors cursor-pointer px-2.5 truncate ${
@@ -2598,9 +2598,9 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                             ? 'bg-[#8ad8ff] text-slate-950 font-semibold'
                             : 'bg-white/[0.06] text-white/70 border border-white/10 hover:bg-white/[0.12]'
                         }`}
-                        title="Simpan tanpa atasan/bawahan luar agar bikini/swimsuit/underwear terlihat saat main di kota"
+                        title="Save without outer top/bottom so bikini, swimsuit, or underwear stays visible in the city"
                       >
-                        {draft.hideOuterForUnderwear ? 'Di Kota: Tanpa Baju' : 'Di Kota: Pakai Baju'}
+                        {draft.hideOuterForUnderwear ? 'In City: Outer Off' : 'In City: Outer On'}
                       </button>
                     </div>
                   </div>

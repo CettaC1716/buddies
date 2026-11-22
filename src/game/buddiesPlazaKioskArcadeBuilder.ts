@@ -100,6 +100,8 @@ const DOOR_TOP_Y = 3.74;
 let _cachedArcadeStuccoTex: THREE.Texture | null = null;
 let _cachedArcadeFanCobbleTex: THREE.Texture | null = null;
 let _cachedArcadeBronzeSealTex: THREE.Texture | null = null;
+let _cachedArcadeWarmTimberTex: THREE.Texture | null = null;
+let _cachedArcadeWarmSlateRoofTex: THREE.Texture | null = null;
 let _cachedFashionBoutiqueFasciaTex: THREE.Texture | null = null;
 let _cachedRealEstateFasciaTex: THREE.Texture | null = null;
 let _cachedUrbanScooterFasciaTex: THREE.Texture | null = null;
@@ -135,29 +137,34 @@ function getArcadeStuccoTexture(): THREE.Texture {
   if (_cachedArcadeStuccoTex) return _cachedArcadeStuccoTex;
   const { canvas, ctx } = makeCanvas(512, 512);
   if (!ctx) {
-    _cachedArcadeStuccoTex = makeFallbackDataTex(235, 224, 202);
+    _cachedArcadeStuccoTex = makeFallbackDataTex(242, 231, 209);
     return _cachedArcadeStuccoTex;
   }
-  ctx.fillStyle = '#ece2cc';
+  ctx.fillStyle = '#f2e7d1';
   ctx.fillRect(0, 0, 512, 512);
-  // Soft organic lime-plaster trowel shading (smooth gradients + fine sand stipple)
+  // Soft organic sunlit lime-plaster trowel shading (smooth gradients + fine sand stipple)
   for (let i = 0; i < 180; i++) {
     const x = (i * 139 + 29) % 512;
     const y = (i * 211 + 47) % 512;
-    const r = 18 + (i % 26);
+    const r = 18 + (i % 28);
     const grad = ctx.createRadialGradient(x, y, 1, x, y, r);
-    const tint = i % 2 === 0 ? 'rgba(210, 194, 166, 0.11)' : 'rgba(255, 251, 243, 0.11)';
+    const tint =
+      i % 3 === 0
+        ? 'rgba(222, 198, 164, 0.13)'
+        : i % 3 === 1
+        ? 'rgba(255, 252, 244, 0.15)'
+        : 'rgba(236, 214, 182, 0.11)';
     grad.addColorStop(0, tint);
-    grad.addColorStop(1, 'rgba(236, 226, 204, 0)');
+    grad.addColorStop(1, 'rgba(242, 231, 209, 0)');
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
   }
-  for (let i = 0; i < 1400; i++) {
+  for (let i = 0; i < 1100; i++) {
     const x = (i * 97 + 13) % 512;
     const y = (i * 193 + 31) % 512;
-    ctx.fillStyle = i % 2 === 0 ? 'rgba(175, 158, 132, 0.08)' : 'rgba(255, 250, 242, 0.10)';
+    ctx.fillStyle = i % 2 === 0 ? 'rgba(186, 166, 136, 0.08)' : 'rgba(255, 250, 242, 0.11)';
     ctx.fillRect(x, y, 2, 2);
   }
   const tex = new THREE.CanvasTexture(canvas as HTMLCanvasElement);
@@ -166,6 +173,74 @@ function getArcadeStuccoTexture(): THREE.Texture {
   tex.wrapT = THREE.RepeatWrapping;
   tex.needsUpdate = true;
   _cachedArcadeStuccoTex = tex;
+  return tex;
+}
+
+function getArcadeWarmTimberPlankTexture(): THREE.Texture {
+  if (_cachedArcadeWarmTimberTex) return _cachedArcadeWarmTimberTex;
+  const { canvas, ctx } = makeCanvas(512, 512);
+  if (!ctx) {
+    _cachedArcadeWarmTimberTex = makeFallbackDataTex(206, 154, 102);
+    return _cachedArcadeWarmTimberTex;
+  }
+  ctx.fillStyle = '#cc955e';
+  ctx.fillRect(0, 0, 512, 512);
+  const plankTones = ['#d9a872', '#c18a54', '#e1b27c', '#b77f4b', '#cf9c66', '#c6905a'];
+  const rows = 8;
+  const rh = 512 / rows;
+  for (let r = 0; r < rows; r++) {
+    const py = r * rh;
+    ctx.fillStyle = plankTones[r % plankTones.length];
+    ctx.fillRect(0, py + 1, 512, rh - 2);
+    ctx.fillStyle = 'rgba(255, 244, 220, 0.22)';
+    ctx.fillRect(0, py + 1.5, 512, 3);
+    for (let g = 0; g < 10; g++) {
+      const gy = py + 5 + (g / 10) * (rh - 10);
+      ctx.strokeStyle = g % 3 === 0 ? 'rgba(132, 82, 38, 0.16)' : 'rgba(255, 238, 204, 0.17)';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(0, gy);
+      ctx.bezierCurveTo(170, gy + Math.sin(r + g) * 2.2, 340, gy - Math.cos(r + g) * 2.2, 512, gy);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(134, 86, 44, 0.26)';
+    ctx.fillRect(0, py + rh - 2.2, 512, 2.2);
+  }
+  const tex = new THREE.CanvasTexture(canvas as HTMLCanvasElement);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.needsUpdate = true;
+  _cachedArcadeWarmTimberTex = tex;
+  return tex;
+}
+
+function getArcadeWarmSlateRoofTexture(): THREE.Texture {
+  if (_cachedArcadeWarmSlateRoofTex) return _cachedArcadeWarmSlateRoofTex;
+  const { canvas, ctx } = makeCanvas(512, 512);
+  if (!ctx) {
+    _cachedArcadeWarmSlateRoofTex = makeFallbackDataTex(104, 112, 120);
+    return _cachedArcadeWarmSlateRoofTex;
+  }
+  ctx.fillStyle = '#5c6670';
+  ctx.fillRect(0, 0, 512, 512);
+  const panels = 8;
+  const pw = 512 / panels;
+  const tones = ['#68727c', '#5e6872', '#707a84', '#58626c'];
+  for (let p = 0; p < panels; p++) {
+    ctx.fillStyle = tones[p % tones.length];
+    ctx.fillRect(p * pw + 2, 0, pw - 4, 512);
+    ctx.fillStyle = 'rgba(255, 246, 230, 0.14)';
+    ctx.fillRect(p * pw + 3, 0, 2.5, 512);
+    ctx.fillStyle = 'rgba(42, 48, 56, 0.22)';
+    ctx.fillRect((p + 1) * pw - 2, 0, 2, 512);
+  }
+  const tex = new THREE.CanvasTexture(canvas as HTMLCanvasElement);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.needsUpdate = true;
+  _cachedArcadeWarmSlateRoofTex = tex;
   return tex;
 }
 
@@ -453,19 +528,19 @@ function buildWoodenAFrameSign(
 export function buildPlazaCommercialArcade3D(
   opts: BuildPlazaKioskArcadeOptions,
 ): THREE.Group {
-  const COL_STUCCO = '#ebe0ca';
-  const COL_SANDSTONE = '#d9cfbc';
-  const COL_SANDSTONE_DARK = '#b8ad99';
-  const COL_BRICK = '#b97352';
-  const COL_BRICK_DARK = '#9c593c';
-  const COL_BRICK_LIGHT = '#c78462';
-  const COL_SLATE_CORNICE = '#4b5862';
-  const COL_SLATE_DARK = '#36414a';
-  const COL_BRONZE_FRAME = '#323840';
-  const COL_STEEL_DOOR = '#58616b';
-  const COL_OAK_FLOOR = '#cfa06e';
-  const COL_BENCH_GREEN = '#2f5439';
-  const COL_CAST_IRON = '#28302c';
+  const COL_STUCCO = '#f1e6d0';
+  const COL_SANDSTONE = '#dfd5c2';
+  const COL_SANDSTONE_DARK = '#c1b5a0';
+  const COL_BRICK = '#c27956';
+  const COL_BRICK_DARK = '#a45e3f';
+  const COL_BRICK_LIGHT = '#cf8c68';
+  const COL_SLATE_CORNICE = '#56616a';
+  const COL_SLATE_DARK = '#434d56';
+  const COL_BRONZE_FRAME = '#4a413a';
+  const COL_STEEL_DOOR = '#6b675f';
+  const COL_OAK_FLOOR = '#d4a672';
+  const COL_BENCH_GREEN = '#3e6649';
+  const COL_CAST_IRON = '#3e4542';
   const COL_LED_WARM = '#ffefc2';
 
   const arcadeGrp = new THREE.Group();
@@ -481,6 +556,8 @@ export function buildPlazaCommercialArcade3D(
   const stuccoTex = getArcadeStuccoTexture();
   const fanCobbleTex = getArcadeFanCobblestoneTexture();
   const bronzeSealTex = getArcadeBronzeMedallionTexture();
+  const warmTimberTex = opts.textures.timberTex ?? getArcadeWarmTimberPlankTexture();
+  const warmSlateRoofTex = opts.textures.steelRoofTex ?? getArcadeWarmSlateRoofTexture();
 
   const partHelper: KioskPartHelper = {
     addPart(
@@ -494,12 +571,10 @@ export function buildPlazaCommercialArcade3D(
       bumpScale = 1.4,
       castShad = true,
     ) {
+      void toonStrokeWidth;
       const mesh = opts.addLobbyPart(parent, geo, colorHex, pos, rot, 0, tex, bumpScale);
       mesh.castShadow = !opts.isSoftwareGl && castShad;
-      if (toonStrokeWidth > 0) {
-        const stroke = opts.createBlitzStrokeMesh(geo, toonStrokeWidth);
-        if (stroke) mesh.add(stroke);
-      }
+      mesh.receiveShadow = !opts.isSoftwareGl;
       return mesh;
     },
   };
@@ -1209,11 +1284,11 @@ export function buildPlazaCommercialArcade3D(
   partHelper.addPart(
     arcadeGrp,
     new THREE.BoxGeometry(20.82, 0.12, 4.74),
-    '#66707a',
+    '#747d86',
     [0, 5.70, 0],
     [0, 0, 0],
     0.006,
-    opts.textures.concreteTex,
+    warmSlateRoofTex,
     2.4,
   );
 
@@ -1498,11 +1573,11 @@ export function buildPlazaCommercialArcade3D(
   }
   const benchSeatSlatGeo = makeRoundedArcadeBox(1.78, 0.045, 0.11, 0.012);
   for (const sz of [-0.14, 0.02, 0.18]) {
-    partHelper.addPart(benchGrp, benchSeatSlatGeo, COL_BENCH_GREEN, [0, 0.455, sz], [0, 0, 0], 0.006);
+    partHelper.addPart(benchGrp, benchSeatSlatGeo, COL_BENCH_GREEN, [0, 0.455, sz], [0, 0, 0], 0.006, warmTimberTex, 1.2);
   }
   const benchBackSlatGeo = makeRoundedArcadeBox(1.78, 0.10, 0.045, 0.012);
   for (const by of [0.64, 0.78, 0.92]) {
-    partHelper.addPart(benchGrp, benchBackSlatGeo, COL_BENCH_GREEN, [0, by, -0.23 - (by - 0.64) * 0.16], [-0.15, 0, 0], 0.006);
+    partHelper.addPart(benchGrp, benchBackSlatGeo, COL_BENCH_GREEN, [0, by, -0.23 - (by - 0.64) * 0.16], [-0.15, 0, 0], 0.006, warmTimberTex, 1.2);
   }
 
   // Tubular Steel U-Loop Scooter Charging Dock Rack in front of Bay 3 right window (`lx = +8.80, lz = 3.25`)

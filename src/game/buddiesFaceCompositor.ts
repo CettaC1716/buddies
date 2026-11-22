@@ -834,8 +834,16 @@ export function applyBuddyRigFaceCustomization(
   compTex.needsUpdate = true;
   let updated = false;
   for (const mat of skinMaterials) {
+    let matChanged = false;
     if (mat.map !== compTex) {
       mat.map = compTex;
+      matChanged = true;
+    }
+    if (mat.color && mat.color.getHex() !== 0xffffff) {
+      mat.color.setHex(0xffffff);
+      matChanged = true;
+    }
+    if (matChanged) {
       mat.needsUpdate = true;
     }
     updated = true;

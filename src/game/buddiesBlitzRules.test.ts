@@ -2007,7 +2007,7 @@ test('Buddies Blitz Crafted Ground Weapon Lifecycle: Physics Pop-out, AI Auto-Lo
   const enemyStealCheck = canUnitLootGroundWeapon(
     'red',
     'unarmed',
-    'Tangan Kosong',
+    'Unarmed',
     'rocket',
     'Nuclear Launcher',
     0,
@@ -3325,7 +3325,7 @@ test('AI Ranged Combat Standoff, 5-Slot Tactical Loadout (3 Handheld + 2 Tactica
       ['PISTOL', 60],
       ['RIFLE', 75],
       ['BAZOOKA', 16],
-      ['GRANAT', 3],
+      ['GRENADE', 3],
       ['LAND MINE', 2],
     ],
   );

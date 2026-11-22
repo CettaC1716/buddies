@@ -97,6 +97,63 @@ function createSmoothTaperedTubeGeo(
   return geo;
 }
 
+/**
+ * Applies a zero-GPU-cost vertex-color canopy AO & sunlit mid-trunk gradient onto
+ * tree trunks, buttress roots, and branches:
+ * - Ground contact root collar: subtle warm soil AO
+ * - Mid-trunk sunlight band: warm sunlit highlight
+ * - Top-of-trunk & inner limbs under the leafy crown: smooth cool-warm canopy AO darkening
+ */
+function applyTreeCanopyAoVertexGradient(
+  geo: THREE.BufferGeometry,
+  opts: {
+    yGroundEnd: number;
+    yCanopyStart: number;
+    yCanopyDeep: number;
+    yTipStart?: number;
+    yTipEnd?: number;
+    groundTint: readonly [number, number, number];
+    sunTint: readonly [number, number, number];
+    canopyAoTint: readonly [number, number, number];
+    tipTint?: readonly [number, number, number];
+  },
+): THREE.BufferGeometry {
+  const pos = geo.getAttribute('position');
+  if (!pos || pos.count === 0) return geo;
+  const smoothstep = (e0: number, e1: number, x: number) => {
+    const t = Math.max(0, Math.min(1, (x - e0) / Math.max(1e-4, e1 - e0)));
+    return t * t * (3 - 2 * t);
+  };
+  const colors = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i);
+    const groundRise = smoothstep(0.0, opts.yGroundEnd, y);
+    const canopyShadow = smoothstep(opts.yCanopyStart, opts.yCanopyDeep, y);
+
+    let r = opts.groundTint[0] + (opts.sunTint[0] - opts.groundTint[0]) * groundRise;
+    let g = opts.groundTint[1] + (opts.sunTint[1] - opts.groundTint[1]) * groundRise;
+    let b = opts.groundTint[2] + (opts.sunTint[2] - opts.groundTint[2]) * groundRise;
+
+    r += (opts.canopyAoTint[0] - r) * canopyShadow;
+    g += (opts.canopyAoTint[1] - g) * canopyShadow;
+    b += (opts.canopyAoTint[2] - b) * canopyShadow;
+
+    if (opts.tipTint && opts.yTipStart !== undefined && opts.yTipEnd !== undefined) {
+      const tipBlend = smoothstep(opts.yTipStart, opts.yTipEnd, y);
+      r += (opts.tipTint[0] - r) * tipBlend;
+      g += (opts.tipTint[1] - g) * tipBlend;
+      b += (opts.tipTint[2] - b) * tipBlend;
+    }
+
+    const idx = i * 3;
+    colors[idx] = r;
+    colors[idx + 1] = g;
+    colors[idx + 2] = b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geo;
+}
+
 function createMiteredPlanterLipGeo(
   outerW: number,
   outerD: number,
@@ -1192,12 +1249,12 @@ function createBotanicalAlphaCutoutWindMaterial(
         float ndl = dot(N, L);
 
         float litFactor = smoothstep(-0.22, 0.85, ndl);
-        vec3 bounceGreen = vec3(0.40, 0.68, 0.20);
+        vec3 bounceGreen = vec3(0.46, 0.66, 0.28);
         float downMask = smoothstep(-0.2, 0.8, -N.y) * clamp(1.0 - max(vWorldPos.y, 0.0) / 1.5, 0.0, 1.0);
         baseCol = mix(baseCol, bounceGreen, downMask * (1.0 - vPetalMask) * 0.16);
 
         vec3 litCol = baseCol * uLightColor * (0.98 + 0.14 * litFactor);
-        vec3 shadowCol = baseCol * mix(vec3(0.70, 0.74, 0.80), vec3(0.78, 0.76, 0.86), vPetalMask);
+        vec3 shadowCol = baseCol * mix(vec3(0.68, 0.72, 0.68), vec3(0.76, 0.72, 0.78), vPetalMask);
         vec3 finalRgb = mix(shadowCol, litCol, 0.36 + 0.64 * litFactor);
 
         gl_FragColor = vec4(finalRgb, 1.0);
@@ -1280,6 +1337,7 @@ function createCanopyBillboardWindMaterial(
         uLeafScale: { value: leafScale },
         uAlphaThreshold: { value: 0.30 },
         uLightDirection: windUniforms.uLightDirection,
+        uLightColor: windUniforms.uLightColor,
         uWindPhase: windUniforms.uWindPhase,
         uWindDirection: windUniforms.uWindDirection,
         uWindStrength: windUniforms.uWindStrength,
@@ -1302,6 +1360,7 @@ function createCanopyBillboardWindMaterial(
       varying vec2 vUv;
       varying vec3 vSphereNormal;
       varying float vCrownHeight;
+      varying float vCrownAO;
       varying vec3 vInstTint;
 
       void main() {
@@ -1356,7 +1415,8 @@ function createCanopyBillboardWindMaterial(
         vec3 localPos = aLeafCenter + camRight * rotX + camUp * rotY + camFwd * ((aLeafPlaneSeed - 0.5) * 0.02) + windDisp;
         vec4 mvPosition = viewMatrix * modelMatrix * instanceMatrix * vec4(localPos, 1.0);
         vSphereNormal = normalize(mat3(modelMatrix * instanceMatrix) * normalize(aLeafCenter + vec3(0.0, 0.38, 0.0)));
-        vCrownHeight = smoothstep(-0.35, 0.85, aLeafCenter.y);
+        vCrownHeight = smoothstep(-0.35, 0.88, aLeafCenter.y);
+        vCrownAO = mix(0.76, 1.04, smoothstep(-0.75, 0.72, aLeafCenter.y));
 
         gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
@@ -1370,18 +1430,24 @@ function createCanopyBillboardWindMaterial(
       uniform vec3 uColorSun;
       uniform float uAlphaThreshold;
       uniform vec3 uLightDirection;
+      uniform vec3 uLightColor;
 
       varying vec2 vUv;
       varying vec3 vSphereNormal;
       varying float vCrownHeight;
+      varying float vCrownAO;
       varying vec3 vInstTint;
 
       void main() {
         float mask = texture2D(uLeafTex, vUv).r;
         if (mask < uAlphaThreshold) discard;
-        float ndl = smoothstep(-0.15, 0.88, dot(normalize(vSphereNormal), normalize(uLightDirection)));
-        vec3 midLit = mix(uColorShadow, uColorMid, smoothstep(0.05, 0.62, ndl));
-        vec3 finalCol = mix(midLit, uColorSun, smoothstep(0.52, 0.96, ndl * 0.75 + vCrownHeight * 0.35)) * vInstTint;
+        float rawNdl = dot(normalize(vSphereNormal), normalize(uLightDirection));
+        float ndl = smoothstep(-0.20, 0.88, rawNdl);
+        vec3 midLit = mix(uColorShadow, uColorMid, smoothstep(0.04, 0.58, ndl * 0.82 + vCrownHeight * 0.24));
+        float tipSunMask = smoothstep(0.46, 0.94, ndl * 0.70 + vCrownHeight * 0.42);
+        vec3 baseCol = mix(midLit, uColorSun, tipSunMask) * vInstTint * vCrownAO;
+        vec3 sunMod = mix(vec3(0.86, 0.88, 0.90), uLightColor, 0.74);
+        vec3 finalCol = baseCol * sunMod;
         gl_FragColor = vec4(finalCol, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -1392,6 +1458,101 @@ function createCanopyBillboardWindMaterial(
   });
   registerPendingLeafMaskMaterial(mat);
   return mat;
+}
+
+function createCanopyBillboardDepthMaterial(
+  leafMaskTex: THREE.Texture,
+  windUniforms: BlitzWindUniforms,
+  leafScale = 1.48,
+): THREE.ShaderMaterial {
+  const depthMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uLeafTex: { value: leafMaskTex },
+      uLeafScale: { value: leafScale * 0.86 },
+      uAlphaThreshold: { value: 0.36 },
+      uWindPhase: windUniforms.uWindPhase,
+      uWindDirection: windUniforms.uWindDirection,
+      uWindStrength: windUniforms.uWindStrength,
+      uWindGust: windUniforms.uWindGust,
+    },
+    vertexShader: /* glsl */ `
+      attribute vec3 aLeafCenter;
+      attribute vec3 aLeafLocalPos;
+      attribute float aLeafPlaneSeed;
+
+      uniform float uLeafScale;
+      uniform float uWindPhase;
+      uniform vec2 uWindDirection;
+      uniform float uWindStrength;
+      uniform float uWindGust;
+
+      varying vec2 vUv;
+      varying float vSeed;
+
+      void main() {
+        vUv = uv;
+        vSeed = aLeafPlaneSeed;
+
+        vec3 treeWorldOrigin = (modelMatrix * instanceMatrix)[3].xyz;
+        float windAmp = max(0.62, uWindStrength);
+        float spatialPhase =
+          dot(treeWorldOrigin.xz, vec2(0.14, 0.11)) + dot(aLeafCenter.xz, vec2(0.28, 0.22));
+        float swayFactor = smoothstep(-0.75, 1.0, aLeafCenter.y);
+
+        float angle =
+          aLeafPlaneSeed * 6.2831853 +
+          sin(uWindPhase * 0.95 + aLeafPlaneSeed * 19.3 + spatialPhase) * 0.22 * windAmp * swayFactor;
+        float s = sin(angle);
+        float c = cos(angle);
+        vec3 scaledLocal = aLeafLocalPos * uLeafScale;
+        float rotX = scaledLocal.x * c - scaledLocal.y * s;
+        float rotY = scaledLocal.x * s + scaledLocal.y * c;
+
+        mat4 mv = viewMatrix * modelMatrix * instanceMatrix;
+        vec3 camRight = normalize(vec3(mv[0][0], mv[1][0], mv[2][0]));
+        vec3 camUp = normalize(vec3(mv[0][1], mv[1][1], mv[2][1]));
+
+        float macroWave =
+          sin(uWindPhase * 0.38 - spatialPhase) * 0.65 +
+          sin(uWindPhase * 0.21 + spatialPhase * 0.55) * 0.35;
+        float crownSway = (macroWave * 0.38 + uWindGust * 0.24) * windAmp * swayFactor;
+        float leafFlutter =
+          sin(uWindPhase * 1.18 + aLeafPlaneSeed * 6.2831853 + aLeafCenter.x * 0.85) *
+          0.14 *
+          windAmp *
+          swayFactor;
+        float sway = crownSway + leafFlutter;
+        float vertBob =
+          (cos(uWindPhase * 0.52 - spatialPhase) * 0.08 +
+            sin(uWindPhase * 1.18 + aLeafPlaneSeed * 6.2831853) * 0.05) *
+          windAmp *
+          swayFactor;
+        vec3 windDisp = vec3(
+          uWindDirection.x * sway - uWindDirection.y * leafFlutter * 0.45,
+          vertBob,
+          uWindDirection.y * sway + uWindDirection.x * leafFlutter * 0.45
+        );
+
+        vec3 localPos = aLeafCenter + camRight * rotX + camUp * rotY + windDisp;
+        gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(localPos, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      #include <packing>
+      uniform sampler2D uLeafTex;
+      uniform float uAlphaThreshold;
+      varying vec2 vUv;
+      varying float vSeed;
+      void main() {
+        if (fract(vSeed * 19.0) > 0.74) discard;
+        if (texture2D(uLeafTex, vUv).r < uAlphaThreshold) discard;
+        gl_FragColor = packDepthToRGBA(gl_FragCoord.z);
+      }
+    `,
+    side: THREE.DoubleSide,
+  });
+  registerPendingLeafMaskMaterial(depthMat);
+  return depthMat;
 }
 
 // ============================================================================
@@ -1682,69 +1843,97 @@ function createNaturalFieldstoneTexture(): THREE.CanvasTexture {
 
 function createTimberGrainTexture(): THREE.CanvasTexture {
   return makeCanvasTex(512, 512, (ctx, w, h) => {
-    ctx.fillStyle = '#cc8d4d';
+    ctx.fillStyle = '#c88d56';
     ctx.fillRect(0, 0, w, h);
-    const plankTones = ['#dfa15e', '#d29351', '#e6ab68', '#c88847'];
+    const plankTones = ['#d89f68', '#c68a54', '#e1ac74', '#be814b', '#d1955e', '#c98e58'];
     const planks = 6;
     const ph = h / planks;
     for (let p = 0; p < planks; p++) {
       const py = p * ph;
       ctx.fillStyle = plankTones[p % plankTones.length];
       ctx.fillRect(0, py + 1.5, w, ph - 3);
-      for (let g = 0; g < 16; g++) {
-        const gy = py + 4 + (g / 16) * (ph - 8);
-        ctx.strokeStyle = g % 3 === 0 ? 'rgba(110,60,22,0.14)' : 'rgba(255,232,190,0.18)';
+      // Warm top chamfer sun highlight on each plank
+      ctx.fillStyle = 'rgba(255, 240, 212, 0.22)';
+      ctx.fillRect(0, py + 1.5, w, 4);
+      for (let g = 0; g < 18; g++) {
+        const gy = py + 5 + (g / 18) * (ph - 10);
+        ctx.strokeStyle = g % 3 === 0 ? 'rgba(104, 58, 24, 0.14)' : 'rgba(255, 234, 196, 0.16)';
         ctx.lineWidth = 1.6;
         ctx.beginPath();
         ctx.moveTo(0, gy);
-        ctx.lineTo(w * 0.33, gy + Math.sin(p + g) * 2.5);
-        ctx.lineTo(w * 0.66, gy - Math.cos(p + g) * 2.5);
+        ctx.lineTo(w * 0.33, gy + Math.sin(p * 1.7 + g) * 2.8);
+        ctx.lineTo(w * 0.66, gy - Math.cos(p * 1.3 + g) * 2.6);
         ctx.lineTo(w, gy);
         ctx.stroke();
       }
-      ctx.fillStyle = 'rgba(72,38,16,0.22)';
-      ctx.fillRect(0, py + ph - 2.5, w, 2.5);
+      ctx.fillStyle = 'rgba(78, 44, 20, 0.24)';
+      ctx.fillRect(0, py + ph - 2.8, w, 2.8);
     }
   });
 }
 
 function createTreeBarkTexture(): THREE.CanvasTexture {
   return makeCanvasTex(256, 256, (ctx, w, h) => {
-    ctx.fillStyle = '#6d5844';
+    // Warm sunlit layered oak bark (cohesive hand-painted honey-umber palette)
+    ctx.fillStyle = '#8b684a';
     ctx.fillRect(0, 0, w, h);
-    const tones = ['#7d6750', '#5a4635', '#8b745c', '#4e3b2b'];
-    for (let i = 0; i < 42; i++) {
-      const bx = (i / 42) * w;
-      const bw = 5 + (i % 4) * 2.5;
-      ctx.fillStyle = tones[i % tones.length];
+    const ridgeTones = ['#a4805d', '#94704f', '#b28d68', '#7d5b3e', '#9c7856'];
+    for (let i = 0; i < 38; i++) {
+      const bx = (i / 38) * w;
+      const bw = 6 + (i % 4) * 2.8;
+      const wobble = (((i * 7) % 5) - 2) * 3.5;
+      ctx.fillStyle = ridgeTones[i % ridgeTones.length];
       ctx.beginPath();
       ctx.moveTo(bx, 0);
       ctx.lineTo(bx + bw, 0);
-      ctx.lineTo(bx + bw + (((i % 3) - 1) * 5), h * 0.5);
+      ctx.lineTo(bx + bw + wobble, h * 0.45);
+      ctx.lineTo(bx + bw - wobble * 0.6, h * 0.78);
       ctx.lineTo(bx + bw, h);
       ctx.lineTo(bx, h);
+      ctx.lineTo(bx - wobble * 0.5, h * 0.62);
       ctx.closePath();
       ctx.fill();
+
+      // Sunlit warm bark plate highlight & soft umber furrow crevice
+      ctx.fillStyle = 'rgba(232, 198, 158, 0.16)';
+      ctx.fillRect(bx + 1, (i * 29) % h, Math.max(1.5, bw * 0.32), 24 + (i % 3) * 14);
+      ctx.fillStyle = 'rgba(66, 44, 28, 0.24)';
+      ctx.fillRect(bx + bw - 1.5, 0, 1.8, h);
+    }
+    // Painterly layered horizontal bark plate cracks
+    for (let k = 0; k < 42; k++) {
+      const lx = (k * 53) % w;
+      const ly = (k * 37) % h;
+      const lw = 10 + (k % 4) * 6;
+      ctx.fillStyle = k % 2 === 0 ? 'rgba(68, 46, 30, 0.26)' : 'rgba(218, 182, 142, 0.18)';
+      ctx.fillRect(lx, ly, lw, 2.2);
     }
   });
 }
 
 function createCherryBarkTexture(): THREE.CanvasTexture {
   return makeCanvasTex(256, 256, (ctx, w, h) => {
-    ctx.fillStyle = '#5e403b';
+    // Warm sunlit chestnut-mahogany cherry bark with satin buff lenticels
+    ctx.fillStyle = '#825747';
     ctx.fillRect(0, 0, w, h);
-    const streaks = ['#6b4943', '#4f3530', '#77534b'];
-    for (let i = 0; i < 32; i++) {
+    const streaks = ['#956754', '#72493b', '#a3735e', '#7e5344'];
+    for (let i = 0; i < 34; i++) {
+      const sx = (i / 34) * w;
+      const sw = 6 + (i % 3) * 2.5;
       ctx.fillStyle = streaks[i % streaks.length];
-      ctx.fillRect((i / 32) * w, 0, 5, h);
+      ctx.fillRect(sx, 0, sw, h);
+      if (i % 3 === 0) {
+        ctx.fillStyle = 'rgba(236, 196, 170, 0.14)';
+        ctx.fillRect(sx + 1, 0, 2, h);
+      }
     }
-    // Signature horizontal cherry bark lenticels
-    for (let l = 0; l < 44; l++) {
+    // Signature warm horizontal cherry bark lenticels + soft umber rings
+    for (let l = 0; l < 52; l++) {
       const lx = (l * 47) % w;
       const ly = (l * 31) % h;
       const lw = 14 + (l % 4) * 8;
-      ctx.fillStyle = l % 2 === 0 ? 'rgba(155, 114, 98, 0.42)' : 'rgba(62, 39, 36, 0.35)';
-      ctx.fillRect(lx, ly, lw, 2.5);
+      ctx.fillStyle = l % 2 === 0 ? 'rgba(206, 162, 138, 0.44)' : 'rgba(72, 43, 35, 0.30)';
+      ctx.fillRect(lx, ly, lw, 2.4);
     }
   });
 }
@@ -2243,6 +2432,8 @@ export function buildCentralBotanicalPark3D(
   pondWaterTex.repeat.set(2.4, 2.4);
   pondWaterTex.needsUpdate = true;
 
+  void createBlitzStrokeMesh;
+
   const addPart = (
     parent: THREE.Object3D,
     geo: THREE.BufferGeometry,
@@ -2259,11 +2450,13 @@ export function buildCentralBotanicalPark3D(
     },
   ): THREE.Mesh => {
     registerGeo(geo);
+    const hasVertexColor = Boolean(geo.getAttribute('color'));
     const mat = new THREE.MeshStandardMaterial({
       color: opts?.map ? '#ffffff' : colorHex,
       map: opts?.map ?? null,
-      roughness: 0.72,
-      metalness: 0.06,
+      vertexColors: hasVertexColor,
+      roughness: 0.76,
+      metalness: 0.05,
     });
     const m = new THREE.Mesh(geo, mat);
     m.position.set(pos[0], pos[1], pos[2]);
@@ -2272,15 +2465,8 @@ export function buildCentralBotanicalPark3D(
     m.castShadow = !isSoftwareGl && Boolean(opts?.castShadow);
     m.receiveShadow = !isSoftwareGl && (opts?.receiveShadow ?? true);
     m.frustumCulled = true;
-    upgradeMeshToBlitzWorldMaterial(m, windUniforms, opts?.map ? '#ffffff' : colorHex, opts?.bounce ?? 0.24);
+    upgradeMeshToBlitzWorldMaterial(m, windUniforms, opts?.map ? '#ffffff' : colorHex, opts?.bounce ?? 0.22);
     mat.dispose();
-    if (opts?.strokeWidth && opts.strokeWidth > 0) {
-      const st = createBlitzStrokeMesh(geo, opts.strokeWidth);
-      if (st) {
-        st.frustumCulled = true;
-        m.add(st);
-      }
-    }
     parent.add(m);
     return m;
   };
@@ -3027,16 +3213,16 @@ export function buildCentralBotanicalPark3D(
     // Classic Slatted Honey-Teak & Antique Bronze-Iron Bench (`classic_teak`)
     bGrp.scale.setScalar(1.58);
     for (const sx of [-0.88, 0.88]) {
-      addPart(bGrp, benchFrontLegGeo.clone(), '#5c554c', [sx, 0, 0], [0, 0, 0], { castShadow: true });
-      addPart(bGrp, benchRearLegGeo.clone(), '#5c554c', [sx, 0, 0], [0, 0, 0], { castShadow: true });
-      addPart(bGrp, benchSeatApronGeo.clone(), '#635c52', [sx, 0, 0]);
-      addPart(bGrp, benchUnderArchGeo.clone(), '#5c554c', [sx, 0, 0]);
-      addPart(bGrp, benchArmrestGeo.clone(), '#6b6358', [sx, 0, 0]);
-      addPart(bGrp, new THREE.CylinderGeometry(0.04, 0.05, 0.03, 6), '#4d473f', [sx, 0.015, 0.28]);
-      addPart(bGrp, new THREE.CylinderGeometry(0.04, 0.05, 0.03, 6), '#4d473f', [sx, 0.015, -0.24]);
-      addPart(bGrp, new THREE.TorusGeometry(0.078, 0.014, 5, 12), '#635c52', [sx, 0.37, 0.02], [0, Math.PI * 0.5, 0]);
-      addPart(bGrp, new THREE.TorusGeometry(0.052, 0.012, 5, 10), '#6b6358', [sx, 0.38, 0.13], [0, Math.PI * 0.5, 0]);
-      addPart(bGrp, new THREE.TorusGeometry(0.052, 0.012, 5, 10), '#6b6358', [sx, 0.38, -0.09], [0, Math.PI * 0.5, 0]);
+      addPart(bGrp, benchFrontLegGeo.clone(), '#544a40', [sx, 0, 0], [0, 0, 0], { castShadow: true, receiveShadow: true });
+      addPart(bGrp, benchRearLegGeo.clone(), '#544a40', [sx, 0, 0], [0, 0, 0], { castShadow: true, receiveShadow: true });
+      addPart(bGrp, benchSeatApronGeo.clone(), '#5e5348', [sx, 0, 0], [0, 0, 0], { receiveShadow: true });
+      addPart(bGrp, benchUnderArchGeo.clone(), '#544a40', [sx, 0, 0], [0, 0, 0], { receiveShadow: true });
+      addPart(bGrp, benchArmrestGeo.clone(), '#685c50', [sx, 0, 0], [0, 0, 0], { receiveShadow: true });
+      addPart(bGrp, new THREE.CylinderGeometry(0.04, 0.05, 0.03, 6), '#494139', [sx, 0.015, 0.28], [0, 0, 0], { receiveShadow: true });
+      addPart(bGrp, new THREE.CylinderGeometry(0.04, 0.05, 0.03, 6), '#494139', [sx, 0.015, -0.24], [0, 0, 0], { receiveShadow: true });
+      addPart(bGrp, new THREE.TorusGeometry(0.078, 0.014, 5, 12), '#5e5348', [sx, 0.37, 0.02], [0, Math.PI * 0.5, 0], { receiveShadow: true });
+      addPart(bGrp, new THREE.TorusGeometry(0.052, 0.012, 5, 10), '#685c50', [sx, 0.38, 0.13], [0, Math.PI * 0.5, 0], { receiveShadow: true });
+      addPart(bGrp, new THREE.TorusGeometry(0.052, 0.012, 5, 10), '#685c50', [sx, 0.38, -0.09], [0, Math.PI * 0.5, 0], { receiveShadow: true });
     }
 
     const seatProfile: readonly [number, number, number][] = [
@@ -3049,6 +3235,7 @@ export function buildCentralBotanicalPark3D(
       addPart(bGrp, applyPlanarUvs(new RoundedBoxGeometry(1.82, 0.036, 0.092, 2, 0.008), 1.0), '#ffffff', [0, sy, sz], [tiltX, 0, 0], {
         map: timberTex,
         castShadow: true,
+        receiveShadow: true,
       });
     }
     for (let sl = 0; sl < 4; sl++) {
@@ -3058,11 +3245,11 @@ export function buildCentralBotanicalPark3D(
         '#ffffff',
         [0, 0.62 + sl * 0.108, -0.155 - sl * 0.026],
         [-0.24, 0, 0],
-        { map: timberTex, castShadow: true },
+        { map: timberTex, castShadow: true, receiveShadow: true },
       );
     }
     for (const rx of [-0.54, 0.0, 0.54]) {
-      addPart(bGrp, new RoundedBoxGeometry(0.044, 0.52, 0.026, 2, 0.005), '#5c554c', [rx, 0.75, -0.22], [-0.24, 0, 0]);
+      addPart(bGrp, new RoundedBoxGeometry(0.044, 0.52, 0.026, 2, 0.005), '#544a40', [rx, 0.75, -0.22], [-0.24, 0, 0], { receiveShadow: true });
       for (let rv = 0; rv < 4; rv++) {
         addPart(bGrp, new THREE.SphereGeometry(0.013, 5, 4), '#d4ab62', [rx, 0.62 + rv * 0.108, -0.232 - rv * 0.026]);
       }
@@ -3518,6 +3705,17 @@ export function buildCentralBotanicalPark3D(
     staticGroup.add(tGrp);
 
     if (tree.species === 'pink_sakura') {
+      const sakuraAoOpts = {
+        yGroundEnd: 0.55,
+        yCanopyStart: 1.85,
+        yCanopyDeep: 3.15,
+        yTipStart: 3.85,
+        yTipEnd: 5.45,
+        groundTint: [0.80, 0.75, 0.71] as const,
+        sunTint: [1.0, 0.97, 0.93] as const,
+        canopyAoTint: [0.58, 0.50, 0.54] as const,
+        tipTint: [0.76, 0.69, 0.72] as const,
+      };
       // Graceful sinuous cherry-bark trunk + flared spline buttress roots + smoothly tapered fork limbs
       const trunkCurve = new THREE.CatmullRomCurve3([
         new THREE.Vector3(0, -0.04, 0),
@@ -3525,9 +3723,15 @@ export function buildCentralBotanicalPark3D(
         new THREE.Vector3(-0.08, 2.25, -0.05),
         new THREE.Vector3(0.06, 3.15, 0.04),
       ]);
-      addPart(tGrp, scaleGeometryUvs(createSmoothTaperedTubeGeo(trunkCurve, 16, 0.44, 0.23, 12), 2.2, 2.4), '#ffffff', [0, 0, 0], [0, 0, 0], {
+      const sakuraTrunkGeo = applyTreeCanopyAoVertexGradient(
+        scaleGeometryUvs(createSmoothTaperedTubeGeo(trunkCurve, 16, 0.44, 0.23, 12), 2.2, 2.4),
+        sakuraAoOpts,
+      );
+      addPart(tGrp, sakuraTrunkGeo, '#ffffff', [0, 0, 0], [0, 0, 0], {
         map: cherryBarkTex,
         castShadow: true,
+        receiveShadow: true,
+        bounce: 0.14,
       });
       for (let r = 0; r < 5; r++) {
         const ra = (r / 5) * Math.PI * 2;
@@ -3536,13 +3740,17 @@ export function buildCentralBotanicalPark3D(
           new THREE.Vector3(Math.cos(ra) * 0.42, 0.18, Math.sin(ra) * 0.42),
           new THREE.Vector3(Math.cos(ra) * 0.78, -0.05, Math.sin(ra) * 0.78),
         ]);
+        const sakuraRootGeo = applyTreeCanopyAoVertexGradient(
+          scaleGeometryUvs(createSmoothTaperedTubeGeo(rootCurve, 8, 0.20, 0.055, 8), 1.4, 1.2),
+          sakuraAoOpts,
+        );
         addPart(
           tGrp,
-          scaleGeometryUvs(createSmoothTaperedTubeGeo(rootCurve, 8, 0.20, 0.055, 8), 1.4, 1.2),
+          sakuraRootGeo,
           '#ffffff',
           [0, 0, 0],
           [0, 0, 0],
-          { map: cherryBarkTex },
+          { map: cherryBarkTex, receiveShadow: true, bounce: 0.14 },
         );
       }
 
@@ -3556,17 +3764,29 @@ export function buildCentralBotanicalPark3D(
           new THREE.Vector3(bx * 0.55, 4.15, bz * 0.55),
           new THREE.Vector3(bx, 4.75 + (bi % 2) * 0.28, bz),
         ]);
-        addPart(tGrp, scaleGeometryUvs(createSmoothTaperedTubeGeo(bCurve, 10, 0.16, 0.085, 8), 1.4, 1.8), '#ffffff', [0, 0, 0], [0, 0, 0], {
+        const sakuraBranchGeo = applyTreeCanopyAoVertexGradient(
+          scaleGeometryUvs(createSmoothTaperedTubeGeo(bCurve, 10, 0.16, 0.085, 8), 1.4, 1.8),
+          sakuraAoOpts,
+        );
+        addPart(tGrp, sakuraBranchGeo, '#ffffff', [0, 0, 0], [0, 0, 0], {
           map: cherryBarkTex,
           castShadow: true,
+          receiveShadow: true,
+          bounce: 0.14,
         });
         const forkAng = ba + (bi % 2 === 0 ? 0.52 : -0.52);
         const forkCurve = new THREE.CatmullRomCurve3([
           new THREE.Vector3(bx * 0.52, 4.08, bz * 0.52),
           new THREE.Vector3(Math.cos(forkAng) * reach * 0.85, 5.45, Math.sin(forkAng) * reach * 0.85),
         ]);
-        addPart(tGrp, scaleGeometryUvs(createSmoothTaperedTubeGeo(forkCurve, 7, 0.092, 0.042, 6), 1.0, 1.4), '#ffffff', [0, 0, 0], [0, 0, 0], {
+        const sakuraForkGeo = applyTreeCanopyAoVertexGradient(
+          scaleGeometryUvs(createSmoothTaperedTubeGeo(forkCurve, 7, 0.092, 0.042, 6), 1.0, 1.4),
+          sakuraAoOpts,
+        );
+        addPart(tGrp, sakuraForkGeo, '#ffffff', [0, 0, 0], [0, 0, 0], {
           map: cherryBarkTex,
+          receiveShadow: true,
+          bounce: 0.14,
         });
 
         const wC = new THREE.Vector3(bx * 0.92, 4.95, bz * 0.92)
@@ -3576,15 +3796,15 @@ export function buildCentralBotanicalPark3D(
         sakuraCrownClusterMatrices.push(
           new THREE.Matrix4().compose(wC, new THREE.Quaternion(), new THREE.Vector3(1.62 * tree.scale, 1.25 * tree.scale, 1.62 * tree.scale)),
         );
-        sakuraCrownClusterColors.push(new THREE.Color(bi % 2 === 0 ? '#ffffff' : '#ffe4f2'));
+        sakuraCrownClusterColors.push(new THREE.Color(bi % 2 === 0 ? '#ffffff' : '#ffe6f0'));
       });
 
       for (const [cx, cy, cz, cs, tint] of [
         [0, 6.15, 0, 1.98, '#ffffff'],
-        [0.95, 5.55, 0.80, 1.55, '#ffdced'],
-        [-0.95, 5.65, -0.82, 1.55, '#ffeaf5'],
-        [-0.85, 5.35, 0.92, 1.45, '#f9d0e6'],
-        [0.88, 5.42, -0.86, 1.45, '#ffe5f3'],
+        [0.95, 5.55, 0.80, 1.55, '#ffe0ec'],
+        [-0.95, 5.65, -0.82, 1.55, '#ffecf4'],
+        [-0.85, 5.35, 0.92, 1.45, '#f9d4e6'],
+        [0.88, 5.42, -0.86, 1.45, '#ffe8f2'],
       ] as const) {
         const wTop = new THREE.Vector3(cx, cy, cz)
           .multiplyScalar(tree.scale)
@@ -3596,6 +3816,17 @@ export function buildCentralBotanicalPark3D(
         sakuraCrownClusterColors.push(new THREE.Color(tint));
       }
     } else {
+      const oakAoOpts = {
+        yGroundEnd: 0.68,
+        yCanopyStart: 2.05,
+        yCanopyDeep: 3.55,
+        yTipStart: 4.35,
+        yTipEnd: 6.25,
+        groundTint: [0.80, 0.75, 0.68] as const,
+        sunTint: [1.0, 0.97, 0.91] as const,
+        canopyAoTint: [0.49, 0.52, 0.44] as const,
+        tipTint: [0.71, 0.73, 0.61] as const,
+      };
       // Mature Oak Shade Tree (`mature_oak`) with contoured Lathe trunk + flared buttress roots + tapered branches
       const oakTrunkProfile = [
         new THREE.Vector2(0.0, -0.05),
@@ -3607,9 +3838,15 @@ export function buildCentralBotanicalPark3D(
         new THREE.Vector2(0.40, 3.48),
         new THREE.Vector2(0.0, 3.58),
       ];
-      addPart(tGrp, scaleGeometryUvs(new THREE.LatheGeometry(oakTrunkProfile, 14), 2.5, 2.5), '#ffffff', [0, 0, 0], [0, 0, 0], {
+      const oakTrunkGeo = applyTreeCanopyAoVertexGradient(
+        scaleGeometryUvs(new THREE.LatheGeometry(oakTrunkProfile, 14), 2.5, 2.5),
+        oakAoOpts,
+      );
+      addPart(tGrp, oakTrunkGeo, '#ffffff', [0, 0, 0], [0, 0, 0], {
         map: barkTex,
         castShadow: true,
+        receiveShadow: true,
+        bounce: 0.14,
       });
       for (let r = 0; r < 6; r++) {
         const ra = (r / 6) * Math.PI * 2;
@@ -3618,13 +3855,17 @@ export function buildCentralBotanicalPark3D(
           new THREE.Vector3(Math.cos(ra) * 0.66, 0.22, Math.sin(ra) * 0.66),
           new THREE.Vector3(Math.cos(ra) * 1.05, -0.05, Math.sin(ra) * 1.05),
         ]);
+        const oakRootGeo = applyTreeCanopyAoVertexGradient(
+          scaleGeometryUvs(createSmoothTaperedTubeGeo(rootCurve, 8, 0.25, 0.065, 8), 1.5, 1.2),
+          oakAoOpts,
+        );
         addPart(
           tGrp,
-          scaleGeometryUvs(createSmoothTaperedTubeGeo(rootCurve, 8, 0.25, 0.065, 8), 1.5, 1.2),
+          oakRootGeo,
           '#ffffff',
           [0, 0, 0],
           [0, 0, 0],
-          { map: barkTex },
+          { map: barkTex, receiveShadow: true, bounce: 0.14 },
         );
       }
       const oakBranchAngles = [0.2, 1.45, 2.7, 3.95, 5.2];
@@ -3637,17 +3878,29 @@ export function buildCentralBotanicalPark3D(
           new THREE.Vector3(bx * 0.55, 4.65, bz * 0.55),
           new THREE.Vector3(bx, 5.55, bz),
         ]);
-        addPart(tGrp, scaleGeometryUvs(createSmoothTaperedTubeGeo(bCurve, 10, 0.21, 0.11, 8), 1.5, 2.0), '#ffffff', [0, 0, 0], [0, 0, 0], {
+        const oakBranchGeo = applyTreeCanopyAoVertexGradient(
+          scaleGeometryUvs(createSmoothTaperedTubeGeo(bCurve, 10, 0.21, 0.11, 8), 1.5, 2.0),
+          oakAoOpts,
+        );
+        addPart(tGrp, oakBranchGeo, '#ffffff', [0, 0, 0], [0, 0, 0], {
           map: barkTex,
           castShadow: true,
+          receiveShadow: true,
+          bounce: 0.14,
         });
         const forkAng = ba + (bi % 2 === 0 ? 0.52 : -0.52);
         const forkCurve = new THREE.CatmullRomCurve3([
           new THREE.Vector3(bx * 0.52, 4.58, bz * 0.52),
           new THREE.Vector3(Math.cos(forkAng) * reach * 0.85, 6.25, Math.sin(forkAng) * reach * 0.85),
         ]);
-        addPart(tGrp, scaleGeometryUvs(createSmoothTaperedTubeGeo(forkCurve, 7, 0.115, 0.052, 6), 1.0, 1.5), '#ffffff', [0, 0, 0], [0, 0, 0], {
+        const oakForkGeo = applyTreeCanopyAoVertexGradient(
+          scaleGeometryUvs(createSmoothTaperedTubeGeo(forkCurve, 7, 0.115, 0.052, 6), 1.0, 1.5),
+          oakAoOpts,
+        );
+        addPart(tGrp, oakForkGeo, '#ffffff', [0, 0, 0], [0, 0, 0], {
           map: barkTex,
+          receiveShadow: true,
+          bounce: 0.14,
         });
 
         const wC = new THREE.Vector3(bx * 0.92, 5.85, bz * 0.92)
@@ -3657,13 +3910,13 @@ export function buildCentralBotanicalPark3D(
         oakCrownClusterMatrices.push(
           new THREE.Matrix4().compose(wC, new THREE.Quaternion(), new THREE.Vector3(1.85 * tree.scale, 1.55 * tree.scale, 1.85 * tree.scale)),
         );
-        oakCrownClusterColors.push(new THREE.Color(bi % 2 === 0 ? '#dbeea8' : '#c6e092'));
+        oakCrownClusterColors.push(new THREE.Color(bi % 2 === 0 ? '#dbe8a4' : '#c9dc8e'));
       });
       for (const [cx, cy, cz, cs, tint] of [
-        [0, 7.25, 0, 2.25, '#fff6be'],
-        [1.1, 6.45, 0.85, 1.65, '#f2f0a8'],
-        [-1.05, 6.55, -0.9, 1.65, '#e8eb9d'],
-        [-0.9, 6.3, 1.0, 1.55, '#dff0a6'],
+        [0, 7.25, 0, 2.25, '#f2f1be'],
+        [1.1, 6.45, 0.85, 1.65, '#e7eaab'],
+        [-1.05, 6.55, -0.9, 1.65, '#dfE59e'],
+        [-0.9, 6.3, 1.0, 1.55, '#d6e39a'],
       ] as const) {
         const wTop = new THREE.Vector3(cx, cy, cz)
           .multiplyScalar(tree.scale)
@@ -3839,11 +4092,20 @@ export function buildCentralBotanicalPark3D(
     midHex: string,
     sunHex: string,
     leafScale: number,
+    castDappledShadow = true,
   ) => {
     if (matrices.length === 0) return;
     const mat = registerMat(createCanopyBillboardWindMaterial(effectiveLeafMask, windUniforms, shadowHex, midHex, sunHex, leafScale));
     const inst = new THREE.InstancedMesh(clusterGeo, mat, matrices.length);
     inst.name = name;
+    if (castDappledShadow && !isSoftwareGl) {
+      const depthMat = registerMat(createCanopyBillboardDepthMaterial(effectiveLeafMask, windUniforms, leafScale));
+      inst.castShadow = true;
+      inst.customDepthMaterial = depthMat;
+    } else {
+      inst.castShadow = false;
+    }
+    inst.receiveShadow = false;
     for (let i = 0; i < matrices.length; i++) {
       inst.setMatrixAt(i, matrices[i]);
       inst.setColorAt(i, colors[i] ?? new THREE.Color('#ffffff'));
@@ -3856,9 +4118,9 @@ export function buildCentralBotanicalPark3D(
     totalBotanicalInstances += matrices.length;
   };
 
-  spawnCrownClusters('CentralParkSakuraCanopyInstanced', sakuraCrownClusterMatrices, sakuraCrownClusterColors, '#b8427c', '#ee79b3', '#ffcce5', 1.46);
-  spawnCrownClusters('CentralParkOakCanopyInstanced', oakCrownClusterMatrices, oakCrownClusterColors, '#3d6e35', '#649e46', '#bdd458', 1.56);
-  spawnCrownClusters('CentralParkHedgeShrubsInstanced', hedgeShrubMatrices, hedgeShrubColors, '#1a5a26', '#2f823b', '#63be54', 1.48);
+  spawnCrownClusters('CentralParkSakuraCanopyInstanced', sakuraCrownClusterMatrices, sakuraCrownClusterColors, '#a34873', '#e67fad', '#ffe0ee', 1.46, true);
+  spawnCrownClusters('CentralParkOakCanopyInstanced', oakCrownClusterMatrices, oakCrownClusterColors, '#335d2e', '#5c943f', '#a6cf52', 1.56, true);
+  spawnCrownClusters('CentralParkHedgeShrubsInstanced', hedgeShrubMatrices, hedgeShrubColors, '#285229', '#4b823c', '#86b84e', 1.48, false);
 
   // Bake ALL static architecture, terrazzo, gold ribbons, stone curbs, fountain, benches, lamps & tree trunks
   bakeStaticGroupMeshes(staticGroup, { minShadowCasterSpan: 0.45 });

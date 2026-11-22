@@ -1458,7 +1458,7 @@ uniform float uCafeBotanicalPhase;`,
       ctx.fillStyle = accentHex;
       ctx.font = '900 20px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('PESANAN PELANGGAN', 160, 44);
+      ctx.fillText('CUSTOMER ORDER', 160, 44);
       ctx.fillStyle = '#ffffff';
       ctx.font = '900 28px sans-serif';
       ctx.fillText(label.toUpperCase().slice(0, 20), 160, 82);
