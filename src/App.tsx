@@ -7632,11 +7632,11 @@ export default function App() {
         data-personal-wallet-modal={embeddedInPhone ? "true" : undefined}
         className={
           embeddedInPhone
-            ? "relative w-full h-full flex-1 flex flex-col bg-[#f4f6f9] text-slate-900 overflow-hidden min-h-0"
-            : "relative flex-1 flex flex-col rounded-[28px] bg-[#f4f6f9]/96 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] text-slate-900 overflow-hidden min-h-0"
+            ? "relative w-full h-full flex-1 flex flex-col bg-[#0a0d16]/55 backdrop-blur-xl backdrop-saturate-150 text-white overflow-hidden min-h-0"
+            : "relative flex-1 flex flex-col rounded-[28px] bg-[#0a0d16]/55 backdrop-blur-2xl backdrop-saturate-150 border border-white/15 shadow-[0_24px_64px_rgba(0,0,0,0.45)] text-white overflow-hidden min-h-0"
         }
       >
-          <div className={`flex items-center justify-between gap-2 bg-white/95 border-b border-slate-200/80 shrink-0 ${embeddedInPhone ? 'px-3.5 py-2.5' : 'px-5 py-3.5'}`}>
+          <div className={`flex items-center justify-between gap-2 bg-white/[0.04] border-b border-white/10 shrink-0 ${embeddedInPhone ? 'px-3.5 py-2.5' : 'px-5 py-3.5'}`}>
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
@@ -7647,8 +7647,8 @@ export default function App() {
                 }}
                 className={`px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
                   personalWalletTab === 'wallet'
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'bg-slate-100 hover:bg-slate-200/80 text-slate-600'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'bg-white/[0.08] hover:bg-white/[0.14] text-white/70'
                 }`}
               >
                 <Wallet className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
@@ -7664,8 +7664,8 @@ export default function App() {
                 }}
                 className={`px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
                   personalWalletTab === 'assets'
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'bg-slate-100 hover:bg-slate-200/80 text-slate-600'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'bg-white/[0.08] hover:bg-white/[0.14] text-white/70'
                 }`}
               >
                 <Package className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
@@ -7681,8 +7681,8 @@ export default function App() {
                 }}
                 className={`px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
                   personalWalletTab === 'history'
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'bg-slate-100 hover:bg-slate-200/80 text-slate-600'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'bg-white/[0.08] hover:bg-white/[0.14] text-white/70'
                 }`}
               >
                 <History className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
@@ -7696,7 +7696,7 @@ export default function App() {
                   soundEngine.playUiCancel();
                   setIsPersonalWalletModalOpen(false);
                 }}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer active:scale-95 shrink-0"
+                className="w-8 h-8 rounded-full bg-white/[0.08] hover:bg-white/[0.16] text-white/80 flex items-center justify-center transition-colors cursor-pointer active:scale-95 shrink-0"
                 aria-label="Close Personal Wallet"
               >
                 <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
@@ -7710,11 +7710,11 @@ export default function App() {
                 {/* ACCOUNT, WALLET ADDRESS & USERNAME CARD */}
                 <div
                   data-wallet-uid-and-username-card="true"
-                  className="rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4 shadow-md space-y-3.5"
+                  className="rounded-2xl bg-white/[0.06] border border-white/[0.12] text-white p-4 space-y-3.5"
                 >
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="text-[11px] font-medium text-slate-400">
+                  <div className="text-[11px] font-medium text-white/40">
                     Login Account
                   </div>
                   <div className="text-sm font-semibold text-white truncate">
@@ -7849,74 +7849,74 @@ export default function App() {
 
             {/* BALANCES */}
             <div className="space-y-2.5">
-              <div className="text-xs font-semibold text-slate-500 px-1">
+              <div className="text-xs font-semibold text-white/55 px-1">
                 Balances
               </div>
 
-              <div className="rounded-2xl bg-white border border-slate-200/70 shadow-sm px-4 py-3 flex items-center justify-between gap-3">
+              <div className="rounded-2xl bg-white/[0.06] border border-white/[0.10] px-4 py-3 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-md flex items-center justify-center shrink-0">
                     <Coins className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold text-slate-900">LUL</div>
-                    <div className="text-xs text-slate-500 truncate">
+                    <div className="text-sm font-semibold text-white">LUL</div>
+                    <div className="text-xs text-white/55 truncate">
                       Fishing and Warzone rewards
                     </div>
                   </div>
                 </div>
-                <div className="px-3 py-1 rounded-full bg-amber-50 text-amber-900 font-mono tabular-nums font-semibold text-sm shrink-0">
+                <div className="px-3 py-1 rounded-full bg-white/[0.10] text-amber-200 font-mono tabular-nums font-semibold text-sm shrink-0">
                   {hud.gold} LUL
                 </div>
               </div>
 
-              <div className="rounded-2xl bg-white border border-slate-200/70 shadow-sm px-4 py-3 flex items-center justify-between gap-3">
+              <div className="rounded-2xl bg-white/[0.06] border border-white/[0.10] px-4 py-3 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center font-bold text-xs shrink-0">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-400 to-blue-600 text-white shadow-md flex items-center justify-center font-bold text-xs shrink-0">
                     CY
                   </div>
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold text-slate-900">CYON</div>
-                    <div className="text-xs text-slate-500 truncate">
+                    <div className="text-sm font-semibold text-white">CYON</div>
+                    <div className="text-xs text-white/55 truncate">
                       Shop items and outfits
                     </div>
                   </div>
                 </div>
-                <div className="px-3 py-1 rounded-full bg-sky-50 text-sky-900 font-mono tabular-nums font-semibold text-sm shrink-0">
+                <div className="px-3 py-1 rounded-full bg-white/[0.10] text-sky-200 font-mono tabular-nums font-semibold text-sm shrink-0">
                   {cyonBalance} CYON
                 </div>
               </div>
 
-              <div className="rounded-2xl bg-white border border-slate-200/70 shadow-sm px-4 py-3 flex items-center justify-between gap-3">
+              <div className="rounded-2xl bg-white/[0.06] border border-white/[0.10] px-4 py-3 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center font-bold text-xs shrink-0">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-400 to-purple-600 text-white shadow-md flex items-center justify-center font-bold text-xs shrink-0">
                     RS
                   </div>
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold text-slate-900">RESPITE</div>
-                    <div className="text-xs text-slate-500 truncate">
+                    <div className="text-sm font-semibold text-white">RESPITE</div>
+                    <div className="text-xs text-white/55 truncate">
                       House, companions, and Fish Market
                     </div>
                   </div>
                 </div>
-                <div className="px-3 py-1 rounded-full bg-violet-50 text-violet-900 font-mono tabular-nums font-semibold text-sm shrink-0">
+                <div className="px-3 py-1 rounded-full bg-white/[0.10] text-violet-200 font-mono tabular-nums font-semibold text-sm shrink-0">
                   {respiteBalance} RESPITE
                 </div>
               </div>
 
-              <div className="rounded-2xl bg-white border border-slate-200/70 shadow-sm px-4 py-3 flex items-center justify-between gap-3">
+              <div className="rounded-2xl bg-white/[0.06] border border-white/[0.10] px-4 py-3 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs shrink-0">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-md flex items-center justify-center font-bold text-xs shrink-0">
                     N
                   </div>
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold text-slate-900">NEAR</div>
-                    <div className="text-xs text-slate-500 truncate">
+                    <div className="text-sm font-semibold text-white">NEAR</div>
+                    <div className="text-xs text-white/55 truncate">
                       Wallet balance
                     </div>
                   </div>
                 </div>
-                <div className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-900 font-mono tabular-nums font-semibold text-sm shrink-0">
+                <div className="px-3 py-1 rounded-full bg-white/[0.10] text-emerald-200 font-mono tabular-nums font-semibold text-sm shrink-0">
                   {nearTestnetBalance.toFixed(2)} NEAR
                 </div>
               </div>
@@ -7925,10 +7925,10 @@ export default function App() {
             {/* P2P SEND RESPITE TO ANOTHER WALLET */}
             <div
               data-wallet-send-respite-card="true"
-              className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-4 space-y-2.5"
+              className="rounded-2xl bg-white/[0.06] border border-white/[0.10] p-4 space-y-2.5"
             >
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900">
-                <Send className="w-3.5 h-3.5 text-violet-600" aria-hidden="true" />
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                <Send className="w-3.5 h-3.5 text-violet-300" aria-hidden="true" />
                 <span>Send RESPITE</span>
               </div>
               <input
@@ -7939,7 +7939,7 @@ export default function App() {
                   setRespiteTransferStatus(null);
                 }}
                 placeholder="Recipient username or wallet"
-                className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder:text-slate-400 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-violet-400/40 focus:border-violet-400"
+                className="w-full px-3 py-2 rounded-xl bg-white/[0.06] border border-white/[0.12] text-white placeholder:text-white/35 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-violet-400/40 focus:border-violet-400"
               />
               <div className="flex gap-2">
                 <input
@@ -7952,7 +7952,7 @@ export default function App() {
                     setRespiteTransferStatus(null);
                   }}
                   placeholder="Amount"
-                  className="w-28 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder:text-slate-400 font-mono tabular-nums font-semibold text-xs focus:outline-none focus:ring-2 focus:ring-violet-400/40 focus:border-violet-400"
+                  className="w-28 px-3 py-2 rounded-xl bg-white/[0.06] border border-white/[0.12] text-white placeholder:text-white/35 font-mono tabular-nums font-semibold text-xs focus:outline-none focus:ring-2 focus:ring-violet-400/40 focus:border-violet-400"
                 />
                 <button
                   type="button"
@@ -8104,12 +8104,12 @@ export default function App() {
                 walletListedFish.length;
               return (
               <div data-wallet-assets-panel="true" className="space-y-3">
-                <div className="rounded-2xl bg-white border border-slate-200/75 shadow-sm px-4 py-3 flex items-center justify-between gap-2">
+                <div className="rounded-2xl bg-white/[0.06] border border-white/[0.10] px-4 py-3 flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="text-[11px] font-semibold text-sky-600">
                       My Items
                     </div>
-                    <div className="text-xs font-medium text-slate-700 truncate">
+                    <div className="text-xs font-medium text-white/80 truncate">
                       {hud.nearWalletId || playerUid || 'Guest'}
                     </div>
                   </div>
@@ -8123,7 +8123,7 @@ export default function App() {
                   {hasHouseOwnership && (
                     <div
                       data-wallet-house-card={ownedWalletHouseStyle}
-                      className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-3.5 space-y-2.5"
+                      className="rounded-2xl bg-white/[0.06] border border-white/[0.10] p-3.5 space-y-2.5"
                     >
                       <div className="relative w-full h-28 rounded-xl bg-slate-900 overflow-hidden flex items-center justify-center">
                         <img
@@ -8142,21 +8142,21 @@ export default function App() {
                         </div>
                       </div>
                       <div>
-                        <div className="text-xs font-semibold text-slate-900">
+                        <div className="text-xs font-semibold text-white">
                           {houseDisplay.title}
                         </div>
-                        <div className="text-[11px] text-slate-500 leading-snug mt-0.5">
+                        <div className="text-[11px] text-white/55 leading-snug mt-0.5">
                           {houseDisplay.description}
                         </div>
                         {hud.nearGamepassTokenId && (
-                          <div className="text-[10px] font-mono text-slate-400 mt-1 truncate">
+                          <div className="text-[10px] font-mono text-white/40 mt-1 truncate">
                             {hud.nearGamepassTokenId}
                           </div>
                         )}
                       </div>
-                      <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-slate-100 pt-2">
+                      <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-white/10 pt-2">
                         <span className="text-emerald-600 font-semibold">Owned</span>
-                        <span className="text-slate-500">{HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE</span>
+                        <span className="text-white/55">{HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE</span>
                       </div>
 
                       {/* Sub-Account Ledger, Ownership Provenance & Royalty Payouts (Contract v1.5.0) */}
@@ -8177,19 +8177,19 @@ export default function App() {
                           <>
                             <div className="grid grid-cols-3 gap-1.5 text-[9px] font-mono tabular-nums">
                               <div className="p-1.5 rounded-lg bg-white/[0.07]">
-                                <div className="text-slate-400">Ready</div>
+                                <div className="text-white/40">Ready</div>
                                 <div className="text-emerald-300 font-semibold">
                                   {onChainDeedLedger.pending_payout_respite} R
                                 </div>
                               </div>
                               <div className="p-1.5 rounded-lg bg-white/[0.07]">
-                                <div className="text-slate-400">Earned</div>
+                                <div className="text-white/40">Earned</div>
                                 <div className="text-violet-300 font-semibold">
                                   {onChainDeedLedger.total_earned_respite} R
                                 </div>
                               </div>
                               <div className="p-1.5 rounded-lg bg-white/[0.07]">
-                                <div className="text-slate-400">Collected</div>
+                                <div className="text-white/40">Collected</div>
                                 <div className="text-sky-300 font-semibold">
                                   {onChainDeedLedger.total_paid_out_respite} R
                                 </div>
@@ -8261,7 +8261,7 @@ export default function App() {
                                 className={`flex-1 py-1.5 rounded-full text-[10px] font-semibold transition-colors ${
                                   !isDeedLedgerTxBusy && respiteBalance >= 5
                                     ? 'bg-violet-500 hover:bg-violet-400 text-white cursor-pointer'
-                                    : 'bg-white/10 text-slate-400 cursor-not-allowed'
+                                    : 'bg-white/10 text-white/40 cursor-not-allowed'
                                 }`}
                               >
                                 {isDeedLedgerTxBusy ? 'Wait...' : 'Add 5 R'}
@@ -8329,7 +8329,7 @@ export default function App() {
                                   !isDeedLedgerTxBusy &&
                                   Number(onChainDeedLedger.pending_payout_respite || '0') > 0
                                     ? 'bg-emerald-500 hover:bg-emerald-400 text-white cursor-pointer'
-                                    : 'bg-white/10 text-slate-400 cursor-not-allowed'
+                                    : 'bg-white/10 text-white/40 cursor-not-allowed'
                                 }`}
                               >
                                 Collect
@@ -8396,9 +8396,9 @@ export default function App() {
                       <div
                         key={item.id}
                         data-wallet-catalog-item={item.id}
-                        className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-3.5 space-y-2.5"
+                        className="rounded-2xl bg-white/[0.06] border border-white/[0.10] p-3.5 space-y-2.5"
                       >
-                        <div className="relative rounded-xl overflow-hidden bg-[#f4f6f9]">
+                        <div className="relative rounded-xl overflow-hidden bg-white/[0.05]">
                           <Furniture3dThumbnail
                             catalogId={item.id}
                             name={item.name}
@@ -8414,18 +8414,18 @@ export default function App() {
                           </div>
                         </div>
                         <div>
-                          <div className="text-xs font-semibold text-slate-900 truncate">
+                          <div className="text-xs font-semibold text-white truncate">
                             {item.name}
                           </div>
-                          <div className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
+                          <div className="text-[10px] font-mono text-white/40 truncate mt-0.5">
                             {item.tokenId}
                           </div>
                         </div>
-                        <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-slate-100 pt-2">
+                        <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-white/10 pt-2">
                           <span className="text-emerald-600 font-semibold">
                             {placedQty > 0 ? `Owned · In Room ×${placedQty}` : 'Owned'}
                           </span>
-                          <span className="text-slate-500">
+                          <span className="text-white/55">
                             {quote.buyPrice} {item.currency}
                           </span>
                         </div>
@@ -8440,7 +8440,7 @@ export default function App() {
                     <div
                       key={v.id}
                       data-wallet-vehicle={v.id}
-                      className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-3.5 space-y-2.5"
+                      className="rounded-2xl bg-white/[0.06] border border-white/[0.10] p-3.5 space-y-2.5"
                     >
                       <div className="relative w-full h-28 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 flex flex-col items-center justify-center text-center p-3">
                         <div className="text-base font-semibold text-teal-300 tracking-wide">
@@ -8457,16 +8457,16 @@ export default function App() {
                         </div>
                       </div>
                       <div>
-                        <div className="text-xs font-semibold text-slate-900 truncate">
+                        <div className="text-xs font-semibold text-white truncate">
                           {v.name}
                         </div>
-                        <div className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
+                        <div className="text-[10px] font-mono text-white/40 truncate mt-0.5">
                           {v.tokenId}
                         </div>
                       </div>
-                      <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-slate-100 pt-2">
+                      <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-white/10 pt-2">
                         <span className="text-emerald-600 font-semibold">Owned</span>
-                        <span className="text-slate-500">{v.priceRespite} RESPITE</span>
+                        <span className="text-white/55">{v.priceRespite} RESPITE</span>
                       </div>
                     </div>
                   ))}
@@ -8475,7 +8475,7 @@ export default function App() {
                   {recruitedFamilyMembers.map((m) => (
                     <div
                       key={m.agentId}
-                      className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-3.5 space-y-2.5"
+                      className="rounded-2xl bg-white/[0.06] border border-white/[0.10] p-3.5 space-y-2.5"
                     >
                       <div className="relative w-full h-28 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 flex flex-col items-center justify-center text-center p-3">
                         <div className="text-base font-semibold text-amber-300 tracking-wide">
@@ -8489,16 +8489,16 @@ export default function App() {
                         </div>
                       </div>
                       <div>
-                        <div className="text-xs font-semibold text-slate-900">
+                        <div className="text-xs font-semibold text-white">
                           {m.name}
                         </div>
-                        <div className="text-[11px] text-slate-500 mt-0.5">
+                        <div className="text-[11px] text-white/55 mt-0.5">
                           Order: {m.activeOrder.replace(/_/g, ' ').toUpperCase()} · {m.planLabel}
                         </div>
                       </div>
-                      <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-slate-100 pt-2">
+                      <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-white/10 pt-2">
                         <span className="text-emerald-600 font-semibold">Active</span>
-                        <span className="text-slate-500">{m.pricePaidRespite} RESPITE</span>
+                        <span className="text-white/55">{m.pricePaidRespite} RESPITE</span>
                       </div>
                     </div>
                   ))}
@@ -8530,9 +8530,9 @@ export default function App() {
                         <div
                           key={fish.id}
                           data-wallet-fish-nft={fish.speciesId}
-                          className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-3.5 space-y-2.5"
+                          className="rounded-2xl bg-white/[0.06] border border-white/[0.10] p-3.5 space-y-2.5"
                         >
-                          <div className="relative rounded-xl overflow-hidden bg-[#f4f6f9]">
+                          <div className="relative rounded-xl overflow-hidden bg-white/[0.05]">
                             <Fish3dThumbnail
                               speciesId={fish.speciesId}
                               speciesName={fish.speciesName}
@@ -8546,10 +8546,10 @@ export default function App() {
                           </div>
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <div className="text-xs font-semibold text-slate-900 truncate">
+                              <div className="text-xs font-semibold text-white truncate">
                                 {fish.speciesName}
                               </div>
-                              <div className="text-[11px] text-slate-500">
+                              <div className="text-[11px] text-white/55">
                                 {fish.weightKg.toFixed(2)} kg · {fish.rarity}
                               </div>
                             </div>
@@ -8565,9 +8565,9 @@ export default function App() {
                               View
                             </button>
                           </div>
-                          <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-slate-100 pt-2">
+                          <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-white/10 pt-2">
                             <span className="text-emerald-600 font-semibold">Owned</span>
-                            <span className="text-slate-500">
+                            <span className="text-white/55">
                               {fish.suggestedRespitePrice || 12} RESPITE
                             </span>
                           </div>
@@ -8604,9 +8604,9 @@ export default function App() {
                         <div
                           key={listing.listingId}
                           data-wallet-listed-fish-nft={listing.speciesId}
-                          className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-3.5 space-y-2.5"
+                          className="rounded-2xl bg-white/[0.06] border border-white/[0.10] p-3.5 space-y-2.5"
                         >
-                          <div className="relative rounded-xl overflow-hidden bg-[#f4f6f9]">
+                          <div className="relative rounded-xl overflow-hidden bg-white/[0.05]">
                             <Fish3dThumbnail
                               speciesId={listing.speciesId}
                               speciesName={listing.speciesName}
@@ -8620,10 +8620,10 @@ export default function App() {
                           </div>
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <div className="text-xs font-semibold text-slate-900 truncate">
+                              <div className="text-xs font-semibold text-white truncate">
                                 {listing.speciesName}
                               </div>
-                              <div className="text-[11px] text-slate-500">
+                              <div className="text-[11px] text-white/55">
                                 {listing.weightKg.toFixed(2)} kg · {listing.rarity}
                               </div>
                             </div>
@@ -8639,18 +8639,18 @@ export default function App() {
                               View
                             </button>
                           </div>
-                          <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-slate-100 pt-2">
+                          <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-white/10 pt-2">
                             <span className="text-amber-600 font-semibold">On Market</span>
-                            <span className="text-slate-500">{listing.priceRespite} RESPITE</span>
+                            <span className="text-white/55">{listing.priceRespite} RESPITE</span>
                           </div>
                         </div>
                       );
                     })}
 
                   {totalOwnedWalletItems === 0 && (
-                      <div className="col-span-1 sm:col-span-2 py-8 px-4 text-center rounded-2xl bg-white/80 border border-dashed border-slate-300 text-slate-500 text-xs space-y-1">
-                        <div className="font-semibold text-slate-700">No items yet</div>
-                        <div className="text-[11px] text-slate-500">
+                      <div className="col-span-1 sm:col-span-2 py-8 px-4 text-center rounded-2xl bg-white/[0.04] border border-dashed border-white/20 text-white/55 text-xs space-y-1">
+                        <div className="font-semibold text-white/80">No items yet</div>
+                        <div className="text-[11px] text-white/55">
                           Buy a house, furniture, recruit a companion, or mint caught fish into NFTs.
                         </div>
                       </div>
@@ -8661,13 +8661,13 @@ export default function App() {
             })() : (
               <div data-wallet-history-panel="true" className="space-y-3">
                 {/* HEADER & CURRENCY FILTER PILLS */}
-                <div className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-4 space-y-3">
+                <div className="rounded-2xl bg-white/[0.06] border border-white/[0.10] p-4 space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <div className="text-[11px] font-semibold text-emerald-600">
                         History
                       </div>
-                      <div className="text-xs font-medium text-slate-700 truncate">
+                      <div className="text-xs font-medium text-white/80 truncate">
                         {hud.nearWalletId || playerUid || connectedGoogleEmail || 'Guest'}
                       </div>
                     </div>
@@ -8684,7 +8684,7 @@ export default function App() {
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-slate-100">
+                  <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-white/10">
                     {(['ALL', 'LUL', 'CYON', 'RESPITE', 'NEAR'] as const).map((filterKey) => (
                       <button
                         key={filterKey}
@@ -8696,8 +8696,8 @@ export default function App() {
                         }}
                         className={`px-3 py-1 rounded-full text-[11px] font-semibold cursor-pointer transition-colors ${
                           walletHistoryFilter === filterKey
-                            ? 'bg-slate-900 text-white shadow-xs'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            ? 'bg-white text-slate-900 shadow-xs'
+                            : 'bg-white/[0.08] text-white/50 hover:bg-white/[0.14]'
                         }`}
                       >
                         {filterKey}
@@ -8716,7 +8716,7 @@ export default function App() {
 
                   if (isLoadingWalletTransactions && filteredTxs.length === 0) {
                     return (
-                      <div className="p-5 rounded-2xl bg-white border border-slate-200/75 shadow-sm text-center text-xs font-medium text-slate-500">
+                      <div className="p-5 rounded-2xl bg-white/[0.06] border border-white/[0.10] text-center text-xs font-medium text-white/55">
                         Loading transaction history...
                       </div>
                     );
@@ -8726,12 +8726,12 @@ export default function App() {
                     return (
                       <div
                         data-wallet-history-empty="true"
-                        className="p-6 rounded-2xl bg-white/80 border border-dashed border-slate-300 text-center space-y-1"
+                        className="p-6 rounded-2xl bg-white/[0.04] border border-dashed border-white/20 text-center space-y-1"
                       >
-                        <div className="text-xs font-semibold text-slate-700">
+                        <div className="text-xs font-semibold text-white/80">
                           No transactions yet
                         </div>
-                        <div className="text-[11px] text-slate-500">
+                        <div className="text-[11px] text-white/55">
                           Currency exchanges, merchant purchases, fish NFT trades, and RESPITE transfers will appear here.
                         </div>
                       </div>
@@ -8745,12 +8745,12 @@ export default function App() {
                         const actionLabel = formatWalletHistoryActionLabel(tx.action_type);
                         const badgeTone =
                           displayAmount.badgeCurrency === 'CYON'
-                            ? 'bg-sky-50 text-sky-900'
+                            ? 'bg-white/[0.10] text-sky-200'
                             : displayAmount.badgeCurrency === 'RESPITE'
-                              ? 'bg-violet-50 text-violet-900'
+                              ? 'bg-white/[0.10] text-violet-200'
                               : displayAmount.badgeCurrency === 'NEAR'
-                                ? 'bg-emerald-50 text-emerald-900'
-                                : 'bg-amber-50 text-amber-900';
+                                ? 'bg-white/[0.10] text-emerald-200'
+                                : 'bg-white/[0.10] text-amber-200';
                         const formattedDate = (() => {
                           try {
                             const d = new Date(tx.created_at);
@@ -8770,19 +8770,19 @@ export default function App() {
                           <div
                             key={tx.id}
                             data-wallet-tx-item="true"
-                            className="p-3.5 rounded-2xl bg-white border border-slate-200/75 shadow-sm space-y-2"
+                            className="p-3.5 rounded-2xl bg-white/[0.06] border border-white/[0.10] space-y-2"
                           >
                             <div className="flex items-start justify-between gap-2.5">
                               <div className="min-w-0 space-y-1">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-semibold">
+                                  <span className="px-2 py-0.5 rounded-full bg-white/[0.10] text-white/80 text-[10px] font-semibold">
                                     {actionLabel}
                                   </span>
-                                  <span className="text-[11px] text-slate-400">
+                                  <span className="text-[11px] text-white/40">
                                     {formattedDate}
                                   </span>
                                 </div>
-                                <div className="text-xs font-medium text-slate-900 break-words">
+                                <div className="text-xs font-medium text-white break-words">
                                   {tx.reasoning_summary || tx.item_id || tx.action_type}
                                 </div>
                               </div>
@@ -8795,8 +8795,8 @@ export default function App() {
                             </div>
 
                             {tx.near_tx_hash && (
-                              <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 text-[10.5px] font-mono">
-                                <span className="text-slate-400 truncate">
+                              <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2 text-[10.5px] font-mono">
+                                <span className="text-white/40 truncate">
                                   Tx: {tx.near_tx_hash}
                                 </span>
                                 <a
