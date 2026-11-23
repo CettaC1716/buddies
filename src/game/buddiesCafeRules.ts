@@ -1181,6 +1181,7 @@ export function resolveNearestCafePromptOrSeat(
   pz: number,
   isWorking: boolean,
   activeOrderCategory: 'drink' | 'pastry' | null = null,
+  isSeatOccupied?: (spot: CafeInteriorSeatSpot) => boolean,
 ): CafeNearestPromptOrSeatResult {
   const station = detectNearestCafeStation(px, pz, isWorking, activeOrderCategory);
   const stationObjectDist =
@@ -1193,6 +1194,7 @@ export function resolveNearestCafePromptOrSeat(
   if (!isWorking) {
     for (let i = 0; i < CAFE_INTERIOR_SEAT_SPOTS.length; i++) {
       const spot = CAFE_INTERIOR_SEAT_SPOTS[i];
+      if (isSeatOccupied?.(spot)) continue;
       const centerDist = Math.hypot(px - spot.x, pz - spot.z);
       if (centerDist <= CAFE_SEAT_PROXIMITY_RADIUS) {
         const objDist = computeCafeSeatObjectDistance(px, pz, spot);

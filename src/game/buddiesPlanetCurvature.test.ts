@@ -187,12 +187,14 @@ test('evaluateRoadNetworkSdf, evaluateNwLakeSdf, and evaluateSeHarborSdf match 1
   assert.ok(evaluateRoadNetworkSdf(70, 0) < 0);
   assert.ok(evaluateRoadNetworkSdf(0, 52) < 0);
   assert.ok(evaluateRoadNetworkSdf(0, -52) < 0);
-  // Mirrored Central S-Curves (s5 at x=-13, s6 at z=±14, s3 at z=±26, s8 at z=±24, s10 at x=-18, s11 at x=+19)
+  // Central S-Curves (West s1-s3 North-only: South branch closed into park lawn; East & x=-18 connectors mirrored N/S)
   assert.ok(evaluateRoadNetworkSdf(-13, 0) < 0);
   assert.ok(evaluateRoadNetworkSdf(0, 14) < 0);
   assert.ok(evaluateRoadNetworkSdf(0, -14) < 0);
-  assert.ok(evaluateRoadNetworkSdf(-33, 26) < 0);
-  assert.ok(evaluateRoadNetworkSdf(-33, -26) < 0);
+  assert.ok(evaluateRoadNetworkSdf(-33, -26) < 0, 'West-North S-curve s3 remains open road');
+  assert.ok(evaluateRoadNetworkSdf(-33, 26) > 0, 'Closed West-South S-curve s3 is now park lawn');
+  assert.ok(evaluateRoadNetworkSdf(-55, 15) > 0, 'Closed West-South S-curve s1 is now park/sidewalk');
+  assert.ok(evaluateRoadNetworkSdf(-45, 22) > 0, 'Closed West-South S-curve s2 is now park lawn');
   assert.ok(evaluateRoadNetworkSdf(26, 24) < 0);
   assert.ok(evaluateRoadNetworkSdf(26, -24) < 0);
   assert.ok(evaluateRoadNetworkSdf(-18, 40) < 0);
@@ -217,11 +219,8 @@ test('evaluateRoadNetworkSdf, evaluateNwLakeSdf, and evaluateSeHarborSdf match 1
   assert.ok(evaluateRoadNetworkSdf(-15.0, 144.5) < 0, 'South Ridge road must register on road SDF');
   assert.ok(evaluateRoadNetworkSdf(-15.0, -144.5) < 0, 'North Ridge road must register on road SDF');
 
-  // 100% North-South Mirror Symmetry: evaluateRoadNetworkSdf(x, -z) === evaluateRoadNetworkSdf(x, +z)
+  // North-South Mirror Symmetry on all mirrored segments (excluding intentionally North-only West s1-s3)
   for (const [rx, rz] of [
-    [-55, 15],
-    [-45, 22],
-    [-33, 26],
     [-19, 20],
     [-13, 8],
     [0, 14],
@@ -371,14 +370,21 @@ test('applyTerrainSculptBrush raises, lowers, and flattens terrain elevation cle
   assert.equal(sample.finalY, 0);
 });
 
-test('isPointOnZebraCrosswalk and isPointOnAsphaltRoadOrZebraCross detect all 12 zebra crosswalks and asphalt highways with N/S symmetry', () => {
-  assert.equal(ZEBRA_CROSSWALK_ZONES.length, 12);
+test('isPointOnZebraCrosswalk and isPointOnAsphaltRoadOrZebraCross detect all 13 zebra crosswalks and asphalt highways accurately', () => {
+  assert.equal(ZEBRA_CROSSWALK_ZONES.length, 13);
   for (const zone of ZEBRA_CROSSWALK_ZONES) {
     assert.equal(isPointOnZebraCrosswalk(zone.cx, zone.cz), true);
-    assert.equal(isPointOnZebraCrosswalk(zone.cx, -zone.cz), true);
     assert.equal(isPointOnAsphaltRoadOrZebraCross(zone.cx, zone.cz), true);
-    assert.equal(isPointOnAsphaltRoadOrZebraCross(zone.cx, -zone.cz), true);
+    if (zone.mirroredZ) {
+      assert.equal(isPointOnZebraCrosswalk(zone.cx, -zone.cz), true);
+      assert.equal(isPointOnAsphaltRoadOrZebraCross(zone.cx, -zone.cz), true);
+    }
   }
+  // Deleted South Plaza & West-South S-curve crosswalks must NOT register
+  assert.equal(isPointOnZebraCrosswalk(-68.05, 8.6), false);
+  assert.equal(isPointOnZebraCrosswalk(-60.0, 15.0), false);
+  // New North Residence crosswalk must register
+  assert.equal(isPointOnZebraCrosswalk(9.8, -50.05), true);
 
   // Off-road grass island at (0, 0) is neither asphalt road nor zebra crosswalk
   assert.equal(isPointOnZebraCrosswalk(0, 0), false);
@@ -499,13 +505,15 @@ test('Widened Tram+Car Ring Road & 4.40m Inner Tram Sidewalk span all 4 sides cl
     assert.equal(evaluateBlitzGrassMask(cx, cz), 0.0, `Expected zero grass inside widened car lane at (${cx}, ${cz})`);
   }
 
-  // Relocated N/S Plaza zebra crosswalks beside Halte ramps ((-68.05, ±8.6)),
+  // Single North Plaza zebra crosswalk (-68.05, -8.6), new North Residence crosswalk (9.8, -50.05),
   // East Harbor crosswalk at (68.05, 0), and inner S-curve zebra crosswalks at (x, ±42.0)
   assert.equal(isPointOnZebraCrosswalk(-65.0, 0.0), false);
   assert.equal(isPointOnZebraCrosswalk(-65.0, -8.6), true);
   assert.equal(isPointOnZebraCrosswalk(-70.0, -8.6), true);
-  assert.equal(isPointOnZebraCrosswalk(-65.0, 8.6), true);
-  assert.equal(isPointOnZebraCrosswalk(-70.0, 8.6), true);
+  assert.equal(isPointOnZebraCrosswalk(-65.0, 8.6), false);
+  assert.equal(isPointOnZebraCrosswalk(-70.0, 8.6), false);
+  assert.equal(isPointOnZebraCrosswalk(9.8, -47.0), true);
+  assert.equal(isPointOnZebraCrosswalk(9.8, -53.0), true);
   assert.equal(isPointOnZebraCrosswalk(65.0, 0.0), true);
   assert.equal(isPointOnZebraCrosswalk(70.0, 0.0), true);
   for (const sx of [-18.0, 19.0, 42.0]) {
@@ -513,12 +521,12 @@ test('Widened Tram+Car Ring Road & 4.40m Inner Tram Sidewalk span all 4 sides cl
     assert.equal(isPointOnZebraCrosswalk(sx, -42.0), true);
   }
 
-  // 4.40m Inner Tram Ring Sidewalk across all 4 straight segments & 4 inner L-corners + zero grass
+  // 4.40m Inner Tram Ring Sidewalk across all 4 straight segments (including continuous closed West-South z=+15) & 4 inner L-corners + zero grass
   for (const [ix, iz] of [
     [-60.0, -30.0],
     [-60.0, 30.0],
-    [-60.0, -10.0],
-    [-60.0, 10.0],
+    [-60.0, -7.5],
+    [-60.0, 15.0],
     [60.0, 0.0],
     [60.0, -30.0],
     [60.0, 30.0],
@@ -539,10 +547,9 @@ test('Widened Tram+Car Ring Road & 4.40m Inner Tram Sidewalk span all 4 sides cl
     assert.equal(evaluateBlitzGrassMask(ix, iz), 0.0, `Expected zero grass on inner sidewalk at (${ix}, ${iz})`);
   }
 
-  // Exclusions: intersecting S-curve roads & shifted inner Halte decks
+  // Exclusions: open intersecting S-curve roads & shifted inner Halte decks
   for (const [ex, ez] of [
     [-60.0, -15.0],
-    [-60.0, 15.0],
     [60.0, -15.0],
     [60.0, 15.0],
     [-18.0, -42.0],
@@ -551,7 +558,7 @@ test('Widened Tram+Car Ring Road & 4.40m Inner Tram Sidewalk span all 4 sides cl
     [-18.0, 42.0],
     [19.0, 42.0],
     [42.0, 42.0],
-    [-58.9, 0.0],
+    [-58.9, 4.6],
     [3.5, -40.87],
     [-36.5, 40.87],
   ] as const) {
@@ -963,10 +970,15 @@ test('all urban sidewalks (trotoar) have exact +0.09m terrain collision elevatio
   );
 
   // 5. Asphalt carriageways, zebra crosswalks, and lawns adjacent to sidewalks MUST remain 0.0m
+  //    (Closed West-South entrance at (-60.0, 15.0) is now continuous +0.09m inner sidewalk!)
+  assert.ok(
+    Math.abs(getTerrainElevation(-60.0, 15.0) - 0.09) < 1e-6,
+    `Closed West-South entrance (-60.0, 15.0) must collide at +0.09m inner sidewalk, got ${getTerrainElevation(-60.0, 15.0)}`,
+  );
   for (const [x, z] of [
     [-73.8, 0.0],    // West Ring asphalt right outside Plaza curb
     [-70.0, 0.0],    // West Tram track centerline
-    [-60.0, 15.0],   // Inner West S-curve crosswalk
+    [-60.0, -15.0],  // Open Inner West-North S-curve crosswalk
     [-18.0, 42.0],   // Inner South S-curve crosswalk
     [19.0, -42.0],   // Inner North S-curve crosswalk
     [-60.0, 58.0],   // Outer South collector crosswalk
@@ -982,11 +994,11 @@ test('all urban sidewalks (trotoar) have exact +0.09m terrain collision elevatio
     );
   }
 
-  // 6. Raised Halte platforms remain +0.26m and ramps bridge smoothly onto +0.09m sidewalks
+  // 6. Raised Shifted Central Halte platform (z = 4.6) remains +0.26m and ramps bridge smoothly onto +0.09m sidewalks
   assert.ok(Math.abs(evaluateUrbanSidewalkElevation(-76.5, 0.0) - 0.09) < 1e-6);
-  assert.ok(Math.abs(getTerrainElevation(-58.9, 0.0) - 0.26) < 1e-6);
-  const rampMid = getTerrainElevation(-58.9, 8.2);
-  const rampEnd = getTerrainElevation(-58.9, 9.2);
+  assert.ok(Math.abs(getTerrainElevation(-58.9, 4.6) - 0.26) < 1e-6);
+  const rampMid = getTerrainElevation(-58.9, 12.8);
+  const rampEnd = getTerrainElevation(-58.9, 13.8);
   assert.ok(rampMid > 0.09 && rampMid < 0.26, `Halte ramp mid (${rampMid}) should bridge 0.09..0.26`);
   assert.ok(Math.abs(rampEnd - 0.09) < 1e-6, `Halte ramp bottom (${rampEnd}) should meet inner sidewalk at +0.09m`);
 });

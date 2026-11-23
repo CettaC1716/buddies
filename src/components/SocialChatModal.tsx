@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { ArrowLeft, Check, X } from 'lucide-react';
+import { ArrowLeft, Check, Globe, MessageCircle, Settings, Users, Wifi, X } from 'lucide-react';
 import { soundEngine } from '../game/audio';
 import {
   fetchLettersForAccount,
@@ -74,6 +74,8 @@ interface SocialChatModalProps {
   onMeetKai?: () => void;
   embeddedInPhone?: boolean;
   initialTab?: SocialChatSubTab;
+  lockedTab?: SocialChatSubTab;
+  onSwitchPhoneApp?: (app: 'contacts' | 'messages') => void;
 }
 
 export type SocialChatSubTab = 'online' | 'public' | 'private' | 'letters' | 'kai' | 'settings';
@@ -280,17 +282,22 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
   onMeetKai,
   embeddedInPhone = false,
   initialTab,
+  lockedTab,
+  onSwitchPhoneApp,
 }) => {
-  const [activeTab, setActiveTab] = useState<SocialChatSubTab>(initialTab ?? 'public');
+  const [activeTab, setActiveTab] = useState<SocialChatSubTab>(lockedTab ?? initialTab ?? 'public');
+  const effectiveTab: SocialChatSubTab = lockedTab ?? activeTab;
+  const isStandaloneGlassChat = !embeddedInPhone;
+  const isPhoneGlassMode = Boolean((embeddedInPhone && lockedTab) || isStandaloneGlassChat);
   const [letters, setLetters] = useState<BuddiesLetter[]>([]);
   const [openLetter, setOpenLetter] = useState<BuddiesLetter | null>(null);
   const lettersUnreadCount = letters.filter((l) => !l.isRead).length;
 
   useEffect(() => {
-    if (isOpen && initialTab) {
-      setActiveTab(initialTab);
+    if (isOpen && (lockedTab || initialTab)) {
+      setActiveTab(lockedTab ?? initialTab ?? 'public');
     }
-  }, [isOpen, initialTab]);
+  }, [isOpen, initialTab, lockedTab]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -303,11 +310,11 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, playerUid, activeTab]);
+  }, [isOpen, playerUid, effectiveTab]);
 
   useEffect(() => {
-    if (activeTab !== 'letters') setOpenLetter(null);
-  }, [activeTab]);
+    if (effectiveTab !== 'letters') setOpenLetter(null);
+  }, [effectiveTab]);
   const publicEndRef = useRef<HTMLDivElement | null>(null);
   const privateEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -332,7 +339,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
   useEffect(() => {
     if (selectedPrivateUser && !isRealHumanWhisperTarget(selectedPrivateUser, playerName, playerUid)) {
       onSelectPrivateUser(null);
-    } else if (validSelectedPrivateUser && isOpen) {
+    } else if (validSelectedPrivateUser && isOpen && !lockedTab) {
       setActiveTab('private');
       onClearUnreadPrivate?.();
     }
@@ -340,6 +347,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
     selectedPrivateUser,
     validSelectedPrivateUser,
     isOpen,
+    lockedTab,
     playerName,
     playerUid,
     onSelectPrivateUser,
@@ -347,17 +355,17 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
   ]);
 
   useEffect(() => {
-    if (isOpen && activeTab === 'private') {
+    if (isOpen && effectiveTab === 'private') {
       onClearUnreadPrivate?.();
     }
-  }, [isOpen, activeTab, onClearUnreadPrivate]);
+  }, [isOpen, effectiveTab, onClearUnreadPrivate]);
 
   useEffect(() => {
     if (isOpen) {
       publicEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       privateEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [normalizedMessages.length, isOpen, activeTab]);
+  }, [normalizedMessages.length, isOpen, effectiveTab]);
 
   const publicMessages = useMemo(
     () => normalizedMessages.filter((m) => m.type === 'public'),
@@ -384,98 +392,258 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
     return null;
   }
 
+  const lockedHeaderMeta: Record<
+    SocialChatSubTab,
+    { title: string; subtitle: string; icon: React.ReactNode; badgeBg: string }
+  > = {
+    online: {
+      title: 'Online Players',
+      subtitle: 'Connected citizens in zone',
+      icon: <Users className="w-3.5 h-3.5 text-white stroke-[2.2]" aria-hidden="true" />,
+      badgeBg: 'from-lime-400 to-emerald-500',
+    },
+    public: {
+      title: 'Public Chat',
+      subtitle: 'All citizens room feed',
+      icon: <Globe className="w-3.5 h-3.5 text-white stroke-[2.2]" aria-hidden="true" />,
+      badgeBg: 'from-rose-400 to-pink-600',
+    },
+    private: {
+      title: validSelectedPrivateUser
+        ? simplifyDisplayName(validSelectedPrivateUser.name)
+        : 'Private Messages',
+      subtitle: validSelectedPrivateUser
+        ? 'Private Whisper'
+        : 'Direct whispers',
+      icon: <MessageCircle className="w-3.5 h-3.5 text-white stroke-[2.2]" aria-hidden="true" />,
+      badgeBg: 'from-sky-400 to-blue-500',
+    },
+    letters: {
+      title: 'Letters',
+      subtitle: 'Purchase certificates & inbox',
+      icon: (
+        <img
+          src="/assets/aistudio/writing_2593648_9a87d6fe.png"
+          alt=""
+          className="w-4 h-4 object-contain"
+          draggable={false}
+        />
+      ),
+      badgeBg: 'from-amber-50 to-orange-100',
+    },
+    settings: {
+      title: 'Settings',
+      subtitle: 'Chat bubble, audio & controls',
+      icon: <Settings className="w-3.5 h-3.5 text-white stroke-[2.2]" aria-hidden="true" />,
+      badgeBg: 'from-slate-500 to-zinc-700',
+    },
+    kai: {
+      title: 'Kai',
+      subtitle: 'East Beach fish merchant',
+      icon: <MessageCircle className="w-3.5 h-3.5 text-white stroke-[2.2]" aria-hidden="true" />,
+      badgeBg: 'from-sky-500 to-teal-400',
+    },
+  };
+
+  const activeStandaloneHeaderMeta = lockedHeaderMeta[effectiveTab];
+  const standalonePeerPortraitUrl = validSelectedPrivateUser
+    ? validSelectedPrivateUser.gender === 'female' ||
+      simplifyDisplayName(validSelectedPrivateUser.name).toLowerCase().includes('nadia') ||
+      simplifyDisplayName(validSelectedPrivateUser.name).toLowerCase().includes('hana')
+      ? '/assets/avatar_nadia.jpg'
+      : '/assets/avatar_hiro.jpg'
+    : null;
+
   const innerPanel = (
       <div
         className={
-          embeddedInPhone
-            ? 'relative w-full h-full bg-white text-slate-900 flex flex-col overflow-hidden'
-            : 'relative h-full rounded-[28px] bg-white/96 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] text-slate-900 flex flex-col overflow-hidden'
+          isStandaloneGlassChat
+            ? 'relative h-full rounded-[32px] bg-[#141926]/68 backdrop-blur-2xl border border-white/25 shadow-[0_24px_70px_rgba(0,0,0,0.52)] text-white flex flex-col overflow-hidden'
+            : isPhoneGlassMode
+              ? 'relative w-full h-full bg-transparent text-white flex flex-col overflow-hidden'
+              : embeddedInPhone
+                ? 'relative w-full h-full bg-white text-slate-900 flex flex-col overflow-hidden'
+                : 'relative h-full rounded-[28px] bg-white/96 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] text-slate-900 flex flex-col overflow-hidden'
         }
       >
-        {/* TOP TAB BAR */}
-        <div
-          className={`flex items-center justify-between gap-2 border-b border-slate-200/80 bg-white/90 shrink-0 ${
-            embeddedInPhone ? 'px-3 py-2.5' : 'px-4 pt-3.5 pb-3'
-          }`}
-        >
-          <div className={`flex items-center flex-wrap min-w-0 ${embeddedInPhone ? 'gap-1' : 'gap-1.5'}`}>
-            {(
-              [
-                { id: 'online', label: 'Online' },
-                { id: 'public', label: 'Public' },
-                { id: 'private', label: 'Private' },
-                { id: 'letters', label: 'Letters' },
-                { id: 'settings', label: 'Settings' },
-              ] as { id: SocialChatSubTab; label: string }[]
-            ).map((tab) => {
-              const active = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  data-social-tab={tab.id}
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setActiveTab(tab.id);
-                    if (tab.id === 'private') {
-                      onClearUnreadPrivate?.();
-                    }
-                  }}
-                  className={`relative rounded-full font-semibold cursor-pointer transition-all ${
-                    embeddedInPhone ? 'px-2.5 py-1 text-[10.5px]' : 'px-3 py-1.5 text-[11px]'
-                  } ${
-                    active
-                      ? 'bg-sky-500 text-white shadow-sm'
-                      : 'bg-slate-100/90 text-slate-600 hover:bg-slate-200/80 hover:text-slate-900'
-                  }`}
-                >
-                  <span>{tab.label}</span>
-                  {tab.id === 'private' && unreadPrivateCount > 0 && (
-                    <span
-                      data-private-tab-unread-dot="true"
-                      className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-rose-500 ring-2 ring-white text-white text-[9px] font-bold flex items-center justify-center"
-                    >
-                      {unreadPrivateCount}
-                    </span>
-                  )}
-                  {tab.id === 'letters' && lettersUnreadCount > 0 && (
-                    <span
-                      data-letters-tab-unread-dot="true"
-                      className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-rose-500 ring-2 ring-white text-white text-[9px] font-bold flex items-center justify-center"
-                    >
-                      {lettersUnreadCount}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+        {/* TOP BAR: Unified dark glass header with Close X for standalone player chat, or locked app header in Smartphone OS */}
+        {isStandaloneGlassChat ? (
+          <>
+            <div className="shrink-0 flex items-center justify-between text-[10.5px] font-medium px-4 pt-3 pb-1.5 text-white/90">
+              <div className="flex items-center gap-1.5">
+                <Wifi className="w-3 h-3 text-white/85" aria-hidden="true" />
+                <span className="tracking-wide font-semibold">BLITZ OS</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  onClose();
+                }}
+                aria-label="Close Chat"
+                title="Close"
+                className="w-6 h-6 rounded-full flex items-center justify-center border bg-white/12 hover:bg-rose-500/35 border-white/20 text-white/90 hover:text-white cursor-pointer active:scale-90 transition-all shrink-0"
+              >
+                <X className="w-3.5 h-3.5 stroke-[2.3]" aria-hidden="true" />
+              </button>
+            </div>
+            <div className="flex items-center justify-between gap-2.5 border-b border-white/12 bg-transparent px-3.5 py-2 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                {effectiveTab === 'private' && standalonePeerPortraitUrl ? (
+                  <img
+                    src={standalonePeerPortraitUrl}
+                    alt={activeStandaloneHeaderMeta.title}
+                    draggable={false}
+                    className="w-8 h-8 rounded-full object-cover object-top ring-1 ring-white/25 shrink-0"
+                  />
+                ) : (
+                  <span
+                    className={`w-7 h-7 rounded-xl bg-gradient-to-br ${activeStandaloneHeaderMeta.badgeBg} shadow-sm flex items-center justify-center shrink-0`}
+                  >
+                    {activeStandaloneHeaderMeta.icon}
+                  </span>
+                )}
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-white leading-tight truncate">
+                    {activeStandaloneHeaderMeta.title}
+                  </div>
+                  <div className="text-[10px] text-white/65 leading-tight truncate">
+                    {activeStandaloneHeaderMeta.subtitle}
+                  </div>
+                </div>
+              </div>
+              {effectiveTab === 'private' && validSelectedPrivateUser && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.75)] shrink-0" />
+              )}
+              {effectiveTab === 'public' && (
+                <span className="px-2 py-0.5 rounded-full bg-white/10 text-white/75 border border-white/12 text-[9.5px] font-medium shrink-0">
+                  Live bubble
+                </span>
+              )}
+            </div>
+          </>
+        ) : isPhoneGlassMode && lockedTab ? (
+          <div className="flex items-center justify-between gap-2.5 border-b border-white/12 bg-transparent px-3.5 py-2.5 shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span
+                className={`w-7 h-7 rounded-xl bg-gradient-to-br ${lockedHeaderMeta[lockedTab].badgeBg} shadow-sm flex items-center justify-center shrink-0`}
+              >
+                {lockedHeaderMeta[lockedTab].icon}
+              </span>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-white leading-tight truncate">
+                  {lockedHeaderMeta[lockedTab].title}
+                </div>
+                <div className="text-[10px] text-white/65 leading-tight truncate">
+                  {lockedHeaderMeta[lockedTab].subtitle}
+                </div>
+              </div>
+            </div>
+            {lockedTab === 'online' && (
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-400/20 text-emerald-200 border border-emerald-300/25 text-[10px] font-semibold shrink-0">
+                {realHumanOnlinePeers.length} {realHumanOnlinePeers.length === 1 ? 'peer' : 'peers'}
+              </span>
+            )}
+            {lockedTab === 'public' && (
+              <span className="px-2 py-0.5 rounded-full bg-white/10 text-white/75 border border-white/12 text-[9.5px] font-medium shrink-0">
+                Live bubble
+              </span>
+            )}
+            {lockedTab === 'letters' && lettersUnreadCount > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-semibold shrink-0">
+                {lettersUnreadCount} new
+              </span>
+            )}
           </div>
-          {!embeddedInPhone && (
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playUiClick();
-                onClose();
-              }}
-              aria-label="Close Social Chat"
-              className="w-8 h-8 rounded-full bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200/80 flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
-            >
-              <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
-            </button>
-          )}
-        </div>
+        ) : (
+          <div
+            className={`flex items-center justify-between gap-2 border-b border-slate-200/80 bg-white/90 shrink-0 ${
+              embeddedInPhone ? 'px-3 py-2.5' : 'px-4 pt-3.5 pb-3'
+            }`}
+          >
+            <div className={`flex items-center flex-wrap min-w-0 ${embeddedInPhone ? 'gap-1' : 'gap-1.5'}`}>
+              {(
+                [
+                  { id: 'online', label: 'Online' },
+                  { id: 'public', label: 'Public' },
+                  { id: 'private', label: 'Private' },
+                  { id: 'letters', label: 'Letters' },
+                  { id: 'settings', label: 'Settings' },
+                ] as { id: SocialChatSubTab; label: string }[]
+              ).map((tab) => {
+                const active = effectiveTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    data-social-tab={tab.id}
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setActiveTab(tab.id);
+                      if (tab.id === 'private') {
+                        onClearUnreadPrivate?.();
+                      }
+                    }}
+                    className={`relative rounded-full font-semibold cursor-pointer transition-all ${
+                      embeddedInPhone ? 'px-2.5 py-1 text-[10.5px]' : 'px-3 py-1.5 text-[11px]'
+                    } ${
+                      active
+                        ? 'bg-sky-500 text-white shadow-sm'
+                        : 'bg-slate-100/90 text-slate-600 hover:bg-slate-200/80 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    {tab.id === 'private' && unreadPrivateCount > 0 && (
+                      <span
+                        data-private-tab-unread-dot="true"
+                        className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-rose-500 ring-2 ring-white text-white text-[9px] font-bold flex items-center justify-center"
+                      >
+                        {unreadPrivateCount}
+                      </span>
+                    )}
+                    {tab.id === 'letters' && lettersUnreadCount > 0 && (
+                      <span
+                        data-letters-tab-unread-dot="true"
+                        className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-rose-500 ring-2 ring-white text-white text-[9px] font-bold flex items-center justify-center"
+                      >
+                        {lettersUnreadCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {!embeddedInPhone && (
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  onClose();
+                }}
+                aria-label="Close Social Chat"
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200/80 flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
+              >
+                <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+              </button>
+            )}
+          </div>
+        )}
 
         {/* SUB-TAB BODY CONTENT */}
         <div
-          className={`relative flex-1 flex flex-col min-h-0 overflow-hidden bg-[#f2f4f8] ${
-            embeddedInPhone ? 'px-3 py-2.5' : 'px-3.5 py-3'
+          className={`relative flex-1 flex flex-col min-h-0 overflow-hidden ${
+            isPhoneGlassMode
+              ? 'bg-transparent px-3.5 py-3'
+              : `bg-[#f2f4f8] ${embeddedInPhone ? 'px-3 py-2.5' : 'px-3.5 py-3'}`
           }`}
         >
           {/* LETTER CERTIFICATE OVERLAY (opened from the LETTERS tab inbox) */}
-          {openLetter && activeTab === 'letters' && (
+          {openLetter && effectiveTab === 'letters' && (
             <div
               data-letter-certificate="true"
-              className="absolute inset-0 z-20 flex flex-col bg-[#fbfaf7] px-5 py-4 overflow-y-auto"
+              className={`absolute inset-0 z-20 flex flex-col px-4 py-3.5 overflow-y-auto ${
+                isPhoneGlassMode ? 'bg-[#141926]/88 backdrop-blur-xl' : 'bg-[#fbfaf7]'
+              }`}
             >
               <button
                 type="button"
@@ -582,19 +750,25 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
           )}
 
           {/* 1. ONLINE LIST SUB-TAB (Real Human Multiplayer Peers Only) */}
-          {activeTab === 'online' && (
+          {effectiveTab === 'online' && (
             <div className="flex-1 flex flex-col min-h-0">
-              <div className="mb-2.5 flex items-center justify-between text-[11px] font-semibold text-slate-500 px-1">
-                <span>Connected players in zone</span>
-                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200/80 text-[10.5px] font-semibold">
-                  {realHumanOnlinePeers.length} {realHumanOnlinePeers.length === 1 ? 'peer' : 'peers'}
-                </span>
-              </div>
+              {!isPhoneGlassMode && (
+                <div className="mb-2.5 flex items-center justify-between text-[11px] font-semibold text-slate-500 px-1">
+                  <span>Connected players in zone</span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200/80 text-[10.5px] font-semibold">
+                    {realHumanOnlinePeers.length} {realHumanOnlinePeers.length === 1 ? 'peer' : 'peers'}
+                  </span>
+                </div>
+              )}
               <div className="flex-1 overflow-y-auto space-y-2 pr-0.5">
                 {realHumanOnlinePeers.length === 0 ? (
                   <div
                     data-social-online-empty="true"
-                    className="h-44 rounded-2xl flex flex-col items-center justify-center text-center p-5 bg-white/80 border border-dashed border-slate-300 text-slate-500 text-xs font-medium"
+                    className={`h-44 rounded-2xl flex flex-col items-center justify-center text-center p-5 border border-dashed text-xs font-medium ${
+                      isPhoneGlassMode
+                        ? 'bg-white/10 border-white/25 text-white/75'
+                        : 'bg-white/80 border-slate-300 text-slate-500'
+                    }`}
                   >
                     No other real human players are currently online in this zone.
                   </div>
@@ -607,7 +781,11 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                         onClick={() => {
                           soundEngine.playUiClick();
                           onSelectPrivateUser(u);
-                          setActiveTab('private');
+                          if (isPhoneGlassMode && onSwitchPhoneApp) {
+                            onSwitchPhoneApp('messages');
+                          } else {
+                            setActiveTab('private');
+                          }
                         }}
                         className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-2.5 cursor-pointer ${
                           isSelected
@@ -633,7 +811,11 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                             e.stopPropagation();
                             soundEngine.playUiClick();
                             onSelectPrivateUser(u);
-                            setActiveTab('private');
+                            if (isPhoneGlassMode && onSwitchPhoneApp) {
+                              onSwitchPhoneApp('messages');
+                            } else {
+                              setActiveTab('private');
+                            }
                           }}
                           className="px-3 py-1 rounded-full bg-sky-500 hover:bg-sky-600 text-white font-semibold text-[10.5px] shadow-xs cursor-pointer transition-colors shrink-0"
                         >
@@ -648,16 +830,22 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
           )}
 
           {/* 2. PUBLIC CHAT SUB-TAB */}
-          {activeTab === 'public' && (
+          {effectiveTab === 'public' && (
             <div className="flex-1 flex flex-col min-h-0">
-              <div className="mb-2 flex items-center justify-between text-[11px] font-semibold text-slate-500 px-1">
-                <span>All citizens room feed</span>
-                <span className="text-[10px] font-medium text-slate-400">Overhead bubble active</span>
-              </div>
+              {!isPhoneGlassMode && (
+                <div className="mb-2 flex items-center justify-between text-[11px] font-semibold text-slate-500 px-1">
+                  <span>All citizens room feed</span>
+                  <span className="text-[10px] font-medium text-slate-400">Overhead bubble active</span>
+                </div>
+              )}
 
               <div className="flex-1 overflow-y-auto px-1 py-2 space-y-3">
                 {publicMessages.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-center p-5 text-slate-400 text-xs font-medium">
+                  <div
+                    className={`h-full flex flex-col items-center justify-center text-center p-5 text-xs font-medium ${
+                      isPhoneGlassMode ? 'text-white/70' : 'text-slate-400'
+                    }`}
+                  >
                     No public messages yet. Say hello to everyone in the room!
                   </div>
                 ) : (
@@ -679,12 +867,20 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                         className={`flex flex-col ${isSelf ? 'items-end' : 'items-start'}`}
                       >
                         <div className="flex items-center gap-1.5 mb-1 px-1.5">
-                          <span className="text-[10.5px] font-semibold text-slate-500">
+                          <span
+                            className={`text-[10.5px] font-semibold ${
+                              isPhoneGlassMode ? 'text-white/80' : 'text-slate-500'
+                            }`}
+                          >
                             {isSelf
                               ? `${simplifyDisplayName(playerName)} (You)`
                               : simplifyDisplayName(msg.senderName)}
                           </span>
-                          <span className="text-[10px] text-slate-400">
+                          <span
+                            className={`text-[10px] ${
+                              isPhoneGlassMode ? 'text-white/50' : 'text-slate-400'
+                            }`}
+                          >
                             {msg.timestamp}
                           </span>
                         </div>
@@ -709,7 +905,9 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                                 : 'rounded-2xl rounded-tr-sm bg-sky-500 text-white'
                               : peerBubbleStyle
                                 ? 'rounded-2xl rounded-tl-sm border border-slate-200/60'
-                                : 'rounded-2xl rounded-tl-sm bg-white text-slate-800 border border-slate-200/50'
+                                : isPhoneGlassMode
+                                  ? 'rounded-2xl rounded-tl-sm bg-white/12 text-white/95 border border-white/15 backdrop-blur-md'
+                                  : 'rounded-2xl rounded-tl-sm bg-white text-slate-800 border border-slate-200/50'
                           }`}
                         >
                           {msg.text}
@@ -724,9 +922,13 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
           )}
 
           {/* 3. PRIVATE / WHISPER CHAT SUB-TAB (Real Connected Human Players Only) */}
-          {activeTab === 'private' && (
+          {effectiveTab === 'private' && (
             <div className="flex-1 flex flex-col min-h-0">
-              <div className="mb-2 flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500 px-1">
+              <div
+                className={`mb-2 flex items-center justify-between gap-2 text-[11px] font-semibold px-1 ${
+                  isPhoneGlassMode ? 'text-white/80' : 'text-slate-500'
+                }`}
+              >
                 <span className="truncate">
                   {validSelectedPrivateUser
                     ? `Whisper to: ${simplifyDisplayName(validSelectedPrivateUser.name)}`
@@ -737,9 +939,17 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                     type="button"
                     onClick={() => {
                       soundEngine.playUiClick();
-                      setActiveTab('online');
+                      if (isPhoneGlassMode && onSwitchPhoneApp) {
+                        onSwitchPhoneApp('contacts');
+                      } else {
+                        setActiveTab('online');
+                      }
                     }}
-                    className="px-2.5 py-1 rounded-full bg-white hover:bg-sky-50 text-slate-600 hover:text-sky-700 text-[10px] font-semibold border border-slate-200/80 shadow-xs cursor-pointer transition-colors shrink-0"
+                    className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border shadow-xs cursor-pointer transition-colors shrink-0 ${
+                      isPhoneGlassMode
+                        ? 'bg-white/14 hover:bg-white/22 text-white border-white/15'
+                        : 'bg-white hover:bg-sky-50 text-slate-600 hover:text-sky-700 border-slate-200/80'
+                    }`}
                   >
                     <span>Switch target</span>
                   </button>
@@ -762,7 +972,9 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                         className={`px-3 py-1 rounded-full border text-[11px] font-semibold shrink-0 cursor-pointer transition-all ${
                           isTarget
                             ? 'bg-sky-500 text-white border-sky-500 shadow-xs'
-                            : 'bg-white hover:bg-sky-50 text-slate-700 border-slate-200/80'
+                            : isPhoneGlassMode
+                              ? 'bg-white/14 hover:bg-white/22 text-white border-white/15'
+                              : 'bg-white hover:bg-sky-50 text-slate-700 border-slate-200/80'
                         }`}
                       >
                         <span>{simplifyDisplayName(peer.name)}</span>
@@ -776,7 +988,9 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                 {!validSelectedPrivateUser ? (
                   <div
                     data-social-private-empty="true"
-                    className="h-full flex flex-col items-center justify-center text-center p-5 text-slate-500 text-xs font-medium gap-3"
+                    className={`h-full flex flex-col items-center justify-center text-center p-5 text-xs font-medium gap-3 ${
+                      isPhoneGlassMode ? 'text-white/75' : 'text-slate-500'
+                    }`}
                   >
                     <span>
                       {realHumanOnlinePeers.length === 0
@@ -788,7 +1002,11 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                         type="button"
                         onClick={() => {
                           soundEngine.playUiClick();
-                          setActiveTab('online');
+                          if (isPhoneGlassMode && onSwitchPhoneApp) {
+                            onSwitchPhoneApp('contacts');
+                          } else {
+                            setActiveTab('online');
+                          }
                         }}
                         className="px-4 py-1.5 rounded-full bg-sky-500 hover:bg-sky-600 text-white font-semibold text-xs shadow-sm cursor-pointer transition-colors"
                       >
@@ -797,9 +1015,17 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                     )}
                   </div>
                 ) : privateMessages.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-center p-5 text-slate-500 text-xs font-medium">
+                  <div
+                    className={`h-full flex flex-col items-center justify-center text-center p-5 text-xs font-medium ${
+                      isPhoneGlassMode ? 'text-white/70' : 'text-slate-500'
+                    }`}
+                  >
                     Start a private whisper with{' '}
-                    <span className="text-slate-900 font-semibold mt-0.5">
+                    <span
+                      className={`font-semibold mt-0.5 ${
+                        isPhoneGlassMode ? 'text-white' : 'text-slate-900'
+                      }`}
+                    >
                       {simplifyDisplayName(validSelectedPrivateUser.name)}
                     </span>
                   </div>
@@ -814,12 +1040,20 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                         className={`flex flex-col ${isSelf ? 'items-end' : 'items-start'}`}
                       >
                         <div className="flex items-center gap-1.5 mb-1 px-1.5">
-                          <span className="text-[10.5px] font-semibold text-slate-500">
+                          <span
+                            className={`text-[10.5px] font-semibold ${
+                              isPhoneGlassMode ? 'text-white/80' : 'text-slate-500'
+                            }`}
+                          >
                             {isSelf
                               ? `You → ${simplifyDisplayName(msg.recipientName || validSelectedPrivateUser.name)}`
                               : simplifyDisplayName(msg.senderName)}
                           </span>
-                          <span className="text-[10px] text-slate-400">
+                          <span
+                            className={`text-[10px] ${
+                              isPhoneGlassMode ? 'text-white/50' : 'text-slate-400'
+                            }`}
+                          >
                             {msg.timestamp}
                           </span>
                         </div>
@@ -827,7 +1061,9 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                           className={`max-w-[85%] px-3.5 py-2.5 text-xs font-medium leading-relaxed shadow-sm break-words ${
                             isSelf
                               ? 'rounded-2xl rounded-tr-sm bg-sky-500 text-white'
-                              : 'rounded-2xl rounded-tl-sm bg-white text-slate-800 border border-slate-200/50'
+                              : isPhoneGlassMode
+                                ? 'rounded-2xl rounded-tl-sm bg-white/12 text-white/95 border border-white/15 backdrop-blur-md'
+                                : 'rounded-2xl rounded-tl-sm bg-white text-slate-800 border border-slate-200/50'
                           }`}
                         >
                           {msg.text}
@@ -842,16 +1078,18 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
           )}
 
           {/* 3A. LETTERS SUB-TAB (Purchase & Ownership Certificates Inbox) */}
-          {activeTab === 'letters' && (
+          {effectiveTab === 'letters' && (
             <div className="flex-1 flex flex-col min-h-0" data-letters-inbox="true">
-              <div className="mb-2 flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500 px-1">
-                <span>Ownership certificates &amp; inbox</span>
-                {lettersUnreadCount > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-semibold">
-                    {lettersUnreadCount} new
-                  </span>
-                )}
-              </div>
+              {!isPhoneGlassMode && (
+                <div className="mb-2 flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500 px-1">
+                  <span>Ownership certificates &amp; inbox</span>
+                  {lettersUnreadCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-semibold">
+                      {lettersUnreadCount} new
+                    </span>
+                  )}
+                </div>
+              )}
 
               <div className="flex-1 flex flex-col min-h-0 rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-hidden">
                 <div className="px-3.5 py-2.5 flex items-center justify-between bg-amber-50/70 border-b border-slate-200/70 shrink-0">
@@ -918,7 +1156,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
           )}
 
           {/* 3B. KAI CONTACT SUB-TAB (phone contact for the fish merchant) */}
-          {activeTab === 'kai' && (
+          {effectiveTab === 'kai' && (
             <div className="flex-1 overflow-y-auto space-y-3 pr-0.5" data-kai-contact="true">
               <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-sm">
                 <div className="flex items-center gap-3">
@@ -1010,8 +1248,8 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
           )}
 
           {/* 4. SETTINGS SUB-TAB */}
-          {activeTab === 'settings' && (
-            <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-3 pr-0.5">
+          {effectiveTab === 'settings' && (
+            <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-3 pr-0.5 text-slate-900">
               <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-sm space-y-2.5">
                 <div className="text-[11px] font-semibold text-slate-600">
                   Speech bubble color
@@ -1147,7 +1385,8 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
       aria-hidden={!isOpen}
       aria-label="Social Chat Room"
       data-social-chat-modal="true"
-      className={`fixed left-3 bottom-24 z-40 w-[min(512px,95vw)] h-[min(724px,calc(100dvh-11.5rem))] select-none transition-all duration-300 ease-out transform ${
+      data-chat-glass-modal="true"
+      className={`fixed left-3 sm:left-4 top-14 bottom-[76px] my-auto z-40 w-[min(340px,calc(100vw-1.5rem))] sm:w-[356px] max-h-[620px] select-none transition-all duration-300 ease-out transform ${
         isOpen
           ? 'translate-x-0 opacity-100 pointer-events-auto'
           : '-translate-x-[120%] opacity-0 pointer-events-none'

@@ -379,40 +379,43 @@ function buildSalonShellAndFacade(
     clearcoat: 0.35,
   });
 
-  // 2. Back-Right (-Z) Full 2-Story Wall (`z = -5.20`) & Back-Left (-X) Straight Wall (`x = -6.20`)
+  // 2. Back-Right (-Z) Full 2-Story Wall (`z = -4.10`) & Back-Left (-X) Straight Wall (`x = -6.00`)
+  const fullW = b.maxX - b.minX; // 12.00m
   addSalonMesh(
     staticGroup,
     styler,
-    makeRoundedBoxGeo(12.64, 6.45, 0.24, 0.015, 2),
+    makeRoundedBoxGeo(fullW + 0.24, 6.45, 0.24, 0.015, 2),
     COL_CREAM,
     [0.0, 3.16, b.minZ - 0.12],
     [0, 0, 0],
     { tex: p.stuccoTex, roughness: 0.72 },
   );
   // Blush cornice coping & baseboard along -Z wall
-  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(12.68, 0.16, 0.28, 0.012, 2), COL_BLUSH, [0, 6.42, b.minZ - 0.12]);
-  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(12.42, 0.18, 0.06, 0.008, 2), COL_BLUSH, [0, 0.09, b.minZ + 0.03]);
+  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(fullW + 0.28, 0.16, 0.28, 0.012, 2), COL_BLUSH, [0, 6.42, b.minZ - 0.12]);
+  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(fullW + 0.02, 0.18, 0.06, 0.008, 2), COL_BLUSH, [0, 0.09, b.minZ + 0.03]);
 
   // -X Back-Left straight stucco wall behind Shelves (solid 1F + pierced 3 Arched Windows on 2F)
-  // Lower straight wall (`z = -5.20 .. +2.80`, `y = 0 .. 3.00`)
+  // Lower straight wall (`z = -4.10 .. +2.30`, `y = 0 .. 3.00`)
+  const leftStraightLen = b.curveCenterZ - b.minZ; // 6.40m
+  const leftStraightCenterZ = (b.minZ + b.curveCenterZ) * 0.5; // -0.90m
   addSalonMesh(
     staticGroup,
     styler,
-    makeRoundedBoxGeo(0.24, 3.04, 8.02, 0.014, 2),
+    makeRoundedBoxGeo(0.24, 3.04, leftStraightLen + 0.02, 0.014, 2),
     COL_CREAM,
-    [b.minX - 0.12, 1.50, -1.20],
+    [b.minX - 0.12, 1.50, leftStraightCenterZ],
     [0, 0, 0],
     { tex: p.stuccoTex, roughness: 0.72 },
   );
-  // 2F Pier Pillars & Headers around 3 Tall Arched Multi-Pane Windows on -X wall (`z = -2.25, -0.15, +1.95`)
-  const winCentersZ = [-2.25, -0.15, 1.95];
-  const winW = 1.24;
-  // Piers between arched windows
+  // 2F Pier Pillars & Headers around 3 Tall Arched Multi-Pane Windows on -X wall (`z = -2.55, -0.85, +0.85`)
+  const winCentersZ = [-2.55, -0.85, 0.85];
+  const winW = 1.16;
+  // Piers between arched windows spanning z in [-4.10 .. +2.30]
   const xPiers: Array<[number, number]> = [
-    [-4.12, 2.22],
-    [-1.20, 0.86],
-    [0.90, 0.86],
-    [2.78, 0.44],
+    [-3.615, 0.98],
+    [-1.70, 0.56],
+    [0.0, 0.56],
+    [1.865, 0.88],
   ];
   for (const [pz, pLen] of xPiers) {
     addSalonMesh(
@@ -426,20 +429,20 @@ function buildSalonShellAndFacade(
     );
   }
   // Below-window sill apron & upper lintel header along -X 2F (`y = 3.00..3.48` & `y = 5.55..6.40`)
-  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.24, 0.50, 8.04, 0.012, 2), COL_CREAM, [b.minX - 0.12, 3.24, -1.20]);
-  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.26, 0.90, 8.04, 0.012, 2), COL_CREAM, [b.minX - 0.12, 5.95, -1.20]);
-  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.30, 0.16, 8.10, 0.012, 2), COL_BLUSH, [b.minX - 0.12, 6.42, -1.20]);
+  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.24, 0.50, leftStraightLen + 0.04, 0.012, 2), COL_CREAM, [b.minX - 0.12, 3.24, leftStraightCenterZ]);
+  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.26, 0.90, leftStraightLen + 0.04, 0.012, 2), COL_CREAM, [b.minX - 0.12, 5.95, leftStraightCenterZ]);
+  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.30, 0.16, leftStraightLen + 0.10, 0.012, 2), COL_BLUSH, [b.minX - 0.12, 6.42, leftStraightCenterZ]);
 
   for (const wz of winCentersZ) {
     buildInteriorArchedWindowAssembly(staticGroup, glassGroup, glassMat, p, b.minX - 0.12, 3.48, wz, Math.PI * 0.5, winW, 1.56);
   }
   // Cylindrical Brass Wall Sconces between -X 2F Arched Windows
-  for (const sz of [-3.30, -1.20, 0.90]) {
+  for (const sz of [-3.38, -1.70, 0.0]) {
     buildInteriorBrassSconce(staticGroup, p, [b.minX + 0.04, 4.48, sz], Math.PI * 0.5);
     buildInteriorBrassSconce(staticGroup, p, [b.minX - 0.28, 4.48, sz], -Math.PI * 0.5);
   }
 
-  // 3. Curved Front-Left Panoramic Corner Glazing (`x = -3.80 .. -6.20, z = +2.80 .. +5.20`, Sheet 2!)
+  // 3. Curved Front-Left Panoramic Corner Glazing (`x = -4.20 .. -6.00, z = +2.30 .. +4.10`, Sheet 2!)
   const cx = b.curveCenterX;
   const cz = b.curveCenterZ;
   // Curved bulkhead base (`y = 0 .. 0.64`) + sill + fascia header (`y = 2.86 .. 3.42`)
@@ -488,31 +491,31 @@ function buildSalonShellAndFacade(
 
   // 4. Right (+X) Entrance Doorway, Canopy Awning, GLOW STUDIO Signage, 2F French Door & BEAUTY & GLOW Header (Sheets 1 & 2)
   const rxWall = b.maxX + 0.12;
-  // North half of +X wall (`z = -5.20 .. +2.15`) solid 2-story wall pierced by 2F French Balcony Door (`z = +0.55`)
-  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.24, 3.04, 7.35, 0.014, 2), COL_CREAM, [rxWall, 1.50, -1.52], [0, 0, 0], { tex: p.stuccoTex });
-  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.24, 3.40, 5.10, 0.014, 2), COL_CREAM, [rxWall, 4.70, -2.65], [0, 0, 0], { tex: p.stuccoTex });
-  // +X 2F pier South of French door (`z = +1.25 .. +2.25`) + Lintel over French Door (`z = -0.10 .. +1.25`)
-  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.24, 3.40, 1.04, 0.014, 2), COL_CREAM, [rxWall, 4.70, 1.72], [0, 0, 0], { tex: p.stuccoTex });
-  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.24, 1.15, 1.40, 0.014, 2), COL_CREAM, [rxWall, 5.82, 0.55], [0, 0, 0], { tex: p.stuccoTex });
-  // 2F Arched French Door (`x = rxWall, z = +0.55`) opening onto East Exterior Balcony
-  buildInteriorArchedWindowAssembly(staticGroup, glassGroup, glassMat, p, rxWall, 3.04, 0.55, Math.PI * 0.5, 1.24, 1.85);
-  buildInteriorBrassSconce(staticGroup, p, [b.maxX - 0.04, 4.48, -0.45], -Math.PI * 0.5);
-  buildInteriorBrassSconce(staticGroup, p, [b.maxX - 0.04, 4.48, 1.55], -Math.PI * 0.5);
+  // North half of +X wall (`z = -4.10 .. +1.77`) solid 2-story wall pierced by 2F French Balcony Door (`z = +0.45`)
+  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.24, 3.04, 5.88, 0.014, 2), COL_CREAM, [rxWall, 1.50, -1.16], [0, 0, 0], { tex: p.stuccoTex });
+  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.24, 3.40, 3.98, 0.014, 2), COL_CREAM, [rxWall, 4.70, -2.12], [0, 0, 0], { tex: p.stuccoTex });
+  // +X 2F pier South of French door (`z = +1.04 .. +1.76`) + Lintel over French Door (`z = -0.14 .. +1.04`)
+  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.24, 3.40, 0.74, 0.014, 2), COL_CREAM, [rxWall, 4.70, 1.40], [0, 0, 0], { tex: p.stuccoTex });
+  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.24, 1.15, 1.32, 0.014, 2), COL_CREAM, [rxWall, 5.82, 0.45], [0, 0, 0], { tex: p.stuccoTex });
+  // 2F Arched French Door (`x = rxWall, z = +0.45`) opening onto East Exterior Balcony
+  buildInteriorArchedWindowAssembly(staticGroup, glassGroup, glassMat, p, rxWall, 3.04, 0.45, Math.PI * 0.5, 1.18, 1.85);
+  buildInteriorBrassSconce(staticGroup, p, [b.maxX - 0.04, 4.48, -0.35], -Math.PI * 0.5);
+  buildInteriorBrassSconce(staticGroup, p, [b.maxX - 0.04, 4.48, 1.25], -Math.PI * 0.5);
 
-  // 1F Entry Vestibule Piers around Entrance Doorway (`z = +3.10`, opening width `1.36m`: `2.42 .. 3.78`)
-  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.24, 3.42, 0.42, 0.012, 2), COL_CREAM, [rxWall, 1.71, 2.21], [0, 0, 0], { tex: p.stuccoTex });
-  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.24, 3.42, 1.44, 0.012, 2), COL_CREAM, [rxWall, 1.71, 4.50], [0, 0, 0], { tex: p.stuccoTex });
-  // Doorway header & `"GLOW STUDIO"` fascia signboard (`z = +1.70 .. +5.15`)
-  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.26, 0.96, 3.45, 0.012, 2), COL_CREAM, [rxWall, 2.94, 3.45], [0, 0, 0], { tex: p.stuccoTex });
-  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.32, 0.12, 3.55, 0.010, 2), COL_BLUSH, [rxWall, 3.44, 3.45]);
-  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.06, 0.54, 2.95, 0.008, 2), '#ffffff', [rxWall + 0.15, 2.98, 3.35], [0, Math.PI * 0.5, 0], { tex: p.glowStudioTex, roughness: 0.45 });
-  // Side-view Beauty & Glow roof header (`z = -1.6 .. +2.4, y = 5.95`) facing `+X`
-  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.32, 0.85, 5.20, 0.012, 2), COL_BLUSH, [rxWall, 6.48, -0.30]);
-  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.06, 0.62, 4.65, 0.008, 2), '#ffffff', [rxWall + 0.17, 6.48, -0.30], [0, Math.PI * 0.5, 0], { tex: p.beautyGlowTex, roughness: 0.42 });
+  // 1F Entry Vestibule Piers around Entrance Doorway (`z = +2.45`, opening width `1.36m`: `1.77 .. 3.13`)
+  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.24, 3.42, 0.24, 0.012, 2), COL_CREAM, [rxWall, 1.71, 1.66], [0, 0, 0], { tex: p.stuccoTex });
+  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.24, 3.42, 0.98, 0.012, 2), COL_CREAM, [rxWall, 1.71, 3.62], [0, 0, 0], { tex: p.stuccoTex });
+  // Doorway header & `"GLOW STUDIO"` fascia signboard (`z = +1.35 .. +4.10`)
+  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.26, 0.96, 2.76, 0.012, 2), COL_CREAM, [rxWall, 2.94, 2.72], [0, 0, 0], { tex: p.stuccoTex });
+  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.32, 0.12, 2.84, 0.010, 2), COL_BLUSH, [rxWall, 3.44, 2.72]);
+  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.06, 0.52, 2.45, 0.008, 2), '#ffffff', [rxWall + 0.15, 2.98, 2.65], [0, Math.PI * 0.5, 0], { tex: p.glowStudioTex, roughness: 0.45 });
+  // Side-view Beauty & Glow roof header (`z = -2.30 .. +1.76, y = 6.48`) facing `+X`
+  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.32, 0.85, 4.10, 0.012, 2), COL_BLUSH, [rxWall, 6.48, -0.27]);
+  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(0.06, 0.60, 3.65, 0.008, 2), '#ffffff', [rxWall + 0.17, 6.48, -0.27], [0, Math.PI * 0.5, 0], { tex: p.beautyGlowTex, roughness: 0.42 });
 
-  // Timber & Glass Entry Door (`x = rxWall`, slightly hinged open outward 22deg at `z = 2.45`!) + C-handle
+  // Timber & Glass Entry Door (`x = rxWall`, slightly hinged open outward 22deg at `z = 1.80`!) + C-handle
   const doorPivot = new THREE.Group();
-  doorPivot.position.set(rxWall + 0.02, 0.02, 2.44);
+  doorPivot.position.set(rxWall + 0.02, 0.02, 1.80);
   doorPivot.rotation.y = 0.34;
   staticGroup.add(doorPivot);
   addSalonMesh(doorPivot, styler, makeRoundedBoxGeo(0.07, 2.38, 1.24, 0.010, 2), COL_OAK, [0, 1.19, 0.64], [0, 0, 0], { tex: p.oakTex });
@@ -524,40 +527,40 @@ function buildSalonShellAndFacade(
   addSalonMesh(doorPivot, styler, new THREE.CylinderGeometry(0.018, 0.018, 0.46, 8), COL_BRASS, [-0.07, 1.12, 1.06], [0, 0, 0], { metalness: 0.72, roughness: 0.28 });
 
   // Sconces inside Entry Vestibule + Exterior Angled Cream Awning & Boxwood Topiary outside door
-  buildInteriorBrassSconce(staticGroup, p, [b.maxX - 0.04, 1.85, 2.18], -Math.PI * 0.5);
-  buildInteriorBrassSconce(staticGroup, p, [b.maxX - 0.04, 1.85, 4.04], -Math.PI * 0.5);
+  buildInteriorBrassSconce(staticGroup, p, [b.maxX - 0.04, 1.85, 1.62], -Math.PI * 0.5);
+  buildInteriorBrassSconce(staticGroup, p, [b.maxX - 0.04, 1.85, 3.30], -Math.PI * 0.5);
   // Outside awning (`x = rxWall .. rxWall + 0.96, y = 2.58 -> 2.32`)
-  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(1.05, 0.06, 2.25, 0.010, 2), '#f4ecde', [rxWall + 0.52, 2.48, 3.12], [0, 0, -0.24], { roughness: 0.78 });
+  addSalonMesh(staticGroup, styler, makeRoundedBoxGeo(1.05, 0.06, 2.15, 0.010, 2), '#f4ecde', [rxWall + 0.52, 2.48, 2.45], [0, 0, -0.24], { roughness: 0.78 });
   // Outside boxwood topiary pot beside entrance door
-  buildSalonPottedPlant(staticGroup, p, [rxWall + 0.42, 0.0, 4.25], 0.92, 'topiary');
+  buildSalonPottedPlant(staticGroup, p, [rxWall + 0.42, 0.0, 3.45], 0.92, 'topiary');
 
   // 5. Exterior Wrap-Around 2F Terrace Balcony (`-X` side & `+X` side w/ Olive Trees & Dark Bronze Railings)
   buildExterior2FTerraceBalconies(staticGroup, p);
 
   // 6. Mezzanine L-Shaped Structural Slab (`y = 2.86 .. 3.00m`, Sheet 1)
-  // Rect A: x in [-0.85 .. +6.20], z in [-5.20 .. -0.95]
+  // Rect A: x in [-0.85 .. +6.00], z in [-4.10 .. -0.75]
   addSalonMesh(
     staticGroup,
     styler,
-    makeRoundedBoxGeo(7.08, 0.14, 4.26, 0.012, 2),
+    makeRoundedBoxGeo(6.86, 0.14, 3.36, 0.012, 2),
     '#ebe0d2',
-    [2.68, 2.93, -3.08],
+    [2.575, 2.93, -2.425],
     [0, 0, 0],
     { tex: p.oakTex, roughness: 0.48 },
   );
-  // Rect B: x in [+2.95 .. +6.20], z in [-0.95 .. +2.20]
+  // Rect B: x in [+2.85 .. +6.00], z in [-0.75 .. +1.65]
   addSalonMesh(
     staticGroup,
     styler,
-    makeRoundedBoxGeo(3.26, 0.14, 3.16, 0.012, 2),
+    makeRoundedBoxGeo(3.16, 0.14, 2.41, 0.012, 2),
     '#ebe0d2',
-    [4.58, 2.93, 0.62],
+    [4.425, 2.93, 0.45],
     [0, 0, 0],
     { tex: p.oakTex, roughness: 0.48 },
   );
   // Warm golden LED cove reveal under mezzanine edge
-  addSalonMesh(staticGroup, styler, new THREE.BoxGeometry(3.84, 0.03, 0.04), COL_GLOW_BULB, [1.05, 2.855, -0.95], [0, 0, 0], { emissiveHex: '#ffdca0', emissiveIntensity: 1.4 });
-  addSalonMesh(staticGroup, styler, new THREE.BoxGeometry(0.04, 0.03, 3.15), COL_GLOW_BULB, [2.95, 2.855, 0.62], [0, 0, 0], { emissiveHex: '#ffdca0', emissiveIntensity: 1.4 });
+  addSalonMesh(staticGroup, styler, new THREE.BoxGeometry(3.72, 0.03, 0.04), COL_GLOW_BULB, [1.00, 2.855, -0.75], [0, 0, 0], { emissiveHex: '#ffdca0', emissiveIntensity: 1.4 });
+  addSalonMesh(staticGroup, styler, new THREE.BoxGeometry(0.04, 0.03, 2.40), COL_GLOW_BULB, [2.85, 2.855, 0.45], [0, 0, 0], { emissiveHex: '#ffdca0', emissiveIntensity: 1.4 });
 }
 
 function buildInteriorArchedWindowAssembly(
@@ -616,10 +619,10 @@ function buildExterior2FTerraceBalconies(
   p: SalonAssetPalette,
 ): void {
   const deckY = 3.00;
-  // Left (-X) outer balcony slab (`x = -7.35 .. -6.20, z = -4.95 .. +2.90`)
-  addSalonMesh(staticGroup, p.styler, makeRoundedBoxGeo(1.18, 0.14, 7.85, 0.015, 2), COL_BLUSH, [-6.82, deckY - 0.05, -1.02]);
-  // Right (+X) outer French Door balcony (`x = +6.20 .. +7.35, z = -1.65 .. +2.25`)
-  addSalonMesh(staticGroup, p.styler, makeRoundedBoxGeo(1.18, 0.14, 3.90, 0.015, 2), COL_BLUSH, [6.88, deckY - 0.05, 0.30]);
+  // Left (-X) outer balcony slab (`x = -7.18 .. -6.00, z = -3.95 .. +2.30`)
+  addSalonMesh(staticGroup, p.styler, makeRoundedBoxGeo(1.18, 0.14, 6.26, 0.015, 2), COL_BLUSH, [-6.62, deckY - 0.05, -0.825]);
+  // Right (+X) outer French Door balcony (`x = +6.00 .. +7.18, z = -1.25 .. +1.75`)
+  addSalonMesh(staticGroup, p.styler, makeRoundedBoxGeo(1.18, 0.14, 3.02, 0.015, 2), COL_BLUSH, [6.66, deckY - 0.05, 0.25]);
 
   // Bronze vertical-picket railings on both exterior balconies
   const picketGeo = new THREE.BoxGeometry(0.025, 0.82, 0.025);
@@ -641,21 +644,21 @@ function buildExterior2FTerraceBalconies(
       );
     }
   };
-  addPicketRun(-7.36, -4.90, -7.36, 2.86);
-  addPicketRun(-7.36, -4.90, -6.24, -4.90);
-  addPicketRun(-7.36, 2.86, -6.24, 2.86);
-  addPicketRun(7.42, -1.60, 7.42, 2.20);
-  addPicketRun(6.24, -1.60, 7.42, -1.60);
-  addPicketRun(6.24, 2.20, 7.42, 2.20);
+  addPicketRun(-7.16, -3.90, -7.16, 2.26);
+  addPicketRun(-7.16, -3.90, -6.04, -3.90);
+  addPicketRun(-7.16, 2.26, -6.04, 2.26);
+  addPicketRun(7.20, -1.20, 7.20, 1.70);
+  addPicketRun(6.04, -1.20, 7.20, -1.20);
+  addPicketRun(6.04, 1.70, 7.20, 1.70);
   picketGeo.dispose();
 
   // Balcony Olive Trees & Trailing Greenery Planters
-  buildSalonPottedPlant(staticGroup, p, [-6.82, deckY + 0.02, 2.40], 0.94, 'olive');
-  buildSalonPottedPlant(staticGroup, p, [-6.82, deckY + 0.02, -3.55], 0.86, 'olive');
-  buildSalonPottedPlant(staticGroup, p, [6.88, deckY + 0.02, 1.72], 0.88, 'olive');
-  addSalonMesh(staticGroup, p.styler, makeRoundedBoxGeo(0.42, 0.36, 1.32, 0.012, 2), COL_OAK, [-6.85, deckY + 0.20, -1.10], [0, 0, 0], { tex: p.oakTex });
+  buildSalonPottedPlant(staticGroup, p, [-6.62, deckY + 0.02, 1.80], 0.92, 'olive');
+  buildSalonPottedPlant(staticGroup, p, [-6.62, deckY + 0.02, -3.15], 0.84, 'olive');
+  buildSalonPottedPlant(staticGroup, p, [6.66, deckY + 0.02, 1.25], 0.86, 'olive');
+  addSalonMesh(staticGroup, p.styler, makeRoundedBoxGeo(0.42, 0.36, 1.32, 0.012, 2), COL_OAK, [-6.65, deckY + 0.20, -0.85], [0, 0, 0], { tex: p.oakTex });
   for (let i = 0; i < 6; i++) {
-    addSalonMesh(staticGroup, p.styler, new THREE.SphereGeometry(0.18 + (i % 2) * 0.04, 8, 7), i % 2 === 0 ? '#6e9460' : '#80a66f', [-6.85 + (i % 2 === 0 ? -0.04 : 0.05), deckY + 0.46, -1.62 + i * 0.21]);
+    addSalonMesh(staticGroup, p.styler, new THREE.SphereGeometry(0.18 + (i % 2) * 0.04, 8, 7), i % 2 === 0 ? '#6e9460' : '#80a66f', [-6.65 + (i % 2 === 0 ? -0.04 : 0.05), deckY + 0.46, -1.37 + i * 0.21]);
   }
 }
 
@@ -669,8 +672,8 @@ function buildArchedBacklitShelvingRow(
   glassMat: THREE.Material,
   p: SalonAssetPalette,
 ): void {
-  const bayCentersZ = [-1.35, -0.05, 1.25];
-  const shelfX = -5.92;
+  const bayCentersZ = [-0.85, 0.35, 1.55];
+  const shelfX = -5.72;
   const bottleCols = ['#f6b4c8', '#d7c3f4', '#b4e3d4', '#f8d6a8', '#fffaf4', '#f39ebc'];
 
   for (let bi = 0; bi < bayCentersZ.length; bi++) {
@@ -679,7 +682,7 @@ function buildArchedBacklitShelvingRow(
     bay.rotation.y = Math.PI * 0.5;
     parent.add(bay);
 
-    const w = 1.22;
+    const w = 1.12;
     const d = 0.46;
     // Lower Stock Credenza Cabinet (`y = 0.06 .. 0.72`) + Brass recessed toe-kick (`0 .. 0.06`)
     addSalonMesh(bay, p.styler, makeRoundedBoxGeo(w - 0.04, 0.06, d - 0.06, 0.008, 1), COL_BRASS, [0, 0.03, -0.02], [0, 0, 0], { metalness: 0.65, roughness: 0.30 });
@@ -745,7 +748,7 @@ function buildCurvedReceptionCounter(
   p: SalonAssetPalette,
 ): void {
   const rg = new THREE.Group();
-  rg.position.set(-3.45, 0.0, 0.05);
+  rg.position.set(-3.35, 0.0, 0.45);
   parent.add(rg);
 
   // Counter C-curve wraps theta from -PI/2 (North wing) -> 0 (+X front belly) -> +PI/2 (South wing)
@@ -827,7 +830,7 @@ function buildCenterpieceDisplayIsland(
   p: SalonAssetPalette,
 ): void {
   const cg = new THREE.Group();
-  cg.position.set(0.65, 0.0, 2.10);
+  cg.position.set(0.65, 0.0, 1.75);
   parent.add(cg);
 
   // Main Center Square/Rounded Calacatta Marble Table
@@ -872,11 +875,11 @@ function buildHollywoodVanityRow(
   p: SalonAssetPalette,
 ): THREE.Mesh[] {
   const bulbMeshes: THREE.Mesh[] = [];
-  const xs = [0.95, 2.75, 4.55];
+  const xs = [0.90, 2.65, 4.40];
 
   for (const vx of xs) {
     const vg = new THREE.Group();
-    vg.position.set(vx, 0.0, -4.64);
+    vg.position.set(vx, 0.0, -3.60);
     parent.add(vg);
 
     // 1. Vanity Desk (`1.22m x 0.50m x 0.78m`) w/ Tapered Legs & Brass Ferrules
@@ -928,9 +931,9 @@ function buildHollywoodVanityRow(
     addSalonMesh(vg, p.styler, makeRoundedBoxGeo(0.16, 0.025, 0.12, 0.004, 1), '#5c4b47', [-0.42, 0.805, 0.06], [0, 0.24, 0]);
     addSalonMesh(vg, p.styler, new THREE.CylinderGeometry(0.025, 0.028, 0.09, 8), '#f5b5c8', [0.30, 0.84, -0.05]);
 
-    // 4. Pink Velvet Swivel Pedestal Stool at `z = -3.72` (relative `+0.92`)
+    // 4. Pink Velvet Swivel Pedestal Stool at `z = -2.72` (relative `+0.88`)
     const sg = new THREE.Group();
-    sg.position.set(0, 0, 0.92);
+    sg.position.set(0, 0, 0.88);
     vg.add(sg);
     addSalonMesh(sg, p.styler, new THREE.CylinderGeometry(0.21, 0.24, 0.035, 16), COL_BRASS, [0, 0.018, 0], [0, 0, 0], { metalness: 0.72 });
     addSalonMesh(sg, p.styler, new THREE.CylinderGeometry(0.034, 0.052, 0.38, 10), COL_BRASS, [0, 0.21, 0], [0, 0, 0], { metalness: 0.72 });
@@ -954,47 +957,47 @@ function buildStaircaseAndMezzanineGlassRailings(
   const b = SALON_INTERIOR_BOUNDS;
   const s = b.stair;
 
-  // 1. Mid-Landing Deck (`x = -4.75 .. -3.25`, `z = -4.95 .. -1.95`, `y = 1.50m`) + Support Under-Cabinet
+  // 1. Mid-Landing Deck (`x = -4.65 .. -3.20`, `z = -3.90 .. -1.45`, `y = 1.50m`) + Support Under-Cabinet
   addSalonMesh(
     staticGroup,
     p.styler,
-    makeRoundedBoxGeo(1.52, 0.14, 3.04, 0.012, 2),
+    makeRoundedBoxGeo(1.46, 0.14, 2.46, 0.012, 2),
     COL_OAK,
-    [-4.00, 1.43, -3.45],
+    [-3.925, 1.43, -2.675],
     [0, 0, 0],
     { tex: p.oakTex },
   );
-  // Central Dividing Rail Wall between Lower & Upper Flights (`z = -3.45`, `x = -3.25 .. -0.85`)
-  addSalonMesh(staticGroup, p.styler, makeRoundedBoxGeo(2.44, 1.38, 0.14, 0.010, 2), COL_CREAM, [-2.05, 0.69, -3.45]);
+  // Central Dividing Rail Wall between Lower & Upper Flights (`z = -2.675`, `x = -3.20 .. -0.85`)
+  addSalonMesh(staticGroup, p.styler, makeRoundedBoxGeo(2.38, 1.38, 0.14, 0.010, 2), COL_CREAM, [-2.025, 0.69, -2.675]);
 
-  // 2. Lower Flight (`9` Oak Treads w/ LED Strip Reveal, climbing -X from -0.85 @ 0m to -3.25 @ 1.50m)
+  // 2. Lower Flight (`9` Oak Treads w/ LED Strip Reveal, climbing -X from -0.85 @ 0m to -3.20 @ 1.50m)
   const steps = 9;
-  const run = s.lowerStartX - s.lowerEndX; // 2.40
+  const run = s.lowerStartX - s.lowerEndX; // 2.35
   const rise = b.midLandingY; // 1.50
   const stepDx = run / steps;
   const stepDy = rise / steps;
   for (let i = 0; i < steps; i++) {
     const tx = s.lowerStartX - (i + 0.5) * stepDx;
     const ty = (i + 1) * stepDy;
-    addSalonMesh(staticGroup, p.styler, makeRoundedBoxGeo(stepDx + 0.04, 0.06, 1.12, 0.008, 1), COL_OAK, [tx, ty - 0.03, -2.52], [0, 0, 0], { tex: p.oakTex });
-    addSalonMesh(staticGroup, p.styler, new THREE.BoxGeometry(0.025, 0.02, 1.04), COL_GLOW_BULB, [tx + stepDx * 0.45, ty - 0.068, -2.52], [0, 0, 0], { emissiveHex: '#ffe1a4', emissiveIntensity: 1.4, strokeW: 0.002 });
+    addSalonMesh(staticGroup, p.styler, makeRoundedBoxGeo(stepDx + 0.04, 0.06, 0.98, 0.008, 1), COL_OAK, [tx, ty - 0.03, -1.95], [0, 0, 0], { tex: p.oakTex });
+    addSalonMesh(staticGroup, p.styler, new THREE.BoxGeometry(0.025, 0.02, 0.90), COL_GLOW_BULB, [tx + stepDx * 0.45, ty - 0.068, -1.95], [0, 0, 0], { emissiveHex: '#ffe1a4', emissiveIntensity: 1.4, strokeW: 0.002 });
   }
   // Structural steel angled stringers under Lower Flight
   const flightLen = Math.hypot(run, rise);
   const flightAng = Math.atan2(rise, run);
-  for (const sz of [-3.02, -2.02]) {
-    addSalonMesh(staticGroup, p.styler, makeRoundedBoxGeo(flightLen, 0.14, 0.06, 0.008, 1), '#5c6066', [-2.05, 0.66, sz], [0, 0, -flightAng], { metalness: 0.55 });
+  for (const sz of [-2.38, -1.52]) {
+    addSalonMesh(staticGroup, p.styler, makeRoundedBoxGeo(flightLen, 0.14, 0.06, 0.008, 1), '#5c6066', [-2.025, 0.66, sz], [0, 0, -flightAng], { metalness: 0.55 });
   }
 
-  // 3. Upper Flight (`9` Oak Treads w/ LED Strip Reveal, climbing +X from -3.25 @ 1.50m to -0.85 @ 3.00m)
+  // 3. Upper Flight (`9` Oak Treads w/ LED Strip Reveal, climbing +X from -3.20 @ 1.50m to -0.85 @ 3.00m)
   for (let i = 0; i < steps; i++) {
     const tx = s.upperStartX + (i + 0.5) * stepDx;
     const ty = b.midLandingY + (i + 1) * stepDy;
-    addSalonMesh(staticGroup, p.styler, makeRoundedBoxGeo(stepDx + 0.04, 0.06, 1.12, 0.008, 1), COL_OAK, [tx, ty - 0.03, -4.38], [0, 0, 0], { tex: p.oakTex });
-    addSalonMesh(staticGroup, p.styler, new THREE.BoxGeometry(0.025, 0.02, 1.04), COL_GLOW_BULB, [tx - stepDx * 0.45, ty - 0.068, -4.38], [0, 0, 0], { emissiveHex: '#ffe1a4', emissiveIntensity: 1.4, strokeW: 0.002 });
+    addSalonMesh(staticGroup, p.styler, makeRoundedBoxGeo(stepDx + 0.04, 0.06, 0.98, 0.008, 1), COL_OAK, [tx, ty - 0.03, -3.40], [0, 0, 0], { tex: p.oakTex });
+    addSalonMesh(staticGroup, p.styler, new THREE.BoxGeometry(0.025, 0.02, 0.90), COL_GLOW_BULB, [tx - stepDx * 0.45, ty - 0.068, -3.40], [0, 0, 0], { emissiveHex: '#ffe1a4', emissiveIntensity: 1.4, strokeW: 0.002 });
   }
-  for (const sz of [-4.88, -3.88]) {
-    addSalonMesh(staticGroup, p.styler, makeRoundedBoxGeo(flightLen, 0.14, 0.06, 0.008, 1), '#5c6066', [-2.05, 2.16, sz], [0, 0, flightAng], { metalness: 0.55 });
+  for (const sz of [-3.84, -2.96]) {
+    addSalonMesh(staticGroup, p.styler, makeRoundedBoxGeo(flightLen, 0.14, 0.06, 0.008, 1), '#5c6066', [-2.025, 2.16, sz], [0, 0, flightAng], { metalness: 0.55 });
   }
 
   // 4. Tempered Glass Railing Panels + Brushed Brass Standoffs & Handrail Cap
@@ -1036,16 +1039,16 @@ function buildStaircaseAndMezzanineGlassRailings(
   };
 
   // Lower Flight South Glass Railing + Mid-Landing West Railing + Upper Flight Center & South Stairwell Edge
-  addGlassRailingRun(-0.85, 0.0, -1.96, -3.25, 1.50, -1.96);
-  addGlassRailingRun(-3.25, 1.50, -1.96, -4.75, 1.50, -1.96);
-  addGlassRailingRun(-4.75, 1.50, -1.96, -4.75, 1.50, -4.94);
-  addGlassRailingRun(-3.25, 1.50, -3.80, -0.85, 3.00, -3.80);
+  addGlassRailingRun(-0.85, 0.0, -1.45, -3.20, 1.50, -1.45);
+  addGlassRailingRun(-3.20, 1.50, -1.45, -4.65, 1.50, -1.45);
+  addGlassRailingRun(-4.65, 1.50, -1.45, -4.65, 1.50, -3.90);
+  addGlassRailingRun(-3.20, 1.50, -2.90, -0.85, 3.00, -2.90);
 
   // Continuous 2F Mezzanine Atrium Glass Balustrade (`y = 3.00m` wrapping entire L-deck interior edges!)
-  addGlassRailingRun(-0.85, 3.00, -3.80, -0.85, 3.00, -0.95);
-  addGlassRailingRun(-0.85, 3.00, -0.95, 2.95, 3.00, -0.95);
-  addGlassRailingRun(2.95, 3.00, -0.95, 2.95, 3.00, 2.20);
-  addGlassRailingRun(2.95, 3.00, 2.20, 6.08, 3.00, 2.20);
+  addGlassRailingRun(-0.85, 3.00, -2.90, -0.85, 3.00, -0.75);
+  addGlassRailingRun(-0.85, 3.00, -0.75, 2.85, 3.00, -0.75);
+  addGlassRailingRun(2.85, 3.00, -0.75, 2.85, 3.00, 1.65);
+  addGlassRailingRun(2.85, 3.00, 1.65, 5.90, 3.00, 1.65);
 }
 
 // ============================================================================
@@ -1059,12 +1062,12 @@ function buildConsultationLoungeSuite(
   p: SalonAssetPalette,
 ): void {
   const yFloor = SALON_INTERIOR_BOUNDS.secondFloorY;
-  // 1. Woven Wool Area Rug (`x = +4.45, z = -1.80`)
-  addSalonMesh(parent, p.styler, makeRoundedBoxGeo(2.38, 0.020, 2.38, 0.008, 1), '#ffffff', [4.45, yFloor + 0.01, -1.80], [0, 0, 0], { tex: p.rugTex, roughness: 0.92, strokeW: 0.005 });
+  // 1. Woven Wool Area Rug (`x = +4.35, z = -1.65`)
+  addSalonMesh(parent, p.styler, makeRoundedBoxGeo(2.20, 0.020, 2.20, 0.008, 1), '#ffffff', [4.35, yFloor + 0.01, -1.65], [0, 0, 0], { tex: p.rugTex, roughness: 0.92, strokeW: 0.005 });
 
-  // 2. Curved Channel-Stitched Velvet Loveseat (`1.62m wide x 0.85m deep`, facing +Z at `4.45, -2.48`)
+  // 2. Curved Channel-Stitched Velvet Loveseat (`1.62m wide x 0.85m deep`, facing +Z at `4.35, -2.42`)
   const sf = new THREE.Group();
-  sf.position.set(4.45, yFloor, -2.48);
+  sf.position.set(4.35, yFloor, -2.42);
   parent.add(sf);
 
   // 4 Tapered Brushed Brass Legs
@@ -1092,9 +1095,9 @@ function buildConsultationLoungeSuite(
     addSalonMesh(sf, p.styler, makePuffedCushionGeo(0.15, 0.42, 0.54, 0.045), COL_VELVET_CREAM, [sx, 0.46, 0.04], [0, 0, 0], { sheen: 0.60, roughness: 0.80 });
   }
 
-  // 3. Oval Calacatta Marble Coffee Table (`1.00m x 0.55m x 0.42m`, at `x = +4.45, z = -1.25`)
+  // 3. Oval Calacatta Marble Coffee Table (`1.00m x 0.55m x 0.42m`, at `x = +4.35, z = -0.88`)
   const tb = new THREE.Group();
-  tb.position.set(4.45, yFloor, -1.25);
+  tb.position.set(4.35, yFloor, -0.88);
   parent.add(tb);
   // Brushed Brass Cross-Base & Legs
   addSalonMesh(tb, p.styler, makeRoundedBoxGeo(0.76, 0.025, 0.38, 0.008, 2), COL_BRASS, [0, 0.018, 0], [0, 0, 0], { metalness: 0.72 });
@@ -1115,7 +1118,7 @@ function buildConsultationLoungeSuite(
   addSalonMesh(tb, p.styler, makeRoundedBoxGeo(0.22, 0.028, 0.17, 0.006, 1), '#c59d8a', [0.03, 0.464, 0.03], [0, -0.08, 0]);
   // Glass Vase in glassGroup
   const vaseG = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.048, 0.13, 12), glassMat);
-  vaseG.position.set(4.45 + 0.30, yFloor + 0.485, -1.25 - 0.08);
+  vaseG.position.set(4.35 + 0.30, yFloor + 0.485, -0.88 - 0.08);
   vaseG.raycast = () => {};
   glassGroup.add(vaseG);
   addSalonMesh(tb, p.styler, new THREE.SphereGeometry(0.11, 8, 7), '#f4b6c6', [0.30, 0.60, -0.08]);
@@ -1131,9 +1134,9 @@ function buildSpaFacialSuite(
 ): void {
   const yFloor = SALON_INTERIOR_BOUNDS.secondFloorY;
 
-  // 1. Ergonomic Articulating Hydraulic Spa Facial Treatment Bed (`x = +1.45, z = -2.65`, `rotY = -0.22`)
+  // 1. Ergonomic Articulating Hydraulic Spa Facial Treatment Bed (`x = +1.38, z = -2.08`, `rotY = -0.22`)
   const bg = new THREE.Group();
-  bg.position.set(1.45, yFloor, -2.65);
+  bg.position.set(1.38, yFloor, -2.08);
   bg.rotation.y = -0.22;
   parent.add(bg);
 
@@ -1154,9 +1157,9 @@ function buildSpaFacialSuite(
     addSalonMesh(bg, p.styler, makeRoundedBoxGeo(0.10, 0.08, 0.52, 0.032, 2), COL_SPA_LEATHER, [sx, 0.68, -0.08], [0.24, 0, 0]);
   }
 
-  // 2. Companion Wooden Spa Storage Credenza (`x = +1.35, z = -4.54`, Sheet 8)
+  // 2. Companion Wooden Spa Storage Credenza (`x = +1.30, z = -3.56`, Sheet 8)
   const cr = new THREE.Group();
-  cr.position.set(1.35, yFloor, -4.54);
+  cr.position.set(1.30, yFloor, -3.56);
   parent.add(cr);
   addSalonMesh(cr, p.styler, makeRoundedBoxGeo(1.58, 0.78, 0.48, 0.012, 2), COL_OAK, [0, 0.39, 0], [0, 0, 0], { tex: p.oakTex });
   for (const dx of [-0.46, 0.02]) {
@@ -1184,9 +1187,9 @@ function buildSpaFacialSuite(
     addSalonMesh(cr, p.styler, new THREE.CylinderGeometry(0.012, 0.012, 0.035, 6), '#f7f4ee', [bx, 0.78 + bh + 0.018, 0]);
   }
 
-  // 3. Metal Towel Warmer Utility Trolley on Casters (`x = +2.88, z = -3.45`, Sheet 8)
+  // 3. Metal Towel Warmer Utility Trolley on Casters (`x = +2.76, z = -2.85`, Sheet 8)
   const tc = new THREE.Group();
-  tc.position.set(2.88, yFloor, -3.45);
+  tc.position.set(2.76, yFloor, -2.85);
   parent.add(tc);
   for (const [cx, cz] of [
     [-0.22, -0.17],
@@ -1203,16 +1206,16 @@ function buildSpaFacialSuite(
   addSalonMesh(tc, p.styler, makeRoundedBoxGeo(0.40, 0.24, 0.32, 0.012, 2), '#e8ecef', [0, 0.54, 0], [0, 0, 0], { roughness: 0.28, metalness: 0.22 });
   addSalonMesh(tc, p.styler, new THREE.CylinderGeometry(0.032, 0.034, 0.12, 8), '#c58c56', [-0.08, 0.82, 0.02]);
 
-  // 4. Floor-to-Ceiling Sheer Curtains on Brushed Brass Rods (`z = -5.06`, behind Spa)
-  addSalonMesh(parent, p.styler, new THREE.CylinderGeometry(0.016, 0.016, 3.60, 8), COL_BRASS, [1.45, yFloor + 2.95, -5.06], [0, 0, Math.PI * 0.5], { metalness: 0.72 });
-  for (const cx of [-0.15, 2.95]) {
+  // 4. Floor-to-Ceiling Sheer Curtains on Brushed Brass Rods (`z = -3.96`, behind Spa)
+  addSalonMesh(parent, p.styler, new THREE.CylinderGeometry(0.016, 0.016, 3.60, 8), COL_BRASS, [1.38, yFloor + 2.95, -3.96], [0, 0, Math.PI * 0.5], { metalness: 0.72 });
+  for (const cx of [-0.20, 2.85]) {
     for (let fold = 0; fold < 4; fold++) {
       addSalonMesh(
         parent,
         p.styler,
         makeRoundedBoxGeo(0.14, 2.86, 0.12, 0.04, 2),
         fold % 2 === 0 ? '#faf4ec' : '#efe3d5',
-        [cx + fold * 0.12, yFloor + 1.48, -5.04 + (fold % 2) * 0.03],
+        [cx + fold * 0.12, yFloor + 1.48, -3.94 + (fold % 2) * 0.03],
         [0, 0, 0],
         { sheen: 0.45, roughness: 0.85, strokeW: 0.004 },
       );
@@ -1220,8 +1223,8 @@ function buildSpaFacialSuite(
   }
 
   // 5. 2F Potted Olive / Ficus Plants beside Spa
-  buildSalonPottedPlant(parent, p, [-0.25, yFloor, -1.55], 0.86, 'olive');
-  buildSalonPottedPlant(parent, p, [3.15, yFloor, -4.48], 0.88, 'olive');
+  buildSalonPottedPlant(parent, p, [-0.28, yFloor, -1.25], 0.86, 'olive');
+  buildSalonPottedPlant(parent, p, [3.02, yFloor, -3.52], 0.88, 'olive');
 }
 
 // ============================================================================
@@ -1259,10 +1262,10 @@ function buildSalonPottedPlant(
 
 function buildHangingBrassPendants(staticGroup: THREE.Object3D, p: SalonAssetPalette): void {
   const specs: Array<[number, number, number, number]> = [
-    [-3.10, 0.15, 3.65, 2.55],
-    [-3.85, -0.65, 3.65, 2.72],
-    [0.65, 2.10, 4.45, 3.10],
-    [1.45, -2.65, 6.25, 5.15],
+    [-3.00, 0.55, 3.65, 2.55],
+    [-3.75, -0.25, 3.65, 2.72],
+    [0.65, 1.75, 4.45, 3.10],
+    [1.38, -2.08, 6.25, 5.15],
   ];
   for (const [px, pz, ceilY, dropY] of specs) {
     const rodLen = Math.max(0.25, ceilY - dropY);
@@ -1359,7 +1362,7 @@ export function buildBeautySalonInterior(): SalonInteriorSceneHandle {
   buildStaircaseAndMezzanineGlassRailings(staticIndoorGroup, glassGroup, glassMat, palette);
   buildConsultationLoungeSuite(staticIndoorGroup, glassGroup, glassMat, palette);
   buildSpaFacialSuite(staticIndoorGroup, palette);
-  buildSalonPottedPlant(staticIndoorGroup, palette, [-4.25, 0.0, 3.35], 0.85, 'topiary');
+  buildSalonPottedPlant(staticIndoorGroup, palette, [-4.65, 0.0, 2.85], 0.85, 'topiary');
   buildHangingBrassPendants(staticIndoorGroup, palette);
 
   // Consolidate & bake static interior meshes into ~15 crisp draw calls while preserving 3D outlines!

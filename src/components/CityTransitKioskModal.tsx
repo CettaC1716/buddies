@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, MapPin, TrainFront } from 'lucide-react';
 import {
   CITY_TRANSIT_DESTINATIONS,
   CityTransitDestinationSpec,
@@ -6,6 +7,7 @@ import {
   getCityTransitDestinationById,
 } from '../game/buddiesBlitzRules';
 import { soundEngine } from '../game/audio';
+import { TabletDeviceMockupShell } from './TabletDeviceMockupShell';
 
 export interface CityTransitKioskModalProps {
   isOpen: boolean;
@@ -256,6 +258,18 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
     onConfirmEnterDestination(selectedDestination);
   };
 
+  const headerTitle =
+    worldMode === 'warzone'
+      ? 'Warzone Evacuation Terminal'
+      : levelView === 'grid'
+        ? 'City Transit & Services Kiosk'
+        : browserSectionTitle;
+
+  const headerSubtitle =
+    worldMode === 'warzone'
+      ? 'Tactical Extraction Terminal · Return to Central Plaza'
+      : `Station: ${originSpec.title}`;
+
   return (
     <div
       role="dialog"
@@ -263,64 +277,99 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
       aria-label="City Transit Self-Service Kiosk"
       data-teleport-kiosk-modal="true"
       data-transit-kiosk-level={levelView}
-      className="fixed inset-0 z-[105] flex items-center justify-center p-3 sm:p-5 bg-slate-950/50 backdrop-blur-sm pointer-events-auto select-none"
+      className="fixed inset-0 z-[105] flex items-center justify-center p-2.5 sm:p-5 bg-black/25 backdrop-blur-[2px] pointer-events-auto select-none"
       onClick={() => {
         soundEngine.playUiClick();
         onClose();
       }}
     >
-      <div
-        className="relative w-full max-w-[940px] rounded-[26px] bg-[#edf0f5]/95 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] text-slate-900 overflow-hidden flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* =================================================================
-            TOP HEADER BAR
-            ================================================================= */}
-        <div className="px-5 sm:px-6 py-4 bg-white/85 border-b border-slate-200/80 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            {worldMode !== 'warzone' && levelView !== 'grid' && (
-              <button
-                type="button"
-                data-transit-kiosk-back="true"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  setLevelView('grid');
-                }}
-                className="px-3.5 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200/90 font-bold text-xs uppercase tracking-wide cursor-pointer active:scale-95 transition-all shrink-0"
-              >
-                &lt; BACK
-              </button>
-            )}
-            <div className="min-w-0">
-              <h2 className="text-base sm:text-xl font-extrabold uppercase tracking-tight text-slate-900 truncate">
-                {worldMode === 'warzone'
-                  ? 'WARZONE EVACUATION TERMINAL'
-                  : levelView === 'grid'
-                    ? 'CITY TRANSIT & SERVICES KIOSK'
-                    : browserSectionTitle}
-              </h2>
+      <TabletDeviceMockupShell
+        appLabel="TRANSIT OS"
+        title={headerTitle}
+        subtitle={headerSubtitle}
+        headerIcon={<TrainFront className="w-4 h-4" aria-hidden="true" />}
+        maxWidthClass="max-w-[960px]"
+        heightClass="max-h-[92vh]"
+        onClose={onClose}
+        closeAriaLabel="Close City Transit Kiosk"
+        closeButtonProps={{ 'data-teleport-kiosk-close': 'true' }}
+        backButton={
+          worldMode !== 'warzone' && levelView !== 'grid' ? (
+            <button
+              type="button"
+              data-transit-kiosk-back="true"
+              onClick={() => {
+                soundEngine.playUiClick();
+                setLevelView('grid');
+              }}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/15 font-semibold text-xs uppercase tracking-wide cursor-pointer active:scale-95 transition-all shrink-0"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Back</span>
+            </button>
+          ) : undefined
+        }
+        headerRight={
+          worldMode !== 'warzone' ? (
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.08] border border-white/15 text-[11px] font-semibold uppercase tracking-wide text-white/85 whitespace-nowrap">
+              <MapPin className="w-3.5 h-3.5 text-sky-400 shrink-0" aria-hidden="true" />
+              <span>{originSpec.title}</span>
             </div>
-          </div>
+          ) : undefined
+        }
+        footer={
+          worldMode !== 'warzone' && levelView === 'browser' ? (
+            <div className="px-4 sm:px-5 py-3 bg-white/[0.04] border-t border-white/[0.12] flex flex-wrap items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  data-transit-recent-filter="true"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    setShowRecentOnly((prev) => !prev);
+                  }}
+                  className={`px-4 py-1.5 rounded-full border font-bold text-xs uppercase tracking-wide cursor-pointer transition-all ${
+                    showRecentOnly
+                      ? 'bg-sky-500 border-sky-400 text-white shadow-sm'
+                      : 'bg-white/10 hover:bg-white/15 border-white/15 text-white/85'
+                  }`}
+                >
+                  RECENT ({recentStationIds.length})
+                </button>
+                {showRecentOnly && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setShowRecentOnly(false);
+                    }}
+                    className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/80 text-[11px] font-bold uppercase cursor-pointer transition-colors"
+                  >
+                    SHOW ALL
+                  </button>
+                )}
+              </div>
 
-          <button
-            type="button"
-            data-teleport-kiosk-close="true"
-            onClick={() => {
-              soundEngine.playUiCancel();
-              onClose();
-            }}
-            aria-label="Close City Transit Kiosk"
-            className="w-8 h-8 rounded-full bg-white hover:bg-slate-100 text-slate-600 hover:text-slate-900 border border-slate-200/90 shadow-xs font-bold text-sm flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
-          >
-            ✕
-          </button>
-        </div>
-
+              <div className="w-full sm:w-64">
+                <input
+                  type="text"
+                  data-transit-search-input="true"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search stations..."
+                  aria-label="Search transit destinations"
+                  className="w-full px-4 py-1.5 rounded-full bg-white/10 border border-white/15 focus:border-sky-400/70 focus:bg-white/15 focus:ring-2 focus:ring-sky-400/25 text-xs font-semibold text-white placeholder:text-white/40 focus:outline-none transition-all"
+                />
+              </div>
+            </div>
+          ) : undefined
+        }
+      >
         {/* =================================================================
             WARZONE MODE: STRICTLY EXIT WARZONE TERMINAL (NO OTHER MENUS)
             ================================================================= */}
         {worldMode === 'warzone' ? (
-          <div className="p-6 sm:p-10 bg-slate-900/95 text-white flex flex-col items-center justify-center text-center space-y-6">
+          <div className="flex-1 overflow-y-auto p-6 sm:p-10 text-white flex flex-col items-center justify-center text-center space-y-6">
             <div className="w-16 h-16 rounded-full bg-rose-500/15 border border-rose-400/40 flex items-center justify-center shadow-lg">
               <svg viewBox="0 0 24 24" className="w-8 h-8 stroke-rose-400 fill-none" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -368,37 +417,37 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
             </div>
           </div>
         ) : levelView === 'grid' ? (
-          <div className="p-5 sm:p-6">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+            <div className="mb-3.5 flex flex-wrap items-center justify-between gap-2">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-white/60">
                 SELECT DESTINATION OR CITIZEN SERVICE
               </div>
-              <div className="px-3 py-1 rounded-full bg-white border border-slate-200/80 shadow-xs text-[11px] font-bold uppercase tracking-wide text-slate-700">
+              <div className="px-3 py-1 rounded-full bg-white/[0.08] border border-white/15 text-[11px] font-semibold uppercase tracking-wide text-white/80">
                 CURRENT STATION: {originSpec.title}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               {/* CARD 1: TRAVEL & DISTRICTS */}
               <button
                 type="button"
                 data-transit-card="travel_districts"
                 data-teleport-option="safezone"
                 onClick={handleOpenTravelBrowser}
-                className="group relative h-[164px] sm:h-[176px] rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
+                className="group relative h-[156px] sm:h-[168px] rounded-2xl bg-slate-900/70 border border-white/15 shadow-md hover:border-sky-400/60 hover:shadow-[0_12px_30px_rgba(0,0,0,0.45)] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
               >
                 <img
                   src={kioskThumbnails.travel_districts || '/docs/hero-2-tram-station.jpg'}
                   alt="Travel & Districts"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/35 to-slate-950/10" />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/35 to-slate-950/15" />
 
                 <div className="relative z-10 p-3.5 flex items-center justify-between">
                   <span className="px-2.5 py-1 rounded-full bg-sky-500/90 backdrop-blur-md text-white text-[10px] font-bold uppercase tracking-wider shadow-xs">
                     THE CITY NETWORK
                   </span>
-                  <span className="px-2.5 py-1 rounded-full bg-slate-900/70 backdrop-blur-md text-white border border-white/20 text-[10px] font-bold uppercase">
+                  <span className="px-2.5 py-1 rounded-full bg-slate-900/75 backdrop-blur-md text-white border border-white/20 text-[10px] font-bold uppercase">
                     {districtDestinationCount} DISTRICTS
                   </span>
                 </div>
@@ -407,7 +456,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   <div className="text-lg sm:text-xl font-extrabold uppercase tracking-tight text-white">
                     TRAVEL &amp; DISTRICTS
                   </div>
-                  <p className="mt-1 text-xs font-medium text-slate-200/95 line-clamp-2">
+                  <p className="mt-1 text-xs font-medium text-slate-200/90 line-clamp-2">
                     Fast-travel by City Tram across Central Plaza, Central Park, Beachfront Harbor, NW Fishing Lake, and Residences.
                   </p>
                 </div>
@@ -419,14 +468,14 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 data-transit-card="warzone_arena"
                 data-teleport-option="warzone"
                 onClick={handleOpenWarzoneBrowser}
-                className="group relative h-[164px] sm:h-[176px] rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
+                className="group relative h-[156px] sm:h-[168px] rounded-2xl bg-slate-900/70 border border-white/15 shadow-md hover:border-amber-400/60 hover:shadow-[0_12px_30px_rgba(0,0,0,0.45)] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
               >
                 <img
                   src={kioskThumbnails.warzone_arena || '/docs/hero-7-crate-stacking-pad.jpg'}
                   alt="Warzone Arena"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/35 to-slate-950/10" />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/35 to-slate-950/15" />
 
                 <div className="relative z-10 p-3.5 flex items-center justify-between gap-2">
                   <span className="px-2.5 py-1 rounded-full bg-amber-400/95 text-slate-950 text-[10px] font-bold uppercase tracking-wider shadow-xs">
@@ -452,7 +501,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   <div className="text-lg sm:text-xl font-extrabold uppercase tracking-tight text-white">
                     WARZONE ARENA
                   </div>
-                  <p className="mt-1 text-xs font-medium text-slate-200/95 line-clamp-2">
+                  <p className="mt-1 text-xs font-medium text-slate-200/90 line-clamp-2">
                     Deploy into the Red vs Blue tactical combat arena with weapons, vehicles, and crate logistics.
                   </p>
                 </div>
@@ -463,20 +512,20 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 type="button"
                 data-transit-card="my_house"
                 onClick={handleClickMyHouse}
-                className="group relative h-[164px] sm:h-[176px] rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
+                className="group relative h-[156px] sm:h-[168px] rounded-2xl bg-slate-900/70 border border-white/15 shadow-md hover:border-emerald-400/60 hover:shadow-[0_12px_30px_rgba(0,0,0,0.45)] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
               >
                 <img
                   src={kioskThumbnails.my_house || '/docs/hero-3-house-interior.jpg'}
                   alt="My House Interior"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/35 to-slate-950/10" />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/35 to-slate-950/15" />
 
                 <div className="relative z-10 p-3.5 flex items-center justify-between">
                   <span className="px-2.5 py-1 rounded-full bg-emerald-500/90 text-white text-[10px] font-bold uppercase tracking-wider shadow-xs">
                     HOUSE
                   </span>
-                  <span className="px-2.5 py-1 rounded-full bg-slate-900/70 backdrop-blur-md text-white border border-white/20 text-[10px] font-bold uppercase">
+                  <span className="px-2.5 py-1 rounded-full bg-slate-900/75 backdrop-blur-md text-white border border-white/20 text-[10px] font-bold uppercase">
                     {hasOwnedHouse ? 'INSTANT ENTRY' : 'BROWSE HOMES'}
                   </span>
                 </div>
@@ -485,7 +534,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   <div className="text-lg sm:text-xl font-extrabold uppercase tracking-tight text-white">
                     MY HOUSE
                   </div>
-                  <p className="mt-1 text-xs font-medium text-slate-200/95 line-clamp-2">
+                  <p className="mt-1 text-xs font-medium text-slate-200/90 line-clamp-2">
                     {hasOwnedHouse
                       ? 'Enter your house interior directly to hang out and arrange furniture.'
                       : 'Acquire a Private House in Hana Catalog to unlock your interior and city plots.'}
@@ -498,20 +547,20 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 type="button"
                 data-transit-card="shop_exchange"
                 onClick={handleClickShopExchange}
-                className="group relative h-[164px] sm:h-[176px] rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
+                className="group relative h-[156px] sm:h-[168px] rounded-2xl bg-slate-900/70 border border-white/15 shadow-md hover:border-violet-400/60 hover:shadow-[0_12px_30px_rgba(0,0,0,0.45)] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
               >
                 <img
                   src={kioskThumbnails.shop_exchange || '/docs/hero-4-hana-exchange.jpg'}
                   alt="Shop & Exchange"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/35 to-slate-950/10" />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/35 to-slate-950/15" />
 
                 <div className="relative z-10 p-3.5 flex items-center justify-between">
                   <span className="px-2.5 py-1 rounded-full bg-violet-500/90 text-white text-[10px] font-bold uppercase tracking-wider shadow-xs">
                     SHOP &amp; EXCHANGE
                   </span>
-                  <span className="px-2.5 py-1 rounded-full bg-slate-900/70 backdrop-blur-md text-white border border-white/20 text-[10px] font-bold uppercase">
+                  <span className="px-2.5 py-1 rounded-full bg-slate-900/75 backdrop-blur-md text-white border border-white/20 text-[10px] font-bold uppercase">
                     LUL / CYON / RESPITE
                   </span>
                 </div>
@@ -520,7 +569,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   <div className="text-lg sm:text-xl font-extrabold uppercase tracking-tight text-white">
                     SHOP &amp; EXCHANGE
                   </div>
-                  <p className="mt-1 text-xs font-medium text-slate-200/95 line-clamp-2">
+                  <p className="mt-1 text-xs font-medium text-slate-200/90 line-clamp-2">
                     Open the City Catalog, furniture items, outfits, and LUL / CYON / RESPITE token exchange counter.
                   </p>
                 </div>
@@ -531,7 +580,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 type="button"
                 data-transit-card="jobs"
                 onClick={handleOpenJobsBrowser}
-                className="group relative h-[164px] sm:h-[176px] rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
+                className="group relative h-[156px] sm:h-[168px] rounded-2xl bg-slate-900/70 border border-white/15 shadow-md hover:border-emerald-400/60 hover:shadow-[0_12px_30px_rgba(0,0,0,0.45)] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
               >
                 <img
                   src={
@@ -542,13 +591,13 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   alt="Citizen Jobs - Cafe Glasshouse"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/35 to-slate-950/10" />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/35 to-slate-950/15" />
 
                 <div className="relative z-10 p-3.5 flex items-center justify-between">
                   <span className="px-2.5 py-1 rounded-full bg-emerald-500/90 text-white text-[10px] font-bold uppercase tracking-wider shadow-xs">
                     WORK &amp; EARN XP
                   </span>
-                  <span className="px-2.5 py-1 rounded-full bg-slate-900/70 backdrop-blur-md text-white border border-white/20 text-[10px] font-bold uppercase">
+                  <span className="px-2.5 py-1 rounded-full bg-slate-900/75 backdrop-blur-md text-white border border-white/20 text-[10px] font-bold uppercase">
                     {cafeJobStatus
                       ? cafeJobStatus.workerName
                         ? `ON SHIFT: ${cafeJobStatus.workerName.toUpperCase()}`
@@ -561,7 +610,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   <div className="text-lg sm:text-xl font-extrabold uppercase tracking-tight text-white">
                     JOBS
                   </div>
-                  <p className="mt-1 text-xs font-medium text-slate-200/95 line-clamp-2">
+                  <p className="mt-1 text-xs font-medium text-slate-200/90 line-clamp-2">
                     Take a barista shift at the Glasshouse Cafe — prepare and serve 3 orders before the timer runs out to earn XP.
                   </p>
                 </div>
@@ -572,12 +621,12 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
           /* =================================================================
              JOBS SUB-VIEW: SAME CARD LAYOUT WITH 1 JOB (CAFE GLASSHOUSE)
              ================================================================= */
-          <div className="p-5 sm:p-6">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-5">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-white/60">
                 SELECT A CITIZEN JOB TO START WORKING
               </div>
-              <div className="px-3 py-1 rounded-full bg-white border border-slate-200/80 shadow-xs text-[11px] font-bold uppercase tracking-wide text-slate-700">
+              <div className="px-3 py-1 rounded-full bg-white/[0.08] border border-white/15 text-[11px] font-semibold uppercase tracking-wide text-white/80">
                 1 AVAILABLE JOB
               </div>
             </div>
@@ -588,7 +637,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 type="button"
                 data-transit-job-card="cafe_glasshouse"
                 onClick={handleEnterCafeGlasshouseJob}
-                className="group relative h-[196px] sm:h-[214px] rounded-2xl bg-white border border-slate-200/80 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
+                className="group relative h-[196px] sm:h-[214px] rounded-2xl bg-slate-900/70 border border-white/15 shadow-md hover:border-emerald-400/60 hover:shadow-[0_12px_30px_rgba(0,0,0,0.45)] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
               >
                 <img
                   src={
@@ -599,13 +648,13 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   alt="Cafe Glasshouse"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/35 to-slate-950/10" />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/35 to-slate-950/15" />
 
                 <div className="relative z-10 p-3.5 flex items-center justify-between">
                   <span className="px-2.5 py-1 rounded-full bg-emerald-500/90 text-white text-[10px] font-bold uppercase tracking-wider shadow-xs">
                     BARISTA SHIFT
                   </span>
-                  <span className="px-2.5 py-1 rounded-full bg-slate-900/70 backdrop-blur-md text-white border border-white/20 text-[10px] font-bold uppercase">
+                  <span className="px-2.5 py-1 rounded-full bg-slate-900/75 backdrop-blur-md text-white border border-white/20 text-[10px] font-bold uppercase">
                     LUL / XP
                   </span>
                 </div>
@@ -614,7 +663,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   <div className="text-lg sm:text-xl font-extrabold uppercase tracking-tight text-white">
                     CAFE GLASSHOUSE
                   </div>
-                  <p className="mt-1 text-xs font-medium text-slate-200/95 line-clamp-2">
+                  <p className="mt-1 text-xs font-medium text-slate-200/90 line-clamp-2">
                     Register at the Work Rota board inside Cafe Glasshouse, prepare customer drinks and pastries, and earn XP for every serve.
                   </p>
                 </div>
@@ -625,7 +674,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
           /* =================================================================
              WARZONE MINI-GAME TEAM SELECT VIEW (RED FACTION vs BLUE FACTION)
              ================================================================= */
-          <div className="p-5 sm:p-7 bg-slate-900/95 text-white">
+          <div className="flex-1 overflow-y-auto p-5 sm:p-7 text-white">
             <div className="mb-5 text-center">
               <div className="inline-block px-3 py-1 rounded-full bg-amber-400/20 text-amber-300 border border-amber-300/30 font-bold text-xs uppercase tracking-wider mb-2">
                 WARZONE MINI-GAME DEPLOYMENT
@@ -723,195 +772,147 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
         ) : (
           /* =================================================================
              LEVEL 2: MASTER-DETAIL SPLIT-VIEW BROWSER
-             - Left Sidebar (~28% width, scrollable)
-             - Right Showcase Panel (~72% width, hero preview + ENTER >)
-             - Bottom Bar (RECENT quick filter + Search... input)
+             - Left Sidebar (~30% width, scrollable)
+             - Right Showcase Panel (~70% width, hero preview + ENTER >)
              ================================================================= */
-          <div className="flex flex-col">
-            <div className="flex flex-col md:flex-row h-[420px] sm:h-[440px] border-b border-slate-200/80">
-              {/* LEFT SIDEBAR (~28% WIDTH) */}
-              <div
-                data-transit-sidebar="true"
-                className="w-full md:w-[30%] h-[165px] md:h-full overflow-y-auto border-b md:border-b-0 md:border-r border-slate-200/80 bg-[#edf0f5]/70 p-3 space-y-2"
-              >
-                {filteredDestinations.length === 0 ? (
-                  <div className="p-4 text-center text-xs font-bold uppercase text-slate-500">
-                    NO MATCHING STATIONS
-                  </div>
-                ) : (
-                  filteredDestinations.map((dest) => {
-                    const isSelected = dest.id === selectedDestination.id;
-                    const isHere = dest.id === activeOriginId;
-
-                    return (
-                      <button
-                        key={dest.id}
-                        type="button"
-                        data-transit-destination-row={dest.id}
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          setSelectedStationId(dest.id);
-                        }}
-                        className={`w-full p-2.5 rounded-2xl flex items-center gap-2.5 text-left transition-all cursor-pointer border ${
-                          isSelected
-                            ? 'bg-sky-50 border-sky-400 ring-2 ring-sky-400/25 shadow-sm'
-                            : 'bg-white hover:bg-slate-50 border-slate-200/80 shadow-xs'
-                        }`}
-                      >
-                        <img
-                          src={kioskThumbnails[dest.id] || dest.heroImageUrl}
-                          alt={dest.shortTitle}
-                          className="w-11 h-11 rounded-xl object-cover shrink-0 bg-slate-900"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="text-xs font-bold uppercase tracking-tight text-slate-900 truncate">
-                            {dest.shortTitle}
-                          </div>
-                          <div className="mt-1 flex items-center gap-1.5">
-                            {isHere ? (
-                              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-bold uppercase">
-                                HERE
-                              </span>
-                            ) : (
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
-                                  dest.id === 'warzone_arena'
-                                    ? 'bg-rose-100 text-rose-700'
-                                    : 'bg-sky-100 text-sky-700'
-                                }`}
-                              >
-                                {dest.tag}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-
-              {/* RIGHT SHOWCASE PANEL (~70% WIDTH) */}
-              <div className="w-full md:w-[70%] flex-1 relative bg-slate-900 overflow-hidden flex flex-col justify-between">
-                <img
-                  src={
-                    kioskThumbnails[selectedDestination.id] ||
-                    selectedDestination.heroImageUrl
-                  }
-                  alt={selectedDestination.title}
-                  className="absolute inset-0 w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/30 to-slate-950/10" />
-
-                {/* Top Badges inside Right Showcase */}
-                <div className="relative z-10 p-4 flex items-center justify-between gap-2">
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-sm backdrop-blur-md ${
-                      selectedDestination.id === 'warzone_arena'
-                        ? 'bg-rose-500/90 text-white'
-                        : 'bg-sky-500/90 text-white'
-                    }`}
-                  >
-                    {selectedDestination.tag}
-                  </span>
-
-                  {selectedDestination.id === 'warzone_arena' ? (
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-1 rounded-full bg-sky-500/90 text-white text-xs font-bold uppercase shadow-sm">
-                        BLUE {blueTeamOnlineCount}/10 ONLINE
-                      </span>
-                      <span className="px-2.5 py-1 rounded-full bg-rose-500/90 text-white text-xs font-bold uppercase shadow-sm">
-                        RED {redTeamOnlineCount}/10 ONLINE
-                      </span>
-                    </div>
-                  ) : (
-                    <span className="px-3 py-1 rounded-full bg-white/90 backdrop-blur-md text-slate-800 text-[11px] font-bold uppercase shadow-sm">
-                      {selectedDestination.hasHalteShelter
-                        ? 'RAIL TRANSIT STATION'
-                        : 'STANDALONE TRANSIT KIOSK'}
-                    </span>
-                  )}
+          <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+            {/* LEFT SIDEBAR (~30% WIDTH) */}
+            <div
+              data-transit-sidebar="true"
+              className="w-full md:w-[30%] h-[165px] md:h-[430px] overflow-y-auto border-b md:border-b-0 md:border-r border-white/[0.12] bg-white/[0.03] p-3 space-y-2"
+            >
+              {filteredDestinations.length === 0 ? (
+                <div className="p-4 text-center text-xs font-bold uppercase text-white/50">
+                  NO MATCHING STATIONS
                 </div>
+              ) : (
+                filteredDestinations.map((dest) => {
+                  const isSelected = dest.id === selectedDestination.id;
+                  const isHere = dest.id === activeOriginId;
 
-                {/* Frosted Bottom Overlay with Title, 1-2 Line Description, and Pill ENTER > Button */}
-                <div className="relative z-10 p-5 sm:p-6 bg-slate-950/65 backdrop-blur-md border-t border-white/10 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <h3
-                      data-transit-selected-title="true"
-                      className="text-xl sm:text-2xl font-extrabold uppercase tracking-tight text-white leading-tight"
+                  return (
+                    <button
+                      key={dest.id}
+                      type="button"
+                      data-transit-destination-row={dest.id}
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setSelectedStationId(dest.id);
+                      }}
+                      className={`w-full p-2.5 rounded-2xl flex items-center gap-2.5 text-left transition-all cursor-pointer border ${
+                        isSelected
+                          ? 'bg-sky-500/20 border-sky-400/70 ring-1 ring-sky-400/35 shadow-sm'
+                          : 'bg-white/[0.06] hover:bg-white/[0.11] border-white/10'
+                      }`}
                     >
-                      {selectedDestination.title}
-                    </h3>
-                    <p className="mt-1.5 text-xs sm:text-sm font-medium text-slate-200 line-clamp-2 leading-snug">
-                      {selectedDestination.description}
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    data-teleport-kiosk-confirm="true"
-                    data-transit-enter-btn={selectedDestination.id}
-                    disabled={isAlreadyAtSelected}
-                    onClick={handleConfirmEnter}
-                    className={`px-6 py-3 rounded-full font-bold text-xs sm:text-sm uppercase tracking-wider shrink-0 transition-all ${
-                      isAlreadyAtSelected
-                        ? 'bg-white/15 text-slate-300 border border-white/15 cursor-not-allowed'
-                        : 'bg-sky-500 hover:bg-sky-400 text-white shadow-md cursor-pointer active:scale-95'
-                    }`}
-                  >
-                    {isAlreadyAtSelected ? 'CURRENT LOCATION' : 'ENTER >'}
-                  </button>
-                </div>
-              </div>
+                      <img
+                        src={kioskThumbnails[dest.id] || dest.heroImageUrl}
+                        alt={dest.shortTitle}
+                        className="w-11 h-11 rounded-xl object-cover shrink-0 bg-slate-900 border border-white/10"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold uppercase tracking-tight text-white truncate">
+                          {dest.shortTitle}
+                        </div>
+                        <div className="mt-1 flex items-center gap-1.5">
+                          {isHere ? (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/25 text-emerald-300 border border-emerald-400/30 text-[9px] font-bold uppercase">
+                              HERE
+                            </span>
+                          ) : (
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                                dest.id === 'warzone_arena'
+                                  ? 'bg-rose-500/25 text-rose-300 border border-rose-400/30'
+                                  : 'bg-sky-500/20 text-sky-300 border border-sky-400/25'
+                              }`}
+                            >
+                              {dest.tag}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
             </div>
 
-            {/* BOTTOM BAR: RECENT QUICK FILTER ON LEFT + LIVE SEARCH INPUT ON RIGHT */}
-            <div className="px-5 py-3.5 bg-white/80 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  data-transit-recent-filter="true"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setShowRecentOnly((prev) => !prev);
-                  }}
-                  className={`px-4 py-1.5 rounded-full border font-bold text-xs uppercase tracking-wide cursor-pointer transition-all ${
-                    showRecentOnly
-                      ? 'bg-sky-500 border-sky-500 text-white shadow-sm'
-                      : 'bg-white hover:bg-slate-100 border-slate-200/90 text-slate-700 shadow-xs'
+            {/* RIGHT SHOWCASE PANEL (~70% WIDTH) */}
+            <div className="w-full md:w-[70%] h-[280px] md:h-[430px] relative bg-slate-900 overflow-hidden flex flex-col justify-between">
+              <img
+                src={
+                  kioskThumbnails[selectedDestination.id] ||
+                  selectedDestination.heroImageUrl
+                }
+                alt={selectedDestination.title}
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/30 to-slate-950/15" />
+
+              {/* Top Badges inside Right Showcase */}
+              <div className="relative z-10 p-4 flex items-center justify-between gap-2">
+                <span
+                  className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-sm backdrop-blur-md ${
+                    selectedDestination.id === 'warzone_arena'
+                      ? 'bg-rose-500/90 text-white'
+                      : 'bg-sky-500/90 text-white'
                   }`}
                 >
-                  RECENT ({recentStationIds.length})
-                </button>
-                {showRecentOnly && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      setShowRecentOnly(false);
-                    }}
-                    className="px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold uppercase cursor-pointer transition-colors"
-                  >
-                    SHOW ALL
-                  </button>
+                  {selectedDestination.tag}
+                </span>
+
+                {selectedDestination.id === 'warzone_arena' ? (
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded-full bg-sky-500/90 text-white text-xs font-bold uppercase shadow-sm">
+                      BLUE {blueTeamOnlineCount}/10 ONLINE
+                    </span>
+                    <span className="px-2.5 py-1 rounded-full bg-rose-500/90 text-white text-xs font-bold uppercase shadow-sm">
+                      RED {redTeamOnlineCount}/10 ONLINE
+                    </span>
+                  </div>
+                ) : (
+                  <span className="px-3 py-1 rounded-full bg-slate-950/65 backdrop-blur-md text-white/90 border border-white/15 text-[11px] font-bold uppercase shadow-sm">
+                    {selectedDestination.hasHalteShelter
+                      ? 'RAIL TRANSIT STATION'
+                      : 'STANDALONE TRANSIT KIOSK'}
+                  </span>
                 )}
               </div>
 
-              <div className="w-full sm:w-64">
-                <input
-                  type="text"
-                  data-transit-search-input="true"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search..."
-                  aria-label="Search transit destinations"
-                  className="w-full px-4 py-1.5 rounded-full bg-white border border-slate-200/90 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/25 shadow-xs text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none transition-all"
-                />
+              {/* Frosted Bottom Overlay with Title, 1-2 Line Description, and Pill ENTER > Button */}
+              <div className="relative z-10 p-5 sm:p-6 bg-slate-950/70 backdrop-blur-md border-t border-white/10 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <h3
+                    data-transit-selected-title="true"
+                    className="text-xl sm:text-2xl font-extrabold uppercase tracking-tight text-white leading-tight"
+                  >
+                    {selectedDestination.title}
+                  </h3>
+                  <p className="mt-1.5 text-xs sm:text-sm font-medium text-slate-200 line-clamp-2 leading-snug">
+                    {selectedDestination.description}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  data-teleport-kiosk-confirm="true"
+                  data-transit-enter-btn={selectedDestination.id}
+                  disabled={isAlreadyAtSelected}
+                  onClick={handleConfirmEnter}
+                  className={`px-6 py-3 rounded-full font-bold text-xs sm:text-sm uppercase tracking-wider shrink-0 transition-all ${
+                    isAlreadyAtSelected
+                      ? 'bg-white/15 text-slate-300 border border-white/15 cursor-not-allowed'
+                      : 'bg-sky-500 hover:bg-sky-400 text-white shadow-md cursor-pointer active:scale-95'
+                  }`}
+                >
+                  {isAlreadyAtSelected ? 'CURRENT LOCATION' : 'ENTER >'}
+                </button>
               </div>
             </div>
           </div>
         )}
-      </div>
+      </TabletDeviceMockupShell>
     </div>
   );
 };

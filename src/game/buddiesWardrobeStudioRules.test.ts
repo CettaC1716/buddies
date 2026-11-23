@@ -23,6 +23,7 @@ import {
   resolveWardrobeDraftToModularOutfitUrls,
   resolveWardrobeGlassSurfaceMode,
   sanitizeDraftToOwnedOnly,
+  shouldFlipWardrobeThumbY,
   undoWardrobeDraft,
   type WardrobeCatalogItem,
   type WardrobeOutfitDraft,
@@ -647,6 +648,30 @@ test('Underwear slot selection supports underwear + corewear layering and bare o
   draft = applyItemSelectionToDraft(draft, starterNone);
   assert.equal(draft.underwearId, null);
   assert.equal(draft.corewearId, null);
+});
+
+test('shouldFlipWardrobeThumbY flips glTF UV beauty thumbnails upright without flipping underwear or procedural previews', () => {
+  assert.equal(
+    shouldFlipWardrobeThumbY({ thumbUrl: '/assets/beauty/eyes/12F06D23_t.webp' }),
+    true,
+  );
+  assert.equal(
+    shouldFlipWardrobeThumbY({ thumbUrl: '/assets/beauty/lips/105FDB_t.webp', thumbFlipY: true }),
+    true,
+  );
+  assert.equal(
+    shouldFlipWardrobeThumbY({ thumbUrl: '/assets/beauty/beard/536654FA_t.webp' }),
+    true,
+  );
+  assert.equal(
+    shouldFlipWardrobeThumbY({ thumbUrl: '/assets/underwear/thumbs/5D1AE180_t.webp' }),
+    false,
+  );
+  assert.equal(shouldFlipWardrobeThumbY({ thumbUrl: null }), false);
+  assert.equal(
+    shouldFlipWardrobeThumbY({ thumbUrl: '/assets/beauty/eyes/custom_upright.webp', thumbFlipY: false }),
+    false,
+  );
 });
 
 

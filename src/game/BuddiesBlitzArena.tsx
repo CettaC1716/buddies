@@ -63,6 +63,7 @@ import {
   resolveSolidCratePush2D,
   resolveCrateVsCrateCollision2D,
   CITY_TRAM_SPEC,
+  getCityTramCollisionObbs,
   BaseSkinThemeId,
   BaseGardenPresetId,
   IndividualCommanderBaseState,
@@ -230,11 +231,20 @@ import {
   stepCityTramTrafficSpeedAndDistance,
   shouldPedestrianYieldForTramOrSignal,
   stepCityAmbientNpcSchedule,
+  isSeatSpotOccupiedByActors,
+  findNearestUnoccupiedSeatForNpc,
   computeNpcDialoguePortraitPose,
+  computeBoneTrackedPortraitMetrics,
+  resolvePairedSessionPortraitDirection,
+  computePosePortraitInspectTarget,
+  clampNpcDialoguePortraitOrbit,
+  NPC_DIALOGUE_ORBIT_BOUNDS,
   resolveUnifiedBottomDockProximity,
   RADAR_WORLD_HALF_EXTENT,
   type CityAmbientNpcActivity,
   type CityAmbientNpcPreset,
+  type SeatedActorOccupancy,
+  type NpcSeatOverrideState,
   type PlazaTrafficSignalState,
   type UnifiedDockProximityCandidate,
 } from './buddiesBlitzRules';
@@ -427,6 +437,7 @@ import {
   CASINO_ORIGIN_Y,
   CASINO_SLOT_VARIANT_META,
   CASINO_STAFF_NPC_PLACEMENTS,
+  CASINO_STATION_TARGETS,
   GRAND_CASINO_DOOR_TRIGGER,
   clampCasinoInteriorPosition,
   computeCasinoSeatStandUpPosition,
@@ -460,6 +471,10 @@ import {
   buildBeautySalonInterior,
   type SalonInteriorSceneHandle,
 } from './buddiesBeautySalonInteriorBuilder';
+import {
+  RadialInteractPinManager,
+  type RadialInteractPinDescriptor,
+} from './buddiesRadialInteractPinSystem';
 import {
   NAMEPLATE_SCREEN_SPEC,
   syncScreenSpaceBillboardQuad,
@@ -736,6 +751,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
     const renderer = new THREE.WebGLRenderer({
       antialias: !isSoftwareGl,
+      preserveDrawingBuffer: true,
       powerPreference: 'high-performance',
     });
 
@@ -772,6 +788,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     promptOverlay.style.zIndex = '25';
     promptOverlay.style.overflow = 'hidden';
     container.appendChild(promptOverlay);
+
+    // Unified inZOI-style Radial Hold-to-Interact Pin Overlay (replaces legacy 3D triangles, seat coins & 1-click bars)
+    const radialPinManager = new RadialInteractPinManager(promptOverlay, () => {
+      resetAllPlayerMovementInputs();
+    });
 
     const createPromptButton = (htmlContent: string, title: string, actionDetail?: string) => {
       const btn = document.createElement('button');
@@ -1238,62 +1259,59 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         textColor: string,
       ) => {
         const style = resolveBubbleStyle(bgColor, textColor);
+        const isDefaultWhite = style.bgColor.toLowerCase() === '#ffffff';
+        const pillFill = isDefaultWhite ? 'rgba(244, 246, 249, 0.94)' : style.bgColor;
+        const pillText = isDefaultWhite ? '#0f172a' : style.textColor;
+
         ctx.clearRect(0, 0, 512, 176);
 
-        // Hard neo-brutalist comic shadow + bubble body
-        ctx.fillStyle = '#14161d';
+        // Reference thin vertical connector bar on the left
+        ctx.save();
+        const stemGrad = ctx.createLinearGradient(0, 26, 0, 150);
+        stemGrad.addColorStop(0, 'rgba(255, 255, 255, 0.25)');
+        stemGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.95)');
+        stemGrad.addColorStop(1, 'rgba(255, 255, 255, 0.25)');
+        ctx.fillStyle = stemGrad;
         ctx.beginPath();
-        ctx.roundRect(22, 34, 474, 114, 24);
+        ctx.roundRect(14, 26, 5, 124, 3);
         ctx.fill();
+        ctx.restore();
 
-        ctx.fillStyle = style.bgColor;
+        // Frosted rounded-full pill body (soft elevation shadow, crisp translucent border)
+        ctx.save();
+        ctx.shadowColor = 'rgba(15, 23, 42, 0.24)';
+        ctx.shadowBlur = 18;
+        ctx.shadowOffsetY = 6;
+        ctx.fillStyle = pillFill;
         ctx.beginPath();
-        ctx.roundRect(14, 26, 474, 114, 24);
+        ctx.roundRect(32, 22, 464, 132, 66);
         ctx.fill();
-        ctx.lineWidth = 6;
-        ctx.strokeStyle = '#14161d';
+        ctx.restore();
+
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+        ctx.beginPath();
+        ctx.roundRect(32, 22, 464, 132, 66);
         ctx.stroke();
 
-        // Comic speech tail
-        ctx.fillStyle = style.bgColor;
-        ctx.beginPath();
-        ctx.moveTo(240, 136);
-        ctx.lineTo(256, 166);
-        ctx.lineTo(274, 136);
-        ctx.closePath();
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(239, 138);
-        ctx.lineTo(256, 166);
-        ctx.lineTo(275, 138);
-        ctx.lineWidth = 5;
-        ctx.strokeStyle = '#14161d';
-        ctx.stroke();
-
-        // Sender pill badge on top edge
-        const cleanName = (displayName || 'CITIZEN').trim().slice(0, 18).toUpperCase();
-        ctx.font = '900 18px "Barlow", sans-serif';
-        const pillWidth = Math.min(260, Math.max(88, ctx.measureText(cleanName).width + 26));
-        ctx.fillStyle = '#14161d';
-        ctx.beginPath();
-        ctx.roundRect(30, 6, pillWidth, 30, 10);
-        ctx.fill();
-        ctx.fillStyle = '#facc15';
+        // Subtle sender caption + message body
+        const cleanName = (displayName || 'CITIZEN').trim().slice(0, 18);
+        ctx.fillStyle = isDefaultWhite ? 'rgba(15, 23, 42, 0.55)' : pillText;
+        ctx.font = '700 18px "Plus Jakarta Sans", "Inter", sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(cleanName, 43, 22);
+        ctx.fillText(cleanName, 60, 48);
 
-        // Message body (1 or 2 crisp wrapped lines)
-        ctx.fillStyle = style.textColor;
-        ctx.font = '800 26px "Barlow", sans-serif';
-        ctx.textAlign = 'center';
+        ctx.fillStyle = pillText;
+        ctx.font = '600 25px "Plus Jakarta Sans", "Inter", sans-serif';
+        ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        const lines = wrapTextLines(text, 432);
+        const lines = wrapTextLines(text, 408);
         if (lines.length === 1) {
-          ctx.fillText(lines[0], 251, 88);
+          ctx.fillText(lines[0], 60, 96);
         } else {
-          ctx.fillText(lines[0], 251, 70);
-          ctx.fillText(lines[1], 251, 106);
+          ctx.fillText(lines[0], 60, 82);
+          ctx.fillText(lines[1], 60, 114);
         }
         tex.needsUpdate = true;
       };
@@ -1572,7 +1590,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             playerUnit.x - CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskX,
             playerUnit.z - CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskZ,
           );
-          const dHalte = Math.hypot(playerUnit.x - -59.18, playerUnit.z - 0.0);
+          const dHalte = Math.hypot(playerUnit.x - -59.18, playerUnit.z - 4.6);
           if (dInfo <= dHalte) {
             return infoKiosk;
           }
@@ -1874,12 +1892,128 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       };
     };
 
+    const seatedOccupantsScratch: SeatedActorOccupancy[] = [];
+    const npcAlternateOccupantsScratch: SeatedActorOccupancy[] = [];
+
+    const isOutdoorSeatOccupied = (
+      spot: { x: number; z: number },
+      excludeNpcId?: string,
+    ): boolean => {
+      if (playerUnit && playerUnit.alive && playerUnit.isSitting && activeSeatedSpot) {
+        if (Math.hypot(playerUnit.x - spot.x, playerUnit.z - spot.z) <= 0.92) {
+          return true;
+        }
+      }
+      for (let i = 0; i < cityAmbientNpcs.length; i++) {
+        const other = cityAmbientNpcs[i];
+        if (!other.isSitting) continue;
+        if (excludeNpcId !== undefined && other.preset.id === excludeNpcId) continue;
+        if (Math.hypot(other.x - spot.x, other.z - spot.z) <= 0.92) {
+          return true;
+        }
+      }
+      for (const av of remotePlayerAvatars.values()) {
+        if (!av.root.visible || !av.peer.isSitting) continue;
+        if (Math.hypot(av.renderX - spot.x, av.renderZ - spot.z) <= 0.92) {
+          return true;
+        }
+      }
+      for (let bi = 0; bi < buddyUnits.length; bi++) {
+        const b = buddyUnits[bi];
+        if (
+          b.alive &&
+          !b.isPlayer &&
+          b.root.visible &&
+          Math.hypot(b.x - spot.x, b.z - spot.z) < 0.85
+        ) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const isCafeSeatOccupied = (spot: { id?: string; x: number; z: number }): boolean => {
+      if (playerUnit?.isSitting && activeCafeSeatedSpot) {
+        if (
+          (spot.id && activeCafeSeatedSpot.id === spot.id) ||
+          Math.hypot(playerUnit.x - spot.x, playerUnit.z - spot.z) <= 0.92
+        ) {
+          return true;
+        }
+      }
+      if (
+        cafeMiraNpcRoot?.visible &&
+        cafeMiraIsSitting &&
+        Math.hypot(cafeMiraX - spot.x, cafeMiraZ - spot.z) <= 0.92
+      ) {
+        return true;
+      }
+      for (const av of remotePlayerAvatars.values()) {
+        if (!av.root.visible || !av.peer.isSitting) continue;
+        if (Math.hypot(av.renderX - spot.x, av.renderZ - spot.z) <= 0.92) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const isCasinoSeatOccupied = (spot: { id?: string; x: number; z: number }): boolean => {
+      if (playerUnit?.isSitting && activeCasinoSeatedSpot) {
+        if (
+          (spot.id && activeCasinoSeatedSpot.id === spot.id) ||
+          Math.hypot(playerUnit.x - spot.x, playerUnit.z - spot.z) <= 0.92
+        ) {
+          return true;
+        }
+      }
+      for (const av of remotePlayerAvatars.values()) {
+        if (!av.root.visible || !av.peer.isSitting) continue;
+        if (Math.hypot(av.renderX - spot.x, av.renderZ - spot.z) <= 0.92) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const isSalonSeatOccupied = (spot: { id?: string; x: number; z: number }): boolean => {
+      if (playerUnit?.isSitting && activeSalonSeatedSpot) {
+        if (
+          (spot.id && activeSalonSeatedSpot.id === spot.id) ||
+          Math.hypot(playerUnit.x - spot.x, playerUnit.z - spot.z) <= 0.92
+        ) {
+          return true;
+        }
+      }
+      for (const av of remotePlayerAvatars.values()) {
+        if (!av.root.visible || !av.peer.isSitting) continue;
+        if (Math.hypot(av.renderX - spot.x, av.renderZ - spot.z) <= 0.92) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const isHouseBedOccupied = (spot: { id?: string; x: number; z: number }): boolean => {
+      if (playerUnit?.isSleeping && activeSleepSpot) {
+        if (
+          (spot.id && activeSleepSpot.id === spot.id) ||
+          Math.hypot(playerUnit.x - spot.x, playerUnit.z - spot.z) <= 0.92
+        ) {
+          return true;
+        }
+      }
+      for (const av of remotePlayerAvatars.values()) {
+        if (!av.root.visible || av.peer.emoteClip !== 'bed:sleep') continue;
+        if (Math.hypot(av.renderX - spot.x, av.renderZ - spot.z) <= 0.92) {
+          return true;
+        }
+      }
+      return false;
+    };
+
     const sitOnLobbySeat = (spot: LobbySeatSpot) => {
       if (!playerUnit || !playerUnit.alive) return;
-      const isOccupiedByBuddy = buddyUnits.some(
-        (b) => b.alive && !b.isPlayer && Math.hypot(b.x - spot.x, b.z - spot.z) < 0.85,
-      );
-      if (isOccupiedByBuddy) return;
+      if (isOutdoorSeatOccupied(spot)) return;
       if (mountedTank) handleToggleMountTank();
       if (ridingTramCarIdx !== null) disembarkFromCityTram();
       soundEngine.playUiClick();
@@ -2033,7 +2167,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           playerUnit.isSitting = false;
           soundEngine.playUiClick();
           emitHudImmediately();
-        } else if (currentNearestCafeSeat && !cafeWorkShiftActive) {
+        } else if (
+          currentNearestCafeSeat &&
+          !cafeWorkShiftActive &&
+          !isCafeSeatOccupied(currentNearestCafeSeat)
+        ) {
           soundEngine.playUiClick();
           activeCafeSeatedSpot = currentNearestCafeSeat;
           playerUnit.x = currentNearestCafeSeat.x;
@@ -2057,7 +2195,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           playerUnit.isSitting = false;
           soundEngine.playUiClick();
           emitHudImmediately();
-        } else if (currentNearestCasinoSeat) {
+        } else if (currentNearestCasinoSeat && !isCasinoSeatOccupied(currentNearestCasinoSeat)) {
           soundEngine.playUiClick();
           activeCasinoSeatedSpot = currentNearestCasinoSeat;
           playerUnit.x = currentNearestCasinoSeat.x;
@@ -2082,7 +2220,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           playerUnit.isSitting = false;
           soundEngine.playUiClick();
           emitHudImmediately();
-        } else if (currentNearestSalonSeat) {
+        } else if (currentNearestSalonSeat && !isSalonSeatOccupied(currentNearestSalonSeat)) {
           soundEngine.playUiClick();
           activeSalonSeatedSpot = currentNearestSalonSeat;
           playerUnit.x = currentNearestSalonSeat.x;
@@ -2287,6 +2425,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             isSelf: false,
           };
         }
+      } else if (targetId === 'citizen_mira' && cafeMiraNpcRoot?.visible) {
+        found = {
+          id: 'citizen_mira',
+          name: 'Mira',
+          isNpc: true,
+          isMerchant: false,
+          gender: 'female',
+          team: 'red',
+          status: cafeMiraStatusLabel,
+          root: cafeMiraNpcRoot,
+          nameplate: cafeMiraNameplate ?? undefined,
+          isSelf: false,
+        };
       } else {
         const u = buddyUnits.find((b) => String(b.id) === String(targetId) && b.alive);
         if (u) {
@@ -2351,12 +2502,50 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           x: playerUnit?.x ?? 0,
           z: playerUnit?.z ?? 0,
         };
-        const groundElev = getTerrainElevation(found.root.position.x, found.root.position.z);
+        const groundElev =
+          npcCameraMode === 'cafe_interior'
+            ? CAFE_ORIGIN_Y
+            : npcCameraMode === 'casino_interior'
+              ? CASINO_ORIGIN_Y
+              : npcCameraMode === 'salon_interior'
+                ? SALON_ORIGIN_Y + salonCurrentFloorY
+                : npcCameraMode === 'house_visit'
+                  ? HOUSE_ORIGIN_Y
+                  : getTerrainElevation(found.root.position.x, found.root.position.z);
         characterSelectionRing.position.set(found.root.position.x, groundElev + 0.04, found.root.position.z);
-        characterSelectionRing.visible = true;
+        characterSelectionRing.visible = npcCameraMode === 'none';
       }
     };
     window.addEventListener('select-character-by-id', onSelectCharacterById);
+
+    const selectCharacterFromRadialPin = (
+      entity: UnifiedDockProximityCandidate,
+      pinId?: string,
+    ) => {
+      resetAllPlayerMovementInputs();
+      window.dispatchEvent(new CustomEvent('select-character-by-id', { detail: { id: entity.id } }));
+      window.dispatchEvent(
+        new CustomEvent('character-selected', {
+          detail: {
+            user: {
+              id: entity.id,
+              nearAccountId: entity.nearAccountId,
+              name: entity.name,
+              distance: entity.distance,
+              isNpc: entity.isNpc,
+              isMerchant: entity.isMerchant,
+              merchantLocation: entity.merchantLocation,
+              gender: entity.gender,
+              isSelf: false,
+              team: entity.team,
+              status: entity.status,
+            },
+            expandMenu: true,
+            pinId,
+          },
+        }),
+      );
+    };
 
     const initialBubbleStyle = (() => {
       try {
@@ -2373,28 +2562,61 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     let localBubbleBgColor = initialBubbleStyle.bgColor;
     let localBubbleTextColor = initialBubbleStyle.textColor;
 
+    const applySocialBubblePillPalette = (
+      pillEl: HTMLSpanElement,
+      bgColor: string,
+      textColor: string,
+    ) => {
+      const isDefaultWhite = bgColor.trim().toLowerCase() === '#ffffff';
+      pillEl.style.background = isDefaultWhite ? 'rgba(244, 246, 249, 0.92)' : bgColor;
+      pillEl.style.color = isDefaultWhite ? '#0f172a' : textColor;
+    };
+
     const socialSpeechBubbleEl = document.createElement('div');
     socialSpeechBubbleEl.setAttribute('data-social-speech-bubble', 'true');
     socialSpeechBubbleEl.style.position = 'absolute';
     socialSpeechBubbleEl.style.left = '0px';
     socialSpeechBubbleEl.style.top = '0px';
     socialSpeechBubbleEl.style.display = 'none';
+    socialSpeechBubbleEl.style.alignItems = 'stretch';
+    socialSpeechBubbleEl.style.gap = '9px';
     socialSpeechBubbleEl.style.pointerEvents = 'none';
     socialSpeechBubbleEl.style.userSelect = 'none';
-    socialSpeechBubbleEl.style.padding = '5px 12px';
-    socialSpeechBubbleEl.style.background = localBubbleBgColor;
-    socialSpeechBubbleEl.style.color = localBubbleTextColor;
-    socialSpeechBubbleEl.style.fontFamily = "'Barlow', sans-serif";
-    socialSpeechBubbleEl.style.fontWeight = '800';
-    socialSpeechBubbleEl.style.fontSize = '12px';
-    socialSpeechBubbleEl.style.borderRadius = '12px';
-    socialSpeechBubbleEl.style.border = '2.5px solid #14161d';
-    socialSpeechBubbleEl.style.boxShadow = '2.5px 2.5px 0 #14161d';
-    socialSpeechBubbleEl.style.maxWidth = '280px';
-    socialSpeechBubbleEl.style.textAlign = 'center';
-    socialSpeechBubbleEl.style.whiteSpace = 'normal';
-    socialSpeechBubbleEl.style.lineHeight = '1.25';
-    socialSpeechBubbleEl.style.overflowWrap = 'break-word';
+    socialSpeechBubbleEl.style.zIndex = '22';
+
+    const socialSpeechBubbleStemEl = document.createElement('span');
+    socialSpeechBubbleStemEl.style.display = 'block';
+    socialSpeechBubbleStemEl.style.width = '2px';
+    socialSpeechBubbleStemEl.style.margin = '3px 0';
+    socialSpeechBubbleStemEl.style.borderRadius = '9999px';
+    socialSpeechBubbleStemEl.style.background =
+      'linear-gradient(to bottom, rgba(255,255,255,0.25), rgba(255,255,255,0.9), rgba(255,255,255,0.25))';
+    socialSpeechBubbleStemEl.style.boxShadow = '0 0 8px rgba(255,255,255,0.42)';
+    socialSpeechBubbleStemEl.style.flexShrink = '0';
+
+    const socialSpeechBubblePillEl = document.createElement('span');
+    socialSpeechBubblePillEl.style.display = 'inline-block';
+    socialSpeechBubblePillEl.style.padding = '7px 14px';
+    socialSpeechBubblePillEl.style.fontFamily = "'Plus Jakarta Sans', 'Inter', sans-serif";
+    socialSpeechBubblePillEl.style.fontWeight = '600';
+    socialSpeechBubblePillEl.style.fontSize = '12px';
+    socialSpeechBubblePillEl.style.borderRadius = '9999px';
+    socialSpeechBubblePillEl.style.border = '1px solid rgba(255, 255, 255, 0.94)';
+    socialSpeechBubblePillEl.style.backdropFilter = 'blur(12px)';
+    socialSpeechBubblePillEl.style.boxShadow = '0 6px 20px rgba(15, 23, 42, 0.22)';
+    socialSpeechBubblePillEl.style.maxWidth = '238px';
+    socialSpeechBubblePillEl.style.textAlign = 'left';
+    socialSpeechBubblePillEl.style.whiteSpace = 'normal';
+    socialSpeechBubblePillEl.style.lineHeight = '1.3';
+    socialSpeechBubblePillEl.style.overflowWrap = 'break-word';
+    applySocialBubblePillPalette(
+      socialSpeechBubblePillEl,
+      localBubbleBgColor,
+      localBubbleTextColor,
+    );
+
+    socialSpeechBubbleEl.appendChild(socialSpeechBubbleStemEl);
+    socialSpeechBubbleEl.appendChild(socialSpeechBubblePillEl);
     promptOverlay.appendChild(socialSpeechBubbleEl);
 
     const onUpdateSocialBubbleStyle = (ev: Event) => {
@@ -2405,8 +2627,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       );
       localBubbleBgColor = nextStyle.bgColor;
       localBubbleTextColor = nextStyle.textColor;
-      socialSpeechBubbleEl.style.background = localBubbleBgColor;
-      socialSpeechBubbleEl.style.color = localBubbleTextColor;
+      applySocialBubblePillPalette(
+        socialSpeechBubblePillEl,
+        localBubbleBgColor,
+        localBubbleTextColor,
+      );
     };
     window.addEventListener('update-social-bubble-style', onUpdateSocialBubbleStyle);
 
@@ -2460,12 +2685,37 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       citizenId: string;
       frontDirX: number;
       frontDirZ: number;
+      curX: number;
+      curZ: number;
+      curBoneDropY: number;
+      isPairedWithCitizen: boolean;
       blend01: number;
       startCamPos: { x: number; y: number; z: number };
       startLookAt: { x: number; y: number; z: number };
       startFov: number;
       faceCamYaw: number;
     } | null = null;
+    let poseModalInspectOpen = false;
+    let pairedModalInspectTargetId: string | null = null;
+    let posePortraitState: {
+      mode: 'solo' | 'paired';
+      targetKey: string;
+      hasActiveSession: boolean;
+      activeAnimId: string | null;
+      frontDirX: number;
+      frontDirZ: number;
+      curCenterX: number;
+      curCenterZ: number;
+      curBoneDropY: number;
+      blend01: number;
+      startCamPos: { x: number; y: number; z: number };
+      startLookAt: { x: number; y: number; z: number };
+      startFov: number;
+    } | null = null;
+    const portraitBoneScratchA = new THREE.Vector3();
+    const portraitBoneScratchB = new THREE.Vector3();
+    const portraitBoneScratchC = new THREE.Vector3();
+    const portraitScaleScratch = new THREE.Vector3();
     let citizenReturnBlend01 = 0;
     let citizenReturnFromCamPos = { x: 0, y: 0, z: 0 };
     let citizenReturnFromLookAt = { x: 0, y: 0, z: 0 };
@@ -2474,13 +2724,58 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     let lastRenderedLookAt = { x: 0, y: 0, z: 0 };
     let lastRenderedFov: number = BUDDIES_CONSTANTS.camera.fov;
     let hasLastRenderedCamPose = false;
+    let npcPortraitOrbitYaw = 0;
+    let npcPortraitOrbitPitch = 0;
+    let npcPortraitDistanceScale: number = NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale;
+    let npcPortraitSmoothedYaw = 0;
+    let npcPortraitSmoothedPitch = 0;
+    let npcPortraitSmoothedDistScale: number = NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale;
+    let isOrbitingNpcPortrait = false;
+    let npcPortraitOrbitDragStart = {
+      x: 0,
+      y: 0,
+      yaw: 0,
+      pitch: 0,
+    };
+    const resetNpcPortraitInspectCamera = (
+      defaultDistanceScale: number = NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale,
+    ) => {
+      const clampedScale = clampNpcDialoguePortraitOrbit({
+        portraitDistanceScale: defaultDistanceScale,
+      }).portraitDistanceScale;
+      npcPortraitOrbitYaw = 0;
+      npcPortraitOrbitPitch = 0;
+      npcPortraitDistanceScale = clampedScale;
+      npcPortraitSmoothedYaw = 0;
+      npcPortraitSmoothedPitch = 0;
+      npcPortraitSmoothedDistScale = clampedScale;
+      isOrbitingNpcPortrait = false;
+    };
+    const isNpcPortraitInspectActive = () =>
+      npcCameraMode === 'npc_merchant' ||
+      (npcCameraMode === 'none' && Boolean(citizenPortraitState)) ||
+      (npcCameraMode === 'cafe_interior' && activeCitizenDialogueId === 'citizen_mira') ||
+      Boolean(posePortraitState);
     const onCitizenDialogueOpenState = (ev: Event) => {
       const customEv = ev as CustomEvent<{ isOpen?: boolean; citizenId?: string | null }>;
-      activeCitizenDialogueId = customEv.detail?.isOpen
-        ? (customEv.detail.citizenId ?? null)
+      const nextId = customEv.detail?.isOpen ? (customEv.detail.citizenId ?? null) : null;
+      if (nextId !== activeCitizenDialogueId) {
+        resetNpcPortraitInspectCamera();
+      }
+      activeCitizenDialogueId = nextId;
+    };
+    const onPoseInspectOpenState = (ev: Event) => {
+      const customEv = ev as CustomEvent<{
+        isQuickPoseOpen?: boolean;
+        pairedTargetId?: string | null;
+      }>;
+      poseModalInspectOpen = Boolean(customEv.detail?.isQuickPoseOpen);
+      pairedModalInspectTargetId = customEv.detail?.pairedTargetId
+        ? String(customEv.detail.pairedTargetId)
         : null;
     };
     window.addEventListener('citizen-dialogue-open-state', onCitizenDialogueOpenState);
+    window.addEventListener('pose-inspect-open-state', onPoseInspectOpenState);
     let updateDirectDomPrompts: () => void = () => {};
 
     // 2. Scene, Camera & Authentic Buddies Blitz Warm Afternoon Sun Lighting
@@ -4481,6 +4776,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       lastProgressZ: number;
       avoidSide: number;
       avoidTimer: number;
+      seatOverride: NpcSeatOverrideState | null;
       seedPhase: number;
       nextFishCastSec: number;
       glbUpgraded: boolean;
@@ -4537,10 +4833,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       posZ: number = npc.z,
       fallbackYaw: number = npc.yaw,
     ) => {
+      const prevIdx =
+        (npc.waypointIdx - 1 + npc.preset.waypoints.length) % npc.preset.waypoints.length;
       const arrivedStop =
-        npc.preset.waypoints[
-          (npc.waypointIdx - 1 + npc.preset.waypoints.length) % npc.preset.waypoints.length
-        ];
+        npc.seatOverride && npc.seatOverride.wpIdx === prevIdx
+          ? npc.seatOverride
+          : npc.preset.waypoints[prevIdx];
       const seatFacingYaw = arrivedStop?.yaw ?? fallbackYaw;
       const seatShift = npc.isSitting ? resolveAmbientSeatBackShift(posX, posZ) : 0;
       const renderX = seatShift > 0 ? posX - Math.cos(seatFacingYaw) * seatShift : posX;
@@ -4642,6 +4940,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           lastProgressZ: wp0.z,
           avoidSide: 0,
           avoidTimer: 0,
+          seatOverride: null,
           seedPhase,
           nextFishCastSec: 7.5 + (idx % 4) * 3.2,
           glbUpgraded: false,
@@ -4738,6 +5037,118 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       avoidTimer: 0,
       blocked: false,
     };
+    const upgradeAmbientNpcRigIfNeeded = (
+      npc: CityAmbientNpcController,
+      assetsOverride?: LoadedBlitzAssets | null,
+    ): boolean => {
+      const assets = assetsOverride ?? loadedBlitzAssets ?? getCachedLoadedBlitzAssets();
+      const playerFemaleGlb = assets?.playerFemaleGlb ?? earlyLoadedPlayerFemaleGltf;
+      const playerMaleGlb = assets?.playerMaleGlb ?? earlyLoadedPlayerMaleGltf;
+      const ambientFemaleGlb =
+        assets?.ambientFemaleNpcGlb ??
+        earlyLoadedAmbientFemaleGlb ??
+        playerFemaleGlb;
+      const ambientMaleGlb =
+        assets?.ambientMaleNpcGlb ??
+        earlyLoadedAmbientMaleGlb ??
+        playerMaleGlb;
+      const fishingRodGlb = assets?.fishingRodGltf;
+      const hasAnyFishingStop =
+        npc.preset.activity === 'fishing' ||
+        npc.preset.waypoints.some((w) => w.activity === 'fishing');
+      const citizenGlbs = getCachedLoadedCitizenGlbs();
+      const bespokeCitizenGlb =
+        npc.preset.id === 'city_plaza_raka'
+          ? ambientMaleGlb
+          : npc.preset.id === 'city_plaza_nadia'
+            ? ambientFemaleGlb
+            : npc.preset.id === 'citizen_mira'
+              ? (assets?.miraCustomGlb ?? citizenGlbs.miraCustomGlb)
+              : npc.preset.id === 'citizen_tari'
+                ? (assets?.tariCustomGlb ?? citizenGlbs.tariCustomGlb)
+                : npc.preset.id === 'citizen_bima'
+                  ? (assets?.bimaCustomGlb ?? citizenGlbs.bimaCustomGlb)
+                  : npc.preset.id === 'citizen_kenji'
+                    ? (assets?.kenjiCustomGlb ?? citizenGlbs.kenjiCustomGlb)
+                    : undefined;
+      const requiresBespokeCitizenGlb =
+        npc.preset.id === 'city_plaza_raka' ||
+        npc.preset.id === 'city_plaza_nadia' ||
+        npc.preset.id === 'citizen_mira' ||
+        npc.preset.id === 'citizen_tari' ||
+        npc.preset.id === 'citizen_bima' ||
+        npc.preset.id === 'citizen_kenji';
+      const targetGlb = requiresBespokeCitizenGlb
+        ? bespokeCitizenGlb
+        : npc.preset.baseGlbVariant === 'player'
+          ? npc.preset.gender === 'male'
+            ? playerMaleGlb ?? ambientMaleGlb
+            : playerFemaleGlb ?? ambientFemaleGlb
+          : npc.preset.gender === 'male'
+            ? ambientMaleGlb
+            : ambientFemaleGlb;
+      const needAvatarUpgrade = Boolean(targetGlb) && !npc.glbUpgraded;
+      const needRodUpgrade =
+        !npc.rodUpgraded &&
+        hasAnyFishingStop &&
+        Boolean(fishingRodGlb) &&
+        Boolean(targetGlb);
+      if ((!needAvatarUpgrade && !needRodUpgrade) || !targetGlb) {
+        return false;
+      }
+      const hasFullModularOutfit = Boolean(
+        npc.preset.equippedCostumeUrl ||
+          npc.preset.equippedHairUrl ||
+          npc.preset.equippedLegsUrl ||
+          npc.preset.equippedFeetUrl,
+      );
+      npc.bodyGroup.userData.desiredModularOutfit = hasFullModularOutfit
+        ? {
+            costumeUrl: npc.preset.equippedCostumeUrl,
+            hairUrl: npc.preset.equippedHairUrl,
+            torsoUrl: npc.preset.equippedTorsoUrl,
+            legsUrl: npc.preset.equippedLegsUrl,
+            feetUrl: npc.preset.equippedFeetUrl,
+          }
+        : undefined;
+      npc.bodyGroup.userData.desiredTorsoAssetUrl = hasFullModularOutfit
+        ? null
+        : (npc.preset.equippedTorsoUrl ?? null);
+      npc.bodyGroup.userData.citizenClothingTintHex =
+        npc.preset.disableClothingTint ? null : (npc.preset.clothingTintHex ?? null);
+      upgradeBuddyRigWithCharBuddiesGlb(
+        npc.rig,
+        targetGlb,
+        undefined,
+        hasAnyFishingStop ? fishingRodGlb : undefined,
+      );
+      applyAmbientNpcClipOverrides(npc.rig, npc.preset);
+      if (
+        npc.preset.clothingTintHex &&
+        !npc.preset.disableClothingTint &&
+        !npc.rig.customGlbController?.glbRoot?.userData?.isBlitzModularDoll
+      ) {
+        applyCitizenClothingTint(npc.rig, npc.preset.clothingTintHex);
+      }
+      npc.rig.weaponRigGroup.visible = false;
+      npc.rig.pistolGroup.visible = false;
+      npc.glbUpgraded = true;
+      if (hasAnyFishingStop && fishingRodGlb) {
+        npc.rodUpgraded = true;
+        npc.rig.fishingPoseState = {
+          phase: 'nibble',
+          isReeling: false,
+          isSurging: false,
+          tension: 0.12,
+          rodBend: 0.08,
+          reelAngle: 0,
+          castPower: 0.5,
+          castProgress: 1,
+        };
+      }
+      return true;
+    };
+
     const updateCityAmbientNpcsFrame = (
       dt: number,
       timeSec: number,
@@ -4752,13 +5163,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       kCurve: number,
       shouldShowAmbientNpcs: boolean,
       portraitOverride?: { citizenId: string; faceCamYaw: number } | null,
+      isFlyInLightweightMode = false,
     ) => {
       npcAnimLodTick++;
       if (!shouldShowAmbientNpcs) {
+        let prewarmedHiddenThisFrame = false;
         for (let i = 0; i < cityAmbientNpcs.length; i++) {
           const npc = cityAmbientNpcs[i];
           npc.root.visible = false;
           npc.nameplate.sprite.visible = false;
+          if (!prewarmedHiddenThisFrame && (!npc.glbUpgraded || !npc.rodUpgraded)) {
+            if (upgradeAmbientNpcRigIfNeeded(npc)) {
+              prewarmedHiddenThisFrame = true;
+            }
+          }
           if (npc.rig.customGlbController) {
             npc.rig.customGlbController.lastStepTimeMs = nowMs;
           }
@@ -4767,41 +5185,64 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       }
 
       syncSecondaryLodFrustum();
-      const assets = loadedBlitzAssets ?? getCachedLoadedBlitzAssets();
-      const playerFemaleGlb = assets?.playerFemaleGlb ?? earlyLoadedPlayerFemaleGltf;
-      const playerMaleGlb = assets?.playerMaleGlb ?? earlyLoadedPlayerMaleGltf;
-      const ambientFemaleGlb =
-        assets?.ambientFemaleNpcGlb ??
-        earlyLoadedAmbientFemaleGlb ??
-        playerFemaleGlb;
-      const ambientMaleGlb =
-        assets?.ambientMaleNpcGlb ??
-        earlyLoadedAmbientMaleGlb ??
-        playerMaleGlb;
-      const fishingRodGlb = assets?.fishingRodGltf;
+
+      // Lightweight fast-path during registered-user camera fly-in (`fly_to_plaza` -> `gameplay`):
+      // Pre-warmed NPCs stand/sit at their initial Plaza anchors without A* pathfinding or multi-capsule collision spikes.
+      if (isFlyInLightweightMode) {
+        for (let i = 0; i < cityAmbientNpcs.length; i++) {
+          const npc = cityAmbientNpcs[i];
+          const distFromFocus = Math.hypot(npc.x - focusX, npc.z - focusZ);
+          const visibleNow = distFromFocus <= 78.0;
+          npc.root.visible = visibleNow;
+          npc.nameplate.sprite.visible = false;
+          if (!visibleNow) {
+            if (npc.rig.customGlbController) {
+              npc.rig.customGlbController.lastStepTimeMs = nowMs;
+            }
+            continue;
+          }
+          upgradeAmbientNpcRigIfNeeded(npc);
+          const { seatFacingYaw, renderX, groundY, renderZ } = resolveCitizenRenderAnchor(
+            npc,
+            npc.x,
+            npc.z,
+            npc.yaw,
+          );
+          const renderYaw = npc.isSitting ? seatFacingYaw : npc.yaw;
+          npc.shadowMesh.visible = !npc.isSitting;
+          npc.bodyGroup.rotation.set(0, renderYaw + Math.PI / 2, 0);
+          npc.bodyGroup.position.y = npc.isSitting ? npc.activeSeatLiftY + 0.178 : 0;
+          applyPlanetCurvatureToObject(
+            npc.root,
+            renderX,
+            groundY,
+            renderZ,
+            planetPivotX,
+            planetPivotZ,
+            0,
+            kCurve,
+          );
+          if (npc.rig.customGlbController) {
+            npc.rig.customGlbController.lastStepTimeMs = nowMs;
+          }
+        }
+        return;
+      }
+
       const pedestrianNavGrid = getPedestrianNavGrid();
       const tramStateNow = cityTram.getState();
       const auditedWorld = getAuditedStaticWorldStructures(getStaticWorldStructures());
-      const sharedDynamicObbs: DynamicObbObstacle2D[] = [
-        {
-          x: tramStateNow.car1.x,
-          z: tramStateNow.car1.z,
-          halfX: CITY_TRAM_SPEC.carLength * 0.5,
-          halfZ: CITY_TRAM_SPEC.carWidth * 0.5,
-          rotY: tramStateNow.car1.yaw,
-          vx: tramStateNow.car1.forwardX * CITY_TRAM_SPEC.cruiseSpeed,
-          vz: tramStateNow.car1.forwardZ * CITY_TRAM_SPEC.cruiseSpeed,
-        },
-        {
-          x: tramStateNow.car2.x,
-          z: tramStateNow.car2.z,
-          halfX: CITY_TRAM_SPEC.carLength * 0.5,
-          halfZ: CITY_TRAM_SPEC.carWidth * 0.5,
-          rotY: tramStateNow.car2.yaw,
-          vx: tramStateNow.car2.forwardX * CITY_TRAM_SPEC.cruiseSpeed,
-          vz: tramStateNow.car2.forwardZ * CITY_TRAM_SPEC.cruiseSpeed,
-        },
-      ];
+      const sharedDynamicObbs: DynamicObbObstacle2D[] = getCityTramCollisionObbs(tramStateNow).map(
+        (sec) => ({
+          x: sec.x,
+          z: sec.z,
+          halfX: sec.halfX,
+          halfZ: sec.halfZ,
+          rotY: sec.yaw,
+          vx: sec.forwardX * CITY_TRAM_SPEC.cruiseSpeed,
+          vz: sec.forwardZ * CITY_TRAM_SPEC.cruiseSpeed,
+        }),
+      );
       if (cityLightingAndTraffic.rootGroup.visible) {
         const trafficBoxes = cityLightingAndTraffic.getVehicleCollisionBoxes();
         for (let tvi = 0; tvi < trafficBoxes.length; tvi++) {
@@ -5000,8 +5441,80 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             npc.x,
             npc.z,
             npc.isSitting,
+            npc.seatOverride,
           );
           const npcGroundY = getTerrainElevation(npc.x, npc.z);
+
+          // Check whether the NPC's approached `sit_relax` bench/chair is already occupied;
+          // if so, divert to an unoccupied nearby bench OR skip this stop and keep roaming.
+          const wpLen = npc.preset.waypoints.length;
+          const activeWpIdx = wpLen > 0 ? ((npc.waypointIdx % wpLen) + wpLen) % wpLen : 0;
+          const activeTargetWp = wpLen > 0 ? npc.preset.waypoints[activeWpIdx] : undefined;
+          const activeGoalIsSit =
+            (activeTargetWp?.activity ?? npc.preset.activity) === 'sit_relax';
+          const effectiveGoal =
+            npc.seatOverride && npc.seatOverride.wpIdx === activeWpIdx
+              ? npc.seatOverride
+              : activeTargetWp;
+          let targetSeatOccupied = false;
+          let alternateSeatForNpc: ReturnType<typeof findNearestUnoccupiedSeatForNpc> = null;
+          if (
+            !npc.isSitting &&
+            npc.pauseTimer <= 0 &&
+            activeGoalIsSit &&
+            effectiveGoal &&
+            Math.hypot(effectiveGoal.x - npc.x, effectiveGoal.z - npc.z) <= 18.0 &&
+            isOutdoorSeatOccupied(effectiveGoal, npc.preset.id)
+          ) {
+            targetSeatOccupied = true;
+            npcAlternateOccupantsScratch.length = 0;
+            if (playerUnit && playerUnit.alive && playerUnit.isSitting) {
+              npcAlternateOccupantsScratch.push({
+                id: '__local_player__',
+                x: playerUnit.x,
+                z: playerUnit.z,
+                isSitting: true,
+              });
+            }
+            for (let oi = 0; oi < cityAmbientNpcs.length; oi++) {
+              const other = cityAmbientNpcs[oi];
+              if (other.preset.id === npc.preset.id) continue;
+              if (other.isSitting) {
+                npcAlternateOccupantsScratch.push({
+                  id: other.preset.id,
+                  x: other.x,
+                  z: other.z,
+                  isSitting: true,
+                });
+              } else if (other.seatOverride) {
+                npcAlternateOccupantsScratch.push({
+                  id: other.preset.id,
+                  x: other.seatOverride.x,
+                  z: other.seatOverride.z,
+                  isSitting: true,
+                });
+              }
+            }
+            for (const av of remotePlayerAvatars.values()) {
+              if (!av.root.visible || !av.peer.isSitting) continue;
+              npcAlternateOccupantsScratch.push({
+                id: av.peer.sessionId,
+                x: av.renderX,
+                z: av.renderZ,
+                isSitting: true,
+              });
+            }
+            alternateSeatForNpc = findNearestUnoccupiedSeatForNpc({
+              targetX: effectiveGoal.x,
+              targetZ: effectiveGoal.z,
+              npcX: npc.x,
+              npcZ: npc.z,
+              npcId: npc.preset.id,
+              candidateSeats: LOBBY_SEAT_SPOTS,
+              occupants: npcAlternateOccupantsScratch,
+              maxSearchRadiusM: 16.0,
+            });
+          }
 
           // Curb, lane-divider & red-light crosswalk safety: yield before stepping onto a roadway OR
           // crossing from the parallel outer car lane onto the inner Halte-side tram track.
@@ -5046,6 +5559,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             lastProgressZ: npc.lastProgressZ,
             avoidSide: npc.avoidSide,
             avoidTimer: npc.avoidTimer,
+            seatOverride: npc.seatOverride,
+            isTargetSeatOccupied: targetSeatOccupied,
+            alternateSeat: alternateSeatForNpc,
             yieldForHazard: yieldForTram,
             isDirectTargetClear: (fromX, fromZ, toX, toZ, isSitGoal) =>
               isSegmentClearOfAuditedStaticObstacles2D({
@@ -5101,6 +5617,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           curX,
           curZ,
           stepped.isSitting,
+          stepped.seatOverride ?? null,
         );
 
         // Enforce unified static world, shoreline/water, dynamic prop, and stair guard collisions
@@ -5306,6 +5823,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         npc.lastProgressZ = stepped.lastProgressZ;
         npc.avoidSide = stepped.avoidSide;
         npc.avoidTimer = stepped.avoidTimer;
+        npc.seatOverride = stepped.seatOverride ?? null;
         if (effectiveIsMoving) {
           const cadenceScale = Math.max(0.32, Math.min(1.05, moveRatio));
           npc.walkCycle +=
@@ -5318,10 +5836,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
         const seatConflict =
           npc.isSitting &&
-          playerIsSitting &&
-          Math.hypot(playerX - finalX, playerZ - finalZ) < 0.9;
+          ((playerIsSitting && Math.hypot(playerX - finalX, playerZ - finalZ) < 0.9) ||
+            cityAmbientNpcs.some(
+              (other, oi) =>
+                oi < i &&
+                other.isSitting &&
+                Math.hypot(other.x - finalX, other.z - finalZ) < 0.9,
+            ));
+        if (seatConflict) {
+          npc.isSitting = false;
+          npc.pauseTimer = 0;
+          npc.seatOverride = null;
+          npc.navPath = [];
+          npc.navPathGoalKey = '';
+        }
         const distFromFocus = Math.hypot(finalX - focusX, finalZ - focusZ);
-        const visibleNow = !seatConflict && distFromFocus <= 78.0;
+        const visibleNow = distFromFocus <= 78.0;
         npc.root.visible = visibleNow;
 
         if (!visibleNow) {
@@ -5333,98 +5863,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         }
 
         // Stagger shared GLB cloning to at most 1 nearby NPC per frame so Safezone FPS never spikes.
-        const hasAnyFishingStop =
-          npc.preset.activity === 'fishing' ||
-          npc.preset.waypoints.some((w) => w.activity === 'fishing');
-        const citizenGlbs = getCachedLoadedCitizenGlbs();
-        const bespokeCitizenGlb =
-          npc.preset.id === 'city_plaza_raka'
-            ? ambientMaleGlb
-            : npc.preset.id === 'city_plaza_nadia'
-              ? ambientFemaleGlb
-              : npc.preset.id === 'citizen_mira'
-                ? (assets?.miraCustomGlb ?? citizenGlbs.miraCustomGlb)
-                : npc.preset.id === 'citizen_tari'
-                  ? (assets?.tariCustomGlb ?? citizenGlbs.tariCustomGlb)
-                  : npc.preset.id === 'citizen_bima'
-                    ? (assets?.bimaCustomGlb ?? citizenGlbs.bimaCustomGlb)
-                    : npc.preset.id === 'citizen_kenji'
-                      ? (assets?.kenjiCustomGlb ?? citizenGlbs.kenjiCustomGlb)
-                      : undefined;
-        const requiresBespokeCitizenGlb =
-          npc.preset.id === 'city_plaza_raka' ||
-          npc.preset.id === 'city_plaza_nadia' ||
-          npc.preset.id === 'citizen_mira' ||
-          npc.preset.id === 'citizen_tari' ||
-          npc.preset.id === 'citizen_bima' ||
-          npc.preset.id === 'citizen_kenji';
-        const targetGlb = requiresBespokeCitizenGlb
-          ? bespokeCitizenGlb
-          : npc.preset.baseGlbVariant === 'player'
-            ? npc.preset.gender === 'male'
-              ? playerMaleGlb ?? ambientMaleGlb
-              : playerFemaleGlb ?? ambientFemaleGlb
-            : npc.preset.gender === 'male'
-              ? ambientMaleGlb
-              : ambientFemaleGlb;
-        const needAvatarUpgrade = Boolean(targetGlb) && !npc.glbUpgraded;
-        const needRodUpgrade =
-          !npc.rodUpgraded &&
-          hasAnyFishingStop &&
-          Boolean(fishingRodGlb) &&
-          Boolean(targetGlb);
-        if ((!upgradedThisFrame || isTalkingWithPlayer) && (needAvatarUpgrade || needRodUpgrade) && targetGlb) {
-          const hasFullModularOutfit = Boolean(
-            npc.preset.equippedCostumeUrl ||
-              npc.preset.equippedHairUrl ||
-              npc.preset.equippedLegsUrl ||
-              npc.preset.equippedFeetUrl,
-          );
-          npc.bodyGroup.userData.desiredModularOutfit = hasFullModularOutfit
-            ? {
-                costumeUrl: npc.preset.equippedCostumeUrl,
-                hairUrl: npc.preset.equippedHairUrl,
-                torsoUrl: npc.preset.equippedTorsoUrl,
-                legsUrl: npc.preset.equippedLegsUrl,
-                feetUrl: npc.preset.equippedFeetUrl,
-              }
-            : undefined;
-          npc.bodyGroup.userData.desiredTorsoAssetUrl = hasFullModularOutfit
-            ? null
-            : (npc.preset.equippedTorsoUrl ?? null);
-          npc.bodyGroup.userData.citizenClothingTintHex =
-            npc.preset.disableClothingTint ? null : (npc.preset.clothingTintHex ?? null);
-          upgradeBuddyRigWithCharBuddiesGlb(
-            npc.rig,
-            targetGlb,
-            undefined,
-            hasAnyFishingStop ? fishingRodGlb : undefined,
-          );
-          applyAmbientNpcClipOverrides(npc.rig, npc.preset);
-          if (
-            npc.preset.clothingTintHex &&
-            !npc.preset.disableClothingTint &&
-            !npc.rig.customGlbController?.glbRoot?.userData?.isBlitzModularDoll
-          ) {
-            applyCitizenClothingTint(npc.rig, npc.preset.clothingTintHex);
+        if (!upgradedThisFrame || isTalkingWithPlayer) {
+          if (upgradeAmbientNpcRigIfNeeded(npc)) {
+            upgradedThisFrame = true;
           }
-          npc.rig.weaponRigGroup.visible = false;
-          npc.rig.pistolGroup.visible = false;
-          npc.glbUpgraded = true;
-          if (hasAnyFishingStop && fishingRodGlb) {
-            npc.rodUpgraded = true;
-            npc.rig.fishingPoseState = {
-              phase: 'nibble',
-              isReeling: false,
-              isSurging: false,
-              tension: 0.12,
-              rodBend: 0.08,
-              reelAngle: 0,
-              castPower: 0.5,
-              castProgress: 1,
-            };
-          }
-          upgradedThisFrame = true;
         }
 
         const { seatFacingYaw, renderX, groundY, renderZ } = resolveCitizenRenderAnchor(
@@ -5635,6 +6077,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     let cafeMiraSeatLiftY = 0;
     let cafeMiraHoldingItemId: CafeMenuItemId | null = null;
     let cafeMiraStatusLabel = 'BROWSING GLASSHOUSE CAFE';
+    let cafeMiraSeatOverride: NpcSeatOverrideState | null = null;
     let cafeInteriorShadersCompiled = false;
     let pendingCafeActivationToken = 0;
     let syncIndoorOutdoorSceneVisibility: (showOutdoor: boolean) => void = () => {};
@@ -5784,6 +6227,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       cafeMiraSeatLiftY = 0;
       cafeMiraHoldingItemId = null;
       cafeMiraStatusLabel = 'BROWSING GLASSHOUSE CAFE';
+      cafeMiraSeatOverride = null;
       cafeInteriorShadersCompiled = false;
       syncCafeCustomerWorkShiftVisuals();
       return builtCafe;
@@ -8844,6 +9288,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           resolvePendingFurnitureMove(false);
         }
         npcCameraMode = detail.mode;
+        if (
+          (detail.mode === 'npc_merchant' && prevMode !== 'npc_merchant') ||
+          (prevMode === 'npc_merchant' && detail.mode !== 'npc_merchant')
+        ) {
+          resetNpcPortraitInspectCamera();
+        }
         if (detail.mode === 'fly_to_plaza') {
           const nextSid = detail.flySessionId ?? flySessionId + 1;
           if (prevMode === 'fly_to_plaza') {
@@ -9265,6 +9715,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         }
       }
       if (detail.location) {
+        if (detail.location !== npcCameraLocation) {
+          resetNpcPortraitInspectCamera();
+        }
         npcCameraLocation = detail.location;
       }
       if (typeof detail.daylightHour === 'number') {
@@ -9583,7 +10036,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     // 3D GUIDED TUTORIAL WAYPOINT PATH (`hana` -> `kiosk` -> `none`)
     // =========================================================================
     let activeTutorialWaypointTarget: 'none' | 'hana' | 'kiosk' | 'coord' = 'none';
-    let tutorialHanaAutoOpened = false;
     const tutorialWaypointGroup = new THREE.Group();
     tutorialWaypointGroup.name = 'TutorialWaypointPathGroup3D';
     tutorialWaypointGroup.visible = false;
@@ -9667,9 +10119,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       } else {
         activeTutorialWaypointTarget =
           nextTarget === 'hana' || nextTarget === 'kiosk' ? nextTarget : 'none';
-        if (activeTutorialWaypointTarget === 'hana') {
-          tutorialHanaAutoOpened = false;
-        }
       }
       const hex =
         typeof detail?.color === 'string' && detail.color.length > 0
@@ -10320,6 +10769,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     let currentNearHouseDoorPlot: { team: 'blue' | 'red'; commanderIdx: number } | null =
       null;
     const scratchLiveObjPos = new THREE.Vector3();
+    const scratchPinScaleVec = new THREE.Vector3();
 
     const findNearestBaseKiosk = (actorX: number, actorZ: number) => {
       let bestTeam: 'blue' | 'red' = 'blue';
@@ -12838,6 +13288,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           });
         });
         buddyUnits.forEach((b) => {
+          if (b.isPlayer) {
+            b.bodyGroup.userData.__enableGenderControllerCache = true;
+            // Pre-build and cache the opposite gender rig controller first so toggling Male <-> Female
+            // in CHOOSE CHARACTER or restoring a registered user's gender is a 0ms instant hot-swap.
+            const activeGender = b.avatarGender ?? getDefaultCharacterGender();
+            const oppositeGender: CharacterGender = activeGender === 'male' ? 'female' : 'male';
+            const oppositeGltf = resolveAvatarGlbForGender(oppositeGender, assets, true);
+            if (oppositeGltf) {
+              upgradeBuddyRigWithCharBuddiesGlb(
+                b.rig,
+                oppositeGltf,
+                assets.ar99AssaultGltf,
+                assets.fishingRodGltf,
+              );
+            }
+          }
           ensureBuddyUnitGlbUpgraded(b, assets);
           if (b.isPlayer) {
             const hidePlayerHandWeapon =
@@ -12876,6 +13342,58 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         );
         lobbyCafeNpc.npcRig.weaponRigGroup.visible = false;
         beachHouseNpc.npcRig.weaponRigGroup.visible = false;
+
+        // Pre-warm all 6 Town Folks / Plaza ambient NPCs during Preload so zero GLB cloning or shader
+        // compilation occurs when flying to Central Plaza or clicking PLAY.
+        for (let ni = 0; ni < cityAmbientNpcs.length; ni++) {
+          const npc = cityAmbientNpcs[ni];
+          upgradeAmbientNpcRigIfNeeded(npc, assets);
+          const { seatFacingYaw, renderX, groundY, renderZ } = resolveCitizenRenderAnchor(
+            npc,
+            npc.x,
+            npc.z,
+            npc.yaw,
+          );
+          const renderYaw = npc.isSitting ? seatFacingYaw : npc.yaw;
+          npc.shadowMesh.visible = !npc.isSitting;
+          npc.bodyGroup.rotation.set(0, renderYaw + Math.PI / 2, 0);
+          npc.bodyGroup.position.y = npc.isSitting ? npc.activeSeatLiftY + 0.178 : 0;
+          npc.root.position.set(renderX, groundY, renderZ);
+          const isFishingInit = npc.activeActivity === 'fishing';
+          updateCharacterWeaponStance(
+            npc.rig,
+            isFishingInit ? 'fishing_rod' : 'unarmed',
+            npc.walkCycle,
+            false,
+            false,
+            0,
+            0,
+            0,
+            'right',
+            0,
+            0,
+            0.76,
+            0,
+            true,
+            'front',
+            1.0,
+            renderYaw,
+            0,
+            npc.isSitting,
+            false,
+            false,
+            null,
+            'idle',
+            'chair',
+            npc.activeHoldingCafeItemId,
+            'full',
+          );
+          if (!isFishingInit) {
+            npc.rig.weaponRigGroup.visible = false;
+            npc.rig.pistolGroup.visible = false;
+          }
+        }
+
         syncPadVisuals(blueBase, bluePadSlots, 'BLUE', blueBaseHp);
         syncPadVisuals(redBase, redPadSlots, 'RED', redBaseHp);
         window.dispatchEvent(new CustomEvent('request-kiosk-thumbnails'));
@@ -12908,12 +13426,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           tanks.push(createBlitzTankVehicle(3.8, 12.2, false, 'blue'));
         }
 
-        // 5. Audit scene frustum culling safety & compile all shaders before releasing the preload gate
+        // 5. Audit scene frustum culling safety & compile all shaders (including pre-warmed Plaza NPCs) before releasing the preload gate
         try {
           auditAndApplyFrustumCulling(scene);
           enableSceneLinearFog(scene);
+          const npcPrevVis: boolean[] = [];
+          for (let ni = 0; ni < cityAmbientNpcs.length; ni++) {
+            npcPrevVis.push(cityAmbientNpcs[ni].root.visible);
+            cityAmbientNpcs[ni].root.visible = true;
+          }
           scene.updateMatrixWorld(true);
           renderer.compile(scene, camera);
+          for (let ni = 0; ni < cityAmbientNpcs.length; ni++) {
+            cityAmbientNpcs[ni].root.visible = npcPrevVis[ni];
+          }
           renderer.render(scene, camera);
         } catch (compileErr) {
           console.warn('[BuddiesBlitzArena] Shader compilation warm-up warning:', compileErr);
@@ -16547,6 +17073,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
     const onWindowBlurOrVisibilityReset = () => {
       resetAllPlayerMovementInputs();
+      isOrbitingNpcPortrait = false;
+      isOrbitingOutdoorCamera = false;
+      isOrbitingSeatedCamera = false;
+      radialPinManager.setKeyEHeld(false);
+      radialPinManager.cancelActiveHold();
     };
     const onDocumentFocusIn = (e: FocusEvent) => {
       const targetEl = e.target as HTMLElement | null;
@@ -16682,6 +17213,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       if (e.code === 'KeyE') {
         e.preventDefault();
         if (activeTramRideCutscene?.active) return;
+        if (
+          worldModeRef.current !== 'warzone' &&
+          !mountedTank &&
+          npcCameraMode !== 'house_interior'
+        ) {
+          if (!e.repeat) {
+            radialPinManager.setKeyEHeld(true);
+          }
+          return;
+        }
 
         const findNearestOnlinePlayerForTalk = (maxDistM: number, isFlatSpace: boolean) => {
           const ax = mountedTank ? mountedTank.x : playerUnit.x;
@@ -17368,6 +17909,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
     const onKeyUp = (e: KeyboardEvent) => {
       keys[e.code] = false;
+      if (e.code === 'KeyE') {
+        radialPinManager.setKeyEHeld(false);
+      }
     };
 
     const updateMouseWorldAim = (clientX: number, clientY: number) => {
@@ -17382,6 +17926,27 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
     const onPointerMove = (e: PointerEvent) => {
       updateMouseWorldAim(e.clientX, e.clientY);
+      if (isOrbitingNpcPortrait) {
+        const dx = e.clientX - npcPortraitOrbitDragStart.x;
+        const dy = e.clientY - npcPortraitOrbitDragStart.y;
+        const clamped = clampNpcDialoguePortraitOrbit({
+          orbitYawOffsetRad: npcPortraitOrbitDragStart.yaw - dx * 0.0075,
+          orbitPitchOffsetRad: npcPortraitOrbitDragStart.pitch + dy * 0.0058,
+          portraitDistanceScale: npcPortraitDistanceScale,
+        });
+        npcPortraitOrbitYaw = clamped.orbitYawOffsetRad;
+        npcPortraitOrbitPitch = clamped.orbitPitchOffsetRad;
+        renderer.domElement.style.cursor = 'grabbing';
+        return;
+      }
+      if (isNpcPortraitInspectActive()) {
+        renderer.domElement.style.cursor = 'grab';
+      } else if (
+        renderer.domElement.style.cursor === 'grab' ||
+        renderer.domElement.style.cursor === 'grabbing'
+      ) {
+        renderer.domElement.style.cursor = '';
+      }
       if (npcCameraMode === 'city_view') {
         if (isOrbitingCityView) {
           const dx = e.clientX - cityViewDragStart.x;
@@ -17558,7 +18123,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         const dy = e.clientY - seatedOrbitDragStart.y;
         seatedCameraYaw = seatedOrbitDragStart.yaw - dx * 0.007;
         seatedCameraPitch = clamp(seatedOrbitDragStart.pitch + dy * 0.0055, 0.06, 0.85);
-      } else if (isOrbitingOutdoorCamera && npcCameraMode === 'none' && !citizenPortraitState) {
+      } else if (
+        isOrbitingOutdoorCamera &&
+        npcCameraMode === 'none' &&
+        !citizenPortraitState &&
+        !posePortraitState
+      ) {
         const dx = e.clientX - outdoorOrbitDragStart.x;
         outdoorWorldCamYaw = outdoorOrbitDragStart.yaw - dx * 0.007;
         outdoorWorldCamPitchOffset = 0;
@@ -17570,6 +18140,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     const onPointerDown = (e: PointerEvent) => {
       if (gameStateRef.current !== 'playing') return;
       updateMouseWorldAim(e.clientX, e.clientY);
+
+      if (isNpcPortraitInspectActive() && (e.button === 0 || e.button === 2)) {
+        isOrbitingNpcPortrait = true;
+        npcPortraitOrbitDragStart = {
+          x: e.clientX,
+          y: e.clientY,
+          yaw: npcPortraitOrbitYaw,
+          pitch: npcPortraitOrbitPitch,
+        };
+        renderer.domElement.style.cursor = 'grabbing';
+        return;
+      }
 
       if (npcCameraMode === 'city_view') {
         if (cityViewExitingToPlayer) return;
@@ -17901,6 +18483,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     };
 
     const onPointerUp = (e: PointerEvent) => {
+      const wasOrbitingNpcPortrait = isOrbitingNpcPortrait;
+      isOrbitingNpcPortrait = false;
+      if (wasOrbitingNpcPortrait) {
+        clickToWalkPointerDown = null;
+        isPointerDown = false;
+        renderer.domElement.style.cursor = isNpcPortraitInspectActive() ? 'grab' : '';
+        return;
+      }
       const pendingClickTap = clickToWalkPointerDown;
       if (!pendingClickTap || e.pointerId === pendingClickTap.pointerId) {
         clickToWalkPointerDown = null;
@@ -18045,6 +18635,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     };
 
     const onWheel = (e: WheelEvent) => {
+      if (isNpcPortraitInspectActive()) {
+        const wheelStep =
+          Math.sign(e.deltaY) *
+          Math.min(0.14, Math.max(0.025, Math.abs(e.deltaY) * 0.0018));
+        npcPortraitDistanceScale = clampNpcDialoguePortraitOrbit({
+          orbitYawOffsetRad: npcPortraitOrbitYaw,
+          orbitPitchOffsetRad: npcPortraitOrbitPitch,
+          portraitDistanceScale: npcPortraitDistanceScale + wheelStep,
+        }).portraitDistanceScale;
+        return;
+      }
       if (npcCameraMode === 'city_view') {
         if (cityViewExitingToPlayer) return;
         const step = Math.sign(e.deltaY) * (cityViewTarget === 'kota' ? 9.5 : 3.8);
@@ -18130,7 +18731,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         editorZoom = clamp(editorZoom + Math.sign(e.deltaY) * 0.1, 0.35, 2.2);
       } else if (playerUnit?.isSitting && activeSeatedSpot) {
         seatedCameraDist = clamp(seatedCameraDist + Math.sign(e.deltaY) * 0.30, 2.2, 5.25);
-      } else if (npcCameraMode === 'npc_merchant' || citizenPortraitState) {
+      } else if (npcCameraMode === 'npc_merchant' || citizenPortraitState || posePortraitState) {
         return;
       } else {
         // Batas kamera zoom-in (0.58) hingga batas maksimal zoom-out (0.86)
@@ -18705,9 +19306,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           socialTalkMessage = msg;
           socialTalkTimer = DEFAULT_CHAT_BUBBLE_TTL_MS / 1000;
           socialTalkSeq += 1;
-          socialSpeechBubbleEl.textContent = msg;
-          socialSpeechBubbleEl.style.background = localBubbleBgColor;
-          socialSpeechBubbleEl.style.color = localBubbleTextColor;
+          socialSpeechBubblePillEl.textContent = msg;
+          applySocialBubblePillPalette(
+            socialSpeechBubblePillEl,
+            localBubbleBgColor,
+            localBubbleTextColor,
+          );
           worldMultiplayer.broadcastChat?.({
             zoneKey: getLocalMultiplayerZoneKey(),
             displayName: playerCustomDisplayName || 'CITIZEN',
@@ -20402,6 +21006,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       if (
         isKioskModalOpenCanvas ||
         Boolean(citizenPortraitState) ||
+        Boolean(posePortraitState) ||
         mountedTank ||
         ridingTramCarIdx !== null ||
         shorelineFishingSync.phase !== 'idle' ||
@@ -21511,14 +22116,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         }
       }
 
-      // 3C. Solid 2-Car City Tram OBB Collision (both Car 1 and Car 2 act as solid moving streetcars on the road!)
+      // 3C. Solid 2-Car City Tram OBB Collision (Car 1, Articulation Joint, and Car 2 act as solid moving streetcar hulls!)
       if (moverAltitude < 2.6) {
         const tramState = cityTram.getState();
-        const tramHalfX = CITY_TRAM_SPEC.carLength * 0.5;
-        const tramHalfZ = CITY_TRAM_SPEC.carWidth * 0.5;
-        const tramCars = [tramState.car1, tramState.car2];
-        for (let tci = 0; tci < tramCars.length; tci++) {
-          const car = tramCars[tci];
+        const tramSections = getCityTramCollisionObbs(tramState);
+        for (let tci = 0; tci < tramSections.length; tci++) {
+          const car = tramSections[tci];
           const carVx = car.forwardX * CITY_TRAM_SPEC.cruiseSpeed;
           const carVz = car.forwardZ * CITY_TRAM_SPEC.cruiseSpeed;
           for (const hs of hullSpheres) {
@@ -21532,8 +22135,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               hs.r,
               car.x,
               car.z,
-              tramHalfX,
-              tramHalfZ,
+              car.halfX,
+              car.halfZ,
               car.yaw,
               0.28,
             );
@@ -21766,7 +22369,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     }[] = [
       // Intact Bottom-Left Model Estate Skyshield bastion at (-51.4, 60.0) + All 4 Halte Tram Platforms + 4 Public Warzone Crate Pads exclude grass
       { x: -51.4, z: 60.0, yaw: 0, halfLen: 2.15, halfWidth: 2.15 },
-      { x: -58.9, z: 0.0, yaw: 0, halfLen: 3.6, halfWidth: 9.6 },
+      { x: -58.9, z: 4.6, yaw: 0, halfLen: 3.6, halfWidth: 9.6 },
       { x: 3.5, z: -40.87, yaw: 0, halfLen: 9.6, halfWidth: 3.6 },
       { x: -36.5, z: 40.87, yaw: 0, halfLen: 9.6, halfWidth: 3.6 },
       { x: 79.63, z: 29.5, yaw: 0, halfLen: 3.6, halfWidth: 9.6 },
@@ -22162,12 +22765,126 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       const activeCitizenPortraitNpc = desiredPortraitCitizenId
         ? (cityAmbientNpcs.find((c) => c.preset.id === desiredPortraitCitizenId) ?? null)
         : null;
+      const resolveRigBonePortraitMetrics = (
+        rig: BuddyCharacterRig | null | undefined,
+        anchorX: number,
+        anchorZ: number,
+        groundY: number,
+        defaultScale = 1.0,
+      ) => {
+        const ctrl = rig?.customGlbController;
+        const headBone = ctrl?.bones?.get('Head');
+        const bodyGrp = rig?.bodyGroupRef;
+        const rootObj = bodyGrp?.parent ?? bodyGrp;
+        if (!ctrl || !headBone || !bodyGrp || !rootObj || !rootObj.visible) {
+          return computeBoneTrackedPortraitMetrics({
+            anchorX,
+            anchorZ,
+            groundY,
+            scale: defaultScale,
+          });
+        }
+        rootObj.updateMatrixWorld(true);
+        bodyGrp.getWorldScale(portraitScaleScratch);
+        const bodyScaleY = Math.max(0.35, portraitScaleScratch.y || defaultScale);
+        headBone.getWorldPosition(portraitBoneScratchA);
+        const leftShoulder =
+          ctrl.bones.get('LeftArm') ?? ctrl.bones.get('LeftShoulder');
+        const rightShoulder =
+          ctrl.bones.get('RightArm') ?? ctrl.bones.get('RightShoulder');
+        let leftX: number | undefined;
+        let leftZ: number | undefined;
+        let rightX: number | undefined;
+        let rightZ: number | undefined;
+        if (leftShoulder && rightShoulder) {
+          leftShoulder.getWorldPosition(portraitBoneScratchB);
+          rightShoulder.getWorldPosition(portraitBoneScratchC);
+          leftX = portraitBoneScratchB.x;
+          leftZ = portraitBoneScratchB.z;
+          rightX = portraitBoneScratchC.x;
+          rightZ = portraitBoneScratchC.z;
+        }
+        const standingHeadHeightWorld =
+          typeof ctrl.standingHeadLocalY === 'number' &&
+          Number.isFinite(ctrl.standingHeadLocalY)
+            ? ctrl.standingHeadLocalY * bodyScaleY
+            : undefined;
+        return computeBoneTrackedPortraitMetrics({
+          anchorX,
+          anchorZ,
+          groundY,
+          scale: bodyScaleY,
+          headWorldX: portraitBoneScratchA.x,
+          headWorldY: portraitBoneScratchA.y,
+          headWorldZ: portraitBoneScratchA.z,
+          standingHeadHeightWorld,
+          leftShoulderX: leftX,
+          leftShoulderZ: leftZ,
+          rightShoulderX: rightX,
+          rightShoulderZ: rightZ,
+        });
+      };
+
+      const wasAnyPortraitActive = Boolean(citizenPortraitState || posePortraitState);
       if (activeCitizenPortraitNpc) {
+        posePortraitState = null;
+        const anchor = resolveCitizenRenderAnchor(activeCitizenPortraitNpc);
+        const isPairedWithCitizen = Boolean(
+          activePairedSession &&
+            activePairedSession.partnerKind === 'ambient_npc' &&
+            activePairedSession.targetId === activeCitizenPortraitNpc.preset.id,
+        );
+        const npcBoneMetrics = resolveRigBonePortraitMetrics(
+          activeCitizenPortraitNpc.rig,
+          anchor.renderX,
+          anchor.renderZ,
+          anchor.groundY,
+          1.0,
+        );
+        let targetCenterX = npcBoneMetrics.centerX;
+        let targetCenterZ = npcBoneMetrics.centerZ;
+        let targetBoneDropY = npcBoneMetrics.boneDropY;
+        let pairedDirOverride: { frontDirX: number; frontDirZ: number } | null = null;
+        let pairedDefaultDistScale: number = NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale;
+        if (isPairedWithCitizen && activePairedSession && playerUnit) {
+          const playerBoneMetrics = resolveRigBonePortraitMetrics(
+            playerUnit.rig,
+            playerUnit.x,
+            playerUnit.z,
+            anchor.groundY,
+            1.0,
+          );
+          targetCenterX = (playerBoneMetrics.centerX + npcBoneMetrics.centerX) * 0.5;
+          targetCenterZ = (playerBoneMetrics.centerZ + npcBoneMetrics.centerZ) * 0.5;
+          targetBoneDropY = (playerBoneMetrics.boneDropY + npcBoneMetrics.boneDropY) * 0.5;
+          const refCamX = hasLastRenderedCamPose ? lastRenderedCamPos.x : camera.position.x;
+          const refCamZ = hasLastRenderedCamPose ? lastRenderedCamPos.z : camera.position.z;
+          const basePairedFramed = computePosePortraitInspectTarget({
+            mode: 'paired',
+            playerX: activePairedSession.anchorX,
+            playerZ: activePairedSession.anchorZ,
+            playerYaw: activePairedSession.anchorYaw,
+            lineYaw: activePairedSession.anchorYaw,
+            cameraPosX: refCamX,
+            cameraPosZ: refCamZ,
+          });
+          pairedDefaultDistScale = basePairedFramed.defaultDistanceScale;
+          pairedDirOverride = resolvePairedSessionPortraitDirection({
+            fallbackFrontDirX: basePairedFramed.frontDirX,
+            fallbackFrontDirZ: basePairedFramed.frontDirZ,
+            playerTorsoForwardX: playerBoneMetrics.torsoForwardX,
+            playerTorsoForwardZ: playerBoneMetrics.torsoForwardZ,
+            partnerTorsoForwardX: npcBoneMetrics.torsoForwardX,
+            partnerTorsoForwardZ: npcBoneMetrics.torsoForwardZ,
+          });
+        }
         if (!citizenPortraitState || citizenPortraitState.citizenId !== activeCitizenPortraitNpc.preset.id) {
-          const anchor = resolveCitizenRenderAnchor(activeCitizenPortraitNpc);
           let dirX = 1;
           let dirZ = 0;
-          if (activeCitizenPortraitNpc.isSitting) {
+          if (pairedDirOverride) {
+            dirX = pairedDirOverride.frontDirX;
+            dirZ = pairedDirOverride.frontDirZ;
+          } else if (activeCitizenPortraitNpc.isSitting) {
             dirX = Math.cos(anchor.seatFacingYaw);
             dirZ = -Math.sin(anchor.seatFacingYaw);
           } else if (playerUnit) {
@@ -22177,6 +22894,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             if (dLen >= 0.15) {
               dirX = toPlayerX / dLen;
               dirZ = toPlayerZ / dLen;
+            } else if (
+              npcBoneMetrics.torsoForwardX !== null &&
+              npcBoneMetrics.torsoForwardZ !== null
+            ) {
+              dirX = npcBoneMetrics.torsoForwardX;
+              dirZ = npcBoneMetrics.torsoForwardZ;
             } else {
               dirX = Math.cos(activeCitizenPortraitNpc.yaw);
               dirZ = -Math.sin(activeCitizenPortraitNpc.yaw);
@@ -22184,15 +22907,24 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           }
           const initLook = hasLastRenderedCamPose
             ? { ...lastRenderedLookAt }
-            : { x: anchor.renderX, y: anchor.groundY + 1.5, z: anchor.renderZ };
+            : {
+                x: targetCenterX,
+                y: Math.max(anchor.groundY + 0.5, anchor.groundY + 1.5 - targetBoneDropY),
+                z: targetCenterZ,
+              };
           const initCam = hasLastRenderedCamPose
             ? { ...lastRenderedCamPos }
             : { x: camera.position.x, y: camera.position.y, z: camera.position.z };
           citizenReturnBlend01 = 0;
+          resetNpcPortraitInspectCamera(pairedDefaultDistScale);
           citizenPortraitState = {
             citizenId: activeCitizenPortraitNpc.preset.id,
             frontDirX: dirX,
             frontDirZ: dirZ,
+            curX: targetCenterX,
+            curZ: targetCenterZ,
+            curBoneDropY: targetBoneDropY,
+            isPairedWithCitizen,
             blend01: 0,
             startCamPos: initCam,
             startLookAt: initLook,
@@ -22200,20 +22932,255 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             faceCamYaw: Math.atan2(dirX, dirZ),
           };
         } else {
+          const boneLerp = 1 - Math.exp(-Math.min(rawDt, 0.05) * 14.0);
+          citizenPortraitState.curX +=
+            (targetCenterX - citizenPortraitState.curX) * boneLerp;
+          citizenPortraitState.curZ +=
+            (targetCenterZ - citizenPortraitState.curZ) * boneLerp;
+          citizenPortraitState.curBoneDropY +=
+            (targetBoneDropY - citizenPortraitState.curBoneDropY) * boneLerp;
+          citizenPortraitState.isPairedWithCitizen = isPairedWithCitizen;
           citizenPortraitState.blend01 = Math.min(
             1,
             citizenPortraitState.blend01 + Math.min(rawDt, 0.05) / 0.28,
           );
         }
       } else {
-        if (citizenPortraitState) {
+        citizenPortraitState = null;
+
+        const isPoseInspectEligibleMode =
+          state === 'playing' &&
+          currentPlayMode !== 'editor' &&
+          worldModeRef.current !== 'warzone' &&
+          cityArenaMode !== 'warzone' &&
+          !isFullMapOverview &&
+          !parkViewMode &&
+          nukeStrikeState.phase === 'idle' &&
+          !activeTramRideCutscene?.active &&
+          !mountedTank &&
+          Boolean(playerUnit && playerUnit.alive) &&
+          (npcCameraMode === 'none' ||
+            (npcCameraMode === 'cafe_interior' && activeCitizenDialogueId !== 'citizen_mira') ||
+            npcCameraMode === 'casino_interior' ||
+            npcCameraMode === 'salon_interior' ||
+            npcCameraMode === 'house_visit');
+
+        const resolvePairedPartnerWorldCoord = (
+          targetId: string,
+        ): { x: number; z: number } | null => {
+          const ambientNpc = cityAmbientNpcs.find((c) => c.preset.id === targetId && c.root.visible);
+          if (ambientNpc) return { x: ambientNpc.x, z: ambientNpc.z };
+          const remoteAv = Array.from(remotePlayerAvatars.values()).find(
+            (av) =>
+              av.root.visible &&
+              (av.peer.sessionId === targetId || av.peer.nearAccountId === targetId),
+          );
+          if (remoteAv) return { x: remoteAv.renderX, z: remoteAv.renderZ };
+          if ((targetId === 'npc_hana' || targetId === 'npc_cafe') && lobbyCafeNpc?.npcGrp) {
+            return {
+              x: lobbyCafeNpc.npcGrp.position.x,
+              z: lobbyCafeNpc.npcGrp.position.z,
+            };
+          }
+          if ((targetId === 'npc_kai' || targetId === 'npc_beach') && beachHouseNpc?.npcGrp) {
+            return {
+              x: beachHouseNpc.npcGrp.position.x,
+              z: beachHouseNpc.npcGrp.position.z,
+            };
+          }
+          const buddy = buddyUnits.find((b) => String(b.id) === targetId && b.alive);
+          if (buddy) return { x: buddy.x, z: buddy.z };
+          return null;
+        };
+
+        let desiredPoseMode: 'solo' | 'paired' | null = null;
+        let desiredPoseTargetKey = '';
+        let desiredPoseAnchorInput: Parameters<typeof computePosePortraitInspectTarget>[0] | null =
+          null;
+
+        if (isPoseInspectEligibleMode && playerUnit) {
+          const refCamX = hasLastRenderedCamPose ? lastRenderedCamPos.x : camera.position.x;
+          const refCamZ = hasLastRenderedCamPose ? lastRenderedCamPos.z : camera.position.z;
+          if (activePairedSession) {
+            desiredPoseMode = 'paired';
+            desiredPoseTargetKey = `paired:${activePairedSession.targetId}`;
+            desiredPoseAnchorInput = {
+              mode: 'paired',
+              playerX: activePairedSession.anchorX,
+              playerZ: activePairedSession.anchorZ,
+              playerYaw: activePairedSession.anchorYaw,
+              lineYaw: activePairedSession.anchorYaw,
+              cameraPosX: refCamX,
+              cameraPosZ: refCamZ,
+            };
+          } else if (pairedModalInspectTargetId) {
+            const partnerPt = resolvePairedPartnerWorldCoord(pairedModalInspectTargetId);
+            desiredPoseMode = 'paired';
+            desiredPoseTargetKey = `paired:${pairedModalInspectTargetId}`;
+            desiredPoseAnchorInput = partnerPt
+              ? {
+                  mode: 'paired',
+                  playerX: playerUnit.x,
+                  playerZ: playerUnit.z,
+                  playerYaw: playerUnit.yaw,
+                  partnerX: partnerPt.x,
+                  partnerZ: partnerPt.z,
+                  cameraPosX: refCamX,
+                  cameraPosZ: refCamZ,
+                }
+              : {
+                  mode: 'paired',
+                  playerX: playerUnit.x,
+                  playerZ: playerUnit.z,
+                  playerYaw: playerUnit.yaw,
+                  lineYaw: playerUnit.yaw,
+                  cameraPosX: refCamX,
+                  cameraPosZ: refCamZ,
+                };
+          } else if (activeQuickPoseState || poseModalInspectOpen) {
+            desiredPoseMode = 'solo';
+            desiredPoseTargetKey = 'solo';
+            desiredPoseAnchorInput = {
+              mode: 'solo',
+              playerX: playerUnit.x,
+              playerZ: playerUnit.z,
+              playerYaw: playerUnit.yaw,
+              cameraPosX: refCamX,
+              cameraPosZ: refCamZ,
+            };
+          }
+        }
+
+        if (desiredPoseMode && desiredPoseAnchorInput && playerUnit) {
+          const framed = computePosePortraitInspectTarget(desiredPoseAnchorInput);
+          const hasActiveSessionNow = Boolean(activePairedSession || activeQuickPoseState);
+          const currentAnimId = activePairedSession
+            ? activePairedSession.animId
+            : activeQuickPoseState
+              ? activeQuickPoseState.id
+              : null;
+          const roomScale =
+            npcCameraMode === 'cafe_interior' ||
+            npcCameraMode === 'casino_interior' ||
+            npcCameraMode === 'salon_interior' ||
+            npcCameraMode === 'house_visit'
+              ? 0.55
+              : 1.0;
+          const roomGroundY =
+            npcCameraMode === 'cafe_interior'
+              ? CAFE_ORIGIN_Y
+              : npcCameraMode === 'casino_interior'
+                ? CASINO_ORIGIN_Y
+                : npcCameraMode === 'salon_interior'
+                  ? SALON_ORIGIN_Y + salonCurrentFloorY
+                  : npcCameraMode === 'house_visit'
+                    ? HOUSE_ORIGIN_Y
+                    : getTerrainElevation(framed.centerX, framed.centerZ);
+
+          const playerBone = resolveRigBonePortraitMetrics(
+            playerUnit.rig,
+            playerUnit.x,
+            playerUnit.z,
+            roomGroundY,
+            roomScale,
+          );
+          let liveCenterX =
+            desiredPoseMode === 'solo' ? playerBone.centerX : framed.centerX;
+          let liveCenterZ =
+            desiredPoseMode === 'solo' ? playerBone.centerZ : framed.centerZ;
+          let liveBoneDropY = playerBone.boneDropY;
+          let liveFrontDirX = framed.frontDirX;
+          let liveFrontDirZ = framed.frontDirZ;
+
+          if (desiredPoseMode === 'paired' && activePairedSession) {
+            const partnerRig = resolvePartnerRigForPairedSession(activePairedSession);
+            const partnerBone = resolveRigBonePortraitMetrics(
+              partnerRig,
+              activePairedSession.anchorX,
+              activePairedSession.anchorZ,
+              roomGroundY,
+              roomScale,
+            );
+            liveCenterX = (playerBone.centerX + partnerBone.centerX) * 0.5;
+            liveCenterZ = (playerBone.centerZ + partnerBone.centerZ) * 0.5;
+            liveBoneDropY = (playerBone.boneDropY + partnerBone.boneDropY) * 0.5;
+            const pairedDir = resolvePairedSessionPortraitDirection({
+              fallbackFrontDirX: framed.frontDirX,
+              fallbackFrontDirZ: framed.frontDirZ,
+              playerTorsoForwardX: playerBone.torsoForwardX,
+              playerTorsoForwardZ: playerBone.torsoForwardZ,
+              partnerTorsoForwardX: partnerBone.torsoForwardX,
+              partnerTorsoForwardZ: partnerBone.torsoForwardZ,
+            });
+            liveFrontDirX = pairedDir.frontDirX;
+            liveFrontDirZ = pairedDir.frontDirZ;
+          }
+
+          if (!posePortraitState || posePortraitState.targetKey !== desiredPoseTargetKey) {
+            const initLook = hasLastRenderedCamPose
+              ? { ...lastRenderedLookAt }
+              : {
+                  x: liveCenterX,
+                  y: Math.max(roomGroundY + 0.5 * roomScale, roomGroundY + 1.5 * roomScale - liveBoneDropY),
+                  z: liveCenterZ,
+                };
+            const initCam = hasLastRenderedCamPose
+              ? { ...lastRenderedCamPos }
+              : { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+            citizenReturnBlend01 = 0;
+            resetNpcPortraitInspectCamera(framed.defaultDistanceScale);
+            posePortraitState = {
+              mode: desiredPoseMode,
+              targetKey: desiredPoseTargetKey,
+              hasActiveSession: hasActiveSessionNow,
+              activeAnimId: currentAnimId,
+              frontDirX: liveFrontDirX,
+              frontDirZ: liveFrontDirZ,
+              curCenterX: liveCenterX,
+              curCenterZ: liveCenterZ,
+              curBoneDropY: liveBoneDropY,
+              blend01: 0,
+              startCamPos: initCam,
+              startLookAt: initLook,
+              startFov: hasLastRenderedCamPose ? lastRenderedFov : camera.fov,
+            };
+          } else {
+            const centerLerp = 1 - Math.exp(-Math.min(rawDt, 0.05) * 14.0);
+            posePortraitState.curCenterX +=
+              (liveCenterX - posePortraitState.curCenterX) * centerLerp;
+            posePortraitState.curCenterZ +=
+              (liveCenterZ - posePortraitState.curCenterZ) * centerLerp;
+            posePortraitState.curBoneDropY +=
+              (liveBoneDropY - posePortraitState.curBoneDropY) * centerLerp;
+            const justStartedOrChangedAnim =
+              (!posePortraitState.hasActiveSession && hasActiveSessionNow) ||
+              posePortraitState.activeAnimId !== currentAnimId ||
+              (activePairedSession !== null && Date.now() - activePairedSession.startedAtMs < 450);
+            if (justStartedOrChangedAnim) {
+              posePortraitState.frontDirX = liveFrontDirX;
+              posePortraitState.frontDirZ = liveFrontDirZ;
+            }
+            posePortraitState.hasActiveSession = hasActiveSessionNow;
+            posePortraitState.activeAnimId = currentAnimId;
+            posePortraitState.blend01 = Math.min(
+              1,
+              posePortraitState.blend01 + Math.min(rawDt, 0.05) / 0.28,
+            );
+          }
+        } else {
+          posePortraitState = null;
+        }
+      }
+
+      if (!citizenPortraitState && !posePortraitState) {
+        if (wasAnyPortraitActive) {
           if (hasLastRenderedCamPose) {
             citizenReturnFromCamPos = { ...lastRenderedCamPos };
             citizenReturnFromLookAt = { ...lastRenderedLookAt };
             citizenReturnFromFov = lastRenderedFov;
             citizenReturnBlend01 = 1;
           }
-          citizenPortraitState = null;
+          resetNpcPortraitInspectCamera();
         }
         if (citizenReturnBlend01 > 0) {
           citizenReturnBlend01 = Math.max(
@@ -22340,9 +23307,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
       if (frameTickCount <= 2 || frameTickCount % 6 === 0) {
         reusableGrassExclusions.length = 0;
-        // Intact Bottom-Left Model Estate Skyshield bastion at (-51.4, 60.0) + Shifted Central Plaza Halte Platform at (-58.90, 0.0)
+        // Intact Bottom-Left Model Estate Skyshield bastion at (-51.4, 60.0) + Shifted Central Plaza Halte Platform at (-58.90, 4.6)
         reusableGrassExclusions.push({ x: -51.4, z: 60.0, yaw: 0, halfLen: 2.15, halfWidth: 2.15 });
-        reusableGrassExclusions.push({ x: -58.9, z: 0.0, yaw: 0, halfLen: 3.6, halfWidth: 9.6 });
+        reusableGrassExclusions.push({ x: -58.9, z: 4.6, yaw: 0, halfLen: 3.6, halfWidth: 9.6 });
         // Public Warzone Crate Pads exclude grass ONLY in Warzone mode (disabled in Safezone / Kota Damai mode)
         if (cityArenaMode === 'warzone') {
           for (let pi = 0; pi < PUBLIC_WARZONE_CRATE_PADS.length; pi++) {
@@ -23320,7 +24287,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               shorelineFishingSync.phase !== 'idle' ||
               cafeWorkAnimSync.phase !== 'idle' ||
               isKioskModalOpenCanvas ||
-              Boolean(citizenPortraitState);
+              Boolean(citizenPortraitState) ||
+              Boolean(posePortraitState);
 
             const isRidingScooterNow = Boolean(scooterRideState);
             const pendingSeatPt =
@@ -24208,6 +25176,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               }
               if (activePairedSession) {
                 stopActivePairedInteraction(true);
+              }
+              if (poseModalInspectOpen || pairedModalInspectTargetId) {
+                poseModalInspectOpen = false;
+                pairedModalInspectTargetId = null;
+                window.dispatchEvent(new CustomEvent('close-pose-style-modals'));
               }
               if (activeCafeSeatedSpot) {
                 const standPos = computeCafeSeatStandUpPosition(
@@ -27865,19 +28838,26 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         raycaster.setFromCamera(mouseNdc, camera);
         raycaster.ray.intersectPlane(groundPlane, aimWorldPoint);
       } else if (npcCameraMode === 'npc_merchant') {
+        const isPairedWithMerchant = Boolean(
+          activePairedSession && activePairedSession.partnerKind === 'merchant_npc',
+        );
         if (playerUnit) {
-          playerUnit.root.visible = false;
+          playerUnit.root.visible = isPairedWithMerchant;
         }
-        // Gentle MMORPG NPC greeting wave & breathing animation (only step Mixamo rig on the active portrait NPC)
+        // Gentle MMORPG NPC greeting wave & breathing animation (only when not in a paired pose/dance)
         const waveAngle = Math.sin(timeSec * 4.2) * 0.28;
         if (npcCameraLocation === 'beach_house') {
-          beachHouseNpc.npcRig.rightArmPivot.rotation.x = -2.2 + waveAngle;
+          if (!isPairedWithMerchant) {
+            beachHouseNpc.npcRig.rightArmPivot.rotation.x = -2.2 + waveAngle;
+          }
           updateCharacterWeaponStance(beachHouseNpc.npcRig, 'unarmed', 0, false, false, 1.0, 0);
           if (lobbyCafeNpc.npcRig.customGlbController) {
             lobbyCafeNpc.npcRig.customGlbController.lastStepTimeMs = now;
           }
         } else {
-          lobbyCafeNpc.npcRig.rightArmPivot.rotation.x = -2.2 + waveAngle;
+          if (!isPairedWithMerchant) {
+            lobbyCafeNpc.npcRig.rightArmPivot.rotation.x = -2.2 + waveAngle;
+          }
           updateCharacterWeaponStance(lobbyCafeNpc.npcRig, 'unarmed', 0, false, false, 1.0, 0);
           if (beachHouseNpc.npcRig.customGlbController) {
             beachHouseNpc.npcRig.customGlbController.lastStepTimeMs = now;
@@ -27886,37 +28866,92 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         lobbyCafeNpc.exclamationGroup.visible = false;
         beachHouseNpc.exclamationGroup.visible = false;
 
-        // Ensure standard 42-deg portrait FOV so waist-up ("setengah badan") framing is exact
-        const portraitNpcX =
-          npcCameraLocation === 'beach_house'
+        const activeMerchantGrp =
+          npcCameraLocation === 'beach_house' ? beachHouseNpc.npcGrp : lobbyCafeNpc.npcGrp;
+        const activeMerchantRig =
+          npcCameraLocation === 'beach_house' ? beachHouseNpc.npcRig : lobbyCafeNpc.npcRig;
+        const baseMerchantX = isPairedWithMerchant
+          ? activeMerchantGrp.position.x
+          : npcCameraLocation === 'beach_house'
             ? 85.8
             : REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x;
-        const portraitNpcY =
-          npcCameraLocation === 'beach_house'
-            ? beachHouseNpc.npcGrp.position.y
-            : lobbyCafeNpc.npcGrp.position.y;
-        const portraitNpcZ =
-          npcCameraLocation === 'beach_house'
+        const portraitNpcY = activeMerchantGrp.position.y;
+        const baseMerchantZ = isPairedWithMerchant
+          ? activeMerchantGrp.position.z
+          : npcCameraLocation === 'beach_house'
             ? 60.0
             : REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.z;
+        const merchantBone = resolveRigBonePortraitMetrics(
+          activeMerchantRig,
+          baseMerchantX,
+          baseMerchantZ,
+          portraitNpcY,
+          1.0,
+        );
+        let portraitNpcX = merchantBone.centerX;
+        let portraitNpcZ = merchantBone.centerZ;
+        let portraitBoneDropY = merchantBone.boneDropY;
+        let merchantFrontDirX = 1;
+        let merchantFrontDirZ = 0;
+        if (isPairedWithMerchant && activePairedSession && playerUnit) {
+          const playerBone = resolveRigBonePortraitMetrics(
+            playerUnit.rig,
+            playerUnit.x,
+            playerUnit.z,
+            portraitNpcY,
+            1.0,
+          );
+          portraitNpcX = (playerBone.centerX + merchantBone.centerX) * 0.5;
+          portraitNpcZ = (playerBone.centerZ + merchantBone.centerZ) * 0.5;
+          portraitBoneDropY = (playerBone.boneDropY + merchantBone.boneDropY) * 0.5;
+          const pairedFramed = computePosePortraitInspectTarget({
+            mode: 'paired',
+            playerX: activePairedSession.anchorX,
+            playerZ: activePairedSession.anchorZ,
+            playerYaw: activePairedSession.anchorYaw,
+            lineYaw: activePairedSession.anchorYaw,
+          });
+          const pairedDir = resolvePairedSessionPortraitDirection({
+            fallbackFrontDirX: pairedFramed.frontDirX,
+            fallbackFrontDirZ: pairedFramed.frontDirZ,
+            playerTorsoForwardX: playerBone.torsoForwardX,
+            playerTorsoForwardZ: playerBone.torsoForwardZ,
+            partnerTorsoForwardX: merchantBone.torsoForwardX,
+            partnerTorsoForwardZ: merchantBone.torsoForwardZ,
+          });
+          merchantFrontDirX = pairedDir.frontDirX;
+          merchantFrontDirZ = pairedDir.frontDirZ;
+        }
+        const portraitDampAlpha = 1 - Math.exp(-Math.min(rawDt, 0.05) * 14.0);
+        npcPortraitSmoothedYaw += (npcPortraitOrbitYaw - npcPortraitSmoothedYaw) * portraitDampAlpha;
+        npcPortraitSmoothedPitch +=
+          (npcPortraitOrbitPitch - npcPortraitSmoothedPitch) * portraitDampAlpha;
+        npcPortraitSmoothedDistScale +=
+          (npcPortraitDistanceScale - npcPortraitSmoothedDistScale) * portraitDampAlpha;
         const portraitPose = computeNpcDialoguePortraitPose({
           npcX: portraitNpcX,
           npcY: portraitNpcY,
           npcZ: portraitNpcZ,
-          frontDirX: 1,
-          frontDirZ: 0,
+          frontDirX: merchantFrontDirX,
+          frontDirZ: merchantFrontDirZ,
           aspect: camera.aspect || 1.6,
           fovDeg: BUDDIES_CONSTANTS.camera.fov,
+          boneDropY: portraitBoneDropY,
+          orbitYawOffsetRad: npcPortraitSmoothedYaw,
+          orbitPitchOffsetRad: npcPortraitSmoothedPitch,
+          portraitDistanceScale: npcPortraitSmoothedDistScale,
         });
         if (camera.fov !== portraitPose.fovDeg) {
           camera.fov = portraitPose.fovDeg;
           camera.updateProjectionMatrix();
         }
         camera.up.set(0, 1, 0);
-        if (npcCameraLocation === 'beach_house') {
-          beachHouseNpc.npcGrp.rotation.y = portraitPose.faceCamYaw;
-        } else {
-          lobbyCafeNpc.npcGrp.rotation.y = portraitPose.faceCamYaw;
+        if (!isPairedWithMerchant) {
+          if (npcCameraLocation === 'beach_house') {
+            beachHouseNpc.npcGrp.rotation.y = portraitPose.faceCamYaw;
+          } else {
+            lobbyCafeNpc.npcGrp.rotation.y = portraitPose.faceCamYaw;
+          }
         }
         camera.position.set(
           portraitPose.cameraPos.x,
@@ -28183,6 +29218,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         //    - In 'house_visit', use a true 3rd-person perspective camera following behind/above the character
         //    - In 'house_interior' (Edit Room mode), use the cutaway studio camera
         if (npcCameraMode === 'house_visit' && playerUnit) {
+          playerUnit.root.visible = true;
           const visitPose = computeIndoorRoomOrbitCameraPose({
             roomKind: 'house_visit',
             originY: HOUSE_ORIGIN_Y,
@@ -28192,14 +29228,74 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             pitch: houseVisitCamPitch,
             dist: houseVisitCamDist,
           });
-          if (camera.fov !== visitPose.fovDeg) {
-            camera.fov = visitPose.fovDeg;
-            camera.updateProjectionMatrix();
+          if (posePortraitState) {
+            const portraitDampAlpha = 1 - Math.exp(-Math.min(rawDt, 0.05) * 14.0);
+            npcPortraitSmoothedYaw +=
+              (npcPortraitOrbitYaw - npcPortraitSmoothedYaw) * portraitDampAlpha;
+            npcPortraitSmoothedPitch +=
+              (npcPortraitOrbitPitch - npcPortraitSmoothedPitch) * portraitDampAlpha;
+            npcPortraitSmoothedDistScale +=
+              (npcPortraitDistanceScale - npcPortraitSmoothedDistScale) * portraitDampAlpha;
+            const targetPose = computeNpcDialoguePortraitPose({
+              npcX: posePortraitState.curCenterX,
+              npcY: HOUSE_ORIGIN_Y,
+              npcZ: posePortraitState.curCenterZ,
+              frontDirX: posePortraitState.frontDirX,
+              frontDirZ: posePortraitState.frontDirZ,
+              aspect: camera.aspect || 1.6,
+              fovDeg: BUDDIES_CONSTANTS.camera.fov,
+              isSitting: posePortraitState.mode === 'solo' && Boolean(playerUnit.isSitting),
+              boneDropY: posePortraitState.curBoneDropY,
+              npcScale: 0.55,
+              orbitYawOffsetRad: npcPortraitSmoothedYaw,
+              orbitPitchOffsetRad: npcPortraitSmoothedPitch,
+              portraitDistanceScale: npcPortraitSmoothedDistScale,
+            });
+            const t = 1 - Math.pow(1 - posePortraitState.blend01, 3);
+            const curFov = THREE.MathUtils.lerp(posePortraitState.startFov, targetPose.fovDeg, t);
+            if (Math.abs(camera.fov - curFov) > 0.02) {
+              camera.fov = curFov;
+              camera.updateProjectionMatrix();
+            }
+            const camX = THREE.MathUtils.lerp(posePortraitState.startCamPos.x, targetPose.cameraPos.x, t);
+            const camY = THREE.MathUtils.lerp(posePortraitState.startCamPos.y, targetPose.cameraPos.y, t);
+            const camZ = THREE.MathUtils.lerp(posePortraitState.startCamPos.z, targetPose.cameraPos.z, t);
+            const lookX = THREE.MathUtils.lerp(posePortraitState.startLookAt.x, targetPose.lookAtPos.x, t);
+            const lookY = THREE.MathUtils.lerp(posePortraitState.startLookAt.y, targetPose.lookAtPos.y, t);
+            const lookZ = THREE.MathUtils.lerp(posePortraitState.startLookAt.z, targetPose.lookAtPos.z, t);
+            camera.up.set(0, 1, 0);
+            camera.position.set(camX, camY, camZ);
+            camera.lookAt(lookX, lookY, lookZ);
+            camera.updateMatrixWorld();
+            lastRenderedCamPos = { x: camX, y: camY, z: camZ };
+            lastRenderedLookAt = { x: lookX, y: lookY, z: lookZ };
+            lastRenderedFov = curFov;
+            hasLastRenderedCamPose = true;
+          } else {
+            const retEase =
+              citizenReturnBlend01 > 0
+                ? citizenReturnBlend01 * citizenReturnBlend01 * (3 - 2 * citizenReturnBlend01)
+                : 0;
+            const applyFov = THREE.MathUtils.lerp(visitPose.fovDeg, citizenReturnFromFov, retEase);
+            if (Math.abs(camera.fov - applyFov) > 0.02) {
+              camera.fov = applyFov;
+              camera.updateProjectionMatrix();
+            }
+            const applyCamX = THREE.MathUtils.lerp(visitPose.camX, citizenReturnFromCamPos.x, retEase);
+            const applyCamY = THREE.MathUtils.lerp(visitPose.camY, citizenReturnFromCamPos.y, retEase);
+            const applyCamZ = THREE.MathUtils.lerp(visitPose.camZ, citizenReturnFromCamPos.z, retEase);
+            const applyLookX = THREE.MathUtils.lerp(visitPose.lookX, citizenReturnFromLookAt.x, retEase);
+            const applyLookY = THREE.MathUtils.lerp(visitPose.lookY, citizenReturnFromLookAt.y, retEase);
+            const applyLookZ = THREE.MathUtils.lerp(visitPose.lookZ, citizenReturnFromLookAt.z, retEase);
+            camera.up.set(0, 1, 0);
+            camera.position.set(applyCamX, applyCamY, applyCamZ);
+            camera.lookAt(applyLookX, applyLookY, applyLookZ);
+            camera.updateMatrixWorld();
+            lastRenderedCamPos = { x: applyCamX, y: applyCamY, z: applyCamZ };
+            lastRenderedLookAt = { x: applyLookX, y: applyLookY, z: applyLookZ };
+            lastRenderedFov = applyFov;
+            hasLastRenderedCamPose = true;
           }
-          camera.up.set(0, 1, 0);
-          camera.position.set(visitPose.camX, visitPose.camY, visitPose.camZ);
-          camera.lookAt(visitPose.lookX, visitPose.lookY, visitPose.lookZ);
-          camera.updateMatrixWorld();
           // Slide the twin shoji/glass entrance doors apart as the player approaches
           const doorDt = clamp(timeSec - houseDoorSwingPrevT, 0, 0.05);
           houseDoorSwingPrevT = timeSec;
@@ -28246,6 +29342,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           activeCafeOrderCategory,
           activeCafeStationForVisuals,
         );
+        if (cafeInterior) {
+          cafeInterior.interactiveMarkers.atm.group.visible = false;
+          cafeInterior.interactiveMarkers.workShiftBoard.group.visible = false;
+          cafeInterior.interactiveMarkers.orderPosRegister.group.visible = false;
+          cafeInterior.interactiveMarkers.drinkEspressoMachine.group.visible = false;
+          cafeInterior.interactiveMarkers.pastryDisplayCase.group.visible = false;
+          cafeInterior.interactiveMarkers.arcadeSlot.group.visible = false;
+          const cafeExitChev = cafeInterior.root.getObjectByName('DoorPadChevronArrow');
+          if (cafeExitChev) cafeExitChev.visible = false;
+        }
         if (cafeCustomerNpcRoot?.visible && cafeCustomerRig) {
           const customerCharGltf =
             loadedBlitzAssets?.ambientFemaleNpcGlb ??
@@ -28276,21 +29382,61 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             cafeMiraGlbUpgraded = true;
           }
           applyAmbientNpcClipOverrides(cafeMiraRig, cafeMiraPreset, 'mira_idle.001');
+          const cafeWpLen = cafeMiraPreset.waypoints.length;
+          const activeMiraWpIdx =
+            cafeWpLen > 0
+              ? ((cafeMiraWaypointIdx % cafeWpLen) + cafeWpLen) % cafeWpLen
+              : 0;
           const nextInteriorWp =
-            cafeMiraPreset.waypoints[
-              ((cafeMiraWaypointIdx % cafeMiraPreset.waypoints.length) +
-                cafeMiraPreset.waypoints.length) %
-                cafeMiraPreset.waypoints.length
-            ];
-          const isPlayerOnMiraChair = Boolean(
-            playerUnit?.isSitting &&
-              activeCafeSeatedSpot &&
-              nextInteriorWp?.activity === 'sit_relax' &&
-              Math.hypot(
-                activeCafeSeatedSpot.x - nextInteriorWp.x,
-                activeCafeSeatedSpot.z - nextInteriorWp.z,
-              ) < 0.75,
-          );
+            cafeWpLen > 0 ? cafeMiraPreset.waypoints[activeMiraWpIdx] : undefined;
+          const miraGoal =
+            cafeMiraSeatOverride && cafeMiraSeatOverride.wpIdx === activeMiraWpIdx
+              ? cafeMiraSeatOverride
+              : nextInteriorWp;
+          const miraGoalIsSit =
+            (nextInteriorWp?.activity ?? cafeMiraPreset.activity) === 'sit_relax';
+          let miraSeatOccupied = false;
+          let miraAlternateSeat: ReturnType<typeof findNearestUnoccupiedSeatForNpc> = null;
+          if (!cafeMiraIsSitting && cafeMiraPauseTimer <= 0 && miraGoalIsSit && miraGoal) {
+            seatedOccupantsScratch.length = 0;
+            if (playerUnit?.isSitting && activeCafeSeatedSpot) {
+              seatedOccupantsScratch.push({
+                id: '__local_player__',
+                x: activeCafeSeatedSpot.x,
+                z: activeCafeSeatedSpot.z,
+                isSitting: true,
+              });
+            }
+            for (const av of remotePlayerAvatars.values()) {
+              if (!av.root.visible || !av.peer.isSitting) continue;
+              seatedOccupantsScratch.push({
+                id: av.peer.sessionId,
+                x: av.renderX,
+                z: av.renderZ,
+                isSitting: true,
+              });
+            }
+            if (
+              isSeatSpotOccupiedByActors(
+                { x: miraGoal.x, z: miraGoal.z },
+                seatedOccupantsScratch,
+                0.92,
+                'citizen_mira',
+              )
+            ) {
+              miraSeatOccupied = true;
+              miraAlternateSeat = findNearestUnoccupiedSeatForNpc({
+                targetX: miraGoal.x,
+                targetZ: miraGoal.z,
+                npcX: cafeMiraX,
+                npcZ: cafeMiraZ,
+                npcId: 'citizen_mira',
+                candidateSeats: CAFE_INTERIOR_SEAT_SPOTS,
+                occupants: seatedOccupantsScratch,
+                maxSearchRadiusM: 18.0,
+              });
+            }
+          }
           const steppedInteriorMira = stepCityAmbientNpcSchedule({
             preset: cafeMiraPreset,
             x: cafeMiraX,
@@ -28300,13 +29446,28 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             pauseTimer: cafeMiraPauseTimer,
             elapsedSec: timeSec,
             dt: isTalkingWithCafeMira ? 0 : dt,
-            yieldForHazard: isTalkingWithCafeMira || isPlayerOnMiraChair,
+            seatOverride: cafeMiraSeatOverride,
+            isTargetSeatOccupied: miraSeatOccupied,
+            alternateSeat: miraAlternateSeat,
+            yieldForHazard: isTalkingWithCafeMira,
           });
           cafeMiraX = steppedInteriorMira.x;
           cafeMiraZ = steppedInteriorMira.z;
           cafeMiraWaypointIdx = steppedInteriorMira.waypointIdx;
           cafeMiraPauseTimer = steppedInteriorMira.pauseTimer;
           cafeMiraIsSitting = steppedInteriorMira.isSitting && !isTalkingWithCafeMira;
+          cafeMiraSeatOverride = steppedInteriorMira.seatOverride ?? null;
+          if (
+            cafeMiraIsSitting &&
+            playerUnit?.isSitting &&
+            activeCafeSeatedSpot &&
+            Math.hypot(activeCafeSeatedSpot.x - cafeMiraX, activeCafeSeatedSpot.z - cafeMiraZ) <
+              0.75
+          ) {
+            cafeMiraIsSitting = false;
+            cafeMiraPauseTimer = 0;
+            cafeMiraSeatOverride = null;
+          }
           cafeMiraSeatLiftY = cafeMiraIsSitting ? steppedInteriorMira.activeSeatLiftY : 0;
           cafeMiraHoldingItemId = steppedInteriorMira.activeHoldingCafeItemId;
           cafeMiraStatusLabel = steppedInteriorMira.activeStatusLabel;
@@ -28336,21 +29497,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           }
           cafeMiraBodyGroup.rotation.y = cafeMiraCurrentYaw;
           if (cafeMiraChevron) {
-            cafeMiraChevron.group.visible = !isTalkingWithCafeMira;
-            cafeMiraChevron.group.position.y = cafeMiraIsSitting ? 2.65 : 3.68;
-            const dCafeMira = playerUnit
-              ? Math.hypot(
-                  playerUnit.x - cafeMiraX,
-                  playerUnit.z - cafeMiraZ,
-                )
-              : Infinity;
-            const isNearCafeMira = dCafeMira <= 2.35;
-            cafeMiraChevron.chevronMat.color.copy(
-              isNearCafeMira ? PROXIMITY_ACTIVE_LIME_COLOR : PROXIMITY_IDLE_SKY_COLOR,
-            );
-            cafeMiraChevron.chevronArrow.scale.setScalar(isNearCafeMira ? 1.15 : 1.0);
-            cafeMiraChevron.chevronArrow.position.y = Math.sin(timeSec * 3.6) * 0.08;
-            cafeMiraChevron.chevronArrow.rotation.y = timeSec * 1.65;
+            cafeMiraChevron.group.visible = false;
           }
           if (cafeMiraNameplate) {
             cafeMiraNameplate.sprite.visible = false;
@@ -28389,7 +29536,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           cafeMiraPortraitBlend01 = Math.max(0, cafeMiraPortraitBlend01 - Math.min(rawDt, 0.05) / 0.24);
         }
         if (playerUnit) {
-          playerUnit.root.visible = !isTalkingWithCafeMira;
+          playerUnit.root.visible = !isTalkingWithCafeMira || Boolean(activePairedSession);
           const cafeAnchorX = cafeWorkShiftActive
             ? CAFE_INTERIOR_BOUNDS.baristaCounterFrontX
             : playerUnit.x;
@@ -28404,6 +29551,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             dist: cafeVisitCamDist,
           });
           if (cafeMiraPortraitBlend01 > 0.001 && cafeMiraBodyGroup) {
+            const portraitDampAlpha = 1 - Math.exp(-Math.min(rawDt, 0.05) * 14.0);
+            npcPortraitSmoothedYaw +=
+              (npcPortraitOrbitYaw - npcPortraitSmoothedYaw) * portraitDampAlpha;
+            npcPortraitSmoothedPitch +=
+              (npcPortraitOrbitPitch - npcPortraitSmoothedPitch) * portraitDampAlpha;
+            npcPortraitSmoothedDistScale +=
+              (npcPortraitDistanceScale - npcPortraitSmoothedDistScale) * portraitDampAlpha;
             const pDirX = playerUnit.x - cafeMiraX;
             const pDirZ = playerUnit.z - cafeMiraZ;
             const pLen = Math.hypot(pDirX, pDirZ);
@@ -28416,6 +29570,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               aspect: camera.aspect || 1.6,
               fovDeg: BUDDIES_CONSTANTS.camera.fov,
               npcScale: 0.55,
+              orbitYawOffsetRad: npcPortraitSmoothedYaw,
+              orbitPitchOffsetRad: npcPortraitSmoothedPitch,
+              portraitDistanceScale: npcPortraitSmoothedDistScale,
             });
             if (isTalkingWithCafeMira) {
               cafeMiraCurrentYaw = portraitPose.faceCamYaw;
@@ -28439,15 +29596,89 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               THREE.MathUtils.lerp(cafePose.lookZ, portraitPose.lookAtPos.z, tBlend),
             );
             camera.updateMatrixWorld();
-          } else {
-            if (camera.fov !== cafePose.fovDeg) {
-              camera.fov = cafePose.fovDeg;
+            lastRenderedCamPos = {
+              x: camera.position.x,
+              y: camera.position.y,
+              z: camera.position.z,
+            };
+            lastRenderedLookAt = {
+              x: THREE.MathUtils.lerp(cafePose.lookX, portraitPose.lookAtPos.x, tBlend),
+              y: THREE.MathUtils.lerp(cafePose.lookY, portraitPose.lookAtPos.y, tBlend),
+              z: THREE.MathUtils.lerp(cafePose.lookZ, portraitPose.lookAtPos.z, tBlend),
+            };
+            lastRenderedFov = curFov;
+            hasLastRenderedCamPose = true;
+          } else if (posePortraitState) {
+            const portraitDampAlpha = 1 - Math.exp(-Math.min(rawDt, 0.05) * 14.0);
+            npcPortraitSmoothedYaw +=
+              (npcPortraitOrbitYaw - npcPortraitSmoothedYaw) * portraitDampAlpha;
+            npcPortraitSmoothedPitch +=
+              (npcPortraitOrbitPitch - npcPortraitSmoothedPitch) * portraitDampAlpha;
+            npcPortraitSmoothedDistScale +=
+              (npcPortraitDistanceScale - npcPortraitSmoothedDistScale) * portraitDampAlpha;
+            const targetPose = computeNpcDialoguePortraitPose({
+              npcX: posePortraitState.curCenterX,
+              npcY: CAFE_ORIGIN_Y,
+              npcZ: posePortraitState.curCenterZ,
+              frontDirX: posePortraitState.frontDirX,
+              frontDirZ: posePortraitState.frontDirZ,
+              aspect: camera.aspect || 1.6,
+              fovDeg: BUDDIES_CONSTANTS.camera.fov,
+              isSitting: posePortraitState.mode === 'solo' && Boolean(playerUnit.isSitting),
+              sitLiftY:
+                posePortraitState.mode === 'solo' && playerUnit.isSitting && activeCafeSeatedSpot
+                  ? activeCafeSeatedSpot.seatLiftY
+                  : 0,
+              boneDropY: posePortraitState.curBoneDropY,
+              npcScale: 0.55,
+              orbitYawOffsetRad: npcPortraitSmoothedYaw,
+              orbitPitchOffsetRad: npcPortraitSmoothedPitch,
+              portraitDistanceScale: npcPortraitSmoothedDistScale,
+            });
+            const t = 1 - Math.pow(1 - posePortraitState.blend01, 3);
+            const curFov = THREE.MathUtils.lerp(posePortraitState.startFov, targetPose.fovDeg, t);
+            if (Math.abs(camera.fov - curFov) > 0.02) {
+              camera.fov = curFov;
               camera.updateProjectionMatrix();
             }
+            const camX = THREE.MathUtils.lerp(posePortraitState.startCamPos.x, targetPose.cameraPos.x, t);
+            const camY = THREE.MathUtils.lerp(posePortraitState.startCamPos.y, targetPose.cameraPos.y, t);
+            const camZ = THREE.MathUtils.lerp(posePortraitState.startCamPos.z, targetPose.cameraPos.z, t);
+            const lookX = THREE.MathUtils.lerp(posePortraitState.startLookAt.x, targetPose.lookAtPos.x, t);
+            const lookY = THREE.MathUtils.lerp(posePortraitState.startLookAt.y, targetPose.lookAtPos.y, t);
+            const lookZ = THREE.MathUtils.lerp(posePortraitState.startLookAt.z, targetPose.lookAtPos.z, t);
             camera.up.set(0, 1, 0);
-            camera.position.set(cafePose.camX, cafePose.camY, cafePose.camZ);
-            camera.lookAt(cafePose.lookX, cafePose.lookY, cafePose.lookZ);
+            camera.position.set(camX, camY, camZ);
+            camera.lookAt(lookX, lookY, lookZ);
             camera.updateMatrixWorld();
+            lastRenderedCamPos = { x: camX, y: camY, z: camZ };
+            lastRenderedLookAt = { x: lookX, y: lookY, z: lookZ };
+            lastRenderedFov = curFov;
+            hasLastRenderedCamPose = true;
+          } else {
+            const retEase =
+              citizenReturnBlend01 > 0
+                ? citizenReturnBlend01 * citizenReturnBlend01 * (3 - 2 * citizenReturnBlend01)
+                : 0;
+            const applyFov = THREE.MathUtils.lerp(cafePose.fovDeg, citizenReturnFromFov, retEase);
+            if (Math.abs(camera.fov - applyFov) > 0.02) {
+              camera.fov = applyFov;
+              camera.updateProjectionMatrix();
+            }
+            const applyCamX = THREE.MathUtils.lerp(cafePose.camX, citizenReturnFromCamPos.x, retEase);
+            const applyCamY = THREE.MathUtils.lerp(cafePose.camY, citizenReturnFromCamPos.y, retEase);
+            const applyCamZ = THREE.MathUtils.lerp(cafePose.camZ, citizenReturnFromCamPos.z, retEase);
+            const applyLookX = THREE.MathUtils.lerp(cafePose.lookX, citizenReturnFromLookAt.x, retEase);
+            const applyLookY = THREE.MathUtils.lerp(cafePose.lookY, citizenReturnFromLookAt.y, retEase);
+            const applyLookZ = THREE.MathUtils.lerp(cafePose.lookZ, citizenReturnFromLookAt.z, retEase);
+            camera.up.set(0, 1, 0);
+            camera.position.set(applyCamX, applyCamY, applyCamZ);
+            camera.lookAt(applyLookX, applyLookY, applyLookZ);
+            camera.updateMatrixWorld();
+            lastRenderedCamPos = { x: applyCamX, y: applyCamY, z: applyCamZ };
+            lastRenderedLookAt = { x: applyLookX, y: applyLookY, z: applyLookZ };
+            lastRenderedFov = applyFov;
+            hasLastRenderedCamPose = true;
           }
         }
       } else if (npcCameraMode === 'casino_interior') {
@@ -28464,6 +29695,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           playerUnit?.x,
           playerUnit?.z,
         );
+        if (casinoInterior) {
+          const cInst = casinoInterior.root.getObjectByName('CasinoStationChevronInstanced');
+          if (cInst) cInst.visible = false;
+          const cStrokeInst = casinoInterior.root.getObjectByName(
+            'CasinoStationChevronStrokeInstanced',
+          );
+          if (cStrokeInst) cStrokeInst.visible = false;
+          const cExitChev = casinoInterior.root.getObjectByName('DoorPadChevronArrow');
+          if (cExitChev) cExitChev.visible = false;
+        }
         syncCasinoStaffNpcsFrame(false);
         if (playerUnit) {
           playerUnit.root.visible = true;
@@ -28476,14 +29717,78 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             pitch: casinoVisitCamPitch,
             dist: casinoVisitCamDist,
           });
-          if (camera.fov !== casinoPose.fovDeg) {
-            camera.fov = casinoPose.fovDeg;
-            camera.updateProjectionMatrix();
+          if (posePortraitState) {
+            const portraitDampAlpha = 1 - Math.exp(-Math.min(rawDt, 0.05) * 14.0);
+            npcPortraitSmoothedYaw +=
+              (npcPortraitOrbitYaw - npcPortraitSmoothedYaw) * portraitDampAlpha;
+            npcPortraitSmoothedPitch +=
+              (npcPortraitOrbitPitch - npcPortraitSmoothedPitch) * portraitDampAlpha;
+            npcPortraitSmoothedDistScale +=
+              (npcPortraitDistanceScale - npcPortraitSmoothedDistScale) * portraitDampAlpha;
+            const targetPose = computeNpcDialoguePortraitPose({
+              npcX: posePortraitState.curCenterX,
+              npcY: CASINO_ORIGIN_Y,
+              npcZ: posePortraitState.curCenterZ,
+              frontDirX: posePortraitState.frontDirX,
+              frontDirZ: posePortraitState.frontDirZ,
+              aspect: camera.aspect || 1.6,
+              fovDeg: BUDDIES_CONSTANTS.camera.fov,
+              isSitting: posePortraitState.mode === 'solo' && Boolean(playerUnit.isSitting),
+              sitLiftY:
+                posePortraitState.mode === 'solo' && playerUnit.isSitting && activeCasinoSeatedSpot
+                  ? activeCasinoSeatedSpot.seatLiftY
+                  : 0,
+              boneDropY: posePortraitState.curBoneDropY,
+              npcScale: 0.55,
+              orbitYawOffsetRad: npcPortraitSmoothedYaw,
+              orbitPitchOffsetRad: npcPortraitSmoothedPitch,
+              portraitDistanceScale: npcPortraitSmoothedDistScale,
+            });
+            const t = 1 - Math.pow(1 - posePortraitState.blend01, 3);
+            const curFov = THREE.MathUtils.lerp(posePortraitState.startFov, targetPose.fovDeg, t);
+            if (Math.abs(camera.fov - curFov) > 0.02) {
+              camera.fov = curFov;
+              camera.updateProjectionMatrix();
+            }
+            const camX = THREE.MathUtils.lerp(posePortraitState.startCamPos.x, targetPose.cameraPos.x, t);
+            const camY = THREE.MathUtils.lerp(posePortraitState.startCamPos.y, targetPose.cameraPos.y, t);
+            const camZ = THREE.MathUtils.lerp(posePortraitState.startCamPos.z, targetPose.cameraPos.z, t);
+            const lookX = THREE.MathUtils.lerp(posePortraitState.startLookAt.x, targetPose.lookAtPos.x, t);
+            const lookY = THREE.MathUtils.lerp(posePortraitState.startLookAt.y, targetPose.lookAtPos.y, t);
+            const lookZ = THREE.MathUtils.lerp(posePortraitState.startLookAt.z, targetPose.lookAtPos.z, t);
+            camera.up.set(0, 1, 0);
+            camera.position.set(camX, camY, camZ);
+            camera.lookAt(lookX, lookY, lookZ);
+            camera.updateMatrixWorld();
+            lastRenderedCamPos = { x: camX, y: camY, z: camZ };
+            lastRenderedLookAt = { x: lookX, y: lookY, z: lookZ };
+            lastRenderedFov = curFov;
+            hasLastRenderedCamPose = true;
+          } else {
+            const retEase =
+              citizenReturnBlend01 > 0
+                ? citizenReturnBlend01 * citizenReturnBlend01 * (3 - 2 * citizenReturnBlend01)
+                : 0;
+            const applyFov = THREE.MathUtils.lerp(casinoPose.fovDeg, citizenReturnFromFov, retEase);
+            if (Math.abs(camera.fov - applyFov) > 0.02) {
+              camera.fov = applyFov;
+              camera.updateProjectionMatrix();
+            }
+            const applyCamX = THREE.MathUtils.lerp(casinoPose.camX, citizenReturnFromCamPos.x, retEase);
+            const applyCamY = THREE.MathUtils.lerp(casinoPose.camY, citizenReturnFromCamPos.y, retEase);
+            const applyCamZ = THREE.MathUtils.lerp(casinoPose.camZ, citizenReturnFromCamPos.z, retEase);
+            const applyLookX = THREE.MathUtils.lerp(casinoPose.lookX, citizenReturnFromLookAt.x, retEase);
+            const applyLookY = THREE.MathUtils.lerp(casinoPose.lookY, citizenReturnFromLookAt.y, retEase);
+            const applyLookZ = THREE.MathUtils.lerp(casinoPose.lookZ, citizenReturnFromLookAt.z, retEase);
+            camera.up.set(0, 1, 0);
+            camera.position.set(applyCamX, applyCamY, applyCamZ);
+            camera.lookAt(applyLookX, applyLookY, applyLookZ);
+            camera.updateMatrixWorld();
+            lastRenderedCamPos = { x: applyCamX, y: applyCamY, z: applyCamZ };
+            lastRenderedLookAt = { x: applyLookX, y: applyLookY, z: applyLookZ };
+            lastRenderedFov = applyFov;
+            hasLastRenderedCamPose = true;
           }
-          camera.up.set(0, 1, 0);
-          camera.position.set(casinoPose.camX, casinoPose.camY, casinoPose.camZ);
-          camera.lookAt(casinoPose.lookX, casinoPose.lookY, casinoPose.lookZ);
-          camera.updateMatrixWorld();
         }
       } else if (npcCameraMode === 'salon_interior') {
         if (salonInterior) salonInterior.root.visible = true;
@@ -28493,6 +29798,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                 .stationKind
             : null;
         salonInterior?.updateVisuals(timeSec, activeSalonStationForVisuals, salonCurrentFloorY);
+        if (salonInterior) {
+          const sExitChev = salonInterior.root.getObjectByName('DoorPadChevronArrow');
+          if (sExitChev) sExitChev.visible = false;
+          const sOuterCoins = salonInterior.root.getObjectByName('SalonSeatOuterCoinInstanced');
+          if (sOuterCoins) sOuterCoins.visible = false;
+          const sInnerCoins = salonInterior.root.getObjectByName('SalonSeatInnerCoinInstanced');
+          if (sInnerCoins) sInnerCoins.visible = false;
+        }
         if (playerUnit) {
           playerUnit.root.visible = true;
           const salonPose = computeSalonOrbitCameraPose({
@@ -28504,14 +29817,78 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             pitch: salonVisitCamPitch,
             dist: salonVisitCamDist,
           });
-          if (camera.fov !== salonPose.fovDeg) {
-            camera.fov = salonPose.fovDeg;
-            camera.updateProjectionMatrix();
+          if (posePortraitState) {
+            const portraitDampAlpha = 1 - Math.exp(-Math.min(rawDt, 0.05) * 14.0);
+            npcPortraitSmoothedYaw +=
+              (npcPortraitOrbitYaw - npcPortraitSmoothedYaw) * portraitDampAlpha;
+            npcPortraitSmoothedPitch +=
+              (npcPortraitOrbitPitch - npcPortraitSmoothedPitch) * portraitDampAlpha;
+            npcPortraitSmoothedDistScale +=
+              (npcPortraitDistanceScale - npcPortraitSmoothedDistScale) * portraitDampAlpha;
+            const targetPose = computeNpcDialoguePortraitPose({
+              npcX: posePortraitState.curCenterX,
+              npcY: SALON_ORIGIN_Y + salonCurrentFloorY,
+              npcZ: posePortraitState.curCenterZ,
+              frontDirX: posePortraitState.frontDirX,
+              frontDirZ: posePortraitState.frontDirZ,
+              aspect: camera.aspect || 1.6,
+              fovDeg: BUDDIES_CONSTANTS.camera.fov,
+              isSitting: posePortraitState.mode === 'solo' && Boolean(playerUnit.isSitting),
+              sitLiftY:
+                posePortraitState.mode === 'solo' && playerUnit.isSitting && activeSalonSeatedSpot
+                  ? activeSalonSeatedSpot.seatLiftY
+                  : 0,
+              boneDropY: posePortraitState.curBoneDropY,
+              npcScale: 0.55,
+              orbitYawOffsetRad: npcPortraitSmoothedYaw,
+              orbitPitchOffsetRad: npcPortraitSmoothedPitch,
+              portraitDistanceScale: npcPortraitSmoothedDistScale,
+            });
+            const t = 1 - Math.pow(1 - posePortraitState.blend01, 3);
+            const curFov = THREE.MathUtils.lerp(posePortraitState.startFov, targetPose.fovDeg, t);
+            if (Math.abs(camera.fov - curFov) > 0.02) {
+              camera.fov = curFov;
+              camera.updateProjectionMatrix();
+            }
+            const camX = THREE.MathUtils.lerp(posePortraitState.startCamPos.x, targetPose.cameraPos.x, t);
+            const camY = THREE.MathUtils.lerp(posePortraitState.startCamPos.y, targetPose.cameraPos.y, t);
+            const camZ = THREE.MathUtils.lerp(posePortraitState.startCamPos.z, targetPose.cameraPos.z, t);
+            const lookX = THREE.MathUtils.lerp(posePortraitState.startLookAt.x, targetPose.lookAtPos.x, t);
+            const lookY = THREE.MathUtils.lerp(posePortraitState.startLookAt.y, targetPose.lookAtPos.y, t);
+            const lookZ = THREE.MathUtils.lerp(posePortraitState.startLookAt.z, targetPose.lookAtPos.z, t);
+            camera.up.set(0, 1, 0);
+            camera.position.set(camX, camY, camZ);
+            camera.lookAt(lookX, lookY, lookZ);
+            camera.updateMatrixWorld();
+            lastRenderedCamPos = { x: camX, y: camY, z: camZ };
+            lastRenderedLookAt = { x: lookX, y: lookY, z: lookZ };
+            lastRenderedFov = curFov;
+            hasLastRenderedCamPose = true;
+          } else {
+            const retEase =
+              citizenReturnBlend01 > 0
+                ? citizenReturnBlend01 * citizenReturnBlend01 * (3 - 2 * citizenReturnBlend01)
+                : 0;
+            const applyFov = THREE.MathUtils.lerp(salonPose.fovDeg, citizenReturnFromFov, retEase);
+            if (Math.abs(camera.fov - applyFov) > 0.02) {
+              camera.fov = applyFov;
+              camera.updateProjectionMatrix();
+            }
+            const applyCamX = THREE.MathUtils.lerp(salonPose.camX, citizenReturnFromCamPos.x, retEase);
+            const applyCamY = THREE.MathUtils.lerp(salonPose.camY, citizenReturnFromCamPos.y, retEase);
+            const applyCamZ = THREE.MathUtils.lerp(salonPose.camZ, citizenReturnFromCamPos.z, retEase);
+            const applyLookX = THREE.MathUtils.lerp(salonPose.lookX, citizenReturnFromLookAt.x, retEase);
+            const applyLookY = THREE.MathUtils.lerp(salonPose.lookY, citizenReturnFromLookAt.y, retEase);
+            const applyLookZ = THREE.MathUtils.lerp(salonPose.lookZ, citizenReturnFromLookAt.z, retEase);
+            camera.up.set(0, 1, 0);
+            camera.position.set(applyCamX, applyCamY, applyCamZ);
+            camera.lookAt(applyLookX, applyLookY, applyLookZ);
+            camera.updateMatrixWorld();
+            lastRenderedCamPos = { x: applyCamX, y: applyCamY, z: applyCamZ };
+            lastRenderedLookAt = { x: applyLookX, y: applyLookY, z: applyLookZ };
+            lastRenderedFov = applyFov;
+            hasLastRenderedCamPose = true;
           }
-          camera.up.set(0, 1, 0);
-          camera.position.set(salonPose.camX, salonPose.camY, salonPose.camZ);
-          camera.lookAt(salonPose.lookX, salonPose.lookY, salonPose.lookZ);
-          camera.updateMatrixWorld();
         }
       } else {
         if (playerUnit && playerUnit.alive && !mountedTank && !activeCitizenPortraitNpc) {
@@ -28589,7 +29966,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               targetZ = scratchLiveObjPos.z;
             } else {
               targetX = -59.18;
-              targetZ = 0.0;
+              targetZ = 4.6;
             }
           }
 
@@ -28786,21 +30163,34 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           }
         } else if (activeCitizenPortraitNpc && citizenPortraitState) {
           if (playerUnit) {
-            playerUnit.root.visible = false;
+            playerUnit.root.visible = Boolean(
+              citizenPortraitState.isPairedWithCitizen || activePairedSession,
+            );
           }
           activeCitizenPortraitNpc.root.visible = true;
           activeCitizenPortraitNpc.nameplate.sprite.visible = false;
           const anchor = resolveCitizenRenderAnchor(activeCitizenPortraitNpc);
+          const portraitDampAlpha = 1 - Math.exp(-Math.min(rawDt, 0.05) * 14.0);
+          npcPortraitSmoothedYaw +=
+            (npcPortraitOrbitYaw - npcPortraitSmoothedYaw) * portraitDampAlpha;
+          npcPortraitSmoothedPitch +=
+            (npcPortraitOrbitPitch - npcPortraitSmoothedPitch) * portraitDampAlpha;
+          npcPortraitSmoothedDistScale +=
+            (npcPortraitDistanceScale - npcPortraitSmoothedDistScale) * portraitDampAlpha;
           const targetPose = computeNpcDialoguePortraitPose({
-            npcX: anchor.renderX,
+            npcX: citizenPortraitState.curX,
             npcY: anchor.groundY,
-            npcZ: anchor.renderZ,
+            npcZ: citizenPortraitState.curZ,
             frontDirX: citizenPortraitState.frontDirX,
             frontDirZ: citizenPortraitState.frontDirZ,
             aspect: camera.aspect || 1.6,
             fovDeg: BUDDIES_CONSTANTS.camera.fov,
             isSitting: activeCitizenPortraitNpc.isSitting,
             sitLiftY: activeCitizenPortraitNpc.activeSeatLiftY,
+            boneDropY: citizenPortraitState.curBoneDropY,
+            orbitYawOffsetRad: npcPortraitSmoothedYaw,
+            orbitPitchOffsetRad: npcPortraitSmoothedPitch,
+            portraitDistanceScale: npcPortraitSmoothedDistScale,
           });
           citizenPortraitState.faceCamYaw = targetPose.faceCamYaw;
           const t = 1 - Math.pow(1 - citizenPortraitState.blend01, 3);
@@ -28836,6 +30226,81 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           );
           const lookZ = THREE.MathUtils.lerp(
             citizenPortraitState.startLookAt.z,
+            targetPose.lookAtPos.z,
+            t,
+          );
+          camera.up.set(0, 1, 0);
+          camera.position.set(camX, camY, camZ);
+          camera.lookAt(lookX, lookY, lookZ);
+          camera.updateMatrixWorld();
+          lastRenderedCamPos = { x: camX, y: camY, z: camZ };
+          lastRenderedLookAt = { x: lookX, y: lookY, z: lookZ };
+          lastRenderedFov = curFov;
+          hasLastRenderedCamPose = true;
+        } else if (posePortraitState && playerUnit && playerUnit.alive) {
+          playerUnit.root.visible = true;
+          const groundY = getTerrainElevation(
+            posePortraitState.curCenterX,
+            posePortraitState.curCenterZ,
+          );
+          const portraitDampAlpha = 1 - Math.exp(-Math.min(rawDt, 0.05) * 14.0);
+          npcPortraitSmoothedYaw +=
+            (npcPortraitOrbitYaw - npcPortraitSmoothedYaw) * portraitDampAlpha;
+          npcPortraitSmoothedPitch +=
+            (npcPortraitOrbitPitch - npcPortraitSmoothedPitch) * portraitDampAlpha;
+          npcPortraitSmoothedDistScale +=
+            (npcPortraitDistanceScale - npcPortraitSmoothedDistScale) * portraitDampAlpha;
+          const targetPose = computeNpcDialoguePortraitPose({
+            npcX: posePortraitState.curCenterX,
+            npcY: groundY,
+            npcZ: posePortraitState.curCenterZ,
+            frontDirX: posePortraitState.frontDirX,
+            frontDirZ: posePortraitState.frontDirZ,
+            aspect: camera.aspect || 1.6,
+            fovDeg: BUDDIES_CONSTANTS.camera.fov,
+            isSitting: posePortraitState.mode === 'solo' && Boolean(playerUnit.isSitting),
+            sitLiftY:
+              posePortraitState.mode === 'solo' && playerUnit.isSitting && activeSeatedSpot
+                ? resolveOutdoorSeatLiftY(activeSeatedSpot)
+                : 0,
+            boneDropY: posePortraitState.curBoneDropY,
+            orbitYawOffsetRad: npcPortraitSmoothedYaw,
+            orbitPitchOffsetRad: npcPortraitSmoothedPitch,
+            portraitDistanceScale: npcPortraitSmoothedDistScale,
+          });
+          const t = 1 - Math.pow(1 - posePortraitState.blend01, 3);
+          const curFov = THREE.MathUtils.lerp(posePortraitState.startFov, targetPose.fovDeg, t);
+          if (Math.abs(camera.fov - curFov) > 0.02) {
+            camera.fov = curFov;
+            camera.updateProjectionMatrix();
+          }
+          const camX = THREE.MathUtils.lerp(
+            posePortraitState.startCamPos.x,
+            targetPose.cameraPos.x,
+            t,
+          );
+          const camY = THREE.MathUtils.lerp(
+            posePortraitState.startCamPos.y,
+            targetPose.cameraPos.y,
+            t,
+          );
+          const camZ = THREE.MathUtils.lerp(
+            posePortraitState.startCamPos.z,
+            targetPose.cameraPos.z,
+            t,
+          );
+          const lookX = THREE.MathUtils.lerp(
+            posePortraitState.startLookAt.x,
+            targetPose.lookAtPos.x,
+            t,
+          );
+          const lookY = THREE.MathUtils.lerp(
+            posePortraitState.startLookAt.y,
+            targetPose.lookAtPos.y,
+            t,
+          );
+          const lookZ = THREE.MathUtils.lerp(
+            posePortraitState.startLookAt.z,
             targetPose.lookAtPos.z,
             t,
           );
@@ -29769,15 +31234,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               plazaHasCrosswalkWalker = true;
             }
           }
-          if (Math.abs(uz - PLAZA_TRAFFIC_SIGNAL_SPEC.southCrosswalkZ) <= 3.8) {
-            plazaHasSouthWaiter = true;
-            if (
-              ux >= PLAZA_TRAFFIC_SIGNAL_SPEC.crosswalkMinX &&
-              ux <= PLAZA_TRAFFIC_SIGNAL_SPEC.crosswalkMaxX
-            ) {
-              plazaHasCrosswalkWalker = true;
-            }
-          }
         }
         if (ux >= 59.5 && ux <= 76.5 && Math.abs(uz - PLAZA_TRAFFIC_SIGNAL_SPEC.eastCrosswalkZ) <= 3.8) {
           eastHasWaiter = true;
@@ -29876,10 +31332,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         playerUnit.z = wrapPlanetCoord(activeCar.z);
       }
       // Push any grounded crate resting on the tram tracks gently aside when the tram passes
+      const liveTramSections = getCityTramCollisionObbs(liveTramState);
       for (let ci = 0; ci < worldCrates.length; ci++) {
         const c = worldCrates[ci];
         if (c.state !== 'grounded') continue;
-        for (const car of [liveTramState.car1, liveTramState.car2]) {
+        for (const car of liveTramSections) {
           const obbRes = resolveSolidObbCollision2D(
             c.x,
             c.z,
@@ -29888,8 +31345,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             0.68,
             car.x,
             car.z,
-            CITY_TRAM_SPEC.carLength * 0.5,
-            CITY_TRAM_SPEC.carWidth * 0.5,
+            car.halfX,
+            car.halfZ,
             car.yaw,
             0.35,
           );
@@ -30826,6 +32283,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
       const isShowcaseCamera =
         npcCameraMode === 'landing_tour' ||
+        npcCameraMode === 'character_select' ||
         (npcCameraMode === 'fly_to_plaza' && flyTargetMode === 'character_select');
       const showOutdoorCityNpcs =
         !isFlatIndoorRoomTick &&
@@ -30857,6 +32315,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               faceCamYaw: citizenPortraitState.faceCamYaw,
             }
           : null,
+        npcCameraMode === 'fly_to_plaza',
       );
 
       // 3D-FISH. REAL-TIME CURVED-PLANET NYLON LINE, MINIATURE FLOAT & 3D LANDING LEAP:
@@ -31796,9 +33255,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       });
       if (
         npcCameraMode === 'landing_tour' ||
-        npcCameraMode === 'npc_merchant' ||
+        (npcCameraMode === 'npc_merchant' && !activePairedSession) ||
         npcCameraMode === 'house_interior' ||
-        Boolean(activeCitizenPortraitNpc) ||
+        (Boolean(activeCitizenPortraitNpc) && !activePairedSession) ||
         mountedTank
       ) {
         playerUnit.root.visible = false;
@@ -32250,15 +33709,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             );
           }
           if (av.saluteSign.sprite.visible) {
-            av.saluteSign.sprite.position.y = av.nameplate.sprite.visible
-              ? anchorY + 0.72
-              : anchorY + 0.36;
+            scratchLiveObjPos.set(1, 0, 0).applyQuaternion(camera.quaternion);
+            av.saluteSign.sprite.position.set(
+              scratchLiveObjPos.x * 1.75,
+              anchorY - 0.88,
+              scratchLiveObjPos.z * 1.75,
+            );
             syncScreenSpaceBillboardQuad(
               av.saluteSign.sprite,
               camera,
               vpH,
-              192,
-              66,
+              212,
+              64,
             );
           }
         }
@@ -32376,28 +33838,39 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         const rootPos = selectedCharacterTarget.root.position;
         const px = playerUnit?.x ?? 0;
         const pz = playerUnit?.z ?? 0;
-        const distToTarget = getPlanetShortestDistance(px, pz, rootPos.x, rootPos.z);
-        const distPlayerMoved = getPlanetShortestDistance(
-          px,
-          pz,
-          selectedCharacterOriginPlayerPos.x,
-          selectedCharacterOriginPlayerPos.z,
-        );
+        const distToTarget = isFlatIndoorRoomMode
+          ? Math.hypot(px - rootPos.x, pz - rootPos.z)
+          : getPlanetShortestDistance(px, pz, rootPos.x, rootPos.z);
+        const distPlayerMoved = isFlatIndoorRoomMode
+          ? Math.hypot(
+              px - selectedCharacterOriginPlayerPos.x,
+              pz - selectedCharacterOriginPlayerPos.z,
+            )
+          : getPlanetShortestDistance(
+              px,
+              pz,
+              selectedCharacterOriginPlayerPos.x,
+              selectedCharacterOriginPlayerPos.z,
+            );
         const isSelfSelected =
           Boolean(selectedCharacterTarget.isSelf) ||
           selectedCharacterTarget.root === playerUnit?.root;
 
         if (
+          !selectedCharacterTarget.root.visible ||
           (isSelfSelected && distPlayerMoved > 2.0) ||
           (!isSelfSelected && (distToTarget > 9.5 || (distPlayerMoved > 4.5 && distToTarget > 5.0)))
         ) {
           clearCharacterSelection();
           window.dispatchEvent(new CustomEvent('character-deselected'));
           window.dispatchEvent(new CustomEvent('close-character-profile-modal'));
-        } else {
+        } else if (npcCameraMode === 'none') {
           const groundY = getTerrainElevation(rootPos.x, rootPos.z);
           characterSelectionRing.position.set(rootPos.x, groundY + 0.04, rootPos.z);
           characterSelectionRing.rotation.z += dt * 1.5;
+          characterSelectionRing.visible = true;
+        } else {
+          characterSelectionRing.visible = false;
         }
       }
 
@@ -32554,6 +34027,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         for (let si = 0; si < sleepIndicatorBtns.length; si++) {
           sleepIndicatorBtns[si].btn.style.display = 'none';
         }
+        radialPinManager.clearAll();
         syncUnifiedBottomDockAction('none');
         return;
       }
@@ -32578,7 +34052,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       let cafeSeatMinDist: number | null = null;
       let casinoSeatMinDist: number | null = null;
       const claimBottomDock = (btn: HTMLButtonElement): boolean => {
-        if (bottomDockOccupied || isFullMapOverview || parkViewMode) {
+        // Non-warzone world interactions now use overhead press-and-hold Radial Pins exclusively
+        if (
+          worldModeRef.current !== 'warzone' ||
+          bottomDockOccupied ||
+          isFullMapOverview ||
+          parkViewMode
+        ) {
           if (btn.style.display !== 'none') btn.style.display = 'none';
           return false;
         }
@@ -32991,7 +34471,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           mesh: scene.getObjectByName('HalteLobbyTeleportKiosk3D') ?? null,
           stationId: 'central_plaza',
           kioskX: -59.18,
-          kioskZ: 0.0,
+          kioskZ: 4.6,
         },
         {
           mesh: scene.getObjectByName('CityTransitKiosk3D_beachfront_kai') ?? null,
@@ -33075,6 +34555,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             playerUnit.z,
             cafeWorkShiftActive,
             activeCafeOrderCategory,
+            isCafeSeatOccupied,
           );
           currentNearestCafeSeat = cafeWinner.target === 'seat' ? cafeWinner.seatSpot : null;
 
@@ -33182,7 +34663,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           );
           claimBottomDock(casinoStationPromptBtn);
         } else {
-          const casinoWinner = resolveNearestCasinoPromptOrSeat(playerUnit.x, playerUnit.z);
+          const casinoWinner = resolveNearestCasinoPromptOrSeat(
+            playerUnit.x,
+            playerUnit.z,
+            false,
+            isCasinoSeatOccupied,
+          );
           currentNearestCasinoSeat = casinoWinner.target === 'seat' ? casinoWinner.seatSpot : null;
           if (casinoWinner.target === 'station' && casinoWinner.stationKind) {
             let label = 'EXIT CASINO';
@@ -33242,6 +34728,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             playerUnit.x,
             playerUnit.z,
             salonCurrentFloorY,
+            isSalonSeatOccupied,
           );
           currentNearestSalonSeat = salonWinner.target === 'seat' ? salonWinner.seatSpot : null;
           if (salonWinner.target === 'station' && salonWinner.stationKind === 'exit_door') {
@@ -33307,10 +34794,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         let bestSleepDist = 2.3;
         if (!playerUnit.isSleeping) {
           for (let si = 0; si < HOUSE_BED_SLEEP_SPOTS.length; si++) {
-            const d = Math.hypot(
-              playerUnit.x - HOUSE_BED_SLEEP_SPOTS[si].x,
-              playerUnit.z - HOUSE_BED_SLEEP_SPOTS[si].z,
-            );
+            const spot = HOUSE_BED_SLEEP_SPOTS[si];
+            if (isHouseBedOccupied(spot)) continue;
+            const d = Math.hypot(playerUnit.x - spot.x, playerUnit.z - spot.z);
             if (d <= bestSleepDist) {
               bestSleepDist = d;
               bestSleepIdx = si;
@@ -33322,7 +34808,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         for (let si = 0; si < HOUSE_BED_SLEEP_SPOTS.length; si++) {
           const spot = HOUSE_BED_SLEEP_SPOTS[si];
           const entry = sleepIndicatorBtns[si];
-          if (playerUnit.isSleeping) {
+          if (playerUnit.isSleeping || isHouseBedOccupied(spot)) {
             entry.btn.style.display = 'none';
             continue;
           }
@@ -33467,19 +34953,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           nearCafeNow = true;
         }
       }
-      if (
-        activeTutorialWaypointTarget === 'hana' &&
-        nearCafeNow &&
-        !tutorialHanaAutoOpened &&
-        npcCameraMode === 'none' &&
-        !isKioskModalOpenCanvas &&
-        !mountedTank
-      ) {
-        tutorialHanaAutoOpened = true;
-        window.dispatchEvent(
-          new CustomEvent('open-npc-merchant-ui', { detail: { location: 'lobby_cafe' } }),
-        );
-      }
+      // Tutorial Hana interaction now uses explicit press-and-hold on Hana's overhead Radial Pin (no walk-by auto-popup)
       if (!nearCafeNow && beachHouseNpc?.npcGrp?.visible) {
         beachHouseNpc.npcGrp.getWorldPosition(scratchLiveObjPos);
         if (getPlanetShortestDistance(actorX, actorZ, scratchLiveObjPos.x, scratchLiveObjPos.z) <= 3.5) {
@@ -33660,6 +35134,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       if (lobbySeatModeActive) {
         for (let si = 0; si < LOBBY_SEAT_SPOTS.length; si++) {
           const spot = LOBBY_SEAT_SPOTS[si];
+          if (isOutdoorSeatOccupied(spot)) continue;
           const d = getPlanetShortestDistance(actorX, actorZ, spot.x, spot.z);
           if (d <= bestLobbySeatDist) {
             bestLobbySeatDist = d;
@@ -33675,10 +35150,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           const spot = LOBBY_SEAT_SPOTS[si];
           const entry = seatIndicatorBtns[si];
           const coin3D = lobbySeatCoinMeshes[si];
-          const isCurrentlySeatedHere =
-            Boolean(playerUnit.isSitting) && activeSeatedSpot?.id === spot.id;
+          const isOccupiedHere = isOutdoorSeatOccupied(spot);
           const dist = getPlanetShortestDistance(actorX, actorZ, spot.x, spot.z);
-          if (isCurrentlySeatedHere || dist > 20.0) {
+          if (isOccupiedHere || dist > 20.0) {
             entry.btn.style.display = 'none';
             if (coin3D) coin3D.coinRoot.visible = false;
             continue;
@@ -33736,13 +35210,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           const sp = CAFE_INTERIOR_SEAT_SPOTS[ci];
           const ind = cafeInterior?.floorSpotIndicators[ci];
           if (ind) {
-            const isActiveHere = Boolean(playerUnit.isSitting && activeCafeSeatedSpot?.id === sp.id);
+            const isOccupiedHere = isCafeSeatOccupied(sp);
             const isWinningSeat = Boolean(
               !playerUnit.isSitting &&
+                !isOccupiedHere &&
                 desiredUnifiedDockAction === 'sit' &&
                 currentNearestCafeSeat?.id === sp.id,
             );
-            ind.coinRoot.visible = !isActiveHere;
+            ind.coinRoot.visible = !isOccupiedHere;
             ind.greenCoin.visible = isWinningSeat;
             ind.blueCoin.visible = !isWinningSeat;
           }
@@ -33758,15 +35233,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           const sp = CASINO_INTERIOR_SEAT_SPOTS[ci];
           const ind = casinoInterior?.floorSpotIndicators[ci];
           if (ind) {
-            const isActiveHere = Boolean(
-              playerUnit.isSitting && activeCasinoSeatedSpot?.id === sp.id,
-            );
+            const isOccupiedHere = isCasinoSeatOccupied(sp);
             const isWinningSeat = Boolean(
               !playerUnit.isSitting &&
+                !isOccupiedHere &&
                 desiredUnifiedDockAction === 'sit' &&
                 currentNearestCasinoSeat?.id === sp.id,
             );
-            ind.coinRoot.visible = !isActiveHere;
+            ind.coinRoot.visible = !isOccupiedHere;
             ind.greenCoin.visible = isWinningSeat;
             ind.blueCoin.visible = !isWinningSeat;
           }
@@ -33783,15 +35257,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           const sp = SALON_INTERIOR_SEAT_SPOTS[ci];
           const ind = salonInterior?.floorSpotIndicators[ci];
           if (ind) {
-            const isActiveHere = Boolean(
-              playerUnit.isSitting && activeSalonSeatedSpot?.id === sp.id,
-            );
+            const isOccupiedHere = isSalonSeatOccupied(sp);
             const isWinningSeat = Boolean(
               !playerUnit.isSitting &&
+                !isOccupiedHere &&
                 desiredUnifiedDockAction === 'sit' &&
                 currentNearestSalonSeat?.id === sp.id,
             );
-            ind.coinRoot.visible = !isActiveHere;
+            ind.coinRoot.visible = !isOccupiedHere;
             ind.greenCoin.visible = isWinningSeat;
             ind.blueCoin.visible = !isWinningSeat;
           }
@@ -34013,7 +35486,1295 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
       syncUnifiedBottomDockAction(desiredUnifiedDockAction, desiredNearbyDockEntity);
 
-      // 0D. Overhead Social Talk Speech Bubble above Player Character's Head
+      // 0C-RADIAL. Suppress ALL legacy 3D triangle chevrons, 3D seat coins & old DOM seat/sleep buttons
+      // and project unified inZOI-style Radial Hold-to-Interact Pins with contextual center icons.
+      cafeExteriorDoorPad.chevronArrow.visible = false;
+      houseExteriorDoorPad.chevronArrow.visible = false;
+      houseInteriorExitDoorPad.chevronArrow.visible = false;
+      scooterShopChevron.group.visible = false;
+      fashionShopChevron.group.visible = false;
+      realEstateCatalogChevron.group.visible = false;
+      modelHouseDoorChevron.group.visible = false;
+      grandCasinoDoorChevron.group.visible = false;
+      beautySalonDoorChevron.group.visible = false;
+      if (lobbyCafeNpc?.merchantChevron?.group) lobbyCafeNpc.merchantChevron.group.visible = false;
+      if (beachHouseNpc?.merchantChevron?.group) beachHouseNpc.merchantChevron.group.visible = false;
+      for (const { baseObj } of basePairs) {
+        for (let pi = 0; pi < baseObj.commanderPads.length; pi++) {
+          const chev = baseObj.commanderPads[pi].kioskMesh.userData.interactiveChevron as
+            | CompactInteractiveChevronMarker
+            | undefined;
+          if (chev) chev.group.visible = false;
+        }
+      }
+      for (let ti = 0; ti < transitKioskVisualTargets.length; ti++) {
+        const tChev = transitKioskVisualTargets[ti].mesh?.userData.interactiveChevron as
+          | CompactInteractiveChevronMarker
+          | undefined;
+        if (tChev) tChev.group.visible = false;
+      }
+      for (let si = 0; si < seatIndicatorBtns.length; si++) {
+        seatIndicatorBtns[si].btn.style.display = 'none';
+        if (lobbySeatCoinMeshes[si]) lobbySeatCoinMeshes[si].coinRoot.visible = false;
+      }
+      for (let si = 0; si < sleepIndicatorBtns.length; si++) {
+        sleepIndicatorBtns[si].btn.style.display = 'none';
+      }
+      if (cafeInterior) {
+        for (let ci = 0; ci < cafeInterior.floorSpotIndicators.length; ci++) {
+          cafeInterior.floorSpotIndicators[ci].coinRoot.visible = false;
+        }
+      }
+      if (casinoInterior) {
+        for (let ci = 0; ci < casinoInterior.floorSpotIndicators.length; ci++) {
+          casinoInterior.floorSpotIndicators[ci].coinRoot.visible = false;
+        }
+      }
+      if (salonInterior) {
+        for (let ci = 0; ci < salonInterior.floorSpotIndicators.length; ci++) {
+          salonInterior.floorSpotIndicators[ci].coinRoot.visible = false;
+        }
+      }
+
+      const isRadialBlockedByModalOrMode =
+        worldModeRef.current === 'warzone' ||
+        isFullMapOverview ||
+        parkViewMode ||
+        isKioskModalOpenCanvas ||
+        Boolean(citizenPortraitState) ||
+        Boolean(posePortraitState) ||
+        Boolean(activeTramRideCutscene?.active) ||
+        mountedTank !== null ||
+        shorelineFishingSync.phase !== 'idle' ||
+        npcCameraMode === 'city_view' ||
+        npcCameraMode === 'house_interior' ||
+        Boolean(document.querySelector('[data-grand-casino-modal="true"]')) ||
+        Boolean(document.querySelector('[data-scooter-showroom-modal="true"]')) ||
+        Boolean(document.querySelector('[data-fashion-boutique-modal="true"]')) ||
+        Boolean(document.querySelector('[data-realestate-catalog-modal="true"]')) ||
+        Boolean(document.querySelector('[data-cafe-prep-modal="true"]')) ||
+        Boolean(document.querySelector('[data-cafe-barista-modal="true"]'));
+
+      if (isRadialBlockedByModalOrMode || !playerUnit || !playerUnit.alive) {
+        radialPinManager.clearAll();
+      } else {
+        const radialPins: RadialInteractPinDescriptor[] = [];
+        const padMarginX = 28;
+        const padMarginTop = playerUnit.isSitting ? 36 : 54;
+        const padMarginBottom = 86;
+
+        const pushWorldPin = (
+          wx: number,
+          wy: number,
+          wz: number,
+          spec: Omit<RadialInteractPinDescriptor, 'screenX' | 'screenY'>,
+          isFlatRoom = false,
+        ) => {
+          const proj = isFlatRoom
+            ? projectFlatRoomToScreenPixels(wx, wy, wz)
+            : projectWorldToScreenPixels(wx, wy, wz);
+          if (
+            !proj.visible ||
+            proj.x < padMarginX ||
+            proj.x > w - padMarginX ||
+            proj.y < padMarginTop ||
+            proj.y > h - padMarginBottom
+          ) {
+            return;
+          }
+          radialPins.push({
+            ...spec,
+            screenX: proj.x,
+            screenY: proj.y,
+          });
+        };
+
+        const pushCharacterHeadPin = (
+          rig: BuddyCharacterRig | null | undefined,
+          fallbackX: number,
+          fallbackY: number,
+          fallbackZ: number,
+          spec: Omit<RadialInteractPinDescriptor, 'screenX' | 'screenY'>,
+          isFlatRoom = false,
+          worldOffsetX = 0,
+        ) => {
+          const headBone = rig?.customGlbController?.bones?.get('Head');
+          const parentVis = rig?.bodyGroupRef?.parent?.visible ?? true;
+          if (headBone && parentVis) {
+            headBone.getWorldPosition(scratchLiveObjPos);
+            let bodyScaleY = 1.0;
+            if (rig?.bodyGroupRef) {
+              rig.bodyGroupRef.getWorldScale(scratchPinScaleVec);
+              bodyScaleY = Math.max(0.35, scratchPinScaleVec.y);
+            }
+            pushWorldPin(
+              scratchLiveObjPos.x + worldOffsetX,
+              scratchLiveObjPos.y + 0.52 * bodyScaleY,
+              scratchLiveObjPos.z,
+              spec,
+              true,
+            );
+            return;
+          }
+          pushWorldPin(fallbackX + worldOffsetX, fallbackY, fallbackZ, spec, isFlatRoom);
+        };
+
+        // A. Active Tram Exit Pin
+        if (ridingTramCarIdx !== null) {
+          const py = getTerrainElevation(actorX, actorZ) + 4.15;
+          pushWorldPin(actorX, py, actorZ, {
+            id: 'exit_tram',
+            inRange: true,
+            distance: 0,
+            priority: 100,
+            icon: 'tram',
+            label: 'Exit Tram',
+            accent: 'rose',
+            onTrigger: () => {
+              window.dispatchEvent(new CustomEvent('buddy-action', { detail: 'exitCityTram' }));
+            },
+          });
+        } else if (playerUnit.isSleeping && activeSleepSpot && npcCameraMode === 'house_visit') {
+          // B. Active Sleep Wake-Up Pin
+          pushWorldPin(
+            playerUnit.x,
+            HOUSE_ORIGIN_Y + 1.95,
+            playerUnit.z,
+            {
+              id: 'wake_up_bed',
+              inRange: true,
+              distance: 0,
+              priority: 100,
+              icon: 'bed',
+              label: 'Wake Up',
+              accent: 'emerald',
+              onTrigger: () => {
+                wakeUpFromBed();
+              },
+            },
+            true,
+          );
+        } else {
+          // C. Active Seated State: Stand Up Pin (+ Casino Game Pin when seated at Casino table/slot)
+          // Note: Do NOT skip NPC/Remote Player pins while seated so sitting companions keep their radial pins!
+          if (playerUnit.isSitting) {
+            if (npcCameraMode === 'casino_interior' && activeCasinoSeatedSpot) {
+              const seatedGameKind = getCasinoGameKindForSeat(activeCasinoSeatedSpot.chairKind);
+              const seatedSlotMeta =
+                CASINO_SLOT_VARIANT_META[getCasinoSlotGameVariantForSeatId(activeCasinoSeatedSpot.id)];
+              const gameLabel =
+                seatedGameKind === 'roulette_table'
+                  ? 'Spin Roulette'
+                  : seatedGameKind === 'blackjack_table'
+                    ? 'Play Blackjack'
+                    : seatedSlotMeta.promptLabel;
+              pushWorldPin(
+                activeCasinoSeatedSpot.x,
+                CASINO_ORIGIN_Y + 1.95,
+                activeCasinoSeatedSpot.z,
+                {
+                  id: 'casino_play_seated',
+                  inRange: true,
+                  distance: 0.1,
+                  priority: 95,
+                  icon: 'casino_game',
+                  label: gameLabel,
+                  accent: 'amber',
+                  onTrigger: () => {
+                    triggerCasinoStationAction(seatedGameKind);
+                  },
+                },
+                true,
+              );
+              pushCharacterHeadPin(
+                playerUnit.rig,
+                playerUnit.x,
+                CASINO_ORIGIN_Y + 1.72,
+                playerUnit.z,
+                {
+                  id: 'stand_up_seated',
+                  inRange: true,
+                  distance: 0.5,
+                  priority: 80,
+                  icon: 'stand_up',
+                  label: 'Stand Up',
+                  accent: 'emerald',
+                  onTrigger: () => {
+                    triggerSitOrStandAction();
+                  },
+                },
+                true,
+                0.55,
+              );
+            } else {
+              const isFlat =
+                npcCameraMode === 'cafe_interior' || npcCameraMode === 'salon_interior';
+              const seatStandY =
+                npcCameraMode === 'cafe_interior'
+                  ? CAFE_ORIGIN_Y + 1.72
+                  : npcCameraMode === 'salon_interior'
+                    ? SALON_ORIGIN_Y + salonCurrentFloorY + 1.72
+                    : getTerrainElevation(playerUnit.x, playerUnit.z) + 2.38;
+              pushCharacterHeadPin(
+                playerUnit.rig,
+                playerUnit.x,
+                seatStandY,
+                playerUnit.z,
+                {
+                  id: 'stand_up_seated',
+                  inRange: true,
+                  distance: 0,
+                  priority: 100,
+                  icon: 'stand_up',
+                  label: 'Stand Up',
+                  accent: 'emerald',
+                  onTrigger: () => {
+                    triggerSitOrStandAction();
+                  },
+                },
+                isFlat,
+              );
+            }
+          }
+
+          if (npcCameraMode === 'none') {
+            // =====================================================================
+            // D. OUTDOOR CITY PINS (Doors, Shops, Kiosks, Tram, NPCs, Players, Seats)
+            // =====================================================================
+            if (!playerUnit.isSitting && showCafeDoorPad && distToCafeDoor <= 28) {
+            const y = getTerrainElevation(CAFE_EXTERIOR_DOOR_TRIGGER.x, CAFE_EXTERIOR_DOOR_TRIGGER.z) + 2.35;
+            pushWorldPin(CAFE_EXTERIOR_DOOR_TRIGGER.x, y, CAFE_EXTERIOR_DOOR_TRIGGER.z, {
+              id: 'door_cafe',
+              inRange: isNearCafeExteriorDoor,
+              distance: distToCafeDoor,
+              priority: 40,
+              icon: 'door_enter',
+              label: 'Enter Cafe',
+              accent: 'amber',
+              onTrigger: () => {
+                window.dispatchEvent(new CustomEvent('buddy-action', { detail: 'enterGlasshouseCafe' }));
+              },
+            });
+          }
+
+          if (!playerUnit.isSitting && showScooterShopChevron && distToScooterShop <= 26) {
+            const y =
+              getTerrainElevation(URBAN_SCOOTER_SHOP_TRIGGER.x, URBAN_SCOOTER_SHOP_TRIGGER.z) +
+              URBAN_SCOOTER_SHOP_TRIGGER.deckY +
+              URBAN_SCOOTER_SHOP_TRIGGER.markerOffsetY +
+              0.85;
+            pushWorldPin(URBAN_SCOOTER_SHOP_TRIGGER.x, y, URBAN_SCOOTER_SHOP_TRIGGER.z, {
+              id: 'shop_scooter',
+              inRange: isNearScooterShop,
+              distance: distToScooterShop,
+              priority: 35,
+              icon: 'shop_scooter',
+              label: 'Scooter Shop',
+              accent: 'amber',
+              onTrigger: () => {
+                window.dispatchEvent(new CustomEvent('buddy-action', { detail: 'openScooterShowroom' }));
+              },
+            });
+          }
+
+          if (!playerUnit.isSitting && showFashionShopChevron && distToFashionBoutique <= 26) {
+            const y =
+              getTerrainElevation(FASHION_BOUTIQUE_SHOP_TRIGGER.x, FASHION_BOUTIQUE_SHOP_TRIGGER.z) +
+              FASHION_BOUTIQUE_SHOP_TRIGGER.markerOffsetY +
+              0.85;
+            pushWorldPin(FASHION_BOUTIQUE_SHOP_TRIGGER.x, y, FASHION_BOUTIQUE_SHOP_TRIGGER.z, {
+              id: 'shop_fashion',
+              inRange: isNearFashionBoutique,
+              distance: distToFashionBoutique,
+              priority: 35,
+              icon: 'shop_fashion',
+              label: 'Boutique',
+              accent: 'amber',
+              onTrigger: () => {
+                window.dispatchEvent(new CustomEvent('buddy-action', { detail: 'openFashionBoutique' }));
+              },
+            });
+          }
+
+          if (!playerUnit.isSitting && showRealEstateCatalogChevron && distToRealEstateCatalog <= 26) {
+            const y =
+              getTerrainElevation(REAL_ESTATE_CATALOG_TRIGGER.x, REAL_ESTATE_CATALOG_TRIGGER.z) +
+              REAL_ESTATE_CATALOG_TRIGGER.markerOffsetY +
+              0.85;
+            pushWorldPin(REAL_ESTATE_CATALOG_TRIGGER.x, y, REAL_ESTATE_CATALOG_TRIGGER.z, {
+              id: 'shop_estate',
+              inRange: isNearRealEstateCatalog,
+              distance: distToRealEstateCatalog,
+              priority: 35,
+              icon: 'shop_estate',
+              label: 'Real Estate',
+              accent: 'amber',
+              onTrigger: () => {
+                window.dispatchEvent(new CustomEvent('buddy-action', { detail: 'openRealEstateCatalog' }));
+              },
+            });
+          }
+
+          if (!playerUnit.isSitting && showModelHouseDoorChevron && distToModelHouseDoor <= 26) {
+            const y =
+              getTerrainElevation(PLAZA_MODEL_HOUSE_DOOR_TRIGGER.x, PLAZA_MODEL_HOUSE_DOOR_TRIGGER.z) +
+              PLAZA_MODEL_HOUSE_DOOR_TRIGGER.markerOffsetY +
+              0.85;
+            pushWorldPin(PLAZA_MODEL_HOUSE_DOOR_TRIGGER.x, y, PLAZA_MODEL_HOUSE_DOOR_TRIGGER.z, {
+              id: 'door_model_house',
+              inRange: isNearModelHouseDoor,
+              distance: distToModelHouseDoor,
+              priority: 40,
+              icon: 'door_enter',
+              label: 'Model House',
+              accent: 'amber',
+              onTrigger: () => {
+                window.dispatchEvent(new CustomEvent('buddy-action', { detail: 'enterPlazaModelHouse' }));
+              },
+            });
+          }
+
+          if (!playerUnit.isSitting && showGrandCasinoDoorChevron && distToGrandCasinoDoor <= 28) {
+            const y =
+              getTerrainElevation(GRAND_CASINO_DOOR_TRIGGER.x, GRAND_CASINO_DOOR_TRIGGER.z) +
+              GRAND_CASINO_DOOR_TRIGGER.deckY +
+              GRAND_CASINO_DOOR_TRIGGER.markerOffsetY +
+              0.85;
+            pushWorldPin(GRAND_CASINO_DOOR_TRIGGER.x, y, GRAND_CASINO_DOOR_TRIGGER.z, {
+              id: 'door_casino',
+              inRange: isNearGrandCasinoDoor,
+              distance: distToGrandCasinoDoor,
+              priority: 40,
+              icon: 'door_enter',
+              label: 'Grand Casino',
+              accent: 'amber',
+              onTrigger: () => {
+                window.dispatchEvent(new CustomEvent('buddy-action', { detail: 'enterGrandCasino' }));
+              },
+            });
+          }
+
+          if (!playerUnit.isSitting && showBeautySalonDoorChevron && distToBeautySalonDoor <= 28) {
+            const y =
+              getTerrainElevation(SALON_EXTERIOR_DOOR_TRIGGER.doorX, SALON_EXTERIOR_DOOR_TRIGGER.doorZ - 0.55) +
+              SALON_EXTERIOR_DOOR_TRIGGER.deckY +
+              SALON_EXTERIOR_DOOR_TRIGGER.markerOffsetY +
+              0.85;
+            pushWorldPin(
+              SALON_EXTERIOR_DOOR_TRIGGER.doorX,
+              y,
+              SALON_EXTERIOR_DOOR_TRIGGER.doorZ - 0.55,
+              {
+                id: 'door_salon',
+                inRange: isNearBeautySalonDoor,
+                distance: distToBeautySalonDoor,
+                priority: 40,
+                icon: 'door_enter',
+                label: 'Beauty Salon',
+                accent: 'amber',
+                onTrigger: () => {
+                  window.dispatchEvent(new CustomEvent('buddy-action', { detail: 'enterBeautySalon' }));
+                },
+              },
+            );
+          }
+
+          if (!playerUnit.isSitting && visibleHouseDoorBeaconPos) {
+            const dHouseDoor = getPlanetShortestDistance(
+              actorX,
+              actorZ,
+              visibleHouseDoorBeaconPos.x,
+              visibleHouseDoorBeaconPos.z,
+            );
+            if (dHouseDoor <= 26) {
+              const y =
+                getTerrainElevation(visibleHouseDoorBeaconPos.x, visibleHouseDoorBeaconPos.z) + 2.35;
+              pushWorldPin(visibleHouseDoorBeaconPos.x, y, visibleHouseDoorBeaconPos.z, {
+                id: 'door_private_house',
+                inRange: Boolean(nearClaimedHouseDoorPos),
+                distance: dHouseDoor,
+                priority: 40,
+                icon: 'door_enter',
+                label: 'Enter House',
+                accent: 'amber',
+                onTrigger: () => {
+                  window.dispatchEvent(
+                    new CustomEvent('buddy-action', { detail: 'enterPrivateHouseInterior' }),
+                  );
+                },
+              });
+            }
+          }
+
+          // Nearest Base Plot Kiosk Pin
+          if (!playerUnit.isSitting && distToKiosk <= 22) {
+            const targetBase = nearestKiosk.team === 'blue' ? blueBase : redBase;
+            const padObj = targetBase.commanderPads[nearestKiosk.plotIdx];
+            if (padObj?.kioskMesh?.visible) {
+              padObj.kioskMesh.getWorldPosition(scratchLiveObjPos);
+              pushWorldPin(
+                scratchLiveObjPos.x,
+                scratchLiveObjPos.y + 2.95,
+                scratchLiveObjPos.z,
+                {
+                  id: `kiosk_plot_${nearestKiosk.team}_${nearestKiosk.plotIdx}`,
+                  inRange: nearKioskNow,
+                  distance: distToKiosk,
+                  priority: 30,
+                  icon: 'house_plot',
+                  label: 'House Plot',
+                  accent: 'amber',
+                  onTrigger: () => {
+                    emitHudImmediately();
+                    window.dispatchEvent(new CustomEvent('toggle-kiosk-ui'));
+                  },
+                },
+              );
+            }
+          }
+
+          // City Transit Kiosks within 22m
+          if (!playerUnit.isSitting) {
+            for (let ti = 0; ti < transitKioskVisualTargets.length; ti++) {
+              const target = transitKioskVisualTargets[ti];
+              if (!target.mesh || !target.mesh.visible) continue;
+              const dTransit = getPlanetShortestDistance(actorX, actorZ, target.kioskX, target.kioskZ);
+              if (dTransit > 22) continue;
+              const y = getTerrainElevation(target.kioskX, target.kioskZ) + 2.95;
+              const isTransitInRange = nearProximityKiosk === target.stationId && dTransit <= 3.5;
+              pushWorldPin(target.kioskX, y, target.kioskZ, {
+                id: `kiosk_transit_${ti}_${target.stationId}`,
+                inRange: isTransitInRange,
+                distance: dTransit,
+                priority: 30,
+                icon: 'transit',
+                label: 'City Transit',
+                accent: 'amber',
+                onTrigger: () => {
+                  window.dispatchEvent(
+                    new CustomEvent('open-teleport-kiosk-modal', {
+                      detail: { kind: target.stationId },
+                    }),
+                  );
+                },
+              });
+            }
+          }
+
+          // City Tram Boarding Pin (when near tram)
+          if (!playerUnit.isSitting && !isPointInsideLobbySafezone(actorX, actorZ)) {
+            const tramBoardNow = canUnitBoardCityTramAtAnyPoint(
+              actorX,
+              actorZ,
+              tramNowForPrompt,
+              cityArenaMode === 'safezone' ? 6.2 : 3.6,
+            );
+            if (tramBoardNow.canBoard) {
+              const carObj =
+                tramBoardNow.carIndex === 0 ? tramNowForPrompt.car1 : tramNowForPrompt.car2;
+              const ty = getTerrainElevation(carObj.x, carObj.z) + 3.55;
+              pushWorldPin(carObj.x, ty, carObj.z, {
+                id: 'board_city_tram',
+                inRange: true,
+                distance: tramBoardNow.distanceMeters,
+                priority: 45,
+                icon: 'tram',
+                label: 'Board Tram',
+                accent: 'amber',
+                onTrigger: () => {
+                  window.dispatchEvent(new CustomEvent('buddy-action', { detail: 'rideCityTram' }));
+                },
+              });
+            }
+          }
+
+          // Merchant NPCs: Hana & Kai (Anchor cleanly ABOVE head top — never over head)
+          if (lobbyCafeNpc?.npcGrp?.visible) {
+            lobbyCafeNpc.npcGrp.getWorldPosition(scratchLiveObjPos);
+            const hanaX = scratchLiveObjPos.x;
+            const hanaY = scratchLiveObjPos.y + 3.45;
+            const hanaZ = scratchLiveObjPos.z;
+            const dHana = getPlanetShortestDistance(actorX, actorZ, hanaX, hanaZ);
+            if (dHana <= 20) {
+              pushCharacterHeadPin(lobbyCafeNpc.npcRig, hanaX, hanaY, hanaZ, {
+                id: 'npc_merchant_hana',
+                inRange: dHana <= 3.85,
+                distance: dHana,
+                priority: 50,
+                icon: 'merchant',
+                label: 'Hana',
+                accent: 'amber',
+                onTrigger: () => {
+                  selectCharacterFromRadialPin(
+                    {
+                      id: 'npc_hana',
+                      name: 'HANA',
+                      distance: dHana,
+                      isNpc: true,
+                      isMerchant: true,
+                      merchantLocation: 'lobby_cafe',
+                      gender: 'female',
+                      team: 'blue',
+                      status: 'Real Estate & Exchange Merchant',
+                    },
+                    'npc_merchant_hana',
+                  );
+                },
+              });
+            }
+          }
+          if (beachHouseNpc?.npcGrp?.visible) {
+            beachHouseNpc.npcGrp.getWorldPosition(scratchLiveObjPos);
+            const kaiX = scratchLiveObjPos.x;
+            const kaiY = scratchLiveObjPos.y + 3.45;
+            const kaiZ = scratchLiveObjPos.z;
+            const dKai = getPlanetShortestDistance(actorX, actorZ, kaiX, kaiZ);
+            if (dKai <= 20) {
+              pushCharacterHeadPin(beachHouseNpc.npcRig, kaiX, kaiY, kaiZ, {
+                id: 'npc_merchant_kai',
+                inRange: dKai <= 3.85,
+                distance: dKai,
+                priority: 50,
+                icon: 'merchant',
+                label: 'Kai',
+                accent: 'amber',
+                onTrigger: () => {
+                  selectCharacterFromRadialPin(
+                    {
+                      id: 'npc_kai',
+                      name: 'KAI',
+                      distance: dKai,
+                      isNpc: true,
+                      isMerchant: true,
+                      merchantLocation: 'beach_house',
+                      gender: 'male',
+                      team: 'blue',
+                      status: 'Beach House Merchant',
+                    },
+                    'npc_merchant_kai',
+                  );
+                },
+              });
+            }
+          }
+
+          // Ambient Citizen NPCs (overhead Radial Pin cleanly above head, standing or sitting together)
+          for (let ci = 0; ci < cityAmbientNpcs.length; ci++) {
+            const npc = cityAmbientNpcs[ci];
+            if (!npc.root.visible) continue;
+            const dNpc = getPlanetShortestDistance(actorX, actorZ, npc.x, npc.z);
+            if (dNpc > 14) continue;
+            const ny = getTerrainElevation(npc.x, npc.z) + (npc.isSitting ? 2.38 : 3.45);
+            const citizenPinId = `npc_citizen_${npc.preset.id}`;
+            pushCharacterHeadPin(npc.rig, npc.x, ny, npc.z, {
+              id: citizenPinId,
+              inRange: dNpc <= 3.85,
+              distance: dNpc,
+              priority: 48,
+              icon: 'npc',
+              label: npc.preset.displayName,
+              accent: 'amber',
+              onTrigger: () => {
+                selectCharacterFromRadialPin(
+                  {
+                    id: npc.preset.id,
+                    name: npc.preset.displayName,
+                    distance: dNpc,
+                    isNpc: true,
+                    isMerchant: false,
+                    gender: npc.preset.gender,
+                    team: npc.preset.teamTint,
+                    status: npc.activeStatusLabel,
+                  },
+                  citizenPinId,
+                );
+              },
+            });
+          }
+
+          // Online Remote Players (overhead Radial Pin cleanly above head, standing or sitting together)
+          for (const av of remotePlayerAvatars.values()) {
+            if (!av.root.visible) continue;
+            const dPeer = getPlanetShortestDistance(actorX, actorZ, av.renderX, av.renderZ);
+            if (dPeer > 16) continue;
+            const py =
+              getTerrainElevation(av.renderX, av.renderZ) +
+              (av.peer.isSitting ? 2.38 : 3.45);
+            const peerId = av.peer.nearAccountId || av.peer.sessionId;
+            const remotePinId = `remote_player_${peerId}`;
+            pushCharacterHeadPin(av.rig, av.renderX, py, av.renderZ, {
+              id: remotePinId,
+              inRange: dPeer <= 3.85,
+              distance: dPeer,
+              priority: 52,
+              icon: 'player',
+              label: av.peer.displayName,
+              accent: 'amber',
+              onTrigger: () => {
+                selectCharacterFromRadialPin(
+                  {
+                    id: peerId,
+                    nearAccountId: av.peer.nearAccountId ?? undefined,
+                    name: av.peer.displayName,
+                    distance: dPeer,
+                    isNpc: false,
+                    isMerchant: false,
+                    team: av.peer.team,
+                    status:
+                      av.peer.weaponId === 'fishing_rod'
+                        ? 'Fishing'
+                        : av.peer.nearAccountId || 'Online Citizen',
+                  },
+                  remotePinId,
+                );
+              },
+            });
+          }
+
+          // Outdoor Seats (show up to 4 nearest unoccupied seats within 9m, cleanly above seat top)
+          if (!playerUnit.isSitting && lobbySeatModeActive) {
+            const nearbyOutdoorSeats: Array<{ spot: LobbySeatSpot; dist: number }> = [];
+            for (let si = 0; si < LOBBY_SEAT_SPOTS.length; si++) {
+              const spot = LOBBY_SEAT_SPOTS[si];
+              if (isOutdoorSeatOccupied(spot)) continue;
+              const dSeat = getPlanetShortestDistance(actorX, actorZ, spot.x, spot.z);
+              if (dSeat <= 9.0) {
+                nearbyOutdoorSeats.push({ spot, dist: dSeat });
+              }
+            }
+            nearbyOutdoorSeats.sort((a, b) => a.dist - b.dist);
+            const seatCap = Math.min(nearbyOutdoorSeats.length, 4);
+            for (let si = 0; si < seatCap; si++) {
+              const { spot, dist: dSeat } = nearbyOutdoorSeats[si];
+              const sy = getTerrainElevation(spot.x, spot.z) + spot.indicatorHeightY + 0.55;
+              pushWorldPin(spot.x, sy, spot.z, {
+                id: `seat_outdoor_${spot.id}`,
+                inRange: dSeat <= 3.8,
+                distance: dSeat,
+                priority: 25,
+                icon: 'chair',
+                label: 'Sit',
+                accent: 'amber',
+                onTrigger: () => {
+                  sitOnLobbySeat(spot);
+                },
+              });
+            }
+          }
+        } else if (npcCameraMode === 'cafe_interior') {
+          // =====================================================================
+          // E. CAFE INTERIOR PINS
+          // =====================================================================
+          const cafeWin = resolveNearestCafePromptOrSeat(
+            playerUnit.x,
+            playerUnit.z,
+            cafeWorkShiftActive,
+            activeCafeOrderCategory,
+            isCafeSeatOccupied,
+          );
+          if (!playerUnit.isSitting) {
+          const dCafeExit = Math.hypot(
+            playerUnit.x - CAFE_INTERIOR_BOUNDS.exitDoorX,
+            playerUnit.z - CAFE_INTERIOR_BOUNDS.exitDoorZ,
+          );
+          pushWorldPin(
+            CAFE_INTERIOR_BOUNDS.exitDoorX,
+            CAFE_ORIGIN_Y + 1.85,
+            CAFE_INTERIOR_BOUNDS.exitDoorZ,
+            {
+              id: 'cafe_exit_door',
+              inRange: cafeWin.stationKind === 'exit_door' || dCafeExit <= 2.2,
+              distance: dCafeExit,
+              priority: 45,
+              icon: 'door_exit',
+              label: 'Exit Cafe',
+              accent: 'rose',
+              onTrigger: () => {
+                window.dispatchEvent(new CustomEvent('exit-glasshouse-cafe'));
+              },
+            },
+            true,
+          );
+
+          const dAtm = Math.hypot(
+            playerUnit.x - CAFE_APPLIANCE_TARGETS.atmMachine.x,
+            playerUnit.z - CAFE_APPLIANCE_TARGETS.atmMachine.z,
+          );
+          pushWorldPin(
+            CAFE_APPLIANCE_TARGETS.atmMachine.x,
+            CAFE_ORIGIN_Y + CAFE_APPLIANCE_TARGETS.atmMachine.markerY + 0.45,
+            CAFE_APPLIANCE_TARGETS.atmMachine.z,
+            {
+              id: 'cafe_atm',
+              inRange: cafeWin.stationKind === 'atm_machine' || dAtm <= 2.1,
+              distance: dAtm,
+              priority: 38,
+              icon: 'atm',
+              label: 'Cafe ATM',
+              accent: 'amber',
+              onTrigger: () => {
+                window.dispatchEvent(new CustomEvent('open-cafe-atm-modal'));
+              },
+            },
+            true,
+          );
+
+          const dRota = Math.hypot(
+            playerUnit.x - CAFE_APPLIANCE_TARGETS.workShiftBoard.x,
+            playerUnit.z - CAFE_APPLIANCE_TARGETS.workShiftBoard.z,
+          );
+          pushWorldPin(
+            CAFE_APPLIANCE_TARGETS.workShiftBoard.x,
+            CAFE_ORIGIN_Y + CAFE_APPLIANCE_TARGETS.workShiftBoard.markerY + 0.45,
+            CAFE_APPLIANCE_TARGETS.workShiftBoard.z,
+            {
+              id: 'cafe_rota_board',
+              inRange: cafeWin.stationKind === 'rota_board' || dRota <= 2.1,
+              distance: dRota,
+              priority: 42,
+              icon: 'work_shift',
+              label: cafeWorkShiftActive ? 'End Shift' : 'Work Shift',
+              accent: cafeWorkShiftActive ? 'rose' : 'emerald',
+              onTrigger: () => {
+                window.dispatchEvent(
+                  new CustomEvent(
+                    cafeWorkShiftActive ? 'stop-cafe-work-shift' : 'toggle-cafe-rota-dock-menu',
+                  ),
+                );
+              },
+            },
+            true,
+          );
+
+          if (!cafeWorkShiftActive) {
+            const dPos = Math.hypot(
+              playerUnit.x - CAFE_APPLIANCE_TARGETS.orderPosRegister.x,
+              playerUnit.z - CAFE_APPLIANCE_TARGETS.orderPosRegister.z,
+            );
+            pushWorldPin(
+              CAFE_APPLIANCE_TARGETS.orderPosRegister.x,
+              CAFE_ORIGIN_Y + CAFE_APPLIANCE_TARGETS.orderPosRegister.markerY + 0.45,
+              CAFE_APPLIANCE_TARGETS.orderPosRegister.z,
+              {
+                id: 'cafe_order_pos',
+                inRange: cafeWin.stationKind === 'order_counter' || dPos <= 2.2,
+                distance: dPos,
+                priority: 40,
+                icon: 'cafe_coffee',
+                label: 'Order Menu',
+                accent: 'amber',
+                onTrigger: () => {
+                  window.dispatchEvent(new CustomEvent('open-cafe-order-modal'));
+                },
+              },
+              true,
+            );
+
+            const dSlot = Math.hypot(
+              playerUnit.x - CAFE_APPLIANCE_TARGETS.arcadeSlotMachine.x,
+              playerUnit.z - CAFE_APPLIANCE_TARGETS.arcadeSlotMachine.z,
+            );
+            pushWorldPin(
+              CAFE_APPLIANCE_TARGETS.arcadeSlotMachine.x,
+              CAFE_ORIGIN_Y + CAFE_APPLIANCE_TARGETS.arcadeSlotMachine.markerY + 0.45,
+              CAFE_APPLIANCE_TARGETS.arcadeSlotMachine.z,
+              {
+                id: 'cafe_arcade_slot',
+                inRange: cafeWin.stationKind === 'arcade_slot' || dSlot <= 2.1,
+                distance: dSlot,
+                priority: 36,
+                icon: 'casino_game',
+                label: 'Play Slots',
+                accent: 'amber',
+                onTrigger: () => {
+                  window.dispatchEvent(new CustomEvent('open-cafe-arcade-slot-modal'));
+                },
+              },
+              true,
+            );
+          } else {
+            // Active barista shift drink/pastry stations
+            if (activeCafeOrderCategory === 'drink' || !activeCafeOrderCategory) {
+              const dDrink = Math.hypot(
+                playerUnit.x - CAFE_APPLIANCE_TARGETS.drinkEspressoMachine.x,
+                playerUnit.z - CAFE_APPLIANCE_TARGETS.drinkEspressoMachine.z,
+              );
+              pushWorldPin(
+                CAFE_APPLIANCE_TARGETS.drinkEspressoMachine.x,
+                CAFE_ORIGIN_Y + CAFE_APPLIANCE_TARGETS.drinkEspressoMachine.markerY + 0.45,
+                CAFE_APPLIANCE_TARGETS.drinkEspressoMachine.z,
+                {
+                  id: 'cafe_prep_drink',
+                  inRange: dDrink <= 2.3,
+                  distance: dDrink,
+                  priority: 55,
+                  icon: 'cafe_coffee',
+                  label: 'Drink Machine',
+                  accent: 'emerald',
+                  onTrigger: () => {
+                    window.dispatchEvent(
+                      new CustomEvent('open-cafe-prep-modal', { detail: { category: 'drink' } }),
+                    );
+                  },
+                },
+                true,
+              );
+            }
+            if (activeCafeOrderCategory === 'pastry' || !activeCafeOrderCategory) {
+              const dPastry = Math.hypot(
+                playerUnit.x - CAFE_APPLIANCE_TARGETS.pastryDisplayCase.x,
+                playerUnit.z - CAFE_APPLIANCE_TARGETS.pastryDisplayCase.z,
+              );
+              pushWorldPin(
+                CAFE_APPLIANCE_TARGETS.pastryDisplayCase.x,
+                CAFE_ORIGIN_Y + CAFE_APPLIANCE_TARGETS.pastryDisplayCase.markerY + 0.45,
+                CAFE_APPLIANCE_TARGETS.pastryDisplayCase.z,
+                {
+                  id: 'cafe_prep_pastry',
+                  inRange: dPastry <= 2.3,
+                  distance: dPastry,
+                  priority: 55,
+                  icon: 'cafe_coffee',
+                  label: 'Pastry Display',
+                  accent: 'emerald',
+                  onTrigger: () => {
+                    window.dispatchEvent(
+                      new CustomEvent('open-cafe-prep-modal', { detail: { category: 'pastry' } }),
+                    );
+                  },
+                },
+                true,
+              );
+            }
+          }
+          }
+
+          // Cafe Mira NPC (cleanly above head top, standing or sitting together)
+          if (cafeMiraNpcRoot?.visible && !cafeWorkShiftActive) {
+            const dMira = Math.hypot(playerUnit.x - cafeMiraX, playerUnit.z - cafeMiraZ);
+            pushCharacterHeadPin(
+              cafeMiraRig,
+              cafeMiraX,
+              CAFE_ORIGIN_Y + (cafeMiraIsSitting ? 1.72 : 2.28),
+              cafeMiraZ,
+              {
+                id: 'npc_cafe_mira',
+                inRange: dMira <= 2.75,
+                distance: dMira,
+                priority: 48,
+                icon: 'npc',
+                label: 'Mira',
+                accent: 'amber',
+                onTrigger: () => {
+                  selectCharacterFromRadialPin(
+                    {
+                      id: 'citizen_mira',
+                      name: 'Mira',
+                      distance: dMira,
+                      isNpc: true,
+                      isMerchant: false,
+                      gender: 'female',
+                      team: 'red',
+                      status: cafeMiraStatusLabel,
+                    },
+                    'npc_cafe_mira',
+                  );
+                },
+              },
+              true,
+            );
+          }
+
+          // Remote players inside Cafe (cleanly above head top, standing or sitting together)
+          for (const av of remotePlayerAvatars.values()) {
+            if (!av.root.visible) continue;
+            const dPeer = Math.hypot(playerUnit.x - av.renderX, playerUnit.z - av.renderZ);
+            if (dPeer > 12) continue;
+            const peerId = av.peer.nearAccountId || av.peer.sessionId;
+            const cafeRemotePinId = `cafe_remote_${peerId}`;
+            pushCharacterHeadPin(
+              av.rig,
+              av.renderX,
+              CAFE_ORIGIN_Y + (av.peer.isSitting ? 1.72 : 2.28),
+              av.renderZ,
+              {
+                id: cafeRemotePinId,
+                inRange: dPeer <= 2.75,
+                distance: dPeer,
+                priority: 50,
+                icon: 'player',
+                label: av.peer.displayName,
+                accent: 'amber',
+                onTrigger: () => {
+                  selectCharacterFromRadialPin(
+                    {
+                      id: peerId,
+                      nearAccountId: av.peer.nearAccountId ?? undefined,
+                      name: av.peer.displayName,
+                      distance: dPeer,
+                      isNpc: false,
+                      isMerchant: false,
+                      team: av.peer.team,
+                      status: av.peer.nearAccountId || 'Online Citizen',
+                    },
+                    cafeRemotePinId,
+                  );
+                },
+              },
+              true,
+            );
+          }
+
+          // Cafe Seats (up to 4 nearest unoccupied seats within 5.5m)
+          if (!playerUnit.isSitting && !cafeWorkShiftActive) {
+            const nearbyCafeSeats: Array<{ spot: CafeInteriorSeatSpot; dist: number }> = [];
+            for (let ci = 0; ci < CAFE_INTERIOR_SEAT_SPOTS.length; ci++) {
+              const sp = CAFE_INTERIOR_SEAT_SPOTS[ci];
+              if (isCafeSeatOccupied(sp)) continue;
+              const dSeat = Math.hypot(playerUnit.x - sp.x, playerUnit.z - sp.z);
+              if (dSeat <= 5.5) nearbyCafeSeats.push({ spot: sp, dist: dSeat });
+            }
+            nearbyCafeSeats.sort((a, b) => a.dist - b.dist);
+            const seatCap = Math.min(nearbyCafeSeats.length, 4);
+            for (let ci = 0; ci < seatCap; ci++) {
+              const { spot, dist: dSeat } = nearbyCafeSeats[ci];
+              pushWorldPin(
+                spot.x,
+                CAFE_ORIGIN_Y + spot.indicatorHeightY + 0.48,
+                spot.z,
+                {
+                  id: `seat_cafe_${spot.id}`,
+                  inRange: dSeat <= 2.0,
+                  distance: dSeat,
+                  priority: 25,
+                  icon: 'chair',
+                  label: 'Sit',
+                  accent: 'amber',
+                  onTrigger: () => {
+                    currentNearestCafeSeat = spot;
+                    triggerSitOrStandAction();
+                  },
+                },
+                true,
+              );
+            }
+          }
+        } else if (npcCameraMode === 'casino_interior') {
+          // =====================================================================
+          // F. GRAND CASINO INTERIOR PINS
+          // =====================================================================
+          if (!playerUnit.isSitting) {
+            const casinoWin = resolveNearestCasinoPromptOrSeat(
+              playerUnit.x,
+              playerUnit.z,
+              false,
+              isCasinoSeatOccupied,
+            );
+            const dExit = Math.hypot(
+              playerUnit.x - CASINO_STATION_TARGETS.exitDoor.x,
+              playerUnit.z - CASINO_STATION_TARGETS.exitDoor.z,
+            );
+            pushWorldPin(
+              CASINO_STATION_TARGETS.exitDoor.x,
+              CASINO_ORIGIN_Y + 1.85,
+              CASINO_STATION_TARGETS.exitDoor.z,
+              {
+                id: 'casino_exit_door',
+                inRange: casinoWin.stationKind === 'exit_door' || dExit <= 2.3,
+                distance: dExit,
+                priority: 45,
+                icon: 'door_exit',
+                label: 'Exit Casino',
+                accent: 'rose',
+                onTrigger: () => {
+                  triggerCasinoStationAction('exit_door');
+                },
+              },
+              true,
+            );
+
+            const dCashier = Math.hypot(
+              playerUnit.x - CASINO_STATION_TARGETS.cashierCage.x,
+              playerUnit.z - CASINO_STATION_TARGETS.cashierCage.z,
+            );
+            pushWorldPin(
+              CASINO_STATION_TARGETS.cashierCage.x,
+              CASINO_ORIGIN_Y + CASINO_STATION_TARGETS.cashierCage.markerY + 0.45,
+              CASINO_STATION_TARGETS.cashierCage.z,
+              {
+                id: 'casino_cashier',
+                inRange: casinoWin.stationKind === 'cashier_cage' || dCashier <= 2.4,
+                distance: dCashier,
+                priority: 42,
+                icon: 'atm',
+                label: 'Cashier Cage',
+                accent: 'amber',
+                onTrigger: () => {
+                  triggerCasinoStationAction('cashier_cage');
+                },
+              },
+              true,
+            );
+
+            const dBar = Math.hypot(
+              playerUnit.x - CASINO_STATION_TARGETS.luxuryBar.x,
+              playerUnit.z - CASINO_STATION_TARGETS.luxuryBar.z,
+            );
+            pushWorldPin(
+              CASINO_STATION_TARGETS.luxuryBar.x,
+              CASINO_ORIGIN_Y + CASINO_STATION_TARGETS.luxuryBar.markerY + 0.45,
+              CASINO_STATION_TARGETS.luxuryBar.z,
+              {
+                id: 'casino_bar',
+                inRange: casinoWin.stationKind === 'luxury_bar' || dBar <= 2.4,
+                distance: dBar,
+                priority: 40,
+                icon: 'cafe_coffee',
+                label: 'Lounge Bar',
+                accent: 'amber',
+                onTrigger: () => {
+                  triggerCasinoStationAction('luxury_bar');
+                },
+              },
+              true,
+            );
+          }
+
+          // Remote players inside Casino (cleanly above head top, standing or sitting together)
+          for (const av of remotePlayerAvatars.values()) {
+            if (!av.root.visible) continue;
+            const dPeer = Math.hypot(playerUnit.x - av.renderX, playerUnit.z - av.renderZ);
+            if (dPeer > 14) continue;
+            const peerId = av.peer.nearAccountId || av.peer.sessionId;
+            const casinoRemotePinId = `casino_remote_${peerId}`;
+            pushCharacterHeadPin(
+              av.rig,
+              av.renderX,
+              CASINO_ORIGIN_Y + (av.peer.isSitting ? 1.72 : 2.28),
+              av.renderZ,
+              {
+                id: casinoRemotePinId,
+                inRange: dPeer <= 3.0,
+                distance: dPeer,
+                priority: 50,
+                icon: 'player',
+                label: av.peer.displayName,
+                accent: 'amber',
+                onTrigger: () => {
+                  selectCharacterFromRadialPin(
+                    {
+                      id: peerId,
+                      nearAccountId: av.peer.nearAccountId ?? undefined,
+                      name: av.peer.displayName,
+                      distance: dPeer,
+                      isNpc: false,
+                      isMerchant: false,
+                      team: av.peer.team,
+                      status: av.peer.nearAccountId || 'Online Citizen',
+                    },
+                    casinoRemotePinId,
+                  );
+                },
+              },
+              true,
+            );
+          }
+
+          // Casino Seats (up to 4 nearest unoccupied seats within 5.5m)
+          if (!playerUnit.isSitting) {
+            const nearbyCasinoSeats: Array<{ spot: CasinoInteriorSeatSpot; dist: number }> = [];
+            for (let ci = 0; ci < CASINO_INTERIOR_SEAT_SPOTS.length; ci++) {
+              const sp = CASINO_INTERIOR_SEAT_SPOTS[ci];
+              if (isCasinoSeatOccupied(sp)) continue;
+              const dSeat = Math.hypot(playerUnit.x - sp.x, playerUnit.z - sp.z);
+              if (dSeat <= 5.5) nearbyCasinoSeats.push({ spot: sp, dist: dSeat });
+            }
+            nearbyCasinoSeats.sort((a, b) => a.dist - b.dist);
+            const casinoSeatCap = Math.min(nearbyCasinoSeats.length, 4);
+            for (let ci = 0; ci < casinoSeatCap; ci++) {
+              const { spot, dist: dSeat } = nearbyCasinoSeats[ci];
+              pushWorldPin(
+                spot.x,
+                CASINO_ORIGIN_Y + spot.indicatorHeightY + 0.48,
+                spot.z,
+                {
+                  id: `seat_casino_${spot.id}`,
+                  inRange: dSeat <= 2.1,
+                  distance: dSeat,
+                  priority: 28,
+                  icon: 'chair',
+                  label: 'Sit & Play',
+                  accent: 'amber',
+                  onTrigger: () => {
+                    currentNearestCasinoSeat = spot;
+                    triggerSitOrStandAction();
+                  },
+                },
+                true,
+              );
+            }
+          }
+        } else if (npcCameraMode === 'salon_interior') {
+          // =====================================================================
+          // G. BEAUTY SALON INTERIOR PINS
+          // =====================================================================
+          if (!playerUnit.isSitting) {
+            if (salonCurrentFloorY < 1.5) {
+              const dSalonExit = Math.hypot(
+                playerUnit.x - SALON_INTERIOR_BOUNDS.exitDoorX,
+                playerUnit.z - SALON_INTERIOR_BOUNDS.exitDoorZ,
+              );
+              pushWorldPin(
+                SALON_INTERIOR_BOUNDS.exitDoorX,
+                SALON_ORIGIN_Y + 1.85,
+                SALON_INTERIOR_BOUNDS.exitDoorZ,
+                {
+                  id: 'salon_exit_door',
+                  inRange: dSalonExit <= 2.3,
+                  distance: dSalonExit,
+                  priority: 45,
+                  icon: 'door_exit',
+                  label: 'Exit Salon',
+                  accent: 'rose',
+                  onTrigger: () => {
+                    triggerSalonStationAction('exit_door');
+                  },
+                },
+                true,
+              );
+            }
+
+            const nearbySalonSeats: Array<{ spot: SalonInteriorSeatSpot; dist: number }> = [];
+            for (let ci = 0; ci < SALON_INTERIOR_SEAT_SPOTS.length; ci++) {
+              const sp = SALON_INTERIOR_SEAT_SPOTS[ci];
+              if (Math.abs(sp.floorY - salonCurrentFloorY) > 1.2) continue;
+              if (isSalonSeatOccupied(sp)) continue;
+              const dSeat = Math.hypot(playerUnit.x - sp.x, playerUnit.z - sp.z);
+              if (dSeat <= 5.5) nearbySalonSeats.push({ spot: sp, dist: dSeat });
+            }
+            nearbySalonSeats.sort((a, b) => a.dist - b.dist);
+            const salonSeatCap = Math.min(nearbySalonSeats.length, 4);
+            for (let ci = 0; ci < salonSeatCap; ci++) {
+              const { spot, dist: dSeat } = nearbySalonSeats[ci];
+              pushWorldPin(
+                spot.x,
+                SALON_ORIGIN_Y + spot.indicatorHeightY + 0.48,
+                spot.z,
+                {
+                  id: `seat_salon_${spot.id}`,
+                  inRange: dSeat <= 2.1,
+                  distance: dSeat,
+                  priority: 28,
+                  icon: 'chair',
+                  label: 'Sit',
+                  accent: 'amber',
+                  onTrigger: () => {
+                    currentNearestSalonSeat = spot;
+                    triggerSitOrStandAction();
+                  },
+                },
+                true,
+              );
+            }
+          }
+
+          // Remote players inside Beauty Salon (standing or sitting together)
+          for (const av of remotePlayerAvatars.values()) {
+            if (!av.root.visible) continue;
+            const dPeer = Math.hypot(playerUnit.x - av.renderX, playerUnit.z - av.renderZ);
+            if (dPeer > 12) continue;
+            const peerId = av.peer.nearAccountId || av.peer.sessionId;
+            const salonRemotePinId = `salon_remote_${peerId}`;
+            pushCharacterHeadPin(
+              av.rig,
+              av.renderX,
+              SALON_ORIGIN_Y + salonCurrentFloorY + (av.peer.isSitting ? 1.72 : 2.28),
+              av.renderZ,
+              {
+                id: salonRemotePinId,
+                inRange: dPeer <= 2.75,
+                distance: dPeer,
+                priority: 50,
+                icon: 'player',
+                label: av.peer.displayName,
+                accent: 'amber',
+                onTrigger: () => {
+                  selectCharacterFromRadialPin(
+                    {
+                      id: peerId,
+                      nearAccountId: av.peer.nearAccountId ?? undefined,
+                      name: av.peer.displayName,
+                      distance: dPeer,
+                      isNpc: false,
+                      isMerchant: false,
+                      team: av.peer.team,
+                      status: av.peer.nearAccountId || 'Online Citizen',
+                    },
+                    salonRemotePinId,
+                  );
+                },
+              },
+              true,
+            );
+          }
+        } else if (npcCameraMode === 'house_visit') {
+          // =====================================================================
+          // H. PRIVATE HOUSE VISIT PINS (Exit Door + Beds)
+          // =====================================================================
+          const dHouseExit = Math.hypot(playerUnit.x - 0.0, playerUnit.z - 3.35);
+          pushWorldPin(
+            0.0,
+            HOUSE_ORIGIN_Y + 1.85,
+            3.35,
+            {
+              id: 'house_exit_door',
+              inRange: isNearHouseInteriorExit,
+              distance: dHouseExit,
+              priority: 45,
+              icon: 'door_exit',
+              label: 'Exit House',
+              accent: 'rose',
+              onTrigger: () => {
+                window.dispatchEvent(
+                  new CustomEvent('buddy-action', { detail: 'exitPrivateHouseInterior' }),
+                );
+              },
+            },
+            true,
+          );
+
+          if (houseBedPresent && !playerUnit.isSleeping) {
+            for (let si = 0; si < HOUSE_BED_SLEEP_SPOTS.length; si++) {
+              const spot = HOUSE_BED_SLEEP_SPOTS[si];
+              if (isHouseBedOccupied(spot)) continue;
+              const dBed = Math.hypot(playerUnit.x - spot.x, playerUnit.z - spot.z);
+              pushWorldPin(
+                spot.indicatorX,
+                HOUSE_ORIGIN_Y + spot.indicatorHeightY + 0.48,
+                spot.indicatorZ,
+                {
+                  id: `house_bed_${spot.id}`,
+                  inRange: dBed <= 2.3,
+                  distance: dBed,
+                  priority: 35,
+                  icon: 'bed',
+                  label: 'Sleep',
+                  accent: 'amber',
+                  onTrigger: () => {
+                    sleepOnBed(spot);
+                  },
+                },
+                true,
+              );
+            }
+          }
+        }
+        }
+
+        radialPinManager.syncPins(radialPins, performance.now());
+      }
+
+      // 0D. Side-Anchored Social Talk Speech Bubble (next to character, never blocking head)
       if (socialTalkMessage && socialTalkTimer > 0 && playerUnit && playerUnit.alive) {
         const bx = playerUnit.x;
         const bz = playerUnit.z;
@@ -34021,7 +36782,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           npcCameraMode === 'casino_interior'
             ? projectFlatRoomToScreenPixels(
                 bx,
-                CASINO_ORIGIN_Y + (playerUnit.nameplate?.sprite?.visible ? 2.12 : 1.92),
+                CASINO_ORIGIN_Y + (playerUnit.isSitting ? 1.25 : 1.5),
                 bz,
               )
             : npcCameraMode === 'salon_interior'
@@ -34029,26 +36790,39 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                   bx,
                   SALON_ORIGIN_Y +
                     salonCurrentFloorY +
-                    (playerUnit.nameplate?.sprite?.visible ? 2.12 : 1.92),
+                    (playerUnit.isSitting ? 1.25 : 1.5),
                   bz,
                 )
               : npcCameraMode === 'cafe_interior'
               ? projectFlatRoomToScreenPixels(
                   bx,
-                  CAFE_ORIGIN_Y + (playerUnit.nameplate?.sprite?.visible ? 2.12 : 1.92),
+                  CAFE_ORIGIN_Y + (playerUnit.isSitting ? 1.25 : 1.5),
                   bz,
                 )
               : npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior'
-                ? projectFlatRoomToScreenPixels(bx, HOUSE_ORIGIN_Y + 1.55, bz)
+                ? projectFlatRoomToScreenPixels(
+                    bx,
+                    HOUSE_ORIGIN_Y + (playerUnit.isSleeping ? 1.15 : 1.5),
+                    bz,
+                  )
                 : projectWorldToScreenPixels(
                     bx,
-                    getTerrainElevation(bx, bz) + (ridingTramCarIdx !== null ? 3.9 : 2.95),
+                    getTerrainElevation(bx, bz) +
+                      (ridingTramCarIdx !== null ? 3.35 : playerUnit.isSitting ? 2.05 : 2.55),
                     bz,
                   );
         const sx = proj.visible ? proj.x : Math.round(w * 0.5);
-        const sy = proj.visible ? proj.y : Math.round(h * 0.38);
-        socialSpeechBubbleEl.style.display = 'block';
-        socialSpeechBubbleEl.style.transform = `translate3d(${sx}px, ${sy}px, 0) translate(-50%, -100%)`;
+        const sy = proj.visible ? proj.y : Math.round(h * 0.44);
+        const placeLeft = sx + 38 + 240 > w - 14;
+        const bubbleX = placeLeft
+          ? Math.max(12 + 240, sx - 38)
+          : Math.min(w - 14 - 240, sx + 38);
+        const bubbleY = Math.max(66, Math.min(h - 100, sy));
+        socialSpeechBubbleEl.style.display = 'inline-flex';
+        socialSpeechBubbleEl.style.flexDirection = placeLeft ? 'row-reverse' : 'row';
+        socialSpeechBubbleEl.style.transform = placeLeft
+          ? `translate3d(${bubbleX}px, ${bubbleY}px, 0) translate(-100%, -50%)`
+          : `translate3d(${bubbleX}px, ${bubbleY}px, 0) translate(0, -50%)`;
       } else {
         socialSpeechBubbleEl.style.display = 'none';
       }
@@ -35218,6 +37992,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       window.removeEventListener('close-kiosk-ui', onKioskUiClosed);
       window.removeEventListener('sync-kiosk-ui', onKioskUiSynced);
       window.removeEventListener('citizen-dialogue-open-state', onCitizenDialogueOpenState);
+      window.removeEventListener('pose-inspect-open-state', onPoseInspectOpenState);
       window.removeEventListener('sync-npc-camera-mode', onSyncNpcCameraMode);
       window.removeEventListener('sync-city-view-mode', onSyncCityViewMode);
       scene.remove(cityViewFocusRingGroup);
@@ -35242,6 +38017,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       window.removeEventListener('set-property-pinpoint', onSetPropertyPinpoint);
       window.removeEventListener('set-kai-tutorial', onSetKaiTutorial);
       window.removeEventListener('trigger-sit-or-stand-action', onTriggerSitOrStandWindowEvent);
+      radialPinManager.dispose();
       clickToWalkIndicator3D.dispose();
       scene.remove(tutorialWaypointGroup);
       tutorialChevronGeo.dispose();

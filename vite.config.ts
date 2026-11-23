@@ -1,13 +1,30 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { handleFishAttestRequest } from './api/fish-attest.ts';
 import { handleHanaClaimAttestRequest } from './api/hana-claim-attest.ts';
 import { handleNearRelayerRequest } from './api/near-relayer.ts';
 import { handleNpcAgentRequest } from './api/npc-agent.ts';
 import { handleNpcTradeRequest } from './api/npc-trade.ts';
+import { createRemoteAssetsProxyMiddleware } from './api/remote-assets-proxy.ts';
+import { handleCityFeedActionRequest, handleCityFeedGetRequest } from './api/city-feed.ts';
+import { handleWardrobePurchaseRequest } from './api/wardrobe-purchase.ts';
 import { isValidPrivyAppId } from './src/lib/privyAuthConfig.ts';
+
+function remoteAssetsSameOriginProxyPlugin(): Plugin {
+  const middleware = createRemoteAssetsProxyMiddleware({ stripPrefix: true });
+  return {
+    name: 'remote-assets-same-origin-proxy',
+    configureServer(server) {
+      server.middlewares.use(middleware);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(middleware);
+    },
+  };
+}
 
 function privyUnusedOptionalPeerStubPlugin(options: { stubInactivePrivyInDev: boolean }): Plugin {
   const stubs: Record<string, string> = {
@@ -65,87 +82,11 @@ function nearSubAccountRelayerDevPlugin(): Plugin {
   return {
     name: 'near-subaccount-relayer-dev',
     configureServer(server) {
-      server.middlewares.use('/api/near-relayer', (req, res, next) => {
-        if (req.method !== 'POST') {
-          next();
-          return;
-        }
-        let rawBody = '';
-        req.on('error', () => {
-          if (!res.writableEnded) {
-            res.statusCode = 400;
-            res.end();
-          }
-        });
-        req.on('data', (chunk) => {
-          rawBody += String(chunk);
-        });
-        req.on('end', async () => {
-          if (res.writableEnded) return;
-          try {
-            const parsed = rawBody ? JSON.parse(rawBody) : {};
-            const out = await handleNearRelayerRequest(parsed);
-            if (res.writableEnded) return;
-            res.statusCode = out.status;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify(out.payload));
-          } catch (err) {
-            if (res.writableEnded) return;
-            res.statusCode = 500;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(
-              JSON.stringify({
-                ok: false,
-                error: err instanceof Error ? err.message : 'Relayer middleware error',
-              }),
-            );
-          }
-        });
-      });
-
-      server.middlewares.use('/api/npc-agent', (req, res, next) => {
-        if (req.method !== 'POST') {
-          next();
-          return;
-        }
-        let rawBody = '';
-        req.on('error', () => {
-          if (!res.writableEnded) {
-            res.statusCode = 400;
-            res.end();
-          }
-        });
-        req.on('data', (chunk) => {
-          rawBody += String(chunk);
-        });
-        req.on('end', async () => {
-          if (res.writableEnded) return;
-          try {
-            const parsed = rawBody ? JSON.parse(rawBody) : {};
-            const out = await handleNpcAgentRequest(parsed);
-            if (res.writableEnded) return;
-            res.statusCode = out.status;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify(out.payload));
-          } catch (err) {
-            if (res.writableEnded) return;
-            res.statusCode = 500;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(
-              JSON.stringify({
-                ok: false,
-                error: err instanceof Error ? err.message : 'NPC agent middleware error',
-              }),
-            );
-          }
-        });
-      });
-
       const mountJsonPostRoute = (
         routePath: string,
         handlerFn: (
           body: Record<string, unknown>,
-        ) => Promise<{ status: number; payload: Record<string, unknown> }>,
+        ) => Promise<{ status: number; payload: unknown }>,
         label: string,
       ) => {
         server.middlewares.use(routePath, (req, res, next) => {
@@ -187,9 +128,41 @@ function nearSubAccountRelayerDevPlugin(): Plugin {
         });
       };
 
+      mountJsonPostRoute('/api/near-relayer', handleNearRelayerRequest, 'Relayer');
+      mountJsonPostRoute(
+        '/api/npc-agent',
+        (body) => handleNpcAgentRequest(body as Parameters<typeof handleNpcAgentRequest>[0]),
+        'NPC agent',
+      );
       mountJsonPostRoute('/api/fish-attest', handleFishAttestRequest, 'Fish attest');
       mountJsonPostRoute('/api/hana-claim-attest', handleHanaClaimAttestRequest, 'Hana claim attest');
       mountJsonPostRoute('/api/npc-trade', handleNpcTradeRequest, 'NPC trade');
+      mountJsonPostRoute('/api/wardrobe-purchase', handleWardrobePurchaseRequest, 'Wardrobe purchase');
+      server.middlewares.use('/api/city-feed', (req, res, next) => {
+        if (req.method === 'GET') {
+          void handleCityFeedGetRequest()
+            .then((out) => {
+              if (res.writableEnded) return;
+              res.statusCode = out.status;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify(out.payload));
+            })
+            .catch((err) => {
+              if (res.writableEnded) return;
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error: err instanceof Error ? err.message : 'City Feed middleware error',
+                }),
+              );
+            });
+          return;
+        }
+        next();
+      });
+      mountJsonPostRoute('/api/city-feed', handleCityFeedActionRequest, 'City Feed');
     },
   };
 }
@@ -209,7 +182,23 @@ export default defineConfig(({ command, mode }) => {
       privyUnusedOptionalPeerStubPlugin({ stubInactivePrivyInDev }),
       react(),
       tailwindcss(),
+      remoteAssetsSameOriginProxyPlugin(),
       nearSubAccountRelayerDevPlugin(),
+      {
+        name: 'copy-unbundled-src-assets',
+        apply: 'build',
+        closeBundle(error?: Error): void {
+          if (error) {
+            return;
+          }
+          const distDir = path.resolve(import.meta.dirname, 'dist');
+          const srcAssets = path.resolve(import.meta.dirname, 'src/assets');
+          const distAssets = path.resolve(distDir, 'src/assets');
+          if (fs.existsSync(distDir) && fs.existsSync(srcAssets)) {
+            fs.cpSync(srcAssets, distAssets, { recursive: true, force: true });
+          }
+        },
+      },
     ],
     resolve: {
       alias: {
@@ -259,6 +248,7 @@ export default defineConfig(({ command, mode }) => {
       host: '0.0.0.0',
       allowedHosts: true,
       hmr: process.env.DISABLE_HMR !== 'true',
+      watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },
   };
 });

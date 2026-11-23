@@ -1173,6 +1173,7 @@ export function resolveNearestCasinoPromptOrSeat(
   px: number,
   pz: number,
   includeGames = false,
+  isSeatOccupied?: (spot: CasinoInteriorSeatSpot) => boolean,
 ): CasinoNearestPromptOrSeatResult {
   const station = detectNearestCasinoStation(px, pz, includeGames);
 
@@ -1180,6 +1181,7 @@ export function resolveNearestCasinoPromptOrSeat(
   let bestSeatObjectDist = Infinity;
   for (let i = 0; i < CASINO_INTERIOR_SEAT_SPOTS.length; i++) {
     const spot = CASINO_INTERIOR_SEAT_SPOTS[i];
+    if (isSeatOccupied?.(spot)) continue;
     const centerDist = Math.hypot(px - spot.x, pz - spot.z);
     if (centerDist <= CASINO_SEAT_PROXIMITY_RADIUS) {
       const objDist = distanceToCasinoAabb2d(px, pz, spot.x, spot.z, 0.25, 0.25);

@@ -135,6 +135,8 @@ export interface WardrobeCatalogItem {
   isStarterDefault: boolean;
   glbPath: string | null;
   thumbUrl?: string | null;
+  /** True when the 2D catalog thumbnail was cropped directly from a glTF `flipY = false` UV texture (upside-down in PNG/WebP space). */
+  thumbFlipY?: boolean;
   underwearSubSlot?: 'underwear' | 'corewear';
   bodyShape?: WardrobeBodyShapeProfile;
   eyeStyle?: WardrobeEyeStyleSpec;
@@ -1666,6 +1668,22 @@ export function getExternalWardrobeCatalogCount(): number {
 }
 
 /**
+ * External Face/Beauty thumbnails under `/assets/beauty/*_t.webp` were cropped
+ * directly from `Blitz_Mask_Head` glTF `flipY = false` UV maps, so they are
+ * vertically inverted in image space and must be flipped vertically (`scaleY(-1)`)
+ * when shown in 2D catalog previews (whereas underwear thumbnails and procedural
+ * canvas previews are already right-side-up).
+ */
+export function shouldFlipWardrobeThumbY(
+  item: Pick<WardrobeCatalogItem, 'thumbUrl' | 'thumbFlipY'>,
+): boolean {
+  if (typeof item.thumbFlipY === 'boolean') {
+    return item.thumbFlipY;
+  }
+  return Boolean(item.thumbUrl && item.thumbUrl.startsWith('/assets/beauty/'));
+}
+
+/**
  * Lazily fetches `/assets/beauty/catalog.json` (403 beauty/makeup/beard overlays)
  * and `/assets/animations/catalog.json` (134 Dance/Pose/Action/Idle animations)
  * and registers them into the active Wardrobe Studio catalog.
@@ -1773,6 +1791,7 @@ export function loadExternalWardrobeCatalogs(): Promise<number> {
           isStarterDefault: false,
           glbPath: null,
           thumbUrl: b.thumbUrl ?? null,
+          thumbFlipY: Boolean(b.thumbUrl),
           beautyOverlay: {
             f: b.f ?? null,
             m: b.m ?? null,

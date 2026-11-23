@@ -237,6 +237,11 @@ import {
   pickRandomTeamShieldedCratePadSpawn,
   computeTeamMirrorCameraPose,
   computeNpcDialoguePortraitPose,
+  computeBoneTrackedPortraitMetrics,
+  resolvePairedSessionPortraitDirection,
+  computePosePortraitInspectTarget,
+  clampNpcDialoguePortraitOrbit,
+  NPC_DIALOGUE_ORBIT_BOUNDS,
   computeCameraRelativeMovementVector,
   SAFEZONE_CITY_HALTE_SPAWN,
   evaluateCitySafezoneModeRules,
@@ -259,6 +264,8 @@ import {
   CITY_AMBIENT_NPC_PRESETS,
   CAFE_MIRA_INTERIOR_PRESET,
   stepCityAmbientNpcSchedule,
+  isSeatSpotOccupiedByActors,
+  findNearestUnoccupiedSeatForNpc,
   resolveUnifiedBottomDockProximity,
 } from './buddiesBlitzRules';
 import { applyGrassChunkSyncedFogOfWar3D } from './buddiesBlitzMinimap';
@@ -4495,8 +4502,8 @@ test('Swapped Halte Canopy (East/Right x=-57.68) & 2 Crate-Pad LOBBY Rings (West
     'Halte roof canopy sits 100% on the concrete platform (East/Right side near grass)',
   );
 
-  // Verify the entire Halte platform deck never cuts into the East-West asphalt road or zebra cross
-  for (const testZ of [-9.2, -7.7, -4.6, 0, 4.6, 7.7, 9.2]) {
+  // Verify the entire shifted Halte platform deck (centerZ = 4.6) never cuts into the East-West asphalt road or zebra cross
+  for (const testZ of [-4.6, -3.1, 0, 4.6, 9.2, 12.3, 13.8]) {
     assert.equal(
       isPointOnAsphaltRoadOrZebraCross(LOBBY_TRAM_SHELTER_SPEC.platformCenterX, testZ),
       false,
@@ -4504,17 +4511,17 @@ test('Swapped Halte Canopy (East/Right x=-57.68) & 2 Crate-Pad LOBBY Rings (West
     );
   }
 
-  // 2. Exactly 2 Crate-Pad-style LOBBY return circles on the West/Left side of the Halte concrete deck (x = -60.52, z = ±4.6, radius = 1.45), 100% on concrete deck and 0% on asphalt road
+  // 2. Exactly 2 Crate-Pad-style LOBBY return circles on the West/Left side of the shifted Halte concrete deck (x = -60.52, z = 0.0 / 9.2, radius = 1.45), 100% on concrete deck and 0% on asphalt road
   assert.equal(LOBBY_TRAM_RETURN_PADS.length, 2);
   const [northPad, southPad] = LOBBY_TRAM_RETURN_PADS;
   assert.equal(northPad.id, 'north_lobby_pad');
   assert.equal(northPad.x, -60.52);
-  assert.equal(northPad.z, -4.6);
+  assert.equal(northPad.z, 0.0);
   assert.equal(northPad.radius, 1.45);
   assert.equal(northPad.style, 'crate_pad_hologram');
   assert.equal(southPad.id, 'south_lobby_pad');
   assert.equal(southPad.x, -60.52);
-  assert.equal(southPad.z, 4.6);
+  assert.equal(southPad.z, 9.2);
   assert.equal(southPad.radius, 1.45);
   assert.equal(southPad.style, 'crate_pad_hologram');
 
@@ -4528,7 +4535,7 @@ test('Swapped Halte Canopy (East/Right x=-57.68) & 2 Crate-Pad LOBBY Rings (West
       `${pad.id} sits 100% within the concrete platform width [-62.20, -55.60]`,
     );
     assert.ok(
-      Math.abs(pad.z) + pad.radius <= platformHalfZ,
+      Math.abs(pad.z - LOBBY_TRAM_SHELTER_SPEC.platformCenterZ) + pad.radius <= platformHalfZ,
       `${pad.id} sits 100% within the central 15.4m concrete platform length`,
     );
     assert.equal(
@@ -7170,4 +7177,406 @@ test('City View Overview & 8 District Group Spotlights: hash routing, orbital cl
   assert.ok(Math.abs(end.lookAtPos.z - endCasino.lookAtPos.z) < 1e-6);
 });
 
+test('computeNpcDialoguePortraitPose supports bounded orbit rotation and zoom-out full-body observation', () => {
+  const aspect = 16 / 9;
+  const cam = new THREE.PerspectiveCamera(BUDDIES_CONSTANTS.camera.fov, aspect, 0.1, 500);
+
+  // 1. Extreme orbit/zoom inputs are safely clamped to NPC_DIALOGUE_ORBIT_BOUNDS
+  const clampedHigh = clampNpcDialoguePortraitOrbit({
+    orbitYawOffsetRad: 9.0,
+    orbitPitchOffsetRad: 4.0,
+    portraitDistanceScale: 10.0,
+  });
+  assert.equal(clampedHigh.orbitYawOffsetRad, NPC_DIALOGUE_ORBIT_BOUNDS.maxYawOffsetRad);
+  assert.equal(clampedHigh.orbitPitchOffsetRad, NPC_DIALOGUE_ORBIT_BOUNDS.maxPitchOffsetRad);
+  assert.equal(clampedHigh.portraitDistanceScale, NPC_DIALOGUE_ORBIT_BOUNDS.maxDistanceScale);
+
+  const clampedLow = clampNpcDialoguePortraitOrbit({
+    orbitYawOffsetRad: -9.0,
+    orbitPitchOffsetRad: -4.0,
+    portraitDistanceScale: 0.1,
+  });
+  assert.equal(clampedLow.orbitYawOffsetRad, NPC_DIALOGUE_ORBIT_BOUNDS.minYawOffsetRad);
+  assert.equal(clampedLow.orbitPitchOffsetRad, NPC_DIALOGUE_ORBIT_BOUNDS.minPitchOffsetRad);
+  assert.equal(clampedLow.portraitDistanceScale, NPC_DIALOGUE_ORBIT_BOUNDS.minDistanceScale);
+
+  // 2. Orbiting keeps faceCamYaw anchored (so player can inspect sides) & keeps NPC on right half
+  const basePose = computeNpcDialoguePortraitPose({
+    npcX: -100.9,
+    npcY: 2.5,
+    npcZ: -3.15,
+    frontDirX: 1,
+    frontDirZ: 0,
+    aspect,
+  });
+  const orbitedPose = computeNpcDialoguePortraitPose({
+    npcX: -100.9,
+    npcY: 2.5,
+    npcZ: -3.15,
+    frontDirX: 1,
+    frontDirZ: 0,
+    aspect,
+    orbitYawOffsetRad: 0.85,
+    orbitPitchOffsetRad: 0.22,
+    portraitDistanceScale: 1.5,
+  });
+  assert.equal(
+    orbitedPose.faceCamYaw,
+    basePose.faceCamYaw,
+    'NPC facing yaw must remain anchored while user orbits camera',
+  );
+  assert.ok(
+    Math.abs(orbitedPose.cameraPos.z - basePose.cameraPos.z) > 1.0,
+    'Camera must horizontally orbit around NPC when yaw offset changes',
+  );
+
+  cam.fov = orbitedPose.fovDeg;
+  cam.aspect = aspect;
+  cam.updateProjectionMatrix();
+  cam.position.set(orbitedPose.cameraPos.x, orbitedPose.cameraPos.y, orbitedPose.cameraPos.z);
+  cam.lookAt(orbitedPose.lookAtPos.x, orbitedPose.lookAtPos.y, orbitedPose.lookAtPos.z);
+  cam.updateMatrixWorld();
+  const orbitedNdc = new THREE.Vector3(-100.9, orbitedPose.lookAtPos.y, -3.15).project(cam);
+  assert.ok(
+    orbitedNdc.x > 0.34 && orbitedNdc.x < 0.54,
+    `Expected orbited NPC to stay framed on right half (~+0.44), got ${orbitedNdc.x}`,
+  );
+
+  // 3. Full zoom-out lowers lookAt toward mid-body so feet & head both fit inside vertical FOV
+  const zoomedOutPose = computeNpcDialoguePortraitPose({
+    npcX: -100.9,
+    npcY: 2.5,
+    npcZ: -3.15,
+    frontDirX: 1,
+    frontDirZ: 0,
+    aspect,
+    portraitDistanceScale: NPC_DIALOGUE_ORBIT_BOUNDS.maxDistanceScale,
+  });
+  assert.ok(
+    zoomedOutPose.lookAtPos.y < basePose.lookAtPos.y - 0.8,
+    'Zooming out shifts target Y down for full-body framing',
+  );
+  cam.position.set(zoomedOutPose.cameraPos.x, zoomedOutPose.cameraPos.y, zoomedOutPose.cameraPos.z);
+  cam.lookAt(zoomedOutPose.lookAtPos.x, zoomedOutPose.lookAtPos.y, zoomedOutPose.lookAtPos.z);
+  cam.updateMatrixWorld();
+  const feetNdc = new THREE.Vector3(-100.9, 2.5, -3.15).project(cam);
+  const headNdc = new THREE.Vector3(-100.9, 2.5 + 3.2, -3.15).project(cam);
+  assert.ok(feetNdc.y > -1.0 && feetNdc.y < -0.5, `Feet should fit inside bottom frame, got ${feetNdc.y}`);
+  assert.ok(headNdc.y > 0.45 && headNdc.y < 1.0, `Head should fit inside top frame, got ${headNdc.y}`);
+});
+
+test('Seat occupancy hides occupied spots while preserving adjacent twin-bench seats and reroutes NPCs to free seats or resumes roaming', () => {
+  // 1. Twin-bench adjacency: occupying slot 1 (-24.85) marks slot 1 occupied but leaves slot 2 (-23.25) free
+  const slot1 = { id: 'lobby_bench_en_1', x: -81.23, z: -24.85 };
+  const slot2 = { id: 'lobby_bench_en_2', x: -81.23, z: -23.25 };
+  const occupants = [
+    { id: 'citizen_tari', x: -81.23, z: -24.85, isSitting: true },
+    { id: 'passerby', x: -81.23, z: -23.25, isSitting: false },
+  ];
+  assert.equal(isSeatSpotOccupiedByActors(slot1, occupants), true);
+  assert.equal(isSeatSpotOccupiedByActors(slot2, occupants), false);
+  assert.equal(isSeatSpotOccupiedByActors(slot1, occupants, 0.92, 'citizen_tari'), false);
+
+  // 2. Alternate seat finder selects closest unoccupied upright seat and ignores custom loungers
+  const candidates = [
+    { id: 'slot1', x: -81.23, z: -24.85, yaw: Math.PI, seatLiftY: 0.02 },
+    { id: 'slot2', x: -81.23, z: -23.25, yaw: Math.PI, seatLiftY: 0.02 },
+    { id: 'lounger', x: -81.23, z: -22.0, yaw: 0, seatLiftY: 0.74, sitVariant: 'sun_lounger' },
+    { id: 'vintage1', x: -81.23, z: -17.65, yaw: Math.PI, seatLiftY: 0.02 },
+  ];
+  const alt1 = findNearestUnoccupiedSeatForNpc({
+    targetX: slot1.x,
+    targetZ: slot1.z,
+    npcX: -83.0,
+    npcZ: -24.0,
+    npcId: 'city_plaza_nadia',
+    candidateSeats: candidates,
+    occupants: [{ id: 'citizen_tari', x: slot1.x, z: slot1.z, isSitting: true }],
+    maxSearchRadiusM: 16.0,
+  });
+  assert.equal(alt1?.id, 'slot2', 'Should pick unoccupied adjacent bench slot2');
+
+  const altAllFull = findNearestUnoccupiedSeatForNpc({
+    targetX: slot1.x,
+    targetZ: slot1.z,
+    npcX: -83.0,
+    npcZ: -24.0,
+    npcId: 'city_plaza_nadia',
+    candidateSeats: candidates,
+    occupants: [
+      { id: 'citizen_tari', x: slot1.x, z: slot1.z, isSitting: true },
+      { id: 'player', x: slot2.x, z: slot2.z, isSitting: true },
+      { id: 'raka', x: -81.23, z: -17.65, isSitting: true },
+    ],
+    maxSearchRadiusM: 16.0,
+  });
+  assert.equal(altAllFull, null, 'Returns null when all nearby standard seats are occupied');
+
+  // 3. NPC approaching an occupied sit_relax stop diverts cleanly to alternateSeat and sits with its yaw
+  const testPreset = {
+    id: 'test_seat_npc',
+    displayName: 'Tari',
+    activityLabel: 'REST',
+    gender: 'female' as const,
+    teamTint: 'blue' as const,
+    activity: 'walk_patrol' as const,
+    speedMps: 1.5,
+    pauseSecAtWaypoint: 10.0,
+    waypoints: [
+      { x: -84.0, z: -24.0, yaw: 0, activity: 'sightseeing' as const, label: 'WALK', durationSec: 5.0 },
+      { x: -81.23, z: -24.85, yaw: Math.PI, activity: 'sit_relax' as const, label: 'BENCH 1', durationSec: 20.0, seatLiftY: 0.02 },
+      { x: -86.0, z: -20.0, yaw: 0, activity: 'sightseeing' as const, label: 'NEXT STOP', durationSec: 12.0 },
+    ],
+  };
+
+  const divertedWalk = stepCityAmbientNpcSchedule({
+    preset: testPreset,
+    x: -82.0,
+    z: -23.3,
+    yaw: 0,
+    waypointIdx: 1,
+    pauseTimer: 0,
+    elapsedSec: 1.0,
+    dt: 0.1,
+    isTargetSeatOccupied: true,
+    alternateSeat: { id: 'slot2', x: -81.23, z: -23.25, yaw: -Math.PI / 2, seatLiftY: 0.05 },
+  });
+  assert.equal(divertedWalk.isSitting, true, 'Within arrivalRadius of alternate seat should sit on alternate seat');
+  assert.equal(divertedWalk.x, -81.23);
+  assert.equal(divertedWalk.z, -23.25);
+  assert.equal(divertedWalk.seatOverride?.wpIdx, 1);
+  assert.equal(divertedWalk.waypointIdx, 2);
+
+  // Dwell step uses alternateSeat's yaw & liftY and clears seatOverride when pauseTimer expires
+  const dwellStep = stepCityAmbientNpcSchedule({
+    preset: testPreset,
+    x: divertedWalk.x,
+    z: divertedWalk.z,
+    yaw: divertedWalk.yaw,
+    waypointIdx: divertedWalk.waypointIdx,
+    pauseTimer: 0.05,
+    elapsedSec: 2.0,
+    dt: 0.1,
+    seatOverride: divertedWalk.seatOverride,
+  });
+  assert.equal(dwellStep.isSitting, true);
+  assert.equal(dwellStep.activeSeatLiftY, 0.05);
+  assert.equal(dwellStep.pauseTimer, 0);
+  assert.equal(dwellStep.seatOverride, null, 'Clears override once sit dwell completes');
+
+  // 4. When no alternate seat is available, NPC skips sit_relax stop and resumes roaming to NEXT STOP
+  const skippedToRoam = stepCityAmbientNpcSchedule({
+    preset: testPreset,
+    x: -84.0,
+    z: -24.0,
+    yaw: 0,
+    waypointIdx: 1,
+    pauseTimer: 0,
+    elapsedSec: 3.0,
+    dt: 0.1,
+    isTargetSeatOccupied: true,
+    alternateSeat: null,
+  });
+  assert.equal(skippedToRoam.isSitting, false);
+  assert.equal(skippedToRoam.waypointIdx, 2, 'Advances past occupied sit_relax stop');
+  assert.equal(skippedToRoam.pauseTimer, 0);
+  assert.equal(skippedToRoam.seatOverride, null);
+});
+
+test('computePosePortraitInspectTarget frames Solo Pose/Dance and Paired Duo with NPC dialogue camera + same orbit/zoom bounds', () => {
+  // 1. Solo Pose / Dance faces player front direction and uses exact NPC dialogue default scale (1.0)
+  const soloTarget = computePosePortraitInspectTarget({
+    mode: 'solo',
+    playerX: -72.0,
+    playerZ: -18.0,
+    playerYaw: -Math.PI / 2, // facing +Z
+  });
+  assert.equal(soloTarget.centerX, -72.0);
+  assert.equal(soloTarget.centerZ, -18.0);
+  assert.ok(Math.abs(soloTarget.frontDirX) < 1e-6);
+  assert.ok(Math.abs(soloTarget.frontDirZ - 1) < 1e-6);
+  assert.equal(soloTarget.defaultDistanceScale, NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale);
+
+  const soloPose = computeNpcDialoguePortraitPose({
+    npcX: soloTarget.centerX,
+    npcY: 0,
+    npcZ: soloTarget.centerZ,
+    frontDirX: soloTarget.frontDirX,
+    frontDirZ: soloTarget.frontDirZ,
+    aspect: 1.6,
+    portraitDistanceScale: soloTarget.defaultDistanceScale,
+  });
+  // Right-side portrait check: lookAt shifts left (-X when looking from +Z toward -Z), placing player on right half (+0.44 NDC)
+  assert.ok(soloPose.lookAtPos.x < soloTarget.centerX);
+  assert.ok(soloPose.cameraPos.z > soloTarget.centerZ);
+
+  // 2. Paired Duo frames midpoint perpendicular to face-to-face line, picking the side closest to current camera
+  const pairedNorthSide = computePosePortraitInspectTarget({
+    mode: 'paired',
+    playerX: -80.0,
+    playerZ: -20.0,
+    playerYaw: 0,
+    partnerX: -78.0,
+    partnerZ: -20.0, // facing along +X (axis = (1, 0))
+    cameraPosX: -79.0,
+    cameraPosZ: -10.0, // camera is south (+Z) of midpoint (-79, -20)
+  });
+  assert.equal(pairedNorthSide.centerX, -79.0);
+  assert.equal(pairedNorthSide.centerZ, -20.0);
+  assert.ok(Math.abs(pairedNorthSide.frontDirX) < 1e-6);
+  assert.ok(Math.abs(pairedNorthSide.frontDirZ - 1) < 1e-6, 'Should pick +Z side facing current camera');
+  assert.ok(
+    pairedNorthSide.defaultDistanceScale >= NPC_DIALOGUE_ORBIT_BOUNDS.minDistanceScale &&
+      pairedNorthSide.defaultDistanceScale <= NPC_DIALOGUE_ORBIT_BOUNDS.maxDistanceScale,
+    'Paired default zoom stays inside shared NPC dialogue orbit bounds',
+  );
+
+  // Opposite camera location selects opposite perpendicular side without changing midpoint
+  const pairedOtherSide = computePosePortraitInspectTarget({
+    mode: 'paired',
+    playerX: -80.0,
+    playerZ: -20.0,
+    playerYaw: 0,
+    partnerX: -78.0,
+    partnerZ: -20.0,
+    cameraPosX: -79.0,
+    cameraPosZ: -30.0, // camera is north (-Z)
+  });
+  assert.ok(Math.abs(pairedOtherSide.frontDirZ + 1) < 1e-6, 'Should pick -Z side when camera is north');
+
+  // 3. Paired synchronized anchor using lineYaw frames side-by-side and supports full zoom-out & orbit
+  const syncedPaired = computePosePortraitInspectTarget({
+    mode: 'paired',
+    playerX: -81.0,
+    playerZ: -24.0,
+    playerYaw: Math.PI / 2, // facing -Z (axis = (0, -1))
+    lineYaw: Math.PI / 2,
+    cameraPosX: -70.0, // camera on +X side
+    cameraPosZ: -24.0,
+  });
+  assert.ok(Math.abs(syncedPaired.frontDirX - 1) < 1e-6);
+  assert.ok(Math.abs(syncedPaired.frontDirZ) < 1e-6);
+
+  const syncedZoomOut = computeNpcDialoguePortraitPose({
+    npcX: syncedPaired.centerX,
+    npcY: 0,
+    npcZ: syncedPaired.centerZ,
+    frontDirX: syncedPaired.frontDirX,
+    frontDirZ: syncedPaired.frontDirZ,
+    aspect: 1.6,
+    orbitYawOffsetRad: NPC_DIALOGUE_ORBIT_BOUNDS.maxYawOffsetRad,
+    orbitPitchOffsetRad: NPC_DIALOGUE_ORBIT_BOUNDS.maxPitchOffsetRad,
+    portraitDistanceScale: NPC_DIALOGUE_ORBIT_BOUNDS.maxDistanceScale,
+  });
+  assert.ok(
+    syncedZoomOut.lookAtPos.y < soloPose.lookAtPos.y,
+    'Zooming out lowers lookAt Y toward full-body observation just like NPC dialogue',
+  );
+});
+
+test('Bone-tracked portrait metrics & boneDropY keep seated/paired animations (e.g. Inseparable Sit) centered when talking or posing', () => {
+  // 1. Standing vs Inseparable Sit bone metrics:
+  // Suppose root anchor is at (-81.23, 0, -24.85) but paired sit animation translates Head onto the bench
+  // at (-80.85, 1.84, -24.60) (a 0.98m drop from standing head height 2.82m) with torso facing -X (West).
+  // When facing -X (fx = -1, fz = 0), RightArm is at -Z (-24.80) and LeftArm is at +Z (-24.40).
+  const seatedMetrics = computeBoneTrackedPortraitMetrics({
+    anchorX: -81.23,
+    anchorZ: -24.85,
+    groundY: 0,
+    scale: 1.0,
+    headWorldX: -80.85,
+    headWorldY: 1.84,
+    headWorldZ: -24.60,
+    standingHeadHeightWorld: 2.82,
+    leftShoulderX: -80.85,
+    leftShoulderZ: -24.40,
+    rightShoulderX: -80.85,
+    rightShoulderZ: -24.80,
+  });
+  assert.ok(Math.abs(seatedMetrics.centerX - -80.85) < 1e-6);
+  assert.ok(Math.abs(seatedMetrics.centerZ - -24.60) < 1e-6);
+  assert.ok(Math.abs(seatedMetrics.boneDropY - 0.98) < 1e-6, `Expected 0.98m bone drop, got ${seatedMetrics.boneDropY}`);
+  assert.ok(seatedMetrics.torsoForwardX !== null && Math.abs(seatedMetrics.torsoForwardX - -1) < 1e-6);
+  assert.ok(seatedMetrics.torsoForwardZ !== null && Math.abs(seatedMetrics.torsoForwardZ) < 1e-6);
+
+  // 2. Talking to NPC during Inseparable Sit lowers lookAtY and cameraPos.y to actual seated head level
+  // instead of aiming at standing height (2.70m) above empty root air.
+  const standingTalkPose = computeNpcDialoguePortraitPose({
+    npcX: -81.23,
+    npcY: 0,
+    npcZ: -24.85,
+    frontDirX: -1,
+    frontDirZ: 0,
+    aspect: 1.6,
+    isSitting: false,
+  });
+  const pairedSeatedTalkPose = computeNpcDialoguePortraitPose({
+    npcX: seatedMetrics.centerX,
+    npcY: 0,
+    npcZ: seatedMetrics.centerZ,
+    frontDirX: seatedMetrics.torsoForwardX!,
+    frontDirZ: seatedMetrics.torsoForwardZ!,
+    aspect: 1.6,
+    isSitting: false,
+    boneDropY: seatedMetrics.boneDropY,
+  });
+  assert.ok(
+    Math.abs(standingTalkPose.lookAtPos.y - 2.70) < 1e-6,
+    'Standing pose aims at 2.70m',
+  );
+  assert.ok(
+    Math.abs(pairedSeatedTalkPose.lookAtPos.y - (2.70 - 0.98)) < 1e-6,
+    `Paired seated talk pose must lower lookAtY by boneDropY to 1.72m (near seated head 1.84m), got ${pairedSeatedTalkPose.lookAtPos.y}`,
+  );
+  assert.ok(
+    pairedSeatedTalkPose.cameraPos.y < standingTalkPose.cameraPos.y - 0.9,
+    'Camera Y must drop down with the seated character',
+  );
+
+  // Project seated head (1.84m) into pairedSeatedTalkPose camera: must sit right in upper-middle right portrait frame
+  const cam = new THREE.PerspectiveCamera(pairedSeatedTalkPose.fovDeg, 1.6, 0.1, 500);
+  cam.position.set(
+    pairedSeatedTalkPose.cameraPos.x,
+    pairedSeatedTalkPose.cameraPos.y,
+    pairedSeatedTalkPose.cameraPos.z,
+  );
+  cam.lookAt(
+    pairedSeatedTalkPose.lookAtPos.x,
+    pairedSeatedTalkPose.lookAtPos.y,
+    pairedSeatedTalkPose.lookAtPos.z,
+  );
+  cam.updateMatrixWorld();
+  const seatedHeadNdc = new THREE.Vector3(seatedMetrics.centerX, 1.84, seatedMetrics.centerZ).project(cam);
+  assert.ok(
+    seatedHeadNdc.x > 0.35 && seatedHeadNdc.x < 0.53,
+    `Seated head must stay framed in right half (~+0.44 NDC), got x=${seatedHeadNdc.x}`,
+  );
+  assert.ok(
+    seatedHeadNdc.y > -0.15 && seatedHeadNdc.y < 0.35,
+    `Seated head must be vertically centered in frame (not cut off below), got y=${seatedHeadNdc.y}`,
+  );
+
+  // 3. resolvePairedSessionPortraitDirection aligns with shared front for side-by-side poses (dot > 0.35)
+  // and keeps perpendicular side framing for face-to-face poses (dot < 0)
+  const sideBySideDir = resolvePairedSessionPortraitDirection({
+    fallbackFrontDirX: 0,
+    fallbackFrontDirZ: 1,
+    playerTorsoForwardX: -1,
+    playerTorsoForwardZ: 0,
+    partnerTorsoForwardX: -0.98,
+    partnerTorsoForwardZ: -0.2,
+  });
+  assert.ok(sideBySideDir.frontDirX < -0.95, 'Side-by-side bench sit should face from shared front (-X)');
+
+  const faceToFaceDir = resolvePairedSessionPortraitDirection({
+    fallbackFrontDirX: 0,
+    fallbackFrontDirZ: 1,
+    playerTorsoForwardX: 1,
+    playerTorsoForwardZ: 0,
+    partnerTorsoForwardX: -1,
+    partnerTorsoForwardZ: 0,
+  });
+  assert.equal(faceToFaceDir.frontDirX, 0);
+  assert.equal(faceToFaceDir.frontDirZ, 1, 'Face-to-face hug/dance preserves perpendicular side view');
+});
 

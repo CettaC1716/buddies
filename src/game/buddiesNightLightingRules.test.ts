@@ -315,7 +315,7 @@ describe('Dynamic Night Window & Storefront Lighting Rules (Workstream 2)', () =
   });
 
   it('eliminates misaligned/floating/blocking/duplicate glow panes in CITY_BUILDING_GLOW_MANIFEST', () => {
-    assert.ok(CITY_BUILDING_GLOW_MANIFEST.length >= 30);
+    assert.ok(CITY_BUILDING_GLOW_MANIFEST.length >= 26);
     const ids = new Set<string>();
     const forbiddenBuildings = new Set([
       'glasshouse_cafe',
@@ -324,6 +324,7 @@ describe('Dynamic Night Window & Storefront Lighting Rules (Workstream 2)', () =
       'urban_plaza_cafe',
       'urban_plaza_boutique',
       'grand_casino',
+      'halte_shelters',
     ]);
 
     for (const pane of CITY_BUILDING_GLOW_MANIFEST) {
@@ -346,9 +347,9 @@ describe('Dynamic Night Window & Storefront Lighting Rules (Workstream 2)', () =
       }
     }
 
-    // Halte windbreak route glass coordinates
+    // Halte shelters must NOT have extra floating window-glow overlay panes over their clear windbreak glass
     const halteCentral = CITY_BUILDING_GLOW_MANIFEST.find((p) => p.id === 'glow_halte_central');
-    assert.ok(halteCentral && Math.abs(halteCentral.x - -56.842) < 0.02 && Math.abs(halteCentral.y - 2.28) < 0.02);
+    assert.equal(halteCentral, undefined);
 
     // Municipal clock glow diagonal must fit strictly inside dial circle radius (0.58 * 1.42 = 0.8236)
     const civicClock = CITY_BUILDING_GLOW_MANIFEST.find((p) => p.id === 'glow_civic_clock_front');

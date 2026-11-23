@@ -56,78 +56,87 @@ export const SALON_ORIGIN_Y = 355.0;
 export const SALON_INTERIOR_CHARACTER_RADIUS = 0.36;
 
 /**
+ * Architectural exterior masonry wall thickness separating the exterior facade footprint
+ * (`12.60m x 8.80m`) from the clear interior showroom floor (`12.00m x 8.20m`).
+ */
+export const SALON_EXTERIOR_WALL_THICKNESS = 0.30;
+
+/**
  * World-space trigger on Central Urban Plaza North Promenade directly outside
- * the `"BEAUTY & GLOW / GLOW STUDIO"` timber-and-glass entrance doorway (`26.97, 10.60`).
+ * the `"BEAUTY & GLOW / GLOW STUDIO"` timber-and-glass entrance doorway (`25.74, 10.60`).
  */
 export const SALON_EXTERIOR_DOOR_TRIGGER = {
-  x: 26.97,
+  x: 25.74,
   z: 9.55,
-  doorX: 26.97,
+  doorX: 25.74,
   doorZ: 10.60,
   deckY: 0.02,
   markerOffsetY: 1.55,
   triggerRadius: 2.35,
-  exitSpawnX: 26.97,
+  exitSpawnX: 25.74,
   exitSpawnZ: 9.35,
   exitSpawnYaw: Math.PI / 2, // faces North (-Z) out into Central Urban Plaza
 } as const;
 
 /**
  * 2-Story Curved-Corner Beauty Salon Interior Dimensions & Mezzanine Coordinates.
+ * Sized 1:1 as a true reflection of the exterior footprint (`12.60m x 8.80m` exterior
+ * minus `0.30m` masonry wall thickness on every side -> `12.00m x 8.20m` clear interior,
+ * and `2.10m - 0.30m = 1.80m` curved front-left panoramic corner radius).
  */
 export const SALON_INTERIOR_BOUNDS = {
-  minX: -6.20,
-  maxX: 6.20,
-  minZ: -5.20,
-  maxZ: 5.20,
+  minX: -6.00,
+  maxX: 6.00,
+  minZ: -4.10,
+  maxZ: 4.10,
   wallMargin: SALON_INTERIOR_CHARACTER_RADIUS,
-  curveCenterX: -3.80,
-  curveCenterZ: 2.80,
-  curveRadius: 2.40,
+  curveCenterX: -4.20,
+  curveCenterZ: 2.30,
+  curveRadius: 1.80,
   groundFloorY: 0.0,
   midLandingY: 1.50,
   secondFloorY: 3.00,
   ceilingY: 6.35,
   // Entry spawn inside the Front-Right Vestibule facing inward toward centerpiece display & reception
-  spawnX: 3.75,
-  spawnZ: 3.10,
+  spawnX: 3.65,
+  spawnZ: 2.45,
   spawnYaw: Math.PI * 0.85,
-  exitDoorX: 5.30,
-  exitDoorZ: 3.10,
+  exitDoorX: 5.15,
+  exitDoorZ: 2.45,
   stair: {
     lowerStartX: -0.85,
-    lowerEndX: -3.25,
-    lowerMinZ: -3.10,
-    lowerMaxZ: -1.95,
-    landingMinX: -4.75,
-    landingMaxX: -3.25,
-    landingMinZ: -4.95,
-    landingMaxZ: -1.95,
-    upperStartX: -3.25,
+    lowerEndX: -3.20,
+    lowerMinZ: -2.45,
+    lowerMaxZ: -1.45,
+    landingMinX: -4.65,
+    landingMaxX: -3.20,
+    landingMinZ: -3.90,
+    landingMaxZ: -1.45,
+    upperStartX: -3.20,
     upperEndX: -0.85,
-    upperMinZ: -4.95,
-    upperMaxZ: -3.80,
+    upperMinZ: -3.90,
+    upperMaxZ: -2.90,
   },
   // 2F L-Shaped Mezzanine Deck covering Back Spa Suite + Right Consultation Lounge
   mezzanineRear: {
     minX: -0.85,
-    maxX: 5.82,
-    minZ: -4.82,
-    maxZ: -0.95,
+    maxX: 5.64,
+    minZ: -3.74,
+    maxZ: -0.75,
   },
   mezzanineFrontWing: {
-    minX: 2.95,
-    maxX: 5.82,
-    minZ: -0.95,
-    maxZ: 2.20,
+    minX: 2.85,
+    maxX: 5.64,
+    minZ: -0.75,
+    maxZ: 1.65,
   },
 } as const;
 
 export const SALON_STATION_TARGETS = {
-  exitDoor: { x: 5.30, markerY: 0.68, promptY: 1.45, z: 3.10, floorLevel: '1f' as const },
-  receptionCounter: { x: -2.42, markerY: 1.62, promptY: 1.85, z: 0.05, floorLevel: '1f' as const },
-  vanityCenter: { x: 2.75, markerY: 2.10, promptY: 2.25, z: -4.18, floorLevel: '1f' as const },
-  spaSuite: { x: 1.45, markerY: 4.45, promptY: 4.65, z: -2.65, floorLevel: '2f' as const },
+  exitDoor: { x: 5.15, markerY: 0.68, promptY: 1.45, z: 2.45, floorLevel: '1f' as const },
+  receptionCounter: { x: -2.32, markerY: 1.62, promptY: 1.85, z: 0.45, floorLevel: '1f' as const },
+  vanityCenter: { x: 2.65, markerY: 2.10, promptY: 2.25, z: -3.18, floorLevel: '1f' as const },
+  spaSuite: { x: 1.38, markerY: 4.45, promptY: 4.65, z: -2.08, floorLevel: '2f' as const },
 } as const;
 
 export const SALON_INTERIOR_SEAT_SPOTS: ReadonlyArray<SalonInteriorSeatSpot> = [
@@ -139,11 +148,11 @@ export const SALON_INTERIOR_SEAT_SPOTS: ReadonlyArray<SalonInteriorSeatSpot> = [
     sitVariant: 'chair',
     floorLevel: '1f',
     floorY: 0.0,
-    x: 0.95,
-    z: -3.72,
+    x: 0.90,
+    z: -2.72,
     yaw: Math.PI / 2,
-    standUpX: 0.95,
-    standUpZ: -2.92,
+    standUpX: 0.90,
+    standUpZ: -1.95,
     seatLiftY: 0.18,
     indicatorHeightY: 0.68,
   },
@@ -154,11 +163,11 @@ export const SALON_INTERIOR_SEAT_SPOTS: ReadonlyArray<SalonInteriorSeatSpot> = [
     sitVariant: 'chair',
     floorLevel: '1f',
     floorY: 0.0,
-    x: 2.75,
-    z: -3.72,
+    x: 2.65,
+    z: -2.72,
     yaw: Math.PI / 2,
-    standUpX: 2.75,
-    standUpZ: -2.92,
+    standUpX: 2.65,
+    standUpZ: -1.95,
     seatLiftY: 0.18,
     indicatorHeightY: 0.68,
   },
@@ -169,11 +178,11 @@ export const SALON_INTERIOR_SEAT_SPOTS: ReadonlyArray<SalonInteriorSeatSpot> = [
     sitVariant: 'chair',
     floorLevel: '1f',
     floorY: 0.0,
-    x: 4.55,
-    z: -3.72,
+    x: 4.40,
+    z: -2.72,
     yaw: Math.PI / 2,
-    standUpX: 4.55,
-    standUpZ: -2.92,
+    standUpX: 4.40,
+    standUpZ: -1.95,
     seatLiftY: 0.18,
     indicatorHeightY: 0.68,
   },
@@ -185,11 +194,11 @@ export const SALON_INTERIOR_SEAT_SPOTS: ReadonlyArray<SalonInteriorSeatSpot> = [
     sitVariant: 'couch',
     floorLevel: '2f',
     floorY: SALON_INTERIOR_BOUNDS.secondFloorY,
-    x: 4.12,
-    z: -2.35,
+    x: 4.02,
+    z: -2.28,
     yaw: -Math.PI / 2,
-    standUpX: 3.62,
-    standUpZ: -1.55,
+    standUpX: 3.60,
+    standUpZ: -1.56,
     seatLiftY: 0.16,
     indicatorHeightY: SALON_INTERIOR_BOUNDS.secondFloorY + 0.68,
   },
@@ -200,11 +209,11 @@ export const SALON_INTERIOR_SEAT_SPOTS: ReadonlyArray<SalonInteriorSeatSpot> = [
     sitVariant: 'couch',
     floorLevel: '2f',
     floorY: SALON_INTERIOR_BOUNDS.secondFloorY,
-    x: 4.78,
-    z: -2.35,
+    x: 4.68,
+    z: -2.28,
     yaw: -Math.PI / 2,
-    standUpX: 5.26,
-    standUpZ: -1.55,
+    standUpX: 5.10,
+    standUpZ: -1.56,
     seatLiftY: 0.16,
     indicatorHeightY: SALON_INTERIOR_BOUNDS.secondFloorY + 0.68,
   },
@@ -216,11 +225,11 @@ export const SALON_INTERIOR_SEAT_SPOTS: ReadonlyArray<SalonInteriorSeatSpot> = [
     sitVariant: 'couch',
     floorLevel: '2f',
     floorY: SALON_INTERIOR_BOUNDS.secondFloorY,
-    x: 1.45,
-    z: -2.65,
+    x: 1.38,
+    z: -2.08,
     yaw: -0.22,
-    standUpX: 1.15,
-    standUpZ: -1.78,
+    standUpX: 1.10,
+    standUpZ: -1.32,
     seatLiftY: 0.28,
     indicatorHeightY: SALON_INTERIOR_BOUNDS.secondFloorY + 0.86,
   },
@@ -228,34 +237,34 @@ export const SALON_INTERIOR_SEAT_SPOTS: ReadonlyArray<SalonInteriorSeatSpot> = [
 
 export const SALON_INTERIOR_COLLIDERS: ReadonlyArray<SalonObbCollider> = [
   // 1F Arched Backlit Shelving Wall along West (-X)
-  { id: 'salon_1f_arched_shelves', floorLevel: '1f', x: -5.92, z: -0.05, hw: 0.30, hd: 2.02, ry: 0 },
+  { id: 'salon_1f_arched_shelves', floorLevel: '1f', x: -5.72, z: 0.35, hw: 0.28, hd: 1.82, ry: 0 },
   // 1F Curved Reception & Consultation Counter (front arc + wings; rear side stays open!)
-  { id: 'salon_1f_reception_front', floorLevel: '1f', x: -2.92, z: 0.05, hw: 0.34, hd: 0.86, ry: 0 },
-  { id: 'salon_1f_reception_wing_n', floorLevel: '1f', x: -3.52, z: -0.82, hw: 0.38, hd: 0.24, ry: 0 },
-  { id: 'salon_1f_reception_wing_s', floorLevel: '1f', x: -3.52, z: 0.92, hw: 0.38, hd: 0.24, ry: 0 },
+  { id: 'salon_1f_reception_front', floorLevel: '1f', x: -2.82, z: 0.45, hw: 0.34, hd: 0.84, ry: 0 },
+  { id: 'salon_1f_reception_wing_n', floorLevel: '1f', x: -3.42, z: -0.40, hw: 0.38, hd: 0.24, ry: 0 },
+  { id: 'salon_1f_reception_wing_s', floorLevel: '1f', x: -3.42, z: 1.30, hw: 0.38, hd: 0.24, ry: 0 },
   // 1F Centerpiece Display Table + Flanking Marble Pedestals
-  { id: 'salon_1f_center_display', floorLevel: '1f', x: 0.65, z: 2.10, hw: 1.12, hd: 0.96, ry: 0 },
+  { id: 'salon_1f_center_display', floorLevel: '1f', x: 0.65, z: 1.75, hw: 1.05, hd: 0.88, ry: 0 },
   // 1F Curved Corner Pedestal Stand near Panoramic Window
-  { id: 'salon_1f_corner_pedestal', floorLevel: '1f', x: -4.25, z: 3.35, hw: 0.44, hd: 0.44, ry: 0 },
+  { id: 'salon_1f_corner_pedestal', floorLevel: '1f', x: -4.65, z: 2.85, hw: 0.40, hd: 0.40, ry: 0 },
   // 1F 3 Hollywood Makeup Vanity Desks along -Z wall
-  { id: 'salon_1f_vanity_row', floorLevel: '1f', x: 2.75, z: -4.64, hw: 2.48, hd: 0.32, ry: 0 },
+  { id: 'salon_1f_vanity_row', floorLevel: '1f', x: 2.65, z: -3.60, hw: 2.40, hd: 0.30, ry: 0 },
   // 1F Swivel Vanity Stools (skipped automatically while player is sitting)
-  { id: 'salon_vanity_stool_1_obb', floorLevel: '1f', x: 0.95, z: -3.72, hw: 0.28, hd: 0.28, ry: 0 },
-  { id: 'salon_vanity_stool_2_obb', floorLevel: '1f', x: 2.75, z: -3.72, hw: 0.28, hd: 0.28, ry: 0 },
-  { id: 'salon_vanity_stool_3_obb', floorLevel: '1f', x: 4.55, z: -3.72, hw: 0.28, hd: 0.28, ry: 0 },
+  { id: 'salon_vanity_stool_1_obb', floorLevel: '1f', x: 0.90, z: -2.72, hw: 0.26, hd: 0.26, ry: 0 },
+  { id: 'salon_vanity_stool_2_obb', floorLevel: '1f', x: 2.65, z: -2.72, hw: 0.26, hd: 0.26, ry: 0 },
+  { id: 'salon_vanity_stool_3_obb', floorLevel: '1f', x: 4.40, z: -2.72, hw: 0.26, hd: 0.26, ry: 0 },
   // 1F Under-Stair Structure & South Lower-Flight Glass Balustrade (leaves bottom stair mouth at x >= -0.85 open!)
-  { id: 'salon_1f_stair_under_block', floorLevel: '1f', x: -2.85, z: -4.14, hw: 1.98, hd: 0.96, ry: 0 },
-  { id: 'salon_1f_stair_rail_s', floorLevel: '1f', x: -2.90, z: -1.92, hw: 1.92, hd: 0.12, ry: 0 },
+  { id: 'salon_1f_stair_under_block', floorLevel: '1f', x: -2.78, z: -3.28, hw: 1.92, hd: 0.72, ry: 0 },
+  { id: 'salon_1f_stair_rail_s', floorLevel: '1f', x: -2.80, z: -1.42, hw: 1.88, hd: 0.12, ry: 0 },
   // Central U-Turn Staircase Divider Wall between Lower and Upper Flights (active on both levels)
-  { id: 'salon_stair_mid_divider', floorLevel: 'all', x: -2.05, z: -3.45, hw: 1.24, hd: 0.22, ry: 0 },
+  { id: 'salon_stair_mid_divider', floorLevel: 'all', x: -2.02, z: -2.675, hw: 1.22, hd: 0.18, ry: 0 },
   // 2F Mezzanine Furniture & Planters
-  { id: 'salon_2f_spa_credenza', floorLevel: '2f', x: 1.35, z: -4.54, hw: 0.84, hd: 0.28, ry: 0 },
-  { id: 'salon_2f_spa_bed', floorLevel: '2f', x: 1.45, z: -2.65, hw: 0.96, hd: 0.42, ry: -0.22 },
-  { id: 'salon_2f_towel_cart', floorLevel: '2f', x: 2.88, z: -3.45, hw: 0.30, hd: 0.24, ry: 0 },
-  { id: 'salon_2f_lounge_sofa', floorLevel: '2f', x: 4.45, z: -2.48, hw: 0.84, hd: 0.44, ry: 0 },
-  { id: 'salon_2f_lounge_table', floorLevel: '2f', x: 4.45, z: -1.25, hw: 0.54, hd: 0.30, ry: 0 },
-  { id: 'salon_2f_olive_pot_nw', floorLevel: '2f', x: -0.25, z: -1.55, hw: 0.34, hd: 0.34, ry: 0 },
-  { id: 'salon_2f_olive_pot_ne', floorLevel: '2f', x: 3.15, z: -4.48, hw: 0.34, hd: 0.34, ry: 0 },
+  { id: 'salon_2f_spa_credenza', floorLevel: '2f', x: 1.30, z: -3.56, hw: 0.82, hd: 0.26, ry: 0 },
+  { id: 'salon_2f_spa_bed', floorLevel: '2f', x: 1.38, z: -2.08, hw: 0.92, hd: 0.40, ry: -0.22 },
+  { id: 'salon_2f_towel_cart', floorLevel: '2f', x: 2.76, z: -2.85, hw: 0.28, hd: 0.22, ry: 0 },
+  { id: 'salon_2f_lounge_sofa', floorLevel: '2f', x: 4.35, z: -2.42, hw: 0.82, hd: 0.42, ry: 0 },
+  { id: 'salon_2f_lounge_table', floorLevel: '2f', x: 4.35, z: -0.88, hw: 0.52, hd: 0.28, ry: 0 },
+  { id: 'salon_2f_olive_pot_nw', floorLevel: '2f', x: -0.28, z: -1.25, hw: 0.30, hd: 0.30, ry: 0 },
+  { id: 'salon_2f_olive_pot_ne', floorLevel: '2f', x: 3.02, z: -3.52, hw: 0.30, hd: 0.30, ry: 0 },
 ];
 
 export function isPointInSalonStairwell(x: number, z: number): boolean {
@@ -465,8 +474,8 @@ export function computeSalonOrbitCameraPose(input: {
     shiftZ *= scale;
   }
 
-  const lookX = clampNum(input.anchorX + shiftX, -4.8, 4.8);
-  const lookZ = clampNum(input.anchorZ + shiftZ, -4.0, 4.0);
+  const lookX = clampNum(input.anchorX + shiftX, -4.6, 4.6);
+  const lookZ = clampNum(input.anchorZ + shiftZ, -3.1, 3.1);
   const lookY = input.originY + input.floorY + cfg.lookHeightOffset;
 
   const actualHoriz = Math.hypot(camX - lookX, camZ - lookZ);
@@ -508,6 +517,7 @@ export function resolveNearestSalonPromptOrSeat(
   px: number,
   pz: number,
   floorY = 0,
+  isSeatOccupied?: (spot: SalonInteriorSeatSpot) => boolean,
 ): SalonNearestPromptOrSeatResult {
   const isOnSecondFloor = floorY >= 1.95;
 
@@ -531,6 +541,7 @@ export function resolveNearestSalonPromptOrSeat(
   for (let i = 0; i < SALON_INTERIOR_SEAT_SPOTS.length; i++) {
     const spot = SALON_INTERIOR_SEAT_SPOTS[i];
     if (isOnSecondFloor !== (spot.floorLevel === '2f')) continue;
+    if (isSeatOccupied?.(spot)) continue;
     const cDist = Math.hypot(px - spot.x, pz - spot.z);
     if (cDist <= SALON_SEAT_PROXIMITY_RADIUS) {
       const objDist = distanceToAabb2d(px, pz, spot.x, spot.z, 0.28, 0.28);

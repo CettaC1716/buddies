@@ -1224,6 +1224,7 @@ export function resolveAmbientNpcExemptSeatPoint(
   npcX: number,
   npcZ: number,
   isSitting: boolean,
+  seatOverride?: { wpIdx: number; x: number; z: number } | null,
 ): { x: number; z: number } | null {
   if (isSitting) {
     return { x: npcX, z: npcZ };
@@ -1233,13 +1234,18 @@ export function resolveAmbientNpcExemptSeatPoint(
   const safeIdx = ((waypointIdx % wps.length) + wps.length) % wps.length;
   const targetWp = wps[safeIdx];
   const act = targetWp?.activity ?? preset.activity;
-  if (act === 'sit_relax' && Math.hypot(npcX - targetWp.x, npcZ - targetWp.z) <= 2.35) {
-    return { x: targetWp.x, z: targetWp.z };
+  const activeGoal =
+    seatOverride && seatOverride.wpIdx === safeIdx ? seatOverride : targetWp;
+  if (act === 'sit_relax' && Math.hypot(npcX - activeGoal.x, npcZ - activeGoal.z) <= 2.35) {
+    return { x: activeGoal.x, z: activeGoal.z };
   }
-  const prevWp = wps[(safeIdx - 1 + wps.length) % wps.length];
+  const prevIdx = (safeIdx - 1 + wps.length) % wps.length;
+  const prevWp = wps[prevIdx];
   const prevAct = prevWp?.activity ?? preset.activity;
-  if (prevAct === 'sit_relax' && Math.hypot(npcX - prevWp.x, npcZ - prevWp.z) <= 1.25) {
-    return { x: prevWp.x, z: prevWp.z };
+  const prevGoal =
+    seatOverride && seatOverride.wpIdx === prevIdx ? seatOverride : prevWp;
+  if (prevAct === 'sit_relax' && Math.hypot(npcX - prevGoal.x, npcZ - prevGoal.z) <= 1.25) {
+    return { x: prevGoal.x, z: prevGoal.z };
   }
   return null;
 }

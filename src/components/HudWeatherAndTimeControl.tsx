@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Music, Volume1, Volume2, VolumeX } from 'lucide-react';
 import {
   CITY_LIGHTS_SCALE_BOUNDS,
   TIME_PHASE_LABELS,
@@ -7,7 +8,19 @@ import {
   type RainIntensityTier,
   type WeatherConditionKey,
 } from '../game/buddiesBlitzRules';
+import { clampAudioVolumePct } from '../game/buddiesRealEstateKioskRules';
 import { formatClock24h } from '../game/buddiesWeatherSystem';
+
+export interface HudWeatherAudioControls {
+  isMusicMuted: boolean;
+  isSfxMuted: boolean;
+  musicVolumePct: number;
+  sfxVolumePct: number;
+  onToggleMusicMute: () => void;
+  onToggleSfxMute: () => void;
+  onChangeMusicVolumePct: (nextPct: number) => void;
+  onChangeSfxVolumePct: (nextPct: number) => void;
+}
 
 export interface HudWeatherAndTimeControlProps {
   contextId: 'city' | 'warzone' | 'city_view';
@@ -26,6 +39,7 @@ export interface HudWeatherAndTimeControlProps {
   onSelectRainIntensityTier: (tier: RainIntensityTier) => void;
   onToggleAutoCycle: (enabled: boolean) => void;
   onChangeCityLightsScale: (scale: number) => void;
+  audioControls?: HudWeatherAudioControls;
 }
 
 const TIME_PHASE_ITEMS: ReadonlyArray<{
@@ -90,6 +104,7 @@ export function HudWeatherAndTimeControl({
   onSelectRainIntensityTier,
   onToggleAutoCycle,
   onChangeCityLightsScale,
+  audioControls,
 }: HudWeatherAndTimeControlProps) {
   const [isOpen, setIsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -143,6 +158,22 @@ export function HudWeatherAndTimeControl({
       Math.min(CITY_LIGHTS_SCALE_BOUNDS.max, cityLightsScale),
     ) * 100,
   );
+  const effectiveMusicPct = audioControls
+    ? audioControls.isMusicMuted
+      ? 0
+      : clampAudioVolumePct(audioControls.musicVolumePct)
+    : 0;
+  const effectiveSfxPct = audioControls
+    ? audioControls.isSfxMuted
+      ? 0
+      : clampAudioVolumePct(audioControls.sfxVolumePct)
+    : 0;
+  const SfxIcon =
+    !audioControls || audioControls.isSfxMuted || effectiveSfxPct === 0
+      ? VolumeX
+      : effectiveSfxPct < 50
+        ? Volume1
+        : Volume2;
 
   return (
     <div
@@ -156,23 +187,24 @@ export function HudWeatherAndTimeControl({
       {isOpen && (
         <div
           role="region"
-          aria-label="City Weather & Time"
+          aria-label={audioControls ? 'Weather, Time & Audio' : 'City Weather & Time'}
           data-hud-weather-popover="true"
+          data-hud-audio-mixer={audioControls ? 'true' : undefined}
           onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
           className={`absolute ${popoverAlign === 'left' ? 'left-0' : 'right-0'} ${
             popoverPlacement === 'bottom' ? 'top-full mt-2.5' : 'bottom-full mb-2.5'
-          } z-50 w-[286px] rounded-2xl bg-[#0d1118]/86 backdrop-blur-xl text-white border border-white/15 shadow-[0_18px_46px_rgba(0,0,0,0.58)] p-3.5 space-y-3`}
+          } z-50 w-[304px] max-h-[80vh] overflow-y-auto rounded-[28px] bg-[#141926]/68 backdrop-blur-2xl text-white border border-white/25 shadow-[0_24px_70px_rgba(0,0,0,0.52)] p-3.5 space-y-2.5`}
         >
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-white/10 pb-2 gap-2">
+          <div className="flex items-center justify-between px-1 pb-1 gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-xs font-semibold tracking-tight text-white whitespace-nowrap">
-                Weather &amp; Time
+              <span className="text-[12.5px] font-bold tracking-tight text-white whitespace-nowrap">
+                {audioControls ? 'Environment & Audio' : 'Weather & Time'}
               </span>
               <span
                 data-weather-clock-label="true"
-                className="px-2 py-0.5 rounded-full bg-white/[0.08] border border-white/12 text-[10px] font-mono tabular-nums font-semibold text-amber-200"
+                className="px-2 py-0.5 rounded-full bg-white/14 border border-white/25 text-[10px] font-mono tabular-nums font-bold text-amber-200 backdrop-blur-md"
               >
                 {clockLabel}
               </span>
@@ -183,7 +215,7 @@ export function HudWeatherAndTimeControl({
                 data-weather-quick-cycle-btn="true"
                 onClick={() => onCycleTimePhase()}
                 title="Cycle Time Phase [L]"
-                className="px-2 py-0.5 rounded-full bg-white/[0.08] hover:bg-white/[0.18] text-[10px] font-medium text-amber-200 border border-white/10 cursor-pointer transition-colors"
+                className="px-2.5 py-1 rounded-full bg-white/14 hover:bg-white/24 text-[10px] font-bold text-amber-200 border border-white/25 cursor-pointer transition-colors backdrop-blur-md"
               >
                 ↻ Phase
               </button>
@@ -191,41 +223,41 @@ export function HudWeatherAndTimeControl({
                 type="button"
                 onClick={() => setIsOpen(false)}
                 aria-label="Close Weather & Time Menu"
-                className="px-2 py-0.5 rounded-full bg-white/[0.08] hover:bg-white/[0.18] text-[10px] font-medium text-white/85 border border-white/10 cursor-pointer transition-colors"
+                className="px-2.5 py-1 rounded-full bg-white/14 hover:bg-white/24 text-[10px] font-bold text-white/90 border border-white/25 cursor-pointer transition-colors backdrop-blur-md"
               >
                 Done
               </button>
             </div>
           </div>
 
-          {/* Auto Cycle Toggle */}
-          <label className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.05] border border-white/10 cursor-pointer">
-            <span className="flex items-center gap-2 text-[11px] font-medium text-white/90">
+          {/* Auto Cycle Toggle (Frosted Gray Card) */}
+          <label className="flex items-center justify-between gap-2 px-3 py-2 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_6px_16px_rgba(15,23,42,0.14)] text-slate-900 cursor-pointer">
+            <span className="flex items-center gap-2 text-[11px] font-bold text-slate-800">
               <input
                 type="checkbox"
                 data-weather-autocycle-checkbox="true"
                 checked={autoCycleEnabled}
                 onChange={(e) => onToggleAutoCycle(e.currentTarget.checked)}
-                className="w-3.5 h-3.5 accent-emerald-300 cursor-pointer"
+                className="w-3.5 h-3.5 accent-emerald-600 cursor-pointer"
               />
               <span>Auto Cycle (24h)</span>
             </span>
             <span
-              className={`text-[9.5px] font-semibold uppercase px-2 py-0.5 rounded-full border ${
+              className={`text-[9.5px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
                 autoCycleEnabled
-                  ? 'bg-emerald-400/20 text-emerald-200 border-emerald-300/45'
-                  : 'bg-white/[0.05] text-white/45 border-white/10'
+                  ? 'bg-emerald-500/15 text-emerald-700 border-emerald-400/50'
+                  : 'bg-[#dfe4ec]/90 text-slate-500 border-slate-300/70'
               }`}
             >
               {autoCycleEnabled ? 'ON' : 'OFF'}
             </span>
           </label>
 
-          {/* Time-of-Day Phase Buttons */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[10.5px] font-medium text-white/70">
+          {/* Time-of-Day Phase Buttons (Frosted Gray Card) */}
+          <div className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_6px_16px_rgba(15,23,42,0.14)] text-slate-900 p-2.5 space-y-2">
+            <div className="flex items-center justify-between text-[10.5px] font-bold text-slate-600">
               <span>Time ({timeMeta.label})</span>
-              <span className="font-mono tabular-nums text-amber-200">{clockLabel}</span>
+              <span className="font-mono tabular-nums text-amber-700">{clockLabel}</span>
             </div>
             <div className="grid grid-cols-4 gap-1.5">
               {TIME_PHASE_ITEMS.map((item) => {
@@ -236,10 +268,10 @@ export function HudWeatherAndTimeControl({
                     type="button"
                     data-weather-time-btn={item.key}
                     onClick={() => onSelectTimePhase(item.key)}
-                    className={`px-1 py-1.5 rounded-xl border text-[10px] font-medium flex flex-col items-center gap-1 cursor-pointer transition-all ${
+                    className={`px-1 py-1.5 rounded-xl border text-[10px] font-semibold flex flex-col items-center gap-1 cursor-pointer transition-all ${
                       isActive
-                        ? 'bg-amber-300/90 text-slate-950 border-amber-200 font-semibold shadow-sm'
-                        : 'bg-white/[0.06] hover:bg-white/[0.14] text-white/85 border-white/10'
+                        ? 'bg-amber-400 text-slate-950 border-amber-500/60 font-bold shadow-sm'
+                        : 'bg-[#dfe4ec]/85 hover:bg-white text-slate-700 border-slate-300/60'
                     }`}
                   >
                     <span aria-hidden="true" className="text-xs leading-none">
@@ -259,15 +291,15 @@ export function HudWeatherAndTimeControl({
               data-weather-hour-slider="true"
               value={Number(timeOfDayHours.toFixed(2))}
               onChange={(e) => onChangeTimeOfDayHours(Number(e.currentTarget.value))}
-              className="w-full h-1.5 accent-amber-300 bg-white/15 rounded-full cursor-pointer"
+              className="w-full h-1.5 accent-amber-500 bg-slate-300/80 rounded-full cursor-pointer"
             />
           </div>
 
-          {/* Weather Buttons */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[10.5px] font-medium text-white/70">
+          {/* Weather Buttons + City Lights (Frosted Gray Card) */}
+          <div className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_6px_16px_rgba(15,23,42,0.14)] text-slate-900 p-2.5 space-y-2">
+            <div className="flex items-center justify-between text-[10.5px] font-bold text-slate-600">
               <span>Weather</span>
-              <span className="text-sky-300 font-semibold">{weatherMeta.label}</span>
+              <span className="text-sky-600 font-bold">{weatherMeta.label}</span>
             </div>
             <div className="grid grid-cols-4 gap-1.5">
               {WEATHER_ITEMS.map((item) => {
@@ -278,10 +310,10 @@ export function HudWeatherAndTimeControl({
                     type="button"
                     data-weather-cond-btn={item.key}
                     onClick={() => onSelectWeatherCondition(item.key)}
-                    className={`px-1 py-1.5 rounded-xl border text-[10px] font-medium flex flex-col items-center gap-1 cursor-pointer transition-all ${
+                    className={`px-1 py-1.5 rounded-xl border text-[10px] font-semibold flex flex-col items-center gap-1 cursor-pointer transition-all ${
                       isActive
-                        ? 'bg-sky-400/90 text-slate-950 border-sky-200 font-semibold shadow-sm'
-                        : 'bg-white/[0.06] hover:bg-white/[0.14] text-white/85 border-white/10'
+                        ? 'bg-sky-500 text-white border-sky-600/60 font-bold shadow-sm'
+                        : 'bg-[#dfe4ec]/85 hover:bg-white text-slate-700 border-slate-300/60'
                     }`}
                   >
                     <span aria-hidden="true" className="text-xs leading-none">
@@ -299,10 +331,10 @@ export function HudWeatherAndTimeControl({
                   type="button"
                   data-weather-rain-tier="ringan"
                   onClick={() => onSelectRainIntensityTier('ringan')}
-                  className={`px-2 py-1 rounded-xl border text-[10px] font-medium cursor-pointer transition-colors ${
+                  className={`px-2 py-1 rounded-xl border text-[10px] font-semibold cursor-pointer transition-colors ${
                     rainIntensityTier === 'ringan'
-                      ? 'bg-sky-300/90 text-slate-950 border-sky-200 font-semibold'
-                      : 'bg-white/[0.06] hover:bg-white/[0.14] text-white/85 border-white/10'
+                      ? 'bg-sky-500 text-white border-sky-600/60 font-bold shadow-sm'
+                      : 'bg-[#dfe4ec]/85 hover:bg-white text-slate-700 border-slate-300/60'
                   }`}
                 >
                   🌦️ Light Rain
@@ -311,54 +343,165 @@ export function HudWeatherAndTimeControl({
                   type="button"
                   data-weather-rain-tier="deras"
                   onClick={() => onSelectRainIntensityTier('deras')}
-                  className={`px-2 py-1 rounded-xl border text-[10px] font-medium cursor-pointer transition-colors ${
+                  className={`px-2 py-1 rounded-xl border text-[10px] font-semibold cursor-pointer transition-colors ${
                     rainIntensityTier === 'deras'
-                      ? 'bg-sky-400/90 text-slate-950 border-sky-200 font-semibold'
-                      : 'bg-white/[0.06] hover:bg-white/[0.14] text-white/85 border-white/10'
+                      ? 'bg-sky-600 text-white border-sky-700/60 font-bold shadow-sm'
+                      : 'bg-[#dfe4ec]/85 hover:bg-white text-slate-700 border-slate-300/60'
                   }`}
                 >
                   ⛈️ Heavy Rain
                 </button>
               </div>
             )}
+
+            {/* City Lights (50% - 250%) */}
+            <div className="space-y-1.5 pt-2 border-t border-slate-300/70">
+              <div className="flex items-center justify-between gap-2 text-[10.5px]">
+                <label
+                  htmlFor={`hud-city-lights-${contextId}`}
+                  className="font-bold text-slate-700 whitespace-nowrap"
+                >
+                  💡 City Lights
+                </label>
+                <span
+                  data-weather-city-lights-label="true"
+                  className="font-mono tabular-nums font-bold text-amber-700"
+                >
+                  {cityLightsPct}%
+                </span>
+              </div>
+              <input
+                id={`hud-city-lights-${contextId}`}
+                type="range"
+                min={50}
+                max={250}
+                step={5}
+                aria-label="City Lights"
+                data-weather-city-lights-slider="true"
+                value={cityLightsPct}
+                onChange={(e) => onChangeCityLightsScale(Number(e.currentTarget.value) / 100)}
+                className="w-full h-1.5 accent-amber-500 bg-slate-300/80 rounded-full cursor-pointer"
+              />
+            </div>
           </div>
 
-          {/* City Lights (50% - 250%) */}
-          <div className="space-y-1.5 pt-2 border-t border-white/10">
-            <div className="flex items-center justify-between gap-2 text-[10.5px]">
-              <label
-                htmlFor={`hud-city-lights-${contextId}`}
-                className="font-medium text-white/85 whitespace-nowrap"
-              >
-                💡 City Lights
-              </label>
-              <span
-                data-weather-city-lights-label="true"
-                className="font-mono tabular-nums font-semibold text-amber-200"
-              >
-                {cityLightsPct}%
-              </span>
+          {/* Merged Audio Volume Section (Music + Sound FX) (Frosted Gray Card) */}
+          {audioControls && (
+            <div className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_6px_16px_rgba(15,23,42,0.14)] text-slate-900 p-2.5 space-y-2">
+              <div className="text-[10.5px] font-bold text-slate-600 tracking-tight">
+                Audio Volume
+              </div>
+
+              {/* Channel 1: Music Volume */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <button
+                      type="button"
+                      data-mixer-music-mute-btn="true"
+                      onClick={audioControls.onToggleMusicMute}
+                      aria-label={
+                        audioControls.isMusicMuted ? 'Unmute Music Channel' : 'Mute Music Channel'
+                      }
+                      className="w-6 h-6 rounded-full flex items-center justify-center bg-[#dfe4ec]/90 hover:bg-white border border-slate-300/70 cursor-pointer shrink-0 transition-colors"
+                    >
+                      <span className="relative flex items-center justify-center">
+                        <Music
+                          className={`w-3.5 h-3.5 ${
+                            effectiveMusicPct === 0 ? 'text-slate-400' : 'text-emerald-600'
+                          }`}
+                        />
+                        {effectiveMusicPct === 0 && (
+                          <span className="absolute w-4 h-[1.5px] bg-rose-500 rotate-[-45deg]" />
+                        )}
+                      </span>
+                    </button>
+                    <label
+                      htmlFor={`hud-music-vol-${contextId}`}
+                      className="text-[11px] font-bold text-slate-800 whitespace-nowrap"
+                    >
+                      Music
+                    </label>
+                  </div>
+                  <span
+                    data-hud-music-pct-label="true"
+                    className="text-[10.5px] font-mono tabular-nums font-bold text-emerald-700 whitespace-nowrap"
+                  >
+                    {effectiveMusicPct}%
+                  </span>
+                </div>
+                <input
+                  id={`hud-music-vol-${contextId}`}
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  aria-label="Music Volume"
+                  data-hud-music-slider="true"
+                  value={effectiveMusicPct}
+                  onChange={(e) => audioControls.onChangeMusicVolumePct(Number(e.currentTarget.value))}
+                  className="w-full h-1.5 accent-emerald-600 bg-slate-300/80 rounded-full cursor-pointer"
+                />
+              </div>
+
+              {/* Channel 2: Sound FX Volume */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <button
+                      type="button"
+                      data-mixer-sfx-mute-btn="true"
+                      onClick={audioControls.onToggleSfxMute}
+                      aria-label={
+                        audioControls.isSfxMuted
+                          ? 'Unmute Sound FX Channel'
+                          : 'Mute Sound FX Channel'
+                      }
+                      className="w-6 h-6 rounded-full flex items-center justify-center bg-[#dfe4ec]/90 hover:bg-white border border-slate-300/70 cursor-pointer shrink-0 transition-colors"
+                    >
+                      <SfxIcon
+                        className={`w-3.5 h-3.5 ${
+                          effectiveSfxPct === 0 ? 'text-slate-400' : 'text-sky-600'
+                        }`}
+                      />
+                    </button>
+                    <label
+                      htmlFor={`hud-sfx-vol-${contextId}`}
+                      className="text-[11px] font-bold text-slate-800 whitespace-nowrap"
+                    >
+                      Sound FX
+                    </label>
+                  </div>
+                  <span
+                    data-hud-sfx-pct-label="true"
+                    className="text-[10.5px] font-mono tabular-nums font-bold text-sky-700 whitespace-nowrap"
+                  >
+                    {effectiveSfxPct}%
+                  </span>
+                </div>
+                <input
+                  id={`hud-sfx-vol-${contextId}`}
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  aria-label="Sound FX Volume"
+                  data-hud-sfx-slider="true"
+                  value={effectiveSfxPct}
+                  onChange={(e) => audioControls.onChangeSfxVolumePct(Number(e.currentTarget.value))}
+                  className="w-full h-1.5 accent-sky-600 bg-slate-300/80 rounded-full cursor-pointer"
+                />
+              </div>
             </div>
-            <input
-              id={`hud-city-lights-${contextId}`}
-              type="range"
-              min={50}
-              max={250}
-              step={5}
-              aria-label="City Lights"
-              data-weather-city-lights-slider="true"
-              value={cityLightsPct}
-              onChange={(e) => onChangeCityLightsScale(Number(e.currentTarget.value) / 100)}
-              className="w-full h-1.5 accent-amber-300 bg-white/15 rounded-full cursor-pointer"
-            />
-          </div>
+          )}
         </div>
       )}
 
-      {/* inZOI-style Frosted Glass Time & Weather Pill */}
+      {/* inZOI-style Frosted Glass Time, Weather & Sound Pill */}
       <button
         type="button"
         data-hud-weather-pill="true"
+        data-hud-sound-toggle={audioControls ? 'true' : undefined}
         aria-expanded={isOpen}
         onClick={(e) => {
           e.currentTarget.blur();
@@ -368,7 +511,11 @@ export function HudWeatherAndTimeControl({
             openPopover();
           }
         }}
-        title={`Weather & Time: ${timeMeta.label} (${clockLabel}) · ${weatherMeta.label} (Press [L] to cycle phase)`}
+        title={
+          audioControls
+            ? `Weather, Time & Audio: ${timeMeta.label} (${clockLabel}) · ${weatherMeta.label} · Sound ${effectiveSfxPct}%`
+            : `Weather & Time: ${timeMeta.label} (${clockLabel}) · ${weatherMeta.label} (Press [L] to cycle phase)`
+        }
         className={`h-9 px-3 rounded-full flex items-center gap-2 backdrop-blur-xl border shadow-[0_6px_20px_rgba(0,0,0,0.35)] cursor-pointer active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70 ${
           isOpen
             ? 'bg-white/18 border-white/35 text-white'
@@ -390,6 +537,17 @@ export function HudWeatherAndTimeControl({
               aria-hidden="true"
               className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"
             />
+          )}
+          {audioControls && (
+            <>
+              <span className="w-px h-3.5 bg-white/20 mx-0.5" aria-hidden="true" />
+              <SfxIcon
+                className={`w-3.5 h-3.5 stroke-[2] ${
+                  effectiveSfxPct === 0 ? 'text-white/45' : 'text-white/90'
+                }`}
+                aria-hidden="true"
+              />
+            </>
           )}
         </span>
       </button>

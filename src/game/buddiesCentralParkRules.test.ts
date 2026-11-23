@@ -239,8 +239,8 @@ test('Urban Plaza promenade corridors, Fountain step elevation, OBB colliders, g
     ['North Gate', mp.gates.north.x, mp.gates.north.z],
     ['Pergola South Promenade', 29.5, -9.2],
     ['South Lawn North Promenade', 29.5, 8.2],
-    ['Beauty Salon West Promenade', 23.0, 14.0],
-    ['Beauty Salon East Promenade', 36.0, 14.0],
+    ['Beauty Salon West Promenade', mp.beautySalon.x - mp.beautySalon.halfX - 1.8, mp.beautySalon.z],
+    ['Beauty Salon East Promenade', mp.beautySalon.x + mp.beautySalon.halfX + 1.8, mp.beautySalon.z],
     ['South Gate', mp.gates.south.x, mp.gates.south.z],
   ];
   for (const [label, wx, wz] of walkableWaypoints) {
@@ -496,8 +496,8 @@ test('buildCentralBotanicalPark3D constructs Terrazzo plaza, Cascade Fountain, W
       new THREE.Vector3(bs.x + bs.halfX, bs.groundFloorHeight + 0.02, bs.z + bs.halfZ),
     );
     const salonBox2F = new THREE.Box3(
-      new THREE.Vector3(bs.x - 3.25, bs.groundFloorHeight + 0.02, bs.z - 2.3),
-      new THREE.Vector3(bs.x + 3.25, bs.totalHeight, bs.z + 2.3),
+      new THREE.Vector3(bs.x - bs.upperHalfX, bs.groundFloorHeight + 0.02, bs.z - bs.upperHalfZ),
+      new THREE.Vector3(bs.x + bs.upperHalfX, bs.totalHeight, bs.z + bs.upperHalfZ),
     );
     const mat4 = new THREE.Matrix4();
     const pos = new THREE.Vector3();

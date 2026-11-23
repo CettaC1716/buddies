@@ -407,11 +407,12 @@ export function evaluateOuterEmbankmentSdf(worldX: number, worldZ: number): numb
   return Math.min(baseWalkSdf, coastalWalkUnion);
 }
 
-function evalMirroredCentralSCurveDist(px: number, az: number): number {
-  // 1. Wind Farm S-Bend (West side x = -66.5..-25, ending cleanly inside Ring Road so caps never bulge)
-  const s1 = sdSegment2D(px, az, -66.5, 15.0, -52.0, 15.0);
-  const s2 = sdSegment2D(px, az, -52.0, 15.0, -41.0, 26.0);
-  const s3 = sdSegment2D(px, az, -41.0, 26.0, -25.0, 26.0);
+function evalMirroredCentralSCurveDist(px: number, pz: number): number {
+  const az = Math.abs(pz);
+  // 1. Wind Farm S-Bend (West side x = -66.5..-25, North-only: South side closed into continuous park lawn & sidewalk)
+  const s1 = pz <= 0.0 ? sdSegment2D(px, -pz, -66.5, 15.0, -52.0, 15.0) : 999.0;
+  const s2 = pz <= 0.0 ? sdSegment2D(px, -pz, -52.0, 15.0, -41.0, 26.0) : 999.0;
+  const s3 = pz <= 0.0 ? sdSegment2D(px, -pz, -41.0, 26.0, -25.0, 26.0) : 999.0;
 
   // 2. Central Forest S-Bend & Equator Crossing (x = -25..+19, framing enlarged Central Urban Plaza)
   const s4 = sdSegment2D(px, az, -25.0, 26.0, -14.2, 15.6);
@@ -419,7 +420,7 @@ function evalMirroredCentralSCurveDist(px: number, az: number): number {
   const s6 = sdSegment2D(px, az, -14.2, 15.6, 8.0, 15.6);
   const s7 = sdSegment2D(px, az, 8.0, 15.6, 18.5, 26.5);
 
-  // 3. Expanded East Warzone S-Curve & Symmetric North/South Base Collector Connectors (x = +18.5..+66.5)
+  // 3. Expanded East Warzone S-Curve & North/South Base Collector Connectors (x = +18.5..+66.5)
   const s8 = sdSegment2D(px, az, 18.5, 26.5, 43.5, 26.5);
   const s9 = sdSegment2D(px, az, -25.0, 26.0, -18.0, 33.0);
   const s10 = sdSegment2D(px, az, -18.0, 33.0, -18.0, 49.5);
@@ -432,11 +433,11 @@ function evalMirroredCentralSCurveDist(px: number, az: number): number {
 }
 
 /**
- * Signed distance to the 100% North-South Mirrored Asphalt Road Network:
+ * Signed distance to the Asphalt Road Network:
  * - Complete Outer Ring Highway Loop for the City Tram (x = ±70.0, z = ±52.0 with R = 8.0m corners)
  * - East Harbor Dock Entrance Spurs (x = 70.0..76.5 at z = ±24.0)
  * - 4-Base Complex Ring & Dividing Roads (x in [-60..+60], |z| in [52..108])
- * - Mirrored Twin S-Curve Warzone Roads weaving across the widened Warzone (x in [-70..+70])
+ * - Twin S-Curve Warzone Roads weaving across the widened Warzone (with South x=-18 connector closed into park/sidewalk)
  * Returns < 0.0 on the asphalt road surface.
  */
 export function evaluateRoadNetworkSdf(worldX: number, worldZ: number): number {
@@ -444,11 +445,11 @@ export function evaluateRoadNetworkSdf(worldX: number, worldZ: number): number {
   const az = Math.abs(worldZ);
 
   // 1. Complete Ring Highway Loop for City Tram + Parallel Inner Car Lane:
-  //    Centerline = rounded box (x = ±70.0, z = ±52.0, R = 8.0m corners).
-  //    Outer curb stays at +3.90m (|x| = 73.90, |z| = 55.90); inner curb extends inward to -7.80m
-  //    (|x| = 62.20, |z| = 44.20) so a full car lane runs beside the tram track up to the inner zebra crossings.
-  const dTramRingBox = sdRoundedBox2D(px, az, 0.0, 0.0, 70.0, 52.0, 8.0);
-  const dTramRingRoad = Math.abs(dTramRingBox + 1.95) - 5.85;
+  //    Outer curb stays at +3.90m of (70, 52, R=8.0) -> (|x| = 73.90, |z| = 55.90, R_outer = 11.90m);
+  //    Inner curb follows the wide R=9.0m tram curve offset inward by 2.80m -> (|x| = 62.20, |z| = 44.20, R_inner = 6.20m).
+  const dTramOuterBox = sdRoundedBox2D(px, az, 0.0, 0.0, 70.0, 52.0, 8.0);
+  const dTramInnerBox = sdRoundedBox2D(px, az, 0.0, 0.0, 65.0, 47.0, 9.0);
+  const dTramRingRoad = Math.max(dTramOuterBox - 3.9, -(dTramInnerBox + 2.8));
   const dHarborTurn = sdSegment2D(px, az, 70.0, 15.0, 76.5, 15.0);
 
   // 2. 4-Base Complex Ring & Dividing Roads ("masing-masing base dipisahkan dengan jalan raya seperti komplek"):
@@ -479,8 +480,8 @@ export function evaluateRoadNetworkSdf(worldX: number, worldZ: number): number {
     Math.min(dGateDrive1, dGateDrive2, dGateDrive3, dGateDrive4) - 2.6,
   );
 
-  // 3. Mirrored Central S-Curve Warzone Roads (cutting through Wind Farm, Forest, and East Warzone)
-  const dCentralSCurve = evalMirroredCentralSCurveDist(px, az) - 4.2;
+  // 3. Central S-Curve Warzone Roads (cutting through Wind Farm, Forest, and East Warzone)
+  const dCentralSCurve = evalMirroredCentralSCurveDist(px, worldZ) - 4.2;
 
   // 4. Grand Casino Semi-Circular Valet Drop-Off Loop (North of Central Plaza, x <= -60.0, z in [-76.4, -50.8])
   const dCasinoValetLoop = evaluateGrandCasinoValetLoopSdf(px, worldZ);
@@ -503,16 +504,20 @@ export interface ZebraCrosswalkZoneSpec {
 }
 
 /**
- * Exact 12 North-South Mirrored Zebra Crosswalk zones matching the GLSL terrain shader
- * (`evalZebraCrosswalk` in buddiesBlitzShadersAndAssets.ts).
+ * Exact 13 Zebra Crosswalk zones matching the GLSL terrain shader
+ * (`evalZebraCrosswalk` in buddiesBlitzShadersAndAssets.ts):
+ * - West S-curve crosswalk (-60.0, -15.0) is North-only (South branch closed into park & sidewalk)
+ * - Single North Plaza crosswalk (-68.05, -8.60) so the 2-car tram stops flush behind it alongside shifted Central Plaza Halte
+ * - Signalized North Residence crosswalk (9.80, -50.05) across the North Ring Road beside North Residence Halte
  */
 export const ZEBRA_CROSSWALK_ZONES: readonly ZebraCrosswalkZoneSpec[] = [
   { cx: -18.0, cz: 42.0, hx: 3.2, hz: 2.2, mirroredZ: true },
   { cx: 19.0, cz: 42.0, hx: 3.2, hz: 2.2, mirroredZ: true },
   { cx: 42.0, cz: 42.0, hx: 3.2, hz: 2.2, mirroredZ: true },
-  { cx: -60.0, cz: 15.0, hx: 2.2, hz: 3.2, mirroredZ: true },
+  { cx: -60.0, cz: -15.0, hx: 2.2, hz: 3.2, mirroredZ: false },
   { cx: 60.0, cz: 15.0, hx: 2.2, hz: 3.2, mirroredZ: true },
-  { cx: -68.05, cz: 8.6, hx: 5.2, hz: 2.2, mirroredZ: true },
+  { cx: -68.05, cz: -8.6, hx: 5.2, hz: 2.2, mirroredZ: false },
+  { cx: 9.8, cz: -50.05, hx: 2.2, hz: 5.2, mirroredZ: false },
   { cx: 68.05, cz: 0.0, hx: 5.2, hz: 2.2, mirroredZ: false },
   { cx: -60.0, cz: 58.0, hx: 3.2, hz: 2.2, mirroredZ: true },
   { cx: -30.0, cz: 58.0, hx: 3.2, hz: 2.2, mirroredZ: true },
@@ -701,17 +706,20 @@ export const INNER_TRAM_SIDEWALK_WIDTH_M = 4.4;
  * and the 3 shifted inner Halte decks (`Central Plaza`, `North Residence`, `South Residence`) clear.
  */
 export function evaluateInnerTramSidewalkSdf(px: number, pz: number): number {
-  const dTram = sdRoundedBox2D(px, pz, 0.0, 0.0, 70.0, 52.0, 8.0);
-  let d = Math.abs(dTram + 10.0) - 2.2;
+  const dInnerTram = sdRoundedBox2D(px, pz, 0.0, 0.0, 65.0, 47.0, 9.0);
+  let d = Math.abs(dInnerTram + 5.0) - 2.2;
 
-  // Exclude West & East S-curve road entrances at z = ±15.0 (half-width 4.20m + 0.03m seam)
+  // Exclude East S-curve road entrances at z = ±15.0 and West North-only entrance at z = -15.0
+  // (West South entrance at z = +15.0 is closed into continuous inner sidewalk & park lawn)
   const ax = Math.abs(px);
   const az = Math.abs(pz);
   if (ax > 57.0 && ax < 63.0) {
-    d = Math.max(d, -sdRoundedBox2D(ax, az, 60.0, 15.0, 3.0, 4.23, 0.0));
+    if (px > 0.0 || pz < 0.0) {
+      d = Math.max(d, -sdRoundedBox2D(ax, az, 60.0, 15.0, 3.0, 4.23, 0.0));
+    }
   }
 
-  // Exclude the 3 North & South S-curve road entrances (x = -18.0, +19.0, +42.0)
+  // Exclude North & South S-curve road entrances at x = -18.0, +19.0, +42.0
   if (az > 39.0 && az < 45.0) {
     for (const sx of [-18.0, 19.0, 42.0] as const) {
       d = Math.max(d, -sdRoundedBox2D(px, az, sx, 42.0, 4.23, 3.0, 0.0));
@@ -719,7 +727,7 @@ export function evaluateInnerTramSidewalkSdf(px: number, pz: number): number {
   }
 
   // Exclude the 3 shifted inner Halte raised boarding decks (+0.26m)
-  d = Math.max(d, -sdRoundedBox2D(px, pz, -58.9, 0.0, 3.35, 9.2, 0.0));
+  d = Math.max(d, -sdRoundedBox2D(px, pz, -58.9, 4.6, 3.35, 9.2, 0.0));
   d = Math.max(d, -sdRoundedBox2D(px, pz, 3.5, -40.87, 9.2, 3.35, 0.0));
   d = Math.max(d, -sdRoundedBox2D(px, pz, -36.5, 40.87, 9.2, 3.35, 0.0));
 
@@ -734,8 +742,8 @@ export function isPointOnInnerTramSidewalk(worldX: number, worldZ: number): bool
 }
 
 export function evaluateHaltePlatformSdf(px: number, pz: number): number {
-  // Central Halte (shifted inward flush to |x| = 62.20 curb): center (-58.90, 0.0), halfExtents (3.6, 9.4)
-  const dCentral = sdRoundedBox2D(px, pz, -58.9, 0.0, 3.6, 9.4, 0.4);
+  // Central Halte (shifted inward flush to |x| = 62.20 curb & slightly South to z = +4.6): center (-58.90, 4.6), halfExtents (3.6, 9.4)
+  const dCentral = sdRoundedBox2D(px, pz, -58.9, 4.6, 3.6, 9.4, 0.4);
   // North Residence Halte (shifted inward flush to |z| = 44.20 curb & clear of x = 19 street): center (3.5, -40.87)
   const dNorth = sdRoundedBox2D(px, pz, 3.5, -40.87, 9.4, 3.6, 0.4);
   // South Residence Halte (shifted inward flush to |z| = 44.20 curb): center (-36.5, 40.87)
@@ -1024,16 +1032,17 @@ export function getBaseProceduralGroundElevation(worldX: number, worldZ: number)
   }
 
   // Halte Raised Boarding Platform Decks (+0.26m) & Sloped Access Ramps:
-  // 1) Central Plaza Halte: worldX in [-62.20, -55.60], worldZ in [-7.70, +7.70], ramps at |worldZ| in [7.70, 9.20]
+  // 1) Central Plaza Halte: worldX in [-62.20, -55.60], worldZ in [-3.10, +12.30], ramps to [-4.60, +13.80]
   // 2) North Residence Halte: worldX in [-4.20, 11.20] (ramps to [-5.70, 12.70]), worldZ in [-44.17, -37.57]
   // 3) South Residence Halte: worldX in [-44.20, -28.80] (ramps to [-45.70, -27.30]), worldZ in [37.57, 44.17]
   // 4) Beachfront Harbor Halte: worldX in [76.31, 82.95], worldZ in [21.80, 37.20] (ramps to [20.30, 38.70])
   let haltePlatformElev = 0.0;
   const absHalteZ = Math.abs(worldZ);
-  if (worldX >= -62.38 && worldX <= -55.38 && absHalteZ <= 9.25) {
+  const dzCentralHalte = Math.abs(worldZ - 4.6);
+  if (worldX >= -62.38 && worldX <= -55.38 && dzCentralHalte <= 9.25) {
     const xMask =
       smoothstep(-62.38, -62.08, worldX) * (1.0 - smoothstep(-55.71, -55.38, worldX));
-    const zRampMask = 1.0 - smoothstep(7.68, 9.20, absHalteZ);
+    const zRampMask = 1.0 - smoothstep(7.68, 9.20, dzCentralHalte);
     haltePlatformElev = 0.26 * xMask * zRampMask;
   } else if (worldZ <= -37.35 && worldZ >= -44.35 && worldX >= -5.75 && worldX <= 12.75) {
     const zMask =

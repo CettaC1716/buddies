@@ -603,21 +603,21 @@ test('computeLocalPedestrianAvoidance2D steers smoothly around Halte poles & cha
   assert.equal(
     isSegmentClearOfAuditedStaticObstacles2D({
       fromX: -58.2,
-      fromZ: -7.8,
+      fromZ: -2.8,
       toX: -54.8,
-      toZ: -7.8,
+      toZ: -2.8,
       radius: AMBIENT_NPC_CAPSULE_RADIUS,
       audited,
     }),
     false,
-    'Segment crossing sign_halte_plaza (-56.25, -7.8) must report blocked',
+    'Segment crossing sign_halte_plaza (-56.25, -2.8) must report blocked',
   );
 
-  // 5. Boxed-in NPC between windbreak wall, pole, and two immovable characters yields cleanly (speedScale=0)
+  // 5. Boxed-in NPC between windbreak wall, pole, and immovable characters yields cleanly (speedScale=0)
   const boxedIn = computeLocalPedestrianAvoidance2D({
     selfId: 'citizen_mira',
     x: -56.25,
-    z: -7.0,
+    z: -2.0,
     dirX: 0,
     dirZ: -1,
     radius: AMBIENT_NPC_CAPSULE_RADIUS,
@@ -627,9 +627,9 @@ test('computeLocalPedestrianAvoidance2D steers smoothly around Halte poles & cha
     dt: 0.05,
     audited,
     characterCapsules: [
-      { id: 'blocker_e', x: -55.3, z: -7.3, radius: PLAYER_FOOT_CAPSULE_RADIUS },
-      { id: 'blocker_n', x: -55.7, z: -6.3, radius: PLAYER_FOOT_CAPSULE_RADIUS },
-      { id: 'blocker_s', x: -56.1, z: -6.2, radius: PLAYER_FOOT_CAPSULE_RADIUS },
+      { id: 'blocker_e', x: -55.3, z: -2.3, radius: PLAYER_FOOT_CAPSULE_RADIUS },
+      { id: 'blocker_n', x: -55.7, z: -1.3, radius: PLAYER_FOOT_CAPSULE_RADIUS },
+      { id: 'blocker_s', x: -56.1, z: -1.2, radius: PLAYER_FOOT_CAPSULE_RADIUS },
     ],
     stayOffNonCrosswalkRoads: true,
   });
@@ -907,13 +907,13 @@ test('Halte Plaza & South Res 12s closed-loop steering: Mira, Tari & Raka steer 
     };
   };
 
-  // A. Halte Plaza (sign_halte_plaza -56.25,-7.8 + lobby_tram_shelter_windbreak + standing NPC):
-  // Mira starts near shelter corner/pole heading East past a standing blocker while Raka crosses past her heading West
-  const mira = makeAgent('citizen_mira', -55.4, -7.5, -59.8, -8.2);
-  const raka = makeAgent('city_plaza_raka', -59.5, -7.8, -52.8, -7.8);
+  // A. Halte Plaza (sign_halte_plaza -56.25,-2.8 + lobby_tram_shelter_windbreak z=4.6 + standing NPC):
+  // Mira starts near shelter corner/pole heading West past a standing blocker while Raka crosses past her heading East
+  const mira = makeAgent('citizen_mira', -55.4, -2.5, -59.8, -3.2);
+  const raka = makeAgent('city_plaza_raka', -59.5, -2.8, -52.8, -2.8);
   runHalteSimulation(
     [mira, raka],
-    [{ id: 'standing_commuter', x: -57.2, z: -8.0, radius: AMBIENT_NPC_CAPSULE_RADIUS }],
+    [{ id: 'standing_commuter', x: -57.2, z: -3.0, radius: AMBIENT_NPC_CAPSULE_RADIUS }],
     12.0,
   );
   assert.equal(mira.reachedTarget, true, 'Mira must escape Halte Plaza pole+shelter+commuter pinch and reach destination');
@@ -942,17 +942,17 @@ test('stepCityAmbientNpcSchedule guards <=3.8m direct target behind pole and rep
   const poleRoutePreset: CityAmbientNpcPreset = {
     ...baseMira,
     waypoints: [
-      { x: -58.5, z: -7.8, yaw: 0, activity: 'sightseeing', durationSec: 10 },
-      { x: -54.9, z: -7.8, yaw: 0, activity: 'sightseeing', durationSec: 10 },
+      { x: -58.5, z: -2.8, yaw: 0, activity: 'sightseeing', durationSec: 10 },
+      { x: -54.9, z: -2.8, yaw: 0, activity: 'sightseeing', durationSec: 10 },
     ],
   };
 
-  // 1. Even with distToFinal = 3.6 <= 3.8m, direct segment through sign_halte_plaza (-56.25, -7.8)
-  // must NOT cut straight along z=-7.8; A* + local avoidance steers laterally around the pole.
+  // 1. Even with distToFinal = 3.6 <= 3.8m, direct segment through sign_halte_plaza (-56.25, -2.8)
+  // must NOT cut straight along z=-2.8; A* + local avoidance steers laterally around the pole.
   const firstStep = stepCityAmbientNpcSchedule({
     preset: poleRoutePreset,
     x: -58.5,
-    z: -7.8,
+    z: -2.8,
     yaw: 0,
     waypointIdx: 1,
     pauseTimer: 0,
@@ -988,8 +988,8 @@ test('stepCityAmbientNpcSchedule guards <=3.8m direct target behind pole and rep
       }),
   });
   assert.ok(
-    Math.abs(firstStep.z - -7.8) > 0.02,
-    `Expected lateral detour off z=-7.8 around sign_halte_plaza, got z=${firstStep.z.toFixed(4)}`,
+    Math.abs(firstStep.z - -2.8) > 0.02,
+    `Expected lateral detour off z=-2.8 around sign_halte_plaza, got z=${firstStep.z.toFixed(4)}`,
   );
 
   // 2. When position fails to advance > 0.35m for > 0.6s, replan triggers cleanly and flips avoidSide
@@ -997,19 +997,19 @@ test('stepCityAmbientNpcSchedule guards <=3.8m direct target behind pole and rep
   const stalledStep = stepCityAmbientNpcSchedule({
     preset: poleRoutePreset,
     x: -58.5,
-    z: -7.8,
+    z: -2.8,
     yaw: 0,
     waypointIdx: 1,
     pauseTimer: 0,
     elapsedSec: 0.7,
     dt: 0.1,
     navGrid: pedestrianGrid,
-    navPath: [{ x: -55.75, z: -9.25 }, { x: -54.9, z: -7.8 }],
+    navPath: [{ x: -55.75, z: -4.25 }, { x: -54.9, z: -2.8 }],
     navWaypointIndex: 0,
-    navPathGoalKey: '1:-54.9,-7.8',
+    navPathGoalKey: '1:-54.9,-2.8',
     stuckTimer: 0.58,
     lastProgressX: -58.5,
-    lastProgressZ: -7.8,
+    lastProgressZ: -2.8,
     avoidSide: 1,
     avoidTimer: 0.3,
     canReplan: true,

@@ -1,26 +1,31 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSafePrivy, useSafePrivyLogin } from './lib/privyAuthBridge';
 import {
-  User,
   ChevronLeft,
   ChevronRight,
   Wallet,
   History,
   ArrowLeft,
   Backpack,
-  Wrench,
   Package,
   Play,
   LogIn,
   X,
-  ClipboardList,
   Shirt,
   Navigation,
   MapPin,
-  Map as MapIcon,
   Send,
-  Smile,
+  PersonStanding,
   Coins,
+  ClipboardList,
+  Gift,
+  HeartHandshake,
+  MessageCircle,
+  MessageSquare,
+  User,
+  UserCheck,
+  Users,
+  Zap,
 } from 'lucide-react';
 import {
   CITY_MINIMAP_POIS,
@@ -93,12 +98,12 @@ import {
   SocialChatModal,
   NearbyEntityUser,
   ChatMessage,
+  filterRealHumanOnlinePlayers,
   isOwnChatMessage,
   shouldTriggerIncomingPrivateChatNotification,
   simplifyDisplayName,
 } from './components/SocialChatModal';
 import {
-  SOCIAL_EMOTE_QUICK_LIST,
   mergeRealtimeSocialChatMessage,
   parseSocialEmoteCommand,
   resolveBubbleStyle,
@@ -106,6 +111,7 @@ import {
 } from './game/buddiesRemotePresenceSync';
 import { CharacterProfileModal } from './components/CharacterProfileModal';
 import { MobileResponsiveControls } from './components/MobileResponsiveControls';
+import { QuickPoseStyleModal } from './components/QuickPoseStyleModal';
 import {
   PairedInteractionOverlay,
   type PairedInteractionStatusState,
@@ -123,6 +129,7 @@ import {
   type Fish3dPreviewSpec,
 } from './components/Fish3dPreviewModal';
 import { Furniture3dThumbnail } from './components/Furniture3dThumbnail';
+import { WalletAssetPortraitCard } from './components/WalletAssetPortraitCard';
 import {
   createInitialMerchantMarketState,
   executeLulToCyonExchange,
@@ -153,6 +160,7 @@ import {
 } from './game/buddiesMerchantPricing';
 import {
   CAFE_ITEM_CONSUME_DURATION_MS,
+  CAFE_SHIFT_MAX_ORDERS,
   advanceCafeConsumerState,
   applyPlayerXpGain,
   computeLevelProgress,
@@ -184,6 +192,10 @@ import {
   XpGainCelebrationBanner,
   type UnifiedBottomDockActionMode,
 } from './components/GlasshouseCafeModal';
+import {
+  PinAnchoredInteractionMenu,
+  type PinAnchoredMenuItem,
+} from './components/PinAnchoredInteractionMenu';
 import { GlasshouseCafeSlotModal } from './components/GlasshouseCafeSlotModal';
 import type { ArcadeSlotEvaluation } from './game/buddiesArcadeSlots';
 import { DailyMissionsModal } from './components/DailyMissionsModal';
@@ -291,7 +303,10 @@ import {
   type ShorelineBiteSchedule,
   type ShorelineMinigameState,
 } from './game/buddiesFishingMarket';
-import { UrbanScooterShowroomModal } from './components/UrbanScooterShowroomModal';
+import {
+  UrbanScooterShowroomModal,
+  getOrRenderScooterPortraitUrl,
+} from './components/UrbanScooterShowroomModal';
 import { FashionBoutiqueModal } from './components/FashionBoutiqueModal';
 import { WardrobeStudioModal } from './components/WardrobeStudioModal';
 import {
@@ -332,13 +347,13 @@ import {
 } from './game/buddiesUrbanScooterRules';
 import { HudAudioVolumeControl } from './components/HudAudioVolumeControl';
 import { HudBottomAvatarDock } from './components/HudBottomAvatarDock';
-import { HudQuickMountScooterControl } from './components/HudQuickMountScooterControl';
 import { HudWeatherAndTimeControl } from './components/HudWeatherAndTimeControl';
 import {
   HudSmartphoneIcon,
   SmartphoneOsModal,
   type SmartphoneAppId,
 } from './components/SmartphoneOsModal';
+import { CityFeedModal } from './components/CityFeedModal';
 import {
   evaluateWeatherAndTimeState,
   getWeatherControlConfig,
@@ -830,8 +845,6 @@ export default function App() {
   >('none');
   const [unifiedBottomDockMode, setUnifiedBottomDockMode] =
     useState<UnifiedBottomDockActionMode>('none');
-  const [nearbyDockEntity, setNearbyDockEntity] = useState<NearbyEntityUser | null>(null);
-  const lastNearbyDockEntityIdRef = useRef<string | null>(null);
   const [isCafeRotaMenuExpanded, setIsCafeRotaMenuExpanded] = useState<boolean>(false);
   const [isCafeOrderSlideBannerVisible, setIsCafeOrderSlideBannerVisible] =
     useState<boolean>(false);
@@ -900,6 +913,7 @@ export default function App() {
   const [isCitizenDialogueOpen, setIsCitizenDialogueOpen] = useState<boolean>(false);
   const [activeCitizenId, setActiveCitizenId] = useState<CitizenId | null>(null);
   const [citizenOpenSeq, setCitizenOpenSeq] = useState<number>(0);
+  const [citizenInitialTab, setCitizenInitialTab] = useState<'sesi_chat' | 'gift' | 'directory'>('sesi_chat');
   const [citizenTalkedBonusJustAwarded, setCitizenTalkedBonusJustAwarded] =
     useState<boolean>(false);
 
@@ -923,34 +937,41 @@ export default function App() {
         : 'Kai'
       : (activeCitizenProfile?.name ?? 'Citizen');
 
-  const openCitizenDialogueForId = useCallback((rawCitizenId: string | null | undefined) => {
-    if (hudRef.current.worldMode === 'warzone') return;
-    const canonical = resolveCanonicalCitizenId(rawCitizenId);
-    if (!canonical) return;
-    setIsKioskModalOpen(false);
-    setIsTargetMenuExpanded(false);
-    setIsProfileModalOpen(false);
-    setIsPersonalWalletModalOpen(false);
-    setIsPersonalBagModalOpen(false);
-    setIsDailyMissionsModalOpen(false);
-    setIsSocialChatModalOpen(false);
-    setIsScooterShowroomModalOpen(false);
-    setIsFashionBoutiqueModalOpen(false);
-    setIsRealEstateCatalogModalOpen(false);
-    setIsGrandCasinoModalOpen(false);
-    setActiveSpecialModal('none');
-    setActiveTeleportKioskModal('none');
-    window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+  const openCitizenDialogueForId = useCallback(
+    (
+      rawCitizenId: string | null | undefined,
+      initialTab: 'sesi_chat' | 'gift' | 'directory' = 'sesi_chat',
+    ) => {
+      if (hudRef.current.worldMode === 'warzone') return;
+      const canonical = resolveCanonicalCitizenId(rawCitizenId);
+      if (!canonical) return;
+      setIsKioskModalOpen(false);
+      setIsTargetMenuExpanded(false);
+      setIsProfileModalOpen(false);
+      setIsPersonalWalletModalOpen(false);
+      setIsPersonalBagModalOpen(false);
+      setIsDailyMissionsModalOpen(false);
+      setIsSocialChatModalOpen(false);
+      setIsScooterShowroomModalOpen(false);
+      setIsFashionBoutiqueModalOpen(false);
+      setIsRealEstateCatalogModalOpen(false);
+      setIsGrandCasinoModalOpen(false);
+      setActiveSpecialModal('none');
+      setActiveTeleportKioskModal('none');
+      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
 
-    const talkRes = recordCitizenDailyTalk(citizenFriendshipStoreRef.current, canonical);
-    citizenFriendshipStoreRef.current = talkRes.store;
-    setCitizenFriendshipStore(talkRes.store);
-    saveCitizenFriendshipStore(talkRes.store);
-    setCitizenTalkedBonusJustAwarded(talkRes.awardedTodayBonus);
-    setActiveCitizenId(canonical);
-    setCitizenOpenSeq((prev) => prev + 1);
-    setIsCitizenDialogueOpen(true);
-  }, []);
+      const talkRes = recordCitizenDailyTalk(citizenFriendshipStoreRef.current, canonical);
+      citizenFriendshipStoreRef.current = talkRes.store;
+      setCitizenFriendshipStore(talkRes.store);
+      saveCitizenFriendshipStore(talkRes.store);
+      setCitizenTalkedBonusJustAwarded(talkRes.awardedTodayBonus);
+      setActiveCitizenId(canonical);
+      setCitizenInitialTab(initialTab);
+      setCitizenOpenSeq((prev) => prev + 1);
+      setIsCitizenDialogueOpen(true);
+    },
+    [],
+  );
   const dailyMissionsAccountKey =
     (hud.nearWalletId || playerUid || 'guest').trim().toLowerCase() || 'guest';
   const dailyMissionsAccountRef = useRef<string>(dailyMissionsAccountKey);
@@ -1575,7 +1596,7 @@ export default function App() {
     smartphoneNavStack[smartphoneNavStack.length - 1] ?? 'home';
   const isPhoneAppActive = (app: SmartphoneAppId): boolean =>
     isSmartphoneOsOpen && activeSmartphoneApp === app;
-  const [isEmotePickerOpen, setIsEmotePickerOpen] = useState<boolean>(false);
+  const [isQuickPoseModalOpen, setIsQuickPoseModalOpen] = useState<boolean>(false);
   const [isPersonalWalletModalOpen, setIsPersonalWalletModalOpen] = useState<boolean>(false);
   const [isPersonalBagModalOpen, setIsPersonalBagModalOpen] = useState<boolean>(false);
   const [isGearModalOpen, setIsGearModalOpen] = useState<boolean>(false);
@@ -1585,17 +1606,6 @@ export default function App() {
   const isSocialChatVisible =
     isSocialChatModalOpen || isPhoneAppActive('messages') || isPhoneAppActive('contacts');
   const [equippedScooterKind, setEquippedScooterKind] = useState<UrbanScooterKind | null>(null);
-  const [preferredScooterKind, setPreferredScooterKind] = useState<UrbanScooterKind>(() => {
-    try {
-      const saved = window.localStorage.getItem('bb_preferred_scooter_kind_v1');
-      if (saved === 'electric_scooter_bike' || saved === 'push_kick_scooter') {
-        return saved;
-      }
-    } catch {
-      // ignore storage errors
-    }
-    return 'electric_scooter_bike';
-  });
   const [personalBagTab, setPersonalBagTab] = useState<'equipment' | 'fish' | 'items'>('equipment');
   const [selectedPrivateUser, setSelectedPrivateUser] = useState<NearbyEntityUser | null>(null);
   const [unreadPrivateCount, setUnreadPrivateCount] = useState<number>(0);
@@ -1633,8 +1643,6 @@ export default function App() {
       }
     }
   }, [isMissionsModalVisible, onboardingMissionsSeen, dailyMissionsAccountKey]);
-  const showMissionsOnboardingHint =
-    hanaWelcomeNearClaimed && onboardingSwapDone && !onboardingMissionsSeen;
   const assetSeenRef = useRef<{
     account: string;
     seen: Record<string, number> | null;
@@ -1739,6 +1747,8 @@ export default function App() {
     user: NearbyEntityUser;
   } | null>(null);
   const [isTargetMenuExpanded, setIsTargetMenuExpanded] = useState<boolean>(false);
+  const [selectedTargetPinId, setSelectedTargetPinId] = useState<string | null>(null);
+  const [isPinTargetPopupOpen, setIsPinTargetPopupOpen] = useState<boolean>(false);
   const [activeTeleportKioskModal, setActiveTeleportKioskModal] = useState<
     'none' | CityTransitStationId
   >('none');
@@ -2317,6 +2327,93 @@ export default function App() {
       }),
     );
   }, [isCitizenDialogueOpen, activeCitizenId, hud.worldMode]);
+
+  useEffect(() => {
+    const isQuickPoseVisible = Boolean(
+      isQuickPoseModalOpen &&
+        !isSmartphoneOsOpen &&
+        !isSocialChatModalOpen &&
+        !isCitizenDialogueOpen &&
+        !isWardrobeStudioOpen &&
+        !cityViewActive &&
+        activeSpecialModal === 'none' &&
+        hud.worldMode !== 'warzone',
+    );
+    const isBlockedByModal =
+      gameState !== 'playing' ||
+      playMode === 'editor' ||
+      cityViewActive ||
+      onboardingStep !== 'completed' ||
+      isKioskModalOpen ||
+      isProfileModalOpen ||
+      isSocialChatModalOpen ||
+      isSmartphoneOsOpen ||
+      isPersonalWalletModalOpen ||
+      isPersonalBagModalOpen ||
+      isNearWalletSelectorOpen ||
+      isDailyMissionsModalOpen ||
+      isScooterShowroomModalOpen ||
+      isFashionBoutiqueModalOpen ||
+      isWardrobeStudioOpen ||
+      isRealEstateCatalogModalOpen ||
+      isGrandCasinoModalOpen ||
+      isCitizenDialogueOpen ||
+      activeSpecialModal !== 'none' ||
+      activeTeleportKioskModal !== 'none' ||
+      activeCafeModal !== 'none' ||
+      Boolean(cafePrepStatus) ||
+      Boolean(tramRideCutsceneUi?.active);
+    const isPairedVisible = Boolean(
+      !isBlockedByModal && pairedInteractTarget && hud.worldMode !== 'warzone',
+    );
+    window.dispatchEvent(
+      new CustomEvent('pose-inspect-open-state', {
+        detail: {
+          isQuickPoseOpen: isQuickPoseVisible,
+          pairedTargetId:
+            isPairedVisible && pairedInteractTarget ? String(pairedInteractTarget.id) : null,
+        },
+      }),
+    );
+  }, [
+    gameState,
+    playMode,
+    onboardingStep,
+    isQuickPoseModalOpen,
+    isSmartphoneOsOpen,
+    isSocialChatModalOpen,
+    isCitizenDialogueOpen,
+    isWardrobeStudioOpen,
+    cityViewActive,
+    activeSpecialModal,
+    isKioskModalOpen,
+    isProfileModalOpen,
+    isPersonalWalletModalOpen,
+    isPersonalBagModalOpen,
+    isNearWalletSelectorOpen,
+    isDailyMissionsModalOpen,
+    isScooterShowroomModalOpen,
+    isFashionBoutiqueModalOpen,
+    isRealEstateCatalogModalOpen,
+    isGrandCasinoModalOpen,
+    activeTeleportKioskModal,
+    activeCafeModal,
+    cafePrepStatus,
+    tramRideCutsceneUi,
+    pairedInteractTarget,
+    hud.worldMode,
+  ]);
+
+  useEffect(() => {
+    const onClosePoseStyleModals = () => {
+      setIsQuickPoseModalOpen(false);
+      setPairedInteractTarget(null);
+    };
+    window.addEventListener('close-pose-style-modals', onClosePoseStyleModals);
+    return () => {
+      window.removeEventListener('close-pose-style-modals', onClosePoseStyleModals);
+    };
+  }, []);
   const [worldMode, setWorldMode] = useState<WorldMode>(() => {
     if (typeof window !== 'undefined') {
       const w = new URLSearchParams(window.location.search).get('world');
@@ -3398,18 +3495,9 @@ export default function App() {
         }>
       ).detail;
       const mode = detail?.mode ?? 'none';
-      const nextEntity = mode === 'nearby_entity' ? detail?.entity ?? null : null;
-      const nextId = nextEntity ? String(nextEntity.id) : null;
-      const isSameEntity =
-        nextId !== null && lastNearbyDockEntityIdRef.current === nextId;
-      lastNearbyDockEntityIdRef.current = nextId;
       setUnifiedBottomDockMode(mode);
-      setNearbyDockEntity(nextEntity);
       if (mode !== 'work_shift') {
         setIsCafeRotaMenuExpanded(false);
-      }
-      if (mode !== 'nearby_entity' || !isSameEntity) {
-        setIsTargetMenuExpanded(false);
       }
     };
     const onCafeRotaProximityChange = (e: Event) => {
@@ -3465,14 +3553,28 @@ export default function App() {
       }
     };
     const onCharacterSelected = (e: Event) => {
-      const customEv = e as CustomEvent<{ user: NearbyEntityUser }>;
+      const customEv = e as CustomEvent<{
+        user: NearbyEntityUser;
+        expandMenu?: boolean;
+        pinId?: string;
+      }>;
       if (customEv.detail?.user) {
         setSelectedTargetUser(customEv.detail.user);
-        setIsTargetMenuExpanded(false);
+        if (customEv.detail.pinId) {
+          setSelectedTargetPinId(customEv.detail.pinId);
+          setIsPinTargetPopupOpen(Boolean(customEv.detail.expandMenu));
+          setIsTargetMenuExpanded(false);
+        } else {
+          setSelectedTargetPinId(null);
+          setIsPinTargetPopupOpen(false);
+          setIsTargetMenuExpanded(Boolean(customEv.detail.expandMenu));
+        }
       }
     };
     const onCharacterDeselected = () => {
       setSelectedTargetUser(null);
+      setSelectedTargetPinId(null);
+      setIsPinTargetPopupOpen(false);
       setIsTargetMenuExpanded(false);
     };
     const onOpenTeleportKioskModal = (e: Event) => {
@@ -3731,7 +3833,6 @@ export default function App() {
       const kind = (e as CustomEvent<{ kind?: UrbanScooterKind }>).detail?.kind;
       if (kind === 'electric_scooter_bike' || kind === 'push_kick_scooter') {
         setEquippedScooterKind(kind);
-        setPreferredScooterKind(kind);
         try {
           window.localStorage.setItem('bb_preferred_scooter_kind_v1', kind);
         } catch {
@@ -5064,6 +5165,8 @@ export default function App() {
         return;
       }
 
+      setIsQuickPoseModalOpen(false);
+      setPairedInteractTarget(null);
       setIsTargetMenuExpanded(false);
       setSelectedTargetUser(null);
       setIsKioskModalOpen(false);
@@ -5125,6 +5228,31 @@ export default function App() {
       lastUnreadPrivateSender,
     ],
   );
+
+  // Keep Pose & Style modal strictly mutually exclusive with Smartphone OS, Paired Duo, and other overlays
+  useEffect(() => {
+    if (
+      isQuickPoseModalOpen &&
+      (isSmartphoneOsOpen ||
+        Boolean(pairedInteractTarget) ||
+        isSocialChatModalOpen ||
+        isCitizenDialogueOpen ||
+        isWardrobeStudioOpen ||
+        cityViewActive ||
+        activeSpecialModal !== 'none')
+    ) {
+      setIsQuickPoseModalOpen(false);
+    }
+  }, [
+    isQuickPoseModalOpen,
+    isSmartphoneOsOpen,
+    pairedInteractTarget,
+    isSocialChatModalOpen,
+    isCitizenDialogueOpen,
+    isWardrobeStudioOpen,
+    cityViewActive,
+    activeSpecialModal,
+  ]);
 
   // Chain-truth refresh: after any in-game wallet transaction settles, and
   // whenever an NPC merchant modal opens, re-read balances and claim status
@@ -7632,23 +7760,29 @@ export default function App() {
         data-personal-wallet-modal={embeddedInPhone ? "true" : undefined}
         className={
           embeddedInPhone
-            ? "relative w-full h-full flex-1 flex flex-col bg-[#e9ebee] text-slate-900 overflow-hidden min-h-0"
-            : "relative flex-1 flex flex-col rounded-[28px] bg-[#e9ebee]/97 backdrop-blur-2xl border border-white/50 shadow-[0_24px_64px_rgba(0,0,0,0.45)] text-slate-900 overflow-hidden min-h-0"
+            ? "relative w-full h-full flex-1 flex flex-col bg-transparent text-white overflow-hidden min-h-0"
+            : "relative flex-1 flex flex-col rounded-[28px] bg-[#141926]/72 backdrop-blur-2xl border border-white/25 shadow-[0_24px_64px_rgba(0,0,0,0.52)] text-white overflow-hidden min-h-0"
         }
       >
-          <div className={`flex items-center justify-between gap-2 bg-transparent border-b border-slate-900/[0.07] shrink-0 ${embeddedInPhone ? 'px-3.5 py-2.5' : 'px-5 py-3.5'}`}>
-            <div className="flex items-center gap-1.5">
+          <div className={`flex items-center justify-between gap-2 bg-transparent border-b border-white/15 shrink-0 ${embeddedInPhone ? 'px-3.5 py-2.5' : 'px-5 py-3.5'}`}>
+            <div
+              role="tablist"
+              aria-label="Wallet Sections"
+              className="flex-1 grid grid-cols-3 gap-1 p-1 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_6px_16px_rgba(15,23,42,0.14)]"
+            >
               <button
                 type="button"
+                role="tab"
+                aria-selected={personalWalletTab === 'wallet'}
                 data-wallet-tab="wallet"
                 onClick={() => {
                   soundEngine.playUiClick();
                   setPersonalWalletTab('wallet');
                 }}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap ${
                   personalWalletTab === 'wallet'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'bg-slate-900/[0.06] hover:bg-slate-900/[0.10] text-slate-600'
+                    ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.1)]'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/55'
                 }`}
               >
                 <Wallet className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
@@ -7657,15 +7791,17 @@ export default function App() {
 
               <button
                 type="button"
+                role="tab"
+                aria-selected={personalWalletTab === 'assets'}
                 data-wallet-tab="assets"
                 onClick={() => {
                   soundEngine.playUiClick();
                   setPersonalWalletTab('assets');
                 }}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap ${
                   personalWalletTab === 'assets'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'bg-slate-900/[0.06] hover:bg-slate-900/[0.10] text-slate-600'
+                    ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.1)]'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/55'
                 }`}
               >
                 <Package className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
@@ -7674,15 +7810,17 @@ export default function App() {
 
               <button
                 type="button"
+                role="tab"
+                aria-selected={personalWalletTab === 'history'}
                 data-wallet-tab="history"
                 onClick={() => {
                   soundEngine.playUiClick();
                   setPersonalWalletTab('history');
                 }}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap ${
                   personalWalletTab === 'history'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'bg-slate-900/[0.06] hover:bg-slate-900/[0.10] text-slate-600'
+                    ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.1)]'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/55'
                 }`}
               >
                 <History className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
@@ -7696,7 +7834,7 @@ export default function App() {
                   soundEngine.playUiCancel();
                   setIsPersonalWalletModalOpen(false);
                 }}
-                className="w-8 h-8 rounded-full bg-slate-900/[0.06] hover:bg-slate-900/[0.10] text-slate-600 flex items-center justify-center transition-colors cursor-pointer active:scale-95 shrink-0"
+                className="w-8 h-8 rounded-full bg-[#eef0f4]/90 hover:bg-white border border-white/80 text-slate-700 hover:text-rose-600 shadow-sm flex items-center justify-center transition-colors cursor-pointer active:scale-95 shrink-0"
                 aria-label="Close Personal Wallet"
               >
                 <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
@@ -7704,17 +7842,17 @@ export default function App() {
             )}
           </div>
 
-          <div className={`flex-1 overflow-y-auto space-y-3.5 min-h-0 ${embeddedInPhone ? 'p-3.5' : 'p-4 sm:p-5'}`}>
+          <div className={`flex-1 overflow-y-auto no-scrollbar space-y-3 min-h-0 ${embeddedInPhone ? 'p-3.5' : 'p-4 sm:p-5'}`}>
             {personalWalletTab === 'wallet' ? (
               <>
                 {/* ACCOUNT, WALLET ADDRESS & USERNAME CARD */}
                 <div
                   data-wallet-uid-and-username-card="true"
-                  className="rounded-2xl bg-white border border-slate-900/[0.05] shadow-sm text-slate-900 p-4 space-y-3.5"
+                  className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 p-4 space-y-3.5"
                 >
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="text-[11px] font-medium text-slate-400">
+                  <div className="text-[11px] font-medium text-slate-500">
                     Login Account
                   </div>
                   <div className="text-sm font-semibold text-slate-900 truncate">
@@ -7759,24 +7897,24 @@ export default function App() {
                     setIsPersonalWalletModalOpen(false); if (embeddedInPhone) closeSmartphone();
                     setOnboardingStep('auth_choice');
                   }}
-                  className="px-3 py-1.5 rounded-full bg-slate-900/[0.06] hover:bg-rose-500 text-slate-600 hover:text-white font-semibold text-[11px] transition-colors cursor-pointer shrink-0"
+                  className="px-3 py-1.5 rounded-full bg-white hover:bg-rose-500 text-slate-700 hover:text-white border border-slate-200/90 shadow-xs font-semibold text-[11px] transition-colors cursor-pointer shrink-0"
                 >
                   Log Out
                 </button>
               </div>
 
               {/* WALLET ADDRESS OR SIGN IN PROMPT */}
-              <div className="p-3 rounded-xl bg-slate-100 border border-slate-900/[0.05] space-y-2.5">
+              <div className="p-3 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 space-y-2.5">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div className="text-[11px] font-medium text-slate-500">
+                  <div className="text-[11px] font-medium text-slate-600">
                     Your Wallet
                   </div>
                   {hud.nearWalletConnected && hud.nearWalletId && (
                     <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
                         isActiveWalletReadOnlyObserver()
-                          ? 'bg-amber-400/20 text-amber-200'
-                          : 'bg-emerald-400/20 text-emerald-200'
+                          ? 'bg-amber-100 text-amber-800 border-amber-300/60'
+                          : 'bg-emerald-100 text-emerald-800 border-emerald-300/60'
                       }`}
                     >
                       {isActiveWalletReadOnlyObserver() ? 'View Only' : 'Connected'}
@@ -7804,7 +7942,7 @@ export default function App() {
                           setWalletAddressCopiedToast(true);
                           window.setTimeout(() => setWalletAddressCopiedToast(false), 1800);
                         }}
-                        className="px-3 py-1 rounded-full bg-slate-900/[0.06] hover:bg-slate-900/[0.10] text-slate-700 font-semibold text-[11px] transition-colors cursor-pointer shrink-0"
+                        className="px-3 py-1 rounded-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 shadow-xs font-semibold text-[11px] transition-colors cursor-pointer shrink-0"
                       >
                         {walletAddressCopiedToast ? 'Copied' : 'Copy'}
                       </button>
@@ -7817,7 +7955,7 @@ export default function App() {
                         setIsPersonalWalletModalOpen(false); if (embeddedInPhone) closeSmartphone();
                         setIsNearWalletSelectorOpen(true);
                       }}
-                      className="w-full py-2 px-3 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white font-semibold text-xs transition-colors cursor-pointer"
+                      className="w-full py-2 px-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
                     >
                       {isActiveWalletReadOnlyObserver() ? 'Connect Wallet' : 'Manage Wallet'}
                     </button>
@@ -7826,7 +7964,7 @@ export default function App() {
                   <div className="flex items-center justify-between gap-3">
                     <div
                       data-wallet-active-uid="true"
-                      className="text-xs text-slate-500 leading-snug"
+                      className="text-xs text-slate-600 leading-snug"
                     >
                       Connect or create a wallet to unlock trading.
                     </div>
@@ -7838,7 +7976,7 @@ export default function App() {
                         setIsPersonalWalletModalOpen(false); if (embeddedInPhone) closeSmartphone();
                         setIsNearWalletSelectorOpen(true);
                       }}
-                      className="px-3.5 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white font-semibold text-xs transition-colors cursor-pointer shrink-0"
+                      className="px-3.5 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer shrink-0"
                     >
                       Connect Wallet
                     </button>
@@ -7849,12 +7987,12 @@ export default function App() {
 
             {/* BALANCES */}
             <div className="space-y-2.5">
-              <div className="text-xs font-semibold text-slate-900 px-0.5">
+              <div className="text-xs font-semibold text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)] px-0.5">
                 Balances
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
-                <div className="col-span-2 rounded-2xl bg-white border border-slate-900/[0.05] shadow-sm px-4 py-3.5 flex items-center justify-between gap-3">
+                <div className="col-span-2 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] px-4 py-3.5 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-purple-600 text-white shadow-md flex items-center justify-center font-bold text-xs shrink-0">
                       RS
@@ -7870,11 +8008,11 @@ export default function App() {
                     <div className="text-xl font-bold font-mono tabular-nums text-slate-900 leading-none">
                       {respiteBalance}
                     </div>
-                    <div className="text-[10px] font-semibold text-violet-600 mt-1">RESPITE</div>
+                    <div className="text-[10px] font-semibold text-violet-700 mt-1">RESPITE</div>
                   </div>
                 </div>
 
-                <div className="rounded-2xl bg-white border border-slate-900/[0.05] shadow-sm p-3.5 space-y-2.5">
+                <div className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] p-3.5 space-y-2.5">
                   <div className="flex items-center gap-2.5">
                     <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-md flex items-center justify-center shrink-0">
                       <Coins className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
@@ -7883,7 +8021,7 @@ export default function App() {
                   </div>
                   <div>
                     <div className="text-lg font-bold font-mono tabular-nums text-slate-900 leading-none">
-                      {hud.gold} <span className="text-[10px] font-semibold text-amber-600">LUL</span>
+                      {hud.gold} <span className="text-[10px] font-semibold text-amber-700">LUL</span>
                     </div>
                     <div className="text-[11px] text-slate-500 mt-1.5 leading-snug">
                       Fishing and Warzone rewards
@@ -7891,7 +8029,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl bg-white border border-slate-900/[0.05] shadow-sm p-3.5 space-y-2.5">
+                <div className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] p-3.5 space-y-2.5">
                   <div className="flex items-center gap-2.5">
                     <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-400 to-blue-600 text-white shadow-md flex items-center justify-center font-bold text-xs shrink-0">
                       CY
@@ -7900,7 +8038,7 @@ export default function App() {
                   </div>
                   <div>
                     <div className="text-lg font-bold font-mono tabular-nums text-slate-900 leading-none">
-                      {cyonBalance} <span className="text-[10px] font-semibold text-sky-600">CYON</span>
+                      {cyonBalance} <span className="text-[10px] font-semibold text-sky-700">CYON</span>
                     </div>
                     <div className="text-[11px] text-slate-500 mt-1.5 leading-snug">
                       Shop items and outfits
@@ -7908,7 +8046,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="col-span-2 rounded-2xl bg-white border border-slate-900/[0.05] shadow-sm px-4 py-3.5 flex items-center justify-between gap-3">
+                <div className="col-span-2 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] px-4 py-3.5 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-md flex items-center justify-center font-bold text-xs shrink-0">
                       N
@@ -7924,7 +8062,7 @@ export default function App() {
                     <div className="text-xl font-bold font-mono tabular-nums text-slate-900 leading-none">
                       {nearTestnetBalance.toFixed(2)}
                     </div>
-                    <div className="text-[10px] font-semibold text-emerald-600 mt-1">NEAR</div>
+                    <div className="text-[10px] font-semibold text-emerald-700 mt-1">NEAR</div>
                   </div>
                 </div>
               </div>
@@ -7934,7 +8072,7 @@ export default function App() {
             {/* P2P SEND RESPITE TO ANOTHER WALLET */}
             <div
               data-wallet-send-respite-card="true"
-              className="rounded-2xl bg-white border border-slate-900/[0.05] shadow-sm p-4 space-y-2.5"
+              className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 p-4 space-y-2.5"
             >
               <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900">
                 <Send className="w-3.5 h-3.5 text-violet-600" aria-hidden="true" />
@@ -7948,7 +8086,7 @@ export default function App() {
                   setRespiteTransferStatus(null);
                 }}
                 placeholder="Recipient username or wallet"
-                className="w-full px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-slate-900 placeholder:text-slate-400 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-violet-400/40 focus:border-violet-400"
+                className="w-full px-3 py-2 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/70 text-slate-900 placeholder:text-slate-500 font-mono text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-400/40 focus:border-violet-400"
               />
               <div className="flex gap-2">
                 <input
@@ -7961,7 +8099,7 @@ export default function App() {
                     setRespiteTransferStatus(null);
                   }}
                   placeholder="Amount"
-                  className="w-28 px-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-slate-900 placeholder:text-slate-400 font-mono tabular-nums font-semibold text-xs focus:outline-none focus:ring-2 focus:ring-violet-400/40 focus:border-violet-400"
+                  className="w-28 px-3 py-2 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/70 text-slate-900 placeholder:text-slate-500 font-mono tabular-nums font-semibold text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-400/40 focus:border-violet-400"
                 />
                 <button
                   type="button"
@@ -8112,282 +8250,269 @@ export default function App() {
                 recruitedFamilyMembers.length +
                 walletListedFish.length;
               return (
-              <div data-wallet-assets-panel="true" className="space-y-3">
-                <div className="rounded-2xl bg-white border border-slate-900/[0.05] shadow-sm px-4 py-3 flex items-center justify-between gap-2">
+              <div data-wallet-assets-panel="true" className="@container space-y-3">
+                <div className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 px-4 py-3 flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="text-[11px] font-semibold text-sky-600">
+                    <div className="text-[11px] font-semibold text-sky-700">
                       My Items
                     </div>
                     <div className="text-xs font-medium text-slate-700 truncate">
                       {hud.nearWalletId || playerUid || 'Guest'}
                     </div>
                   </div>
-                  <div className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-mono tabular-nums font-semibold shrink-0">
+                  <div className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-mono tabular-nums font-semibold shrink-0">
                     {totalOwnedWalletItems} owned
                   </div>
                 </div>
 
-                <div className={embeddedInPhone ? "grid grid-cols-1 gap-3" : "grid grid-cols-1 sm:grid-cols-2 gap-3"}>
+                <div className="grid grid-cols-2 @[460px]:grid-cols-3 gap-x-3 gap-y-4 pt-2.5">
                   {/* 1. HOUSE DEED CARD */}
                   {hasHouseOwnership && (
-                    <div
-                      data-wallet-house-card={ownedWalletHouseStyle}
-                      className="rounded-2xl bg-white border border-slate-900/[0.05] shadow-sm p-3.5 space-y-2.5"
-                    >
-                      <div className="relative w-full h-28 rounded-xl bg-slate-900 overflow-hidden flex items-center justify-center">
+                    <WalletAssetPortraitCard
+                      dataAttrs={{ 'data-wallet-house-card': ownedWalletHouseStyle }}
+                      brandLabel="House"
+                      badgeLabel={deedBadgeLabel}
+                      badgeTone="emerald"
+                      title={houseDisplay.title}
+                      description={houseDisplay.description}
+                      tokenId={hud.nearGamepassTokenId || undefined}
+                      statusLabel="Owned"
+                      statusTone="emerald"
+                      priceLabel={`${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE`}
+                      visual={
                         <img
                           src={houseDisplay.imageSrc}
                           alt={houseDisplay.title}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-200"
                           onError={(e) => {
                             e.currentTarget.style.display = 'none';
                           }}
                         />
-                        <div className="absolute top-2 left-2 px-2.5 py-0.5 rounded-full bg-emerald-500/95 text-white font-semibold text-[10px] shadow-xs">
-                          House
-                        </div>
-                        <div className="absolute bottom-2 right-2 px-2.5 py-0.5 rounded-full bg-slate-950/75 backdrop-blur-md text-sky-200 font-mono text-[10px]">
-                          {deedBadgeLabel}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold text-slate-900">
-                          {houseDisplay.title}
-                        </div>
-                        <div className="text-[11px] text-slate-500 leading-snug mt-0.5">
-                          {houseDisplay.description}
-                        </div>
-                        {hud.nearGamepassTokenId && (
-                          <div className="text-[10px] font-mono text-slate-400 mt-1 truncate">
-                            {hud.nearGamepassTokenId}
+                      }
+                      extraFooter={
+                        /* Sub-Account Ledger, Ownership Provenance & Royalty Payouts (Contract v1.5.0) */
+                        <div
+                          data-wallet-deed-ledger="true"
+                          className="p-2.5 rounded-xl bg-neutral-900 text-white space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-[9px] font-semibold text-sky-300 truncate">
+                              House Account
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded-full bg-white/10 text-[8.5px] font-mono font-medium text-emerald-300 shrink-0">
+                              {(() => {
+                                const raw = onChainDeedLedger?.sub_account_id || nep171Ledger.subAccountId || '';
+                                const m = raw.match(/estate-0*(\d+)/i);
+                                return m ? `#${parseInt(m[1], 10)}` : 'Active';
+                              })()}
+                            </span>
                           </div>
-                        )}
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-slate-900/[0.07] pt-2">
-                        <span className="text-emerald-600 font-semibold">Owned</span>
-                        <span className="text-slate-500">{HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE</span>
-                      </div>
 
-                      {/* Sub-Account Ledger, Ownership Provenance & Royalty Payouts (Contract v1.5.0) */}
-                      <div
-                        data-wallet-deed-ledger="true"
-                        className="p-3 rounded-xl bg-slate-900 text-white space-y-2"
-                      >
-                        <div className="flex items-center justify-between gap-1.5">
-                          <span className="text-[10px] font-semibold text-sky-300 truncate">
-                            Your House Account
-                          </span>
-                          <span className="px-2 py-0.5 rounded-full bg-white/10 text-[9.5px] font-mono font-medium text-emerald-300 shrink-0">
-                            {(() => { const raw = onChainDeedLedger?.sub_account_id || nep171Ledger.subAccountId || ''; const m = raw.match(/estate-0*(\d+)/i); return m ? 'House No. ' + parseInt(m[1], 10) : 'Your house'; })()}
-                          </span>
-                        </div>
-
-                        {onChainDeedLedger ? (
-                          <>
-                            <div className="grid grid-cols-3 gap-1.5 text-[9px] font-mono tabular-nums">
-                              <div className="p-1.5 rounded-lg bg-white/[0.07]">
-                                <div className="text-slate-400">Ready</div>
-                                <div className="text-emerald-300 font-semibold">
-                                  {onChainDeedLedger.pending_payout_respite} R
-                                </div>
-                              </div>
-                              <div className="p-1.5 rounded-lg bg-white/[0.07]">
-                                <div className="text-slate-400">Earned</div>
-                                <div className="text-violet-600 font-semibold">
-                                  {onChainDeedLedger.total_earned_respite} R
-                                </div>
-                              </div>
-                              <div className="p-1.5 rounded-lg bg-white/[0.07]">
-                                <div className="text-slate-400">Collected</div>
-                                <div className="text-sky-300 font-semibold">
-                                  {onChainDeedLedger.total_paid_out_respite} R
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="text-[9.5px] font-mono text-slate-300 space-y-0.5 max-h-16 overflow-y-auto">
-                              {onChainDeedLedger.ownership_history.length === 0 ? (
-                                <div>You are the first owner</div>
-                              ) : (
-                                onChainDeedLedger.ownership_history.slice(-3).map((rec, idx) => (
-                                  <div key={`${rec.new_key_epoch}-${idx}`} className="truncate">
-                                    Owner #{rec.new_key_epoch} · {rec.transferred_treasury_respite} R moved with the house
+                          {onChainDeedLedger ? (
+                            <>
+                              <div className="grid grid-cols-3 gap-1 text-[8.5px] font-mono tabular-nums">
+                                <div className="p-1 rounded-md bg-white/[0.07] min-w-0">
+                                  <div className="text-slate-400 truncate">Ready</div>
+                                  <div className="text-emerald-300 font-semibold truncate">
+                                    {onChainDeedLedger.pending_payout_respite}R
                                   </div>
-                                ))
+                                </div>
+                                <div className="p-1 rounded-md bg-white/[0.07] min-w-0">
+                                  <div className="text-slate-400 truncate">Earned</div>
+                                  <div className="text-violet-300 font-semibold truncate">
+                                    {onChainDeedLedger.total_earned_respite}R
+                                  </div>
+                                </div>
+                                <div className="p-1 rounded-md bg-white/[0.07] min-w-0">
+                                  <div className="text-slate-400 truncate">Paid</div>
+                                  <div className="text-sky-300 font-semibold truncate">
+                                    {onChainDeedLedger.total_paid_out_respite}R
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="text-[8.5px] font-mono text-slate-300 space-y-0.5 max-h-12 overflow-y-auto">
+                                {onChainDeedLedger.ownership_history.length === 0 ? (
+                                  <div className="truncate">First owner</div>
+                                ) : (
+                                  onChainDeedLedger.ownership_history.slice(-2).map((rec, idx) => (
+                                    <div key={`${rec.new_key_epoch}-${idx}`} className="truncate">
+                                      #{rec.new_key_epoch} · {rec.transferred_treasury_respite}R
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-1 pt-0.5">
+                                <button
+                                  type="button"
+                                  data-deed-fund-btn="true"
+                                  disabled={isDeedLedgerTxBusy || respiteBalance < 5}
+                                  onClick={async () => {
+                                    const signer = hud.nearWalletId || playerUid || '';
+                                    const deedTokenId =
+                                      hud.nearGamepassTokenId || onChainDeedLedger.token_id;
+                                    if (!signer || !deedTokenId) return;
+                                    soundEngine.playUiClick();
+                                    setIsDeedLedgerTxBusy(true);
+                                    setDeedLedgerActionFeedback(null);
+                                    try {
+                                      const tx = await executeMarketContractCallOnChain({
+                                        signerAccountId: signer,
+                                        methodName: 'fund_deed_royalty',
+                                        args: { token_id: deedTokenId, amount: '5' },
+                                      });
+                                      if (!tx.ok) {
+                                        setDeedLedgerActionFeedback({
+                                          type: 'error',
+                                          text: tx.error || 'Could not fund deed treasury.',
+                                        });
+                                        return;
+                                      }
+                                      void logMarketTransactionToSupabase({
+                                        merchant_id: 'lobby_cafe',
+                                        actor_near_account: signer,
+                                        action_type: 'FUND_DEED_ROYALTY',
+                                        item_id: deedTokenId,
+                                        currency: 'RESPITE',
+                                        amount: 5,
+                                        unit_price: 1,
+                                        reasoning_summary: `Added 5 RESPITE to your house account`,
+                                        near_tx_hash: tx.txHash,
+                                      });
+                                      setDeedLedgerActionFeedback({
+                                        type: 'success',
+                                        text: '+5 R funded to deed treasury',
+                                        txHash: tx.txHash,
+                                      });
+                                      await Promise.all([
+                                        refreshOnChainBalances(signer),
+                                        refreshOnChainDeedLedger(deedTokenId),
+                                      ]);
+                                    } finally {
+                                      setIsDeedLedgerTxBusy(false);
+                                    }
+                                  }}
+                                  className={`flex-1 py-1 rounded-full text-[9px] font-semibold transition-colors ${
+                                    !isDeedLedgerTxBusy && respiteBalance >= 5
+                                      ? 'bg-violet-500 hover:bg-violet-400 text-white cursor-pointer'
+                                      : 'bg-white/10 text-slate-400 cursor-not-allowed'
+                                  }`}
+                                >
+                                  {isDeedLedgerTxBusy ? 'Wait...' : 'Add 5 R'}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  data-deed-claim-btn="true"
+                                  disabled={
+                                    isDeedLedgerTxBusy ||
+                                    Number(onChainDeedLedger.pending_payout_respite || '0') <= 0
+                                  }
+                                  onClick={async () => {
+                                    const signer = hud.nearWalletId || playerUid || '';
+                                    const deedTokenId =
+                                      hud.nearGamepassTokenId || onChainDeedLedger.token_id;
+                                    if (!signer || !deedTokenId) return;
+                                    soundEngine.playUiClick();
+                                    setIsDeedLedgerTxBusy(true);
+                                    setDeedLedgerActionFeedback(null);
+                                    try {
+                                      const tx = await executeMarketContractCallOnChain({
+                                        signerAccountId: signer,
+                                        methodName: 'claim_deed_payout',
+                                        args: {
+                                          token_id: deedTokenId,
+                                          expected_key_epoch: onChainDeedLedger.key_epoch,
+                                        },
+                                      });
+                                      if (!tx.ok) {
+                                        setDeedLedgerActionFeedback({
+                                          type: 'error',
+                                          text: tx.error || 'Could not claim deed payout.',
+                                        });
+                                        return;
+                                      }
+                                      const payoutAmt = Number(
+                                        onChainDeedLedger.pending_payout_respite || '0',
+                                      );
+                                      void logMarketTransactionToSupabase({
+                                        merchant_id: 'lobby_cafe',
+                                        actor_near_account: signer,
+                                        action_type: 'CLAIM_DEED_PAYOUT',
+                                        item_id: deedTokenId,
+                                        currency: 'RESPITE',
+                                        amount: payoutAmt,
+                                        unit_price: 1,
+                                        reasoning_summary: `Collected ${payoutAmt} RESPITE from your house`,
+                                        near_tx_hash: tx.txHash,
+                                      });
+                                      setDeedLedgerActionFeedback({
+                                        type: 'success',
+                                        text: `Claimed +${payoutAmt} R`,
+                                        txHash: tx.txHash,
+                                      });
+                                      await Promise.all([
+                                        refreshOnChainBalances(signer),
+                                        refreshOnChainDeedLedger(deedTokenId),
+                                      ]);
+                                    } finally {
+                                      setIsDeedLedgerTxBusy(false);
+                                    }
+                                  }}
+                                  className={`flex-1 py-1 rounded-full text-[9px] font-semibold transition-colors ${
+                                    !isDeedLedgerTxBusy &&
+                                    Number(onChainDeedLedger.pending_payout_respite || '0') > 0
+                                      ? 'bg-emerald-500 hover:bg-emerald-400 text-white cursor-pointer'
+                                      : 'bg-white/10 text-slate-400 cursor-not-allowed'
+                                  }`}
+                                >
+                                  Collect
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="flex items-center justify-between gap-1.5 text-[9px] font-mono text-slate-300">
+                              <span className="truncate">
+                                {isLoadingDeedLedger ? 'Loading...' : 'Ledger ready'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => void refreshOnChainDeedLedger()}
+                                className="px-2 py-0.5 rounded-full bg-sky-500 hover:bg-sky-400 text-white font-semibold cursor-pointer transition-colors shrink-0"
+                              >
+                                Sync
+                              </button>
+                            </div>
+                          )}
+
+                          {deedLedgerActionFeedback && (
+                            <div
+                              className={`text-[9px] font-medium leading-tight ${
+                                deedLedgerActionFeedback.type === 'success'
+                                  ? 'text-emerald-300'
+                                  : 'text-rose-300'
+                              }`}
+                            >
+                              <span>{deedLedgerActionFeedback.text}</span>
+                              {deedLedgerActionFeedback.txHash && (
+                                <>
+                                  {' '}
+                                  <a
+                                    href={getNearBlocksTxUrl(deedLedgerActionFeedback.txHash)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="underline text-sky-300"
+                                  >
+                                    Receipt
+                                  </a>
+                                </>
                               )}
                             </div>
-
-                            <div className="flex items-center gap-1.5 pt-0.5">
-                              <button
-                                type="button"
-                                data-deed-fund-btn="true"
-                                disabled={isDeedLedgerTxBusy || respiteBalance < 5}
-                                onClick={async () => {
-                                  const signer = hud.nearWalletId || playerUid || '';
-                                  const deedTokenId =
-                                    hud.nearGamepassTokenId || onChainDeedLedger.token_id;
-                                  if (!signer || !deedTokenId) return;
-                                  soundEngine.playUiClick();
-                                  setIsDeedLedgerTxBusy(true);
-                                  setDeedLedgerActionFeedback(null);
-                                  try {
-                                    const tx = await executeMarketContractCallOnChain({
-                                      signerAccountId: signer,
-                                      methodName: 'fund_deed_royalty',
-                                      args: { token_id: deedTokenId, amount: '5' },
-                                    });
-                                    if (!tx.ok) {
-                                      setDeedLedgerActionFeedback({
-                                        type: 'error',
-                                        text: tx.error || 'Could not fund deed treasury.',
-                                      });
-                                      return;
-                                    }
-                                    void logMarketTransactionToSupabase({
-                                      merchant_id: 'lobby_cafe',
-                                      actor_near_account: signer,
-                                      action_type: 'FUND_DEED_ROYALTY',
-                                      item_id: deedTokenId,
-                                      currency: 'RESPITE',
-                                      amount: 5,
-                                      unit_price: 1,
-                                      reasoning_summary: `Added 5 RESPITE to your house account`,
-                                      near_tx_hash: tx.txHash,
-                                    });
-                                    setDeedLedgerActionFeedback({
-                                      type: 'success',
-                                      text: '+5 R funded to deed treasury',
-                                      txHash: tx.txHash,
-                                    });
-                                    await Promise.all([
-                                      refreshOnChainBalances(signer),
-                                      refreshOnChainDeedLedger(deedTokenId),
-                                    ]);
-                                  } finally {
-                                    setIsDeedLedgerTxBusy(false);
-                                  }
-                                }}
-                                className={`flex-1 py-1.5 rounded-full text-[10px] font-semibold transition-colors ${
-                                  !isDeedLedgerTxBusy && respiteBalance >= 5
-                                    ? 'bg-violet-500 hover:bg-violet-400 text-white cursor-pointer'
-                                    : 'bg-white/10 text-slate-400 cursor-not-allowed'
-                                }`}
-                              >
-                                {isDeedLedgerTxBusy ? 'Wait...' : 'Add 5 R'}
-                              </button>
-
-                              <button
-                                type="button"
-                                data-deed-claim-btn="true"
-                                disabled={
-                                  isDeedLedgerTxBusy ||
-                                  Number(onChainDeedLedger.pending_payout_respite || '0') <= 0
-                                }
-                                onClick={async () => {
-                                  const signer = hud.nearWalletId || playerUid || '';
-                                  const deedTokenId =
-                                    hud.nearGamepassTokenId || onChainDeedLedger.token_id;
-                                  if (!signer || !deedTokenId) return;
-                                  soundEngine.playUiClick();
-                                  setIsDeedLedgerTxBusy(true);
-                                  setDeedLedgerActionFeedback(null);
-                                  try {
-                                    const tx = await executeMarketContractCallOnChain({
-                                      signerAccountId: signer,
-                                      methodName: 'claim_deed_payout',
-                                      args: {
-                                        token_id: deedTokenId,
-                                        expected_key_epoch: onChainDeedLedger.key_epoch,
-                                      },
-                                    });
-                                    if (!tx.ok) {
-                                      setDeedLedgerActionFeedback({
-                                        type: 'error',
-                                        text: tx.error || 'Could not claim deed payout.',
-                                      });
-                                      return;
-                                    }
-                                    const payoutAmt = Number(
-                                      onChainDeedLedger.pending_payout_respite || '0',
-                                    );
-                                    void logMarketTransactionToSupabase({
-                                      merchant_id: 'lobby_cafe',
-                                      actor_near_account: signer,
-                                      action_type: 'CLAIM_DEED_PAYOUT',
-                                      item_id: deedTokenId,
-                                      currency: 'RESPITE',
-                                      amount: payoutAmt,
-                                      unit_price: 1,
-                                      reasoning_summary: `Collected ${payoutAmt} RESPITE from your house`,
-                                      near_tx_hash: tx.txHash,
-                                    });
-                                    setDeedLedgerActionFeedback({
-                                      type: 'success',
-                                      text: `Claimed +${payoutAmt} R`,
-                                      txHash: tx.txHash,
-                                    });
-                                    await Promise.all([
-                                      refreshOnChainBalances(signer),
-                                      refreshOnChainDeedLedger(deedTokenId),
-                                    ]);
-                                  } finally {
-                                    setIsDeedLedgerTxBusy(false);
-                                  }
-                                }}
-                                className={`flex-1 py-1.5 rounded-full text-[10px] font-semibold transition-colors ${
-                                  !isDeedLedgerTxBusy &&
-                                  Number(onChainDeedLedger.pending_payout_respite || '0') > 0
-                                    ? 'bg-emerald-500 hover:bg-emerald-400 text-white cursor-pointer'
-                                    : 'bg-white/10 text-slate-400 cursor-not-allowed'
-                                }`}
-                              >
-                                Collect
-                              </button>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="flex items-center justify-between gap-2 text-[10px] font-mono text-slate-300">
-                            <span>
-                              {isLoadingDeedLedger
-                                ? 'Loading sub-account ledger...'
-                                : 'Sub-account ledger ready'}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => void refreshOnChainDeedLedger()}
-                              className="px-2.5 py-0.5 rounded-full bg-sky-500 hover:bg-sky-400 text-white font-semibold cursor-pointer transition-colors"
-                            >
-                              Sync
-                            </button>
-                          </div>
-                        )}
-
-                        {deedLedgerActionFeedback && (
-                          <div
-                            className={`text-[10px] font-medium ${
-                              deedLedgerActionFeedback.type === 'success'
-                                ? 'text-emerald-300'
-                                : 'text-rose-300'
-                            }`}
-                          >
-                            <span>{deedLedgerActionFeedback.text}</span>
-                            {deedLedgerActionFeedback.txHash && (
-                              <>
-                                {' '}
-                                <a
-                                  href={getNearBlocksTxUrl(deedLedgerActionFeedback.txHash)}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="underline text-sky-300"
-                                >
-                                  Receipt
-                                </a>
-                              </>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                          )}
+                        </div>
+                      }
+                    />
                   )}
 
                   {/* 1B. OWNED FURNITURE, HOUSE THEMES & COLLECTOR GEAR */}
@@ -8402,114 +8527,102 @@ export default function App() {
                           ? 'Theme'
                           : 'Gear';
                     return (
-                      <div
+                      <WalletAssetPortraitCard
                         key={item.id}
-                        data-wallet-catalog-item={item.id}
-                        className="rounded-2xl bg-white border border-slate-900/[0.05] shadow-sm p-3.5 space-y-2.5"
-                      >
-                        <div className="relative rounded-xl overflow-hidden bg-slate-200">
+                        dataAttrs={{ 'data-wallet-catalog-item': item.id }}
+                        brandLabel={categoryLabel}
+                        badgeLabel={`${item.isNft ? 'NFT' : 'Item'}${qty > 1 ? ` ×${qty}` : ''}`}
+                        badgeTone="neutral"
+                        title={item.name}
+                        description={item.description}
+                        tokenId={item.tokenId}
+                        statusLabel={placedQty > 0 ? `In Room ×${placedQty}` : 'Owned'}
+                        statusTone="emerald"
+                        priceLabel={`${quote.buyPrice} ${item.currency}`}
+                        visual={
                           <Furniture3dThumbnail
                             catalogId={item.id}
                             name={item.name}
                             iconEmoji={item.iconEmoji}
-                            size="normal"
+                            size="portrait"
+                            variant="studio"
                           />
-                          <div className="absolute top-2 left-2 z-20 px-2 py-0.5 rounded-full bg-violet-100/95 text-violet-900 font-semibold text-[10px] pointer-events-none">
-                            {categoryLabel}
-                          </div>
-                          <div className="absolute top-2 right-2 z-20 px-2 py-0.5 rounded-full bg-slate-900/80 text-emerald-300 font-mono font-semibold text-[10px] pointer-events-none">
-                            {item.isNft ? 'NFT' : 'Item'}
-                            {qty > 1 ? ` ×${qty}` : ''}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-xs font-semibold text-slate-900 truncate">
-                            {item.name}
-                          </div>
-                          <div className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
-                            {item.tokenId}
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-slate-900/[0.07] pt-2">
-                          <span className="text-emerald-600 font-semibold">
-                            {placedQty > 0 ? `Owned · In Room ×${placedQty}` : 'Owned'}
-                          </span>
-                          <span className="text-slate-500">
-                            {quote.buyPrice} {item.currency}
-                          </span>
-                        </div>
-                      </div>
+                        }
+                      />
                     );
                   })}
 
                   {/* 1C. OWNED VEHICLES (NFT SCOOTERS) */}
                   {URBAN_SCOOTER_CATALOG_ITEMS.filter((v) =>
                     ownedScooterIds.includes(v.id),
-                  ).map((v) => (
-                    <div
-                      key={v.id}
-                      data-wallet-vehicle={v.id}
-                      className="rounded-2xl bg-white border border-slate-900/[0.05] shadow-sm p-3.5 space-y-2.5"
-                    >
-                      <div className="relative w-full h-28 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 flex flex-col items-center justify-center text-center p-3">
-                        <div className="text-base font-semibold text-teal-300 tracking-wide">
-                          Vehicle
-                        </div>
-                        <div className="text-[11px] text-slate-300 mt-0.5">
-                          {v.subtitle}
-                        </div>
-                        <div className="absolute top-2 left-2 z-20 px-2 py-0.5 rounded-full bg-violet-400/20 text-violet-200 font-semibold text-[10px] pointer-events-none">
-                          Gear
-                        </div>
-                        <div className="absolute top-2 right-2 z-20 px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-200 font-mono font-semibold text-[10px] pointer-events-none">
-                          NFT
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold text-slate-900 truncate">
-                          {v.name}
-                        </div>
-                        <div className="text-[10px] font-mono text-slate-400 truncate mt-0.5">
-                          {v.tokenId}
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-slate-900/[0.07] pt-2">
-                        <span className="text-emerald-600 font-semibold">Owned</span>
-                        <span className="text-slate-500">{v.priceRespite} RESPITE</span>
-                      </div>
-                    </div>
-                  ))}
+                  ).map((v) => {
+                    const scooterPortrait = getOrRenderScooterPortraitUrl(v.kind);
+                    return (
+                      <WalletAssetPortraitCard
+                        key={v.id}
+                        dataAttrs={{ 'data-wallet-vehicle': v.id }}
+                        brandLabel="Vehicle"
+                        badgeLabel="NFT"
+                        badgeTone="emerald"
+                        title={v.name}
+                        description={v.description || v.subtitle}
+                        tokenId={v.tokenId}
+                        statusLabel="Owned"
+                        statusTone="emerald"
+                        priceLabel={`${v.priceRespite} RESPITE`}
+                        visual={
+                          scooterPortrait ? (
+                            <div className="relative w-full h-full flex items-center justify-center">
+                              <div
+                                aria-hidden="true"
+                                className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[60%] h-2.5 rounded-full bg-black/[0.08] blur-[5px] pointer-events-none"
+                              />
+                              <img
+                                src={scooterPortrait}
+                                alt={v.name}
+                                className="relative z-10 w-full h-full object-contain p-2 drop-shadow-[0_6px_10px_rgba(15,23,42,0.14)] group-hover/card:scale-105 transition-transform duration-200 pointer-events-none"
+                                draggable={false}
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center justify-center text-center p-3">
+                              <div className="text-xs font-bold text-neutral-800 tracking-tight">
+                                Vehicle
+                              </div>
+                              <div className="text-[10px] text-neutral-500 mt-0.5 line-clamp-2">
+                                {v.subtitle}
+                              </div>
+                            </div>
+                          )
+                        }
+                      />
+                    );
+                  })}
 
                   {/* 2. RECRUITED FAMILY MEMBERS */}
                   {recruitedFamilyMembers.map((m) => (
-                    <div
+                    <WalletAssetPortraitCard
                       key={m.agentId}
-                      className="rounded-2xl bg-white border border-slate-900/[0.05] shadow-sm p-3.5 space-y-2.5"
-                    >
-                      <div className="relative w-full h-28 rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 flex flex-col items-center justify-center text-center p-3">
-                        <div className="text-base font-semibold text-amber-300 tracking-wide">
-                          Companion
+                      brandLabel="Companion"
+                      badgeLabel={m.planLabel}
+                      badgeTone="amber"
+                      title={m.name}
+                      description={`Order: ${m.activeOrder.replace(/_/g, ' ').toUpperCase()}`}
+                      tokenId={m.contractAddress}
+                      statusLabel="Active"
+                      statusTone="emerald"
+                      priceLabel={`${m.pricePaidRespite} RESPITE`}
+                      visual={
+                        <div className="relative w-full h-full flex flex-col items-center justify-center text-center p-3">
+                          <div className="w-12 h-12 rounded-2xl bg-amber-500/12 border border-amber-500/20 flex items-center justify-center text-lg font-bold text-amber-700 shadow-xs">
+                            {m.name.slice(0, 1).toUpperCase()}
+                          </div>
+                          <div className="mt-2 text-[10px] font-semibold text-neutral-600">
+                            AI Companion
+                          </div>
                         </div>
-                        <div className="text-[10px] font-mono text-slate-300 truncate max-w-full mt-0.5">
-                          {m.contractAddress}
-                        </div>
-                        <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-200 font-semibold text-[10px]">
-                          Companion
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold text-slate-900">
-                          {m.name}
-                        </div>
-                        <div className="text-[11px] text-slate-500 mt-0.5">
-                          Order: {m.activeOrder.replace(/_/g, ' ').toUpperCase()} · {m.planLabel}
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-slate-900/[0.07] pt-2">
-                        <span className="text-emerald-600 font-semibold">Active</span>
-                        <span className="text-slate-500">{m.pricePaidRespite} RESPITE</span>
-                      </div>
-                    </div>
+                      }
+                    />
                   ))}
 
                   {/* 3. MINTED FISH NFTS (IN BAG + LISTED BY PLAYER) */}
@@ -8536,32 +8649,19 @@ export default function App() {
                       };
 
                       return (
-                        <div
+                        <WalletAssetPortraitCard
                           key={fish.id}
-                          data-wallet-fish-nft={fish.speciesId}
-                          className="rounded-2xl bg-white border border-slate-900/[0.05] shadow-sm p-3.5 space-y-2.5"
-                        >
-                          <div className="relative rounded-xl overflow-hidden bg-slate-200">
-                            <Fish3dThumbnail
-                              speciesId={fish.speciesId}
-                              speciesName={fish.speciesName}
-                              colorHex={fish.colorHex}
-                              variant="card"
-                              onInspect={openWalletFish3d}
-                            />
-                            <div className="absolute top-2 left-2 z-20 px-2 py-0.5 rounded-full bg-sky-100/95 text-sky-900 font-semibold text-[10px] pointer-events-none">
-                              Fish NFT
-                            </div>
-                          </div>
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="text-xs font-semibold text-slate-900 truncate">
-                                {fish.speciesName}
-                              </div>
-                              <div className="text-[11px] text-slate-500">
-                                {fish.weightKg.toFixed(2)} kg · {fish.rarity}
-                              </div>
-                            </div>
+                          dataAttrs={{ 'data-wallet-fish-nft': fish.speciesId }}
+                          brandLabel="Fish NFT"
+                          badgeLabel={fish.rarity}
+                          badgeTone="sky"
+                          title={fish.speciesName}
+                          description={`${fish.weightKg.toFixed(2)} kg · ${fish.waterZoneLabel}`}
+                          tokenId={fish.nftTokenId || undefined}
+                          statusLabel="Owned"
+                          statusTone="emerald"
+                          priceLabel={`${fish.suggestedRespitePrice || 12} RESPITE`}
+                          headerAction={
                             <button
                               type="button"
                               data-wallet-fish-3d-btn={fish.id}
@@ -8569,18 +8669,21 @@ export default function App() {
                                 soundEngine.playUiClick();
                                 openWalletFish3d();
                               }}
-                              className="px-2.5 py-1 rounded-full bg-sky-100 hover:bg-sky-200 text-sky-900 text-[10.5px] font-semibold transition-colors cursor-pointer shrink-0"
+                              className="px-2 py-0.5 rounded-full bg-neutral-900 hover:bg-neutral-700 text-white text-[9.5px] font-semibold transition-colors cursor-pointer"
                             >
-                              View
+                              3D
                             </button>
-                          </div>
-                          <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-slate-900/[0.07] pt-2">
-                            <span className="text-emerald-600 font-semibold">Owned</span>
-                            <span className="text-slate-500">
-                              {fish.suggestedRespitePrice || 12} RESPITE
-                            </span>
-                          </div>
-                        </div>
+                          }
+                          visual={
+                            <Fish3dThumbnail
+                              speciesId={fish.speciesId}
+                              speciesName={fish.speciesName}
+                              colorHex={fish.colorHex}
+                              variant="studio"
+                              onInspect={openWalletFish3d}
+                            />
+                          }
+                        />
                       );
                     })}
 
@@ -8610,32 +8713,19 @@ export default function App() {
                       };
 
                       return (
-                        <div
+                        <WalletAssetPortraitCard
                           key={listing.listingId}
-                          data-wallet-listed-fish-nft={listing.speciesId}
-                          className="rounded-2xl bg-white border border-slate-900/[0.05] shadow-sm p-3.5 space-y-2.5"
-                        >
-                          <div className="relative rounded-xl overflow-hidden bg-slate-200">
-                            <Fish3dThumbnail
-                              speciesId={listing.speciesId}
-                              speciesName={listing.speciesName}
-                              colorHex={listing.colorHex}
-                              variant="card"
-                              onInspect={openListedWalletFish3d}
-                            />
-                            <div className="absolute top-2 left-2 z-20 px-2 py-0.5 rounded-full bg-amber-100/95 text-amber-900 font-semibold text-[10px] pointer-events-none">
-                              Listed at Kai
-                            </div>
-                          </div>
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="text-xs font-semibold text-slate-900 truncate">
-                                {listing.speciesName}
-                              </div>
-                              <div className="text-[11px] text-slate-500">
-                                {listing.weightKg.toFixed(2)} kg · {listing.rarity}
-                              </div>
-                            </div>
+                          dataAttrs={{ 'data-wallet-listed-fish-nft': listing.speciesId }}
+                          brandLabel="Listed at Kai"
+                          badgeLabel={listing.rarity}
+                          badgeTone="amber"
+                          title={listing.speciesName}
+                          description={`${listing.weightKg.toFixed(2)} kg · ${listing.waterZoneLabel}`}
+                          tokenId={listing.nftTokenId || undefined}
+                          statusLabel="On Market"
+                          statusTone="amber"
+                          priceLabel={`${listing.priceRespite} RESPITE`}
+                          headerAction={
                             <button
                               type="button"
                               data-wallet-listed-fish-3d-btn={listing.listingId}
@@ -8643,37 +8733,42 @@ export default function App() {
                                 soundEngine.playUiClick();
                                 openListedWalletFish3d();
                               }}
-                              className="px-2.5 py-1 rounded-full bg-sky-100 hover:bg-sky-200 text-sky-900 text-[10.5px] font-semibold transition-colors cursor-pointer shrink-0"
+                              className="px-2 py-0.5 rounded-full bg-neutral-900 hover:bg-neutral-700 text-white text-[9.5px] font-semibold transition-colors cursor-pointer"
                             >
-                              View
+                              3D
                             </button>
-                          </div>
-                          <div className="flex items-center justify-between text-[11px] font-mono tabular-nums border-t border-slate-900/[0.07] pt-2">
-                            <span className="text-amber-600 font-semibold">On Market</span>
-                            <span className="text-slate-500">{listing.priceRespite} RESPITE</span>
-                          </div>
-                        </div>
+                          }
+                          visual={
+                            <Fish3dThumbnail
+                              speciesId={listing.speciesId}
+                              speciesName={listing.speciesName}
+                              colorHex={listing.colorHex}
+                              variant="studio"
+                              onInspect={openListedWalletFish3d}
+                            />
+                          }
+                        />
                       );
                     })}
 
                   {totalOwnedWalletItems === 0 && (
-                      <div className="col-span-1 sm:col-span-2 py-8 px-4 text-center rounded-2xl bg-white/60 border border-dashed border-slate-300 text-slate-500 text-xs space-y-1">
-                        <div className="font-semibold text-slate-700">No items yet</div>
-                        <div className="text-[11px] text-slate-500">
-                          Buy a house, furniture, recruit a companion, or mint caught fish into NFTs.
-                        </div>
+                    <div className="col-span-full py-8 px-4 text-center rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-700 text-xs space-y-1">
+                      <div className="font-semibold text-slate-900">No items yet</div>
+                      <div className="text-[11px] text-slate-500">
+                        Buy a house, furniture, recruit a companion, or mint caught fish into NFTs.
                       </div>
-                    )}
+                    </div>
+                  )}
                 </div>
               </div>
               );
             })() : (
               <div data-wallet-history-panel="true" className="space-y-3">
                 {/* HEADER & CURRENCY FILTER PILLS */}
-                <div className="rounded-2xl bg-white border border-slate-900/[0.05] shadow-sm p-4 space-y-3">
+                <div className="rounded-2xl bg-[#eef0f4]/92 text-slate-900 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] p-4 space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="text-[11px] font-semibold text-emerald-600">
+                      <div className="text-[11px] font-semibold text-emerald-700">
                         History
                       </div>
                       <div className="text-xs font-medium text-slate-700 truncate">
@@ -8687,13 +8782,13 @@ export default function App() {
                         soundEngine.playUiClick();
                         void refreshWalletTransactions();
                       }}
-                      className="px-3 py-1.5 rounded-full bg-sky-100 hover:bg-sky-200 text-sky-900 font-semibold text-[11px] transition-colors cursor-pointer shrink-0"
+                      className="px-3 py-1.5 rounded-full bg-white hover:bg-slate-50 text-slate-800 border border-slate-200/90 shadow-xs font-semibold text-[11px] transition-colors cursor-pointer shrink-0"
                     >
                       {isLoadingWalletTransactions ? 'Loading...' : 'Refresh'}
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-slate-900/[0.07]">
+                  <div className="flex items-center gap-1.5 flex-wrap pt-2.5 border-t border-slate-300/60">
                     {(['ALL', 'LUL', 'CYON', 'RESPITE', 'NEAR'] as const).map((filterKey) => (
                       <button
                         key={filterKey}
@@ -8705,8 +8800,8 @@ export default function App() {
                         }}
                         className={`px-3 py-1 rounded-full text-[11px] font-semibold cursor-pointer transition-colors ${
                           walletHistoryFilter === filterKey
-                            ? 'bg-white text-slate-900 shadow-xs'
-                            : 'bg-slate-900/[0.06] text-slate-400 hover:bg-slate-900/[0.10]'
+                            ? 'bg-slate-900 text-white shadow-xs'
+                            : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90'
                         }`}
                       >
                         {filterKey}
@@ -8725,7 +8820,7 @@ export default function App() {
 
                   if (isLoadingWalletTransactions && filteredTxs.length === 0) {
                     return (
-                      <div className="p-5 rounded-2xl bg-white border border-slate-900/[0.05] shadow-sm text-center text-xs font-medium text-slate-500">
+                      <div className="p-5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-center text-xs font-medium text-slate-600">
                         Loading transaction history...
                       </div>
                     );
@@ -8735,9 +8830,9 @@ export default function App() {
                     return (
                       <div
                         data-wallet-history-empty="true"
-                        className="p-6 rounded-2xl bg-white/60 border border-dashed border-slate-300 text-center space-y-1"
+                        className="p-6 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-center space-y-1"
                       >
-                        <div className="text-xs font-semibold text-slate-700">
+                        <div className="text-xs font-semibold text-slate-900">
                           No transactions yet
                         </div>
                         <div className="text-[11px] text-slate-500">
@@ -8779,15 +8874,15 @@ export default function App() {
                           <div
                             key={tx.id}
                             data-wallet-tx-item="true"
-                            className="p-3.5 rounded-2xl bg-white border border-slate-900/[0.05] shadow-sm space-y-2"
+                            className="p-3.5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 space-y-2"
                           >
                             <div className="flex items-start justify-between gap-2.5">
                               <div className="min-w-0 space-y-1">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="px-2 py-0.5 rounded-full bg-slate-900/[0.06] text-slate-700 text-[10px] font-semibold">
+                                  <span className="px-2 py-0.5 rounded-full bg-[#dfe4ec]/90 border border-slate-300/60 text-slate-700 text-[10px] font-semibold">
                                     {actionLabel}
                                   </span>
-                                  <span className="text-[11px] text-slate-400">
+                                  <span className="text-[11px] text-slate-500">
                                     {formattedDate}
                                   </span>
                                 </div>
@@ -8804,15 +8899,15 @@ export default function App() {
                             </div>
 
                             {tx.near_tx_hash && (
-                              <div className="pt-2 border-t border-slate-900/[0.07] flex items-center justify-between gap-2 text-[10.5px] font-mono">
-                                <span className="text-slate-400 truncate">
+                              <div className="pt-2 border-t border-slate-300/60 flex items-center justify-between gap-2 text-[10.5px] font-mono">
+                                <span className="text-slate-500 truncate">
                                   Tx: {tx.near_tx_hash}
                                 </span>
                                 <a
                                   href={`https://testnet.nearblocks.io/txns/${tx.near_tx_hash}`}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="font-sans font-semibold text-sky-600 hover:text-sky-700 hover:underline shrink-0"
+                                  className="font-sans font-semibold text-sky-700 hover:text-sky-800 hover:underline shrink-0"
                                 >
                                   View on NearBlocks ↗
                                 </a>
@@ -8831,148 +8926,94 @@ export default function App() {
   );
 
   const renderGearApp = (embeddedInPhone: boolean) => (
-        <div
-        data-gear-modal={embeddedInPhone ? "true" : undefined}
-        className={
-          embeddedInPhone
-            ? "relative w-full h-full flex-1 flex flex-col bg-[#f4f6f9] text-slate-900 overflow-hidden min-h-0"
-            : "relative flex-1 flex flex-col rounded-[28px] bg-[#f4f6f9]/96 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] text-slate-900 overflow-hidden min-h-0"
-        }
-      >
-          <div className={`flex items-center justify-between gap-2 bg-white/95 border-b border-slate-200/80 shrink-0 ${embeddedInPhone ? 'px-3.5 py-2.5' : 'px-5 py-3.5'}`}>
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-                <Wrench className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
-              </div>
-              <span className="text-sm font-semibold text-slate-900">Your Gear</span>
-            </div>
-            {!embeddedInPhone && (
-              <button
-                type="button"
-                data-close-gear-btn="true"
-                onClick={() => {
-                  soundEngine.playUiCancel();
-                  setIsGearModalOpen(false);
-                }}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer active:scale-95 shrink-0"
-                aria-label="Close Gear"
-              >
-                <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
-              </button>
-            )}
-          </div>
+    <div
+      data-gear-modal={embeddedInPhone ? 'true' : undefined}
+      className={
+        embeddedInPhone
+          ? 'relative w-full h-full flex-1 flex flex-col bg-transparent p-3 text-white overflow-hidden min-h-0'
+          : 'relative flex-1 flex flex-col rounded-[32px] bg-[#141926]/68 backdrop-blur-2xl border border-white/25 shadow-[0_24px_70px_rgba(0,0,0,0.52)] p-4 text-white overflow-hidden min-h-0'
+      }
+    >
+      {/* Header (matching City Feed) */}
+      <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-white/15 shrink-0">
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-semibold tracking-tight text-white truncate">
+            Scooters &amp; Gear
+          </h2>
+          <p className="text-[10.5px] text-white/70 truncate">
+            {ownedScooterIds.length}{' '}
+            {ownedScooterIds.length === 1 ? 'scooter' : 'scooters'} · Personal Equipment
+          </p>
+        </div>
 
-          <div className={`flex-1 overflow-y-auto space-y-3 min-h-0 ${embeddedInPhone ? 'p-3.5' : 'p-4 sm:p-5'}`}>
-            {(() => {
-              const isJoranEquipped = hud.equippedWeapon === 'Joran Fishing';
-              const ownedFishingGear = MERCHANT_CATALOG_ITEMS.filter(
-                (item) => item.category === 'fishing_gear' && ownedMerchantItemIds.includes(item.id),
-              );
-              return (
-                <>
-            {/* Personal Fishing Rod Card */}
-            <div
-              data-gear-item-card="fishing_rod"
-              className={`rounded-2xl bg-white border shadow-sm p-4 transition-all ${
-                isJoranEquipped
-                  ? 'border-emerald-300 ring-2 ring-emerald-400/20'
-                  : 'border-slate-200/75'
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-11 h-11 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center font-bold text-xs tracking-wide shrink-0">
-                    ROD
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-semibold text-slate-900">
-                        Fishing Rod
-                      </span>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                          isJoranEquipped
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {isJoranEquipped ? 'Equipped' : 'In Gear'}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5 leading-snug">
-                      Carbon spin rod. Use along the beach or lake shore.
-                    </p>
-                  </div>
-                </div>
-              </div>
+        {!embeddedInPhone && (
+          <button
+            type="button"
+            data-close-gear-btn="true"
+            onClick={() => {
+              soundEngine.playUiCancel();
+              setIsGearModalOpen(false);
+            }}
+            className="w-8 h-8 rounded-full bg-[#eef0f4]/90 hover:bg-white border border-white/80 text-slate-700 hover:text-rose-600 shadow-sm flex items-center justify-center transition-colors cursor-pointer active:scale-95 shrink-0"
+            aria-label="Close Gear"
+          >
+            <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+          </button>
+        )}
+      </div>
 
-              <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-slate-500">
-                  {isJoranEquipped ? 'Equipped' : 'Stored in Gear'}
-                </span>
-
-                <button
-                  type="button"
-                  data-gear-toggle-fishing-rod="true"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    if (isJoranEquipped) {
-                      setIsChargingCast(false);
-                      setIsHoldingReel(false);
-                      setFishingMinigame(null);
-                      setFishingHintMessage(null);
-                      setFishingPhase('idle');
-                      dispatchBuddyAction('qcEquipWeapon:unarmed');
-                    } else {
-                      dispatchBuddyAction('qcEquipWeapon:fishing_rod');
-                    }
-                  }}
-                  className={`px-4 py-1.5 rounded-full font-semibold text-xs cursor-pointer active:scale-95 transition-colors ${
-                    isJoranEquipped
-                      ? 'bg-rose-100 hover:bg-rose-200 text-rose-700'
-                      : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs'
-                  }`}
-                >
-                  {isJoranEquipped ? 'Unequip' : 'Equip'}
-                </button>
-              </div>
-            </div>
-
-            {/* Owned Fishing Gear & Tackle Purchased from Merchant Kai */}
-            {ownedFishingGear.map((gear) => (
+      <div className="flex-1 overflow-y-auto overflow-x-hidden pr-0.5 mt-2.5 space-y-2.5 min-h-0">
+        {(() => {
+          const isJoranEquipped = hud.equippedWeapon === 'Joran Fishing';
+          const ownedFishingGear = MERCHANT_CATALOG_ITEMS.filter(
+            (item) => item.category === 'fishing_gear' && ownedMerchantItemIds.includes(item.id),
+          );
+          return (
+            <>
+              {/* Personal Fishing Rod Card (Frosted Gray Card) */}
               <div
-                key={gear.id}
-                data-gear-item-card={gear.id}
-                className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-3.5 flex items-center justify-between gap-3"
+                data-gear-item-card="fishing_rod"
+                className={`rounded-2xl bg-[#eef0f4]/92 border shadow-[0_8px_22px_rgba(15,23,42,0.16)] p-3.5 text-slate-900 transition-all ${
+                  isJoranEquipped
+                    ? 'border-emerald-400/90 ring-2 ring-emerald-400/25'
+                    : 'border-white/80'
+                }`}
               >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-[10px] shrink-0">
-                    GEAR
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-xs font-semibold text-slate-900">
-                        {gear.name}
-                      </span>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                          gear.isNft
-                            ? 'bg-violet-100 text-violet-800'
-                            : 'bg-sky-100 text-sky-800'
-                        }`}
-                      >
-                        {gear.isNft ? 'NFT' : 'Tackle'}
-                      </span>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-11 h-11 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 text-sky-700 flex items-center justify-center font-bold text-xs tracking-wide shrink-0">
+                      ROD
                     </div>
-                    <div className="text-[11px] text-slate-500 mt-0.5 truncate">
-                      {gear.description}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold text-slate-900">
+                          Fishing Rod
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            isJoranEquipped
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-[#dfe4ec]/90 text-slate-700'
+                          }`}
+                        >
+                          {isJoranEquipped ? 'Equipped' : 'In Gear'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 mt-0.5 leading-snug">
+                        Carbon spin rod. Use along the beach or lake shore.
+                      </p>
                     </div>
                   </div>
                 </div>
 
-                {gear.isEquippableRod && (
+                <div className="mt-3 pt-2.5 border-t border-slate-300/60 flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-slate-600">
+                    {isJoranEquipped ? 'Equipped' : 'Stored in Gear'}
+                  </span>
+
                   <button
                     type="button"
+                    data-gear-toggle-fishing-rod="true"
                     onClick={() => {
                       soundEngine.playUiClick();
                       if (isJoranEquipped) {
@@ -8986,551 +9027,634 @@ export default function App() {
                         dispatchBuddyAction('qcEquipWeapon:fishing_rod');
                       }
                     }}
-                    className={`px-3.5 py-1.5 rounded-full font-semibold text-[11px] transition-colors cursor-pointer shrink-0 ${
+                    className={`px-4 py-1.5 rounded-xl font-semibold text-xs cursor-pointer active:scale-95 transition-colors ${
                       isJoranEquipped
                         ? 'bg-rose-100 hover:bg-rose-200 text-rose-700'
-                        : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs'
+                        : 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs'
                     }`}
                   >
                     {isJoranEquipped ? 'Unequip' : 'Equip'}
                   </button>
-                )}
+                </div>
               </div>
-            ))}
-                </>
-              );
-            })()}
 
-            {URBAN_SCOOTER_CATALOG_ITEMS.filter((v) => ownedScooterIds.includes(v.id)).map(
-              (v) => {
-                const isEquipped = equippedScooterKind === v.kind;
-                return (
-                  <div
-                    key={v.id}
-                    data-gear-vehicle={v.id}
-                    className={`rounded-2xl bg-white border shadow-sm p-4 transition-all ${
-                      isEquipped
-                        ? 'border-emerald-300 ring-2 ring-emerald-400/20'
-                        : 'border-slate-200/75'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-11 h-11 rounded-xl bg-teal-100 text-teal-800 flex items-center justify-center font-bold text-[10px] shrink-0">
-                          RIDE
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-sm font-semibold text-slate-900">
-                              {v.name}
-                            </span>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-100 text-violet-800">
-                              NFT
-                            </span>
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                isEquipped
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : 'bg-slate-100 text-slate-600'
-                              }`}
-                            >
-                              {isEquipped ? 'Riding' : 'Owned'}
-                            </span>
-                          </div>
-                          <div className="text-xs text-slate-500 mt-0.5">
-                            {v.subtitle}
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        data-gear-equip-btn={v.id}
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          if (isEquipped) {
-                            dispatchBuddyAction('unequipScooter');
-                          } else {
-                            dispatchBuddyAction(`equipScooter:${v.kind}`);
-                          }
-                          setIsGearModalOpen(false); if (embeddedInPhone) closeSmartphone();
-                        }}
-                        className={`px-4 py-1.5 rounded-full font-semibold text-xs transition-colors cursor-pointer shrink-0 ${
-                          isEquipped
-                            ? 'bg-rose-100 hover:bg-rose-200 text-rose-700'
-                            : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs'
-                        }`}
-                      >
-                        {isEquipped ? 'Get Off' : 'Ride'}
-                      </button>
+              {/* Owned Fishing Gear & Tackle Purchased from Merchant Kai */}
+              {ownedFishingGear.map((gear) => (
+                <div
+                  key={gear.id}
+                  data-gear-item-card={gear.id}
+                  className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] p-3.5 text-slate-900 flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 text-slate-700 flex items-center justify-center font-bold text-[10px] shrink-0">
+                      GEAR
                     </div>
-                  </div>
-                );
-              },
-            )}
-
-            {ownedScooterIds.length === 0 && (
-              <div className="p-5 rounded-2xl bg-white/80 border border-dashed border-slate-300 text-center">
-                <div className="text-xs font-semibold text-slate-700">
-                  No rides yet
-                </div>
-                <div className="text-[11px] text-slate-500 mt-1">
-                  Buy a scooter at the Scooter Showroom in the city, then ride it from here.
-                </div>
-              </div>
-            )}
-
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-sm">
-              <div className="text-[11px] font-semibold text-emerald-300">
-                How to Ride
-              </div>
-              <div className="text-xs text-slate-300 mt-1 leading-relaxed">
-                Move with WASD or the joystick — hold Shift to go faster. Your scooter
-                parks itself when you step indoors, board the tram, or enter the Warzone.
-              </div>
-            </div>
-          </div>
-        </div>
-  );
-
-  const renderPersonalBagApp = (embeddedInPhone: boolean) => (
-        <div
-        data-personal-bag-modal={embeddedInPhone ? "true" : undefined}
-        className={
-          embeddedInPhone
-            ? "relative w-full h-full flex-1 flex flex-col bg-[#f4f6f9] text-slate-900 overflow-hidden min-h-0"
-            : "relative flex-1 flex flex-col rounded-[28px] bg-[#f4f6f9]/96 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] text-slate-900 overflow-hidden min-h-0"
-        }
-      >
-          {/* Header & Tabs */}
-          <div className={`flex items-center justify-between gap-2 bg-white/95 border-b border-slate-200/80 shrink-0 ${embeddedInPhone ? 'px-3.5 py-2.5' : 'px-4 sm:px-5 py-3.5'}`}>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <button
-                type="button"
-                data-bag-tab="equipment"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  setPersonalBagTab('equipment');
-                }}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
-                  personalBagTab === 'equipment'
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'bg-slate-100 hover:bg-slate-200/80 text-slate-600'
-                }`}
-              >
-                <Backpack className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
-                <span>Equipment</span>
-              </button>
-
-              <button
-                type="button"
-                data-bag-tab="fish"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  setPersonalBagTab('fish');
-                }}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
-                  personalBagTab === 'fish'
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'bg-slate-100 hover:bg-slate-200/80 text-slate-600'
-                }`}
-              >
-                <span>Fish ({caughtFishBucket.length}/20)</span>
-              </button>
-
-              <button
-                type="button"
-                data-bag-tab="items"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  setPersonalBagTab('items');
-                }}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
-                  personalBagTab === 'items'
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'bg-slate-100 hover:bg-slate-200/80 text-slate-600'
-                }`}
-              >
-                <span>Items ({ownedMerchantItemIds.length + ownedApparelIds.length})</span>
-              </button>
-            </div>
-
-            {!embeddedInPhone && (
-              <button
-                type="button"
-                data-close-personal-bag-btn="true"
-                onClick={() => {
-                  soundEngine.playUiCancel();
-                  setIsPersonalBagModalOpen(false);
-                }}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer active:scale-95 shrink-0"
-                aria-label="Close Personal Bag"
-              >
-                <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
-              </button>
-            )}
-          </div>
-
-          {/* Bag Body */}
-          <div className={`flex-1 overflow-y-auto space-y-3 min-h-0 ${embeddedInPhone ? 'p-3.5' : 'p-4 sm:p-5'}`}>
-            {personalBagTab === 'equipment' && (() => {
-              const ownedWardrobeItems = FASHION_APPAREL_CATALOG_ITEMS.filter((apparel) =>
-                ownedApparelIds.includes(apparel.id),
-              );
-              const totalOwnedStudioCount = WARDROBE_STUDIO_ITEMS.filter(
-                (item) => item.isStarterDefault || ownedApparelIds.includes(item.id),
-              ).length;
-              return (
-                <div className="space-y-3">
-                  {/* Wardrobe & Apparel Section inside Personal Bag */}
-                  <div className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-4 space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-7 h-7 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
-                          <Shirt className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
-                        </div>
-                        <span className="text-xs font-semibold text-slate-900 truncate">
-                          Wardrobe &amp; Apparel ({totalOwnedStudioCount})
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-semibold text-slate-900">
+                          {gear.name}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            gear.isNft
+                              ? 'bg-violet-100 text-violet-800'
+                              : 'bg-sky-100 text-sky-800'
+                          }`}
+                        >
+                          {gear.isNft ? 'NFT' : 'Tackle'}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {equippedTorsoItemId && (
-                          <button
-                            type="button"
-                            onClick={() => handleToggleEquipApparel(null)}
-                            className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10.5px] font-semibold transition-colors cursor-pointer whitespace-nowrap"
-                          >
-                            Default Top
-                          </button>
-                        )}
-                        {hud.worldMode !== 'warzone' && (
-                          <button
-                            type="button"
-                            data-bag-open-wardrobe-studio-btn="true"
-                            onClick={() => {
-                              soundEngine.playUiConfirm();
-                              setIsPersonalBagModalOpen(false); if (embeddedInPhone) closeSmartphone();
-                              setIsWardrobeStudioOpen(true);
-                            }}
-                            className="px-3 py-1 rounded-full bg-fuchsia-100 hover:bg-fuchsia-200 text-fuchsia-900 text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap"
-                          >
-                            3D Studio
-                          </button>
-                        )}
+                      <div className="text-[11px] text-slate-600 mt-0.5 truncate">
+                        {gear.description}
                       </div>
                     </div>
-
-                    {ownedWardrobeItems.length === 0 ? (
-                      <div className="p-4 rounded-xl bg-[#f4f6f9] border border-dashed border-slate-300 text-center space-y-1">
-                        <div className="text-xs font-semibold text-slate-700">
-                          Starter Wardrobe Ready
-                        </div>
-                        <p className="text-[11px] text-slate-500 leading-relaxed">
-                          Open the 3D Wardrobe Studio to customize Top, Bottoms, Hair, Shoes, Sets, and Dye Colors.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {ownedWardrobeItems.map((apparel) => {
-                          const isEquippedNow = equippedTorsoItemId === apparel.id;
-                          return (
-                            <div
-                              key={apparel.id}
-                              data-bag-apparel-row={apparel.id}
-                              className="p-3 rounded-xl bg-[#f4f6f9] border border-slate-200/70 flex items-center justify-between gap-2.5"
-                            >
-                              <div className="min-w-0">
-                                <div className="text-xs font-semibold text-slate-900 truncate">
-                                  {apparel.name}
-                                </div>
-                                <div className="text-[11px] text-slate-500 mt-0.5">
-                                  <span>Torso Slot</span>
-                                  <span aria-hidden="true"> · </span>
-                                  <span>{characterGender === 'female' ? 'Female Fit' : 'Male Fit'}</span>
-                                  <span aria-hidden="true"> · </span>
-                                  <span className={isEquippedNow ? 'text-emerald-600 font-semibold' : 'text-slate-500'}>
-                                    {isEquippedNow ? 'Wearing Now' : 'In Bag'}
-                                  </span>
-                                </div>
-                              </div>
-
-                              <button
-                                type="button"
-                                data-bag-equip-apparel-btn={apparel.id}
-                                onClick={() => handleToggleEquipApparel(apparel.id)}
-                                className={`px-3.5 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer whitespace-nowrap shrink-0 transition-colors ${
-                                  isEquippedNow
-                                    ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
-                                    : 'bg-sky-100 hover:bg-sky-200 text-sky-900'
-                                }`}
-                              >
-                                {isEquippedNow ? 'Take Off' : 'Wear'}
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
 
-                  {/* Quick Summary of Bag Capacity */}
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-sm flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-[11px] font-semibold text-emerald-300">
-                        Fish Bucket
-                      </div>
-                      <div className="text-xs text-slate-200 font-mono tabular-nums mt-0.5">
-                        {caughtFishBucket.length} / 20 Fish Stored
-                      </div>
-                    </div>
+                  {gear.isEquippableRod && (
                     <button
                       type="button"
                       onClick={() => {
                         soundEngine.playUiClick();
-                        setPersonalBagTab('fish');
+                        if (isJoranEquipped) {
+                          setIsChargingCast(false);
+                          setIsHoldingReel(false);
+                          setFishingMinigame(null);
+                          setFishingHintMessage(null);
+                          setFishingPhase('idle');
+                          dispatchBuddyAction('qcEquipWeapon:unarmed');
+                        } else {
+                          dispatchBuddyAction('qcEquipWeapon:fishing_rod');
+                        }
                       }}
-                      className="px-3.5 py-1.5 rounded-full bg-sky-400/20 hover:bg-sky-400/30 text-sky-200 font-semibold text-xs transition-colors cursor-pointer shrink-0"
+                      className={`px-3.5 py-1.5 rounded-xl font-semibold text-[11px] transition-colors cursor-pointer shrink-0 ${
+                        isJoranEquipped
+                          ? 'bg-rose-100 hover:bg-rose-200 text-rose-700'
+                          : 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs'
+                      }`}
                     >
-                      View Fish
+                      {isJoranEquipped ? 'Unequip' : 'Equip'}
                     </button>
+                  )}
+                </div>
+              ))}
+            </>
+          );
+        })()}
+
+        {URBAN_SCOOTER_CATALOG_ITEMS.filter((v) => ownedScooterIds.includes(v.id)).map(
+          (v) => {
+            const isEquipped = equippedScooterKind === v.kind;
+            return (
+              <div
+                key={v.id}
+                data-gear-vehicle={v.id}
+                className={`rounded-2xl bg-[#eef0f4]/92 border shadow-[0_8px_22px_rgba(15,23,42,0.16)] p-3.5 text-slate-900 transition-all ${
+                  isEquipped
+                    ? 'border-emerald-400/90 ring-2 ring-emerald-400/25'
+                    : 'border-white/80'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-11 h-11 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 text-teal-800 flex items-center justify-center font-bold text-[10px] shrink-0">
+                      RIDE
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-sm font-semibold text-slate-900">
+                          {v.name}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-100 text-violet-800">
+                          NFT
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            isEquipped
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-[#dfe4ec]/90 text-slate-700'
+                          }`}
+                        >
+                          {isEquipped ? 'Riding' : 'Owned'}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-600 mt-0.5">
+                        {v.subtitle}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    data-gear-equip-btn={v.id}
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      if (isEquipped) {
+                        dispatchBuddyAction('unequipScooter');
+                      } else {
+                        dispatchBuddyAction(`equipScooter:${v.kind}`);
+                      }
+                      setIsGearModalOpen(false);
+                      if (embeddedInPhone) closeSmartphone();
+                    }}
+                    className={`px-4 py-1.5 rounded-xl font-semibold text-xs transition-colors cursor-pointer shrink-0 ${
+                      isEquipped
+                        ? 'bg-rose-100 hover:bg-rose-200 text-rose-700'
+                        : 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs'
+                    }`}
+                  >
+                    {isEquipped ? 'Get Off' : 'Ride'}
+                  </button>
+                </div>
+              </div>
+            );
+          },
+        )}
+
+        {ownedScooterIds.length === 0 && (
+          <div className="p-5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-center text-slate-900">
+            <div className="text-xs font-semibold text-slate-900">
+              No rides yet
+            </div>
+            <div className="text-[11px] text-slate-600 mt-1">
+              Buy a scooter at the Scooter Showroom in the city, then ride it from here.
+            </div>
+          </div>
+        )}
+
+        <div className="p-3.5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900">
+          <div className="text-[11px] font-semibold text-slate-900">
+            How to Ride
+          </div>
+          <div className="text-xs text-slate-600 mt-1 leading-relaxed">
+            Move with WASD or the joystick — hold Shift to go faster. Your scooter
+            parks itself when you step indoors, board the tram, or enter the Warzone.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderPersonalBagApp = (embeddedInPhone: boolean) => (
+    <div
+      data-personal-bag-modal={embeddedInPhone ? 'true' : undefined}
+      className={
+        embeddedInPhone
+          ? 'relative w-full h-full flex-1 flex flex-col bg-transparent p-3 text-white overflow-hidden min-h-0'
+          : 'relative flex-1 flex flex-col rounded-[32px] bg-[#141926]/68 backdrop-blur-2xl border border-white/25 shadow-[0_24px_70px_rgba(0,0,0,0.52)] p-4 text-white overflow-hidden min-h-0'
+      }
+    >
+      {/* Header (matching City Feed) */}
+      <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-white/15 shrink-0">
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-semibold tracking-tight text-white truncate">
+            Personal Bag
+          </h2>
+          <p className="text-[10.5px] text-white/70 truncate">
+            {caughtFishBucket.length}/20 Fish ·{' '}
+            {ownedMerchantItemIds.length + ownedApparelIds.length} Items
+          </p>
+        </div>
+
+        {!embeddedInPhone && (
+          <button
+            type="button"
+            data-close-personal-bag-btn="true"
+            onClick={() => {
+              soundEngine.playUiCancel();
+              setIsPersonalBagModalOpen(false);
+            }}
+            className="w-8 h-8 rounded-full bg-[#eef0f4]/90 hover:bg-white border border-white/80 text-slate-700 hover:text-rose-600 shadow-sm flex items-center justify-center transition-colors cursor-pointer active:scale-95 shrink-0"
+            aria-label="Close Personal Bag"
+          >
+            <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+          </button>
+        )}
+      </div>
+
+      {/* Segmented Filter Bar (inZOI Frosted Pearl Card matching City Feed) */}
+      <div
+        role="tablist"
+        aria-label="Bag Categories"
+        className="grid grid-cols-3 gap-1 p-1 mt-2.5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_6px_16px_rgba(15,23,42,0.14)] shrink-0"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={personalBagTab === 'equipment'}
+          data-bag-tab="equipment"
+          onClick={() => {
+            soundEngine.playUiClick();
+            setPersonalBagTab('equipment');
+          }}
+          className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1 whitespace-nowrap truncate transition-colors cursor-pointer ${
+            personalBagTab === 'equipment'
+              ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.1)]'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/55'
+          }`}
+        >
+          <Backpack className="w-3 h-3 stroke-[2.2] shrink-0" aria-hidden="true" />
+          <span>Equipment</span>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          aria-selected={personalBagTab === 'fish'}
+          data-bag-tab="fish"
+          onClick={() => {
+            soundEngine.playUiClick();
+            setPersonalBagTab('fish');
+          }}
+          className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold whitespace-nowrap truncate transition-colors cursor-pointer ${
+            personalBagTab === 'fish'
+              ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.1)]'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/55'
+          }`}
+        >
+          <span>Fish ({caughtFishBucket.length}/20)</span>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          aria-selected={personalBagTab === 'items'}
+          data-bag-tab="items"
+          onClick={() => {
+            soundEngine.playUiClick();
+            setPersonalBagTab('items');
+          }}
+          className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold whitespace-nowrap truncate transition-colors cursor-pointer ${
+            personalBagTab === 'items'
+              ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.1)]'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-white/55'
+          }`}
+        >
+          <span>Items ({ownedMerchantItemIds.length + ownedApparelIds.length})</span>
+        </button>
+      </div>
+
+      {/* Bag Body */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden pr-0.5 mt-2.5 space-y-2.5 min-h-0">
+        {personalBagTab === 'equipment' && (() => {
+          const ownedWardrobeItems = FASHION_APPAREL_CATALOG_ITEMS.filter((apparel) =>
+            ownedApparelIds.includes(apparel.id),
+          );
+          const totalOwnedStudioCount = WARDROBE_STUDIO_ITEMS.filter(
+            (item) => item.isStarterDefault || ownedApparelIds.includes(item.id),
+          ).length;
+          return (
+            <div className="space-y-2.5">
+              {/* Wardrobe & Apparel Section inside Personal Bag */}
+              <div className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] p-3.5 space-y-3 text-slate-900">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-7 h-7 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 text-sky-700 flex items-center justify-center shrink-0">
+                      <Shirt className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-900 truncate">
+                      Wardrobe &amp; Apparel ({totalOwnedStudioCount})
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {equippedTorsoItemId && (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleEquipApparel(null)}
+                        className="px-2.5 py-1 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/90 text-slate-700 text-[10.5px] font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                      >
+                        Default Top
+                      </button>
+                    )}
+                    {hud.worldMode !== 'warzone' && (
+                      <button
+                        type="button"
+                        data-bag-open-wardrobe-studio-btn="true"
+                        onClick={() => {
+                          soundEngine.playUiConfirm();
+                          setIsPersonalBagModalOpen(false);
+                          if (embeddedInPhone) closeSmartphone();
+                          setIsWardrobeStudioOpen(true);
+                        }}
+                        className="px-3 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap shadow-xs"
+                      >
+                        3D Studio
+                      </button>
+                    )}
                   </div>
                 </div>
-              );
-            })()}
 
-            {personalBagTab === 'fish' && (
-              <div className="space-y-2.5">
-                {caughtFishBucket.length === 0 ? (
-                  <div className="p-6 rounded-2xl bg-white/80 border border-dashed border-slate-300 text-center space-y-1.5">
-                    <div className="text-xs font-semibold text-slate-700">
-                      No fish in bag yet
+                {ownedWardrobeItems.length === 0 ? (
+                  <div className="p-3.5 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 text-center space-y-1">
+                    <div className="text-xs font-semibold text-slate-800">
+                      Starter Wardrobe Ready
                     </div>
-                    <p className="text-[11px] text-slate-500 leading-relaxed">
-                      Equip your Fishing Rod in the Gear tab and cast your line at the beach or lake.
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Open the 3D Wardrobe Studio to customize Top, Bottoms, Hair, Shoes, Sets, and Dye Colors.
                     </p>
                   </div>
                 ) : (
-                  caughtFishBucket.map((fish) => {
-                    const openBagFish3d = () => {
-                      setPreview3dFish({
-                        speciesId: fish.speciesId,
-                        speciesName: fish.speciesName,
-                        rarity: fish.rarity,
-                        weightKg: fish.weightKg,
-                        lengthCm: fish.lengthCm,
-                        waterZoneLabel: fish.waterZoneLabel,
-                        colorHex: fish.colorHex,
-                        isTrophy: fish.isTrophy,
-                        isMintedNft: fish.isMintedNft,
-                        nftTokenId: fish.nftTokenId,
-                        valueLabel: fish.isMintedNft
-                          ? `${fish.suggestedRespitePrice || 12} RESPITE`
-                          : `${fish.sellValueLul || fish.sellValueCyon || 15} LUL`,
-                        ownerOrSellerLabel: fish.caughtByAccount
-                          ? `Angler: ${fish.caughtByAccount}`
-                          : undefined,
-                      });
-                    };
-
-                    return (
-                      <div
-                        key={fish.id}
-                        data-bag-fish-row={fish.speciesId}
-                        className="p-3 rounded-2xl bg-white border border-slate-200/75 shadow-sm flex items-center justify-between gap-2.5"
-                      >
-                        <Fish3dThumbnail
-                          speciesId={fish.speciesId}
-                          speciesName={fish.speciesName}
-                          colorHex={fish.colorHex}
-                          variant="compact"
-                          onInspect={openBagFish3d}
-                        />
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-xs font-semibold text-slate-900">
-                              {fish.speciesName}
-                            </span>
-                            <span className="px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 text-[10px] font-semibold">
-                              {fish.rarity}
-                            </span>
-                            {fish.isMintedNft && (
-                              <span className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 text-[10px] font-semibold">
-                                NFT
+                  <div className="space-y-2">
+                    {ownedWardrobeItems.map((apparel) => {
+                      const isEquippedNow = equippedTorsoItemId === apparel.id;
+                      return (
+                        <div
+                          key={apparel.id}
+                          data-bag-apparel-row={apparel.id}
+                          className="p-3 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 flex items-center justify-between gap-2.5"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-slate-900 truncate">
+                              {apparel.name}
+                            </div>
+                            <div className="text-[11px] text-slate-600 mt-0.5">
+                              <span>Torso Slot</span>
+                              <span aria-hidden="true"> · </span>
+                              <span>{characterGender === 'female' ? 'Female Fit' : 'Male Fit'}</span>
+                              <span aria-hidden="true"> · </span>
+                              <span className={isEquippedNow ? 'text-emerald-700 font-semibold' : 'text-slate-600'}>
+                                {isEquippedNow ? 'Wearing Now' : 'In Bag'}
                               </span>
-                            )}
+                            </div>
                           </div>
-                          <div className="text-[11px] text-slate-500 mt-0.5 font-mono tabular-nums">
-                            {fish.weightKg.toFixed(2)} kg ·{' '}
-                            {fish.sellValueLul || fish.sellValueCyon || 15} LUL at Kai&apos;s Shop
-                          </div>
-                        </div>
 
-                        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                           <button
                             type="button"
-                            data-bag-fish-3d-btn={fish.id}
-                            onClick={() => {
-                              soundEngine.playUiClick();
-                              openBagFish3d();
-                            }}
-                            className="px-2.5 py-1 rounded-full bg-sky-100 hover:bg-sky-200 text-sky-900 text-[10.5px] font-semibold transition-colors cursor-pointer"
+                            data-bag-equip-apparel-btn={apparel.id}
+                            onClick={() => handleToggleEquipApparel(apparel.id)}
+                            className={`px-3.5 py-1.5 rounded-xl text-[11px] font-semibold cursor-pointer whitespace-nowrap shrink-0 transition-colors ${
+                              isEquippedNow
+                                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
+                                : 'bg-slate-900 hover:bg-slate-800 text-white'
+                            }`}
                           >
-                            View
+                            {isEquippedNow ? 'Take Off' : 'Wear'}
                           </button>
-
-                          {!fish.isMintedNft ? (
-                            hud.nearWalletConnected ? (
-                              <button
-                                type="button"
-                                data-bag-mint-fish-btn={fish.id}
-                                onClick={() => {
-                                  void handleMintCaughtFishNft(fish);
-                                }}
-                                className="px-2.5 py-1 rounded-full bg-violet-600 hover:bg-violet-700 text-white text-[10.5px] font-semibold transition-colors cursor-pointer"
-                              >
-                                Mint NFT
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                data-bag-guest-register-btn={fish.id}
-                                onClick={() => {
-                                  soundEngine.playUiClick();
-                                  setIsPersonalBagModalOpen(false); if (embeddedInPhone) closeSmartphone();
-                                  setOnboardingStep('auth_choice');
-                                }}
-                                className="px-2.5 py-1 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white text-[10.5px] font-semibold transition-colors cursor-pointer"
-                              >
-                                Sign In
-                              </button>
-                            )
-                          ) : (
-                            <span className="text-[10px] font-semibold text-violet-700 bg-violet-50 px-2.5 py-1 rounded-full">
-                              Minted
-                            </span>
-                          )}
-
-                          {!fish.isMintedNft && (
-                            <button
-                              type="button"
-                              data-bag-release-fish-btn={fish.id}
-                              onClick={() => {
-                                soundEngine.playUiClick();
-                                setCaughtFishBucket((prev) =>
-                                  prev.filter((f) => f.id !== fish.id),
-                                );
-                                setLastCaughtFishToast((prev) =>
-                                  prev?.id === fish.id ? null : prev,
-                                );
-                              }}
-                              className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10.5px] font-semibold transition-colors cursor-pointer"
-                            >
-                              Release
-                            </button>
-                          )}
                         </div>
-                      </div>
-                    );
-                  })
+                      );
+                    })}
+                  </div>
                 )}
               </div>
-            )}
 
-            {personalBagTab === 'items' && (() => {
-              const ownedWardrobeItems = FASHION_APPAREL_CATALOG_ITEMS.filter((apparel) =>
-                ownedApparelIds.includes(apparel.id),
-              );
-              const ownedPersonalItems = MERCHANT_CATALOG_ITEMS.filter((item) =>
-                ownedMerchantItemIds.includes(item.id),
-              );
-              const bagOwnedCounts = countOwnedMerchantItems(ownedMerchantItemIds);
-              return (
-                <div className="space-y-2.5">
-                  {ownedWardrobeItems.map((apparel) => {
-                    const isEquippedNow = equippedTorsoItemId === apparel.id;
-                    return (
-                      <div
-                        key={apparel.id}
-                        className="p-3.5 rounded-2xl bg-white border border-slate-200/75 shadow-sm flex items-center justify-between gap-2.5"
+              {/* Quick Summary of Bag Capacity */}
+              <div className="p-3.5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-semibold text-slate-900">
+                    Fish Bucket
+                  </div>
+                  <div className="text-xs text-slate-600 font-mono tabular-nums mt-0.5">
+                    {caughtFishBucket.length} / 20 Fish Stored
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    setPersonalBagTab('fish');
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition-colors cursor-pointer shrink-0 shadow-xs"
+                >
+                  View Fish
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+
+        {personalBagTab === 'fish' && (
+          <div className="space-y-2.5">
+            {caughtFishBucket.length === 0 ? (
+              <div className="p-6 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-center space-y-1.5 text-slate-900">
+                <div className="text-xs font-semibold text-slate-900">
+                  No fish in bag yet
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  Equip your Fishing Rod in the Gear tab and cast your line at the beach or lake.
+                </p>
+              </div>
+            ) : (
+              caughtFishBucket.map((fish) => {
+                const openBagFish3d = () => {
+                  setPreview3dFish({
+                    speciesId: fish.speciesId,
+                    speciesName: fish.speciesName,
+                    rarity: fish.rarity,
+                    weightKg: fish.weightKg,
+                    lengthCm: fish.lengthCm,
+                    waterZoneLabel: fish.waterZoneLabel,
+                    colorHex: fish.colorHex,
+                    isTrophy: fish.isTrophy,
+                    isMintedNft: fish.isMintedNft,
+                    nftTokenId: fish.nftTokenId,
+                    valueLabel: fish.isMintedNft
+                      ? `${fish.suggestedRespitePrice || 12} RESPITE`
+                      : `${fish.sellValueLul || fish.sellValueCyon || 15} LUL`,
+                    ownerOrSellerLabel: fish.caughtByAccount
+                      ? `Angler: ${fish.caughtByAccount}`
+                      : undefined,
+                  });
+                };
+
+                return (
+                  <div
+                    key={fish.id}
+                    data-bag-fish-row={fish.speciesId}
+                    className="p-3 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 flex items-center justify-between gap-2.5"
+                  >
+                    <Fish3dThumbnail
+                      speciesId={fish.speciesId}
+                      speciesName={fish.speciesName}
+                      colorHex={fish.colorHex}
+                      variant="compact"
+                      onInspect={openBagFish3d}
+                    />
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-semibold text-slate-900">
+                          {fish.speciesName}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 text-[10px] font-semibold">
+                          {fish.rarity}
+                        </span>
+                        {fish.isMintedNft && (
+                          <span className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 text-[10px] font-semibold">
+                            NFT
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-600 mt-0.5 font-mono tabular-nums">
+                        {fish.weightKg.toFixed(2)} kg ·{' '}
+                        {fish.sellValueLul || fish.sellValueCyon || 15} LUL at Kai&apos;s Shop
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                      <button
+                        type="button"
+                        data-bag-fish-3d-btn={fish.id}
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          openBagFish3d();
+                        }}
+                        className="px-2.5 py-1 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/90 text-slate-800 text-[10.5px] font-semibold transition-colors cursor-pointer"
                       >
-                        <div className="min-w-0">
-                          <div className="text-xs font-semibold text-slate-900 truncate">
-                            {apparel.name}
-                          </div>
-                          <div className="text-[11px] text-slate-500 mt-0.5">
-                            <span>Apparel · Torso</span>
-                            <span aria-hidden="true"> · </span>
-                            <span className={isEquippedNow ? 'text-emerald-600 font-semibold' : ''}>
-                              {isEquippedNow ? 'Wearing Now' : 'Stored in Bag'}
-                            </span>
-                          </div>
-                        </div>
+                        View
+                      </button>
+
+                      {!fish.isMintedNft ? (
+                        hud.nearWalletConnected ? (
+                          <button
+                            type="button"
+                            data-bag-mint-fish-btn={fish.id}
+                            onClick={() => {
+                              void handleMintCaughtFishNft(fish);
+                            }}
+                            className="px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-[10.5px] font-semibold transition-colors cursor-pointer"
+                          >
+                            Mint NFT
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            data-bag-guest-register-btn={fish.id}
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              setIsPersonalBagModalOpen(false);
+                              if (embeddedInPhone) closeSmartphone();
+                              setOnboardingStep('auth_choice');
+                            }}
+                            className="px-2.5 py-1 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-[10.5px] font-semibold transition-colors cursor-pointer"
+                          >
+                            Sign In
+                          </button>
+                        )
+                      ) : (
+                        <span className="text-[10px] font-semibold text-violet-800 bg-violet-100 px-2.5 py-1 rounded-xl">
+                          Minted
+                        </span>
+                      )}
+
+                      {!fish.isMintedNft && (
                         <button
                           type="button"
-                          onClick={() => handleToggleEquipApparel(apparel.id)}
-                          className={`px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                            isEquippedNow
-                              ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
-                              : 'bg-sky-100 hover:bg-sky-200 text-sky-900'
+                          data-bag-release-fish-btn={fish.id}
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            setCaughtFishBucket((prev) =>
+                              prev.filter((f) => f.id !== fish.id),
+                            );
+                            setLastCaughtFishToast((prev) =>
+                              prev?.id === fish.id ? null : prev,
+                            );
+                          }}
+                          className="px-2.5 py-1 rounded-xl bg-[#dfe4ec]/90 hover:bg-white text-slate-700 text-[10.5px] font-semibold transition-colors cursor-pointer"
+                        >
+                          Release
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {personalBagTab === 'items' && (() => {
+          const ownedWardrobeItems = FASHION_APPAREL_CATALOG_ITEMS.filter((apparel) =>
+            ownedApparelIds.includes(apparel.id),
+          );
+          const ownedPersonalItems = MERCHANT_CATALOG_ITEMS.filter((item) =>
+            ownedMerchantItemIds.includes(item.id),
+          );
+          const bagOwnedCounts = countOwnedMerchantItems(ownedMerchantItemIds);
+          return (
+            <div className="space-y-2.5">
+              {ownedWardrobeItems.map((apparel) => {
+                const isEquippedNow = equippedTorsoItemId === apparel.id;
+                return (
+                  <div
+                    key={apparel.id}
+                    className="p-3.5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 flex items-center justify-between gap-2.5"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-slate-900 truncate">
+                        {apparel.name}
+                      </div>
+                      <div className="text-[11px] text-slate-600 mt-0.5">
+                        <span>Apparel · Torso</span>
+                        <span aria-hidden="true"> · </span>
+                        <span className={isEquippedNow ? 'text-emerald-700 font-semibold' : ''}>
+                          {isEquippedNow ? 'Wearing Now' : 'Stored in Bag'}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleEquipApparel(apparel.id)}
+                      className={`px-3.5 py-1.5 rounded-xl text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                        isEquippedNow
+                          ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
+                          : 'bg-slate-900 hover:bg-slate-800 text-white'
+                      }`}
+                    >
+                      {isEquippedNow ? 'Take Off' : 'Wear'}
+                    </button>
+                  </div>
+                );
+              })}
+              {ownedPersonalItems.length === 0 && ownedWardrobeItems.length === 0 ? (
+                <div className="p-6 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-center space-y-1.5 text-slate-900">
+                  <div className="text-xs font-semibold text-slate-900">
+                    No collectible items yet
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    Purchase outfits at the Fashion Boutique or furniture &amp; personal items from Merchant Hana (Plaza) or Kai (Beachfront).
+                  </p>
+                </div>
+              ) : (
+                ownedPersonalItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-3.5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 flex items-center justify-between gap-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-semibold text-slate-900">
+                          {item.name}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            item.isNft
+                              ? 'bg-violet-100 text-violet-800'
+                              : 'bg-sky-100 text-sky-800'
                           }`}
                         >
-                          {isEquippedNow ? 'Take Off' : 'Wear'}
-                        </button>
+                          {item.isNft ? 'NFT' : 'Item'}
+                        </span>
+                        {(bagOwnedCounts[item.id] ?? 1) > 1 && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 font-mono tabular-nums">
+                            ×{bagOwnedCounts[item.id]}
+                          </span>
+                        )}
                       </div>
-                    );
-                  })}
-                  {ownedPersonalItems.length === 0 && ownedWardrobeItems.length === 0 ? (
-                    <div className="p-6 rounded-2xl bg-white/80 border border-dashed border-slate-300 text-center space-y-1.5">
-                      <div className="text-xs font-semibold text-slate-700">
-                        No collectible items yet
+                      <div className="text-[11px] text-slate-600 mt-0.5 truncate">
+                        {item.description}
                       </div>
-                      <p className="text-[11px] text-slate-500 leading-relaxed">
-                        Purchase outfits at the Fashion Boutique or furniture &amp; personal items from Merchant Hana (Plaza) or Kai (Beachfront).
-                      </p>
-                    </div>
-                  ) : (
-                    ownedPersonalItems.map((item) => (
-                      <div
-                        key={item.id}
-                        className="p-3.5 rounded-2xl bg-white border border-slate-200/75 shadow-sm flex items-center justify-between gap-2"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-xs font-semibold text-slate-900">
-                              {item.name}
-                            </span>
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                item.isNft
-                                  ? 'bg-violet-100 text-violet-800'
-                                  : 'bg-sky-100 text-sky-800'
-                              }`}
-                            >
-                              {item.isNft ? 'NFT' : 'Item'}
-                            </span>
-                            {(bagOwnedCounts[item.id] ?? 1) > 1 && (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 font-mono tabular-nums">
-                                ×{bagOwnedCounts[item.id]}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-slate-500 mt-0.5 truncate">
-                            {item.description}
-                          </div>
-                          {(placedFurnitureCounts[item.id] ?? 0) > 0 && (
-                            <div className="text-[10.5px] font-semibold text-emerald-600 mt-0.5">
-                              In room ×{placedFurnitureCounts[item.id]}
-                            </div>
-                          )}
+                      {(placedFurnitureCounts[item.id] ?? 0) > 0 && (
+                        <div className="text-[10.5px] font-semibold text-emerald-700 mt-0.5">
+                          In room ×{placedFurnitureCounts[item.id]}
                         </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-        </div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          );
+        })()}
+      </div>
+    </div>
   );
 
   const handleDailyMissionShortcutTravel = (
@@ -10587,7 +10711,7 @@ export default function App() {
         !tramRideCutsceneUi?.active && (
           <div
             data-tutorial-objective-hud="true"
-            className="fixed top-16 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-md pointer-events-auto select-none"
+            className="fixed top-3.5 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-md pointer-events-auto select-none"
           >
             <div className="rounded-full bg-[#0d1118]/78 backdrop-blur-xl text-white border border-white/15 shadow-[0_12px_32px_rgba(0,0,0,0.48)] px-3.5 py-1.5 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
@@ -11074,83 +11198,9 @@ export default function App() {
                     </button>
                     )}
 
-                    {/* Live Walking Distance + Cancel Pill */}
-                    {showWalkOverlay && activeWalk && (
-                      <div
-                        data-click-to-walk-pill="true"
-                        className="pointer-events-auto flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#0d1118]/78 backdrop-blur-xl text-white border border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.42)] text-[10.5px] font-medium max-w-[216px]"
-                      >
-                        <Navigation className="w-3 h-3 text-emerald-300 shrink-0" />
-                        <span className="font-mono-tabular truncate text-white/92">
-                          {activeWalk.isOnScooter ? 'Scooter' : 'Walking'}{' '}
-                          {activeWalk.remainingDistanceM}m
-                          {activeWalk.targetLabel ? ` · ${activeWalk.targetLabel}` : ''}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={handleCancelClickToWalk}
-                          className="px-2 py-0.5 rounded-full bg-rose-500/80 hover:bg-rose-500 text-white font-semibold text-[9.5px] cursor-pointer shrink-0 transition-colors"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
                   </div>
                 );
             })()}
-
-            {/* 3-Currency & Store Name Bar — Only Shown Inside Merchant Shop / Kiosk / Personal Wallet */}
-            {playMode !== 'editor' &&
-              (activeSpecialModal === 'npc_merchant' ||
-                isKioskModalOpen ||
-                isPersonalWalletModalOpen) && (
-              <div className="pointer-events-auto flex flex-wrap items-center gap-1.5">
-                <div
-                  data-top-near-badge="true"
-                  title="NEAR — Wallet balance (swaps, purchases, network fees)"
-                  className="px-2.5 py-1 rounded-full bg-[#0d1118]/78 backdrop-blur-xl text-white/95 border border-white/15 shadow-[0_6px_18px_rgba(0,0,0,0.35)] font-mono-tabular font-semibold text-[11px]"
-                >
-                  {nearTestnetBalance >= 1
-                    ? nearTestnetBalance.toFixed(2)
-                    : Number(nearTestnetBalance.toFixed(4))}{' '}
-                  NEAR
-                </div>
-
-                <div
-                  data-top-lul-badge="true"
-                  title="LUL (Lulling) Session Currency"
-                  className="px-2.5 py-1 rounded-full bg-[#0d1118]/78 backdrop-blur-xl text-amber-200 border border-amber-300/35 shadow-[0_6px_18px_rgba(0,0,0,0.35)] font-mono-tabular font-semibold text-[11px]"
-                >
-                  {hud.gold} LUL
-                </div>
-
-                <div
-                  data-top-cyon-badge="true"
-                  title="CYON — Shop currency exchanged from LUL"
-                  className="px-2.5 py-1 rounded-full bg-[#0d1118]/78 backdrop-blur-xl text-sky-200 border border-sky-300/35 shadow-[0_6px_18px_rgba(0,0,0,0.35)] font-mono-tabular font-semibold text-[11px]"
-                >
-                  {cyonBalance} CYON
-                </div>
-
-                <div
-                  data-top-respite-badge="true"
-                  title="RESPITE — Token for houses, companions, and Fish Market"
-                  className="px-2.5 py-1 rounded-full bg-[#0d1118]/78 backdrop-blur-xl text-purple-200 border border-purple-300/35 shadow-[0_6px_18px_rgba(0,0,0,0.35)] font-mono-tabular font-semibold text-[11px]"
-                >
-                  {respiteBalance} RESPITE
-                </div>
-
-                {activeSpecialModal === 'npc_merchant' && (
-                  <div
-                    data-lobby-gold-exchange-btn="true"
-                    title={merchantLocation === 'beach_house' ? 'Kai — Fisherman & Beach Keeper' : 'Hana — Property Agent & City Guide'}
-                    className="px-2.5 py-1 rounded-full bg-amber-300/90 text-slate-950 border border-amber-200 shadow-[0_6px_18px_rgba(0,0,0,0.35)] font-semibold text-[11px]"
-                  >
-                    {merchantLocation === 'beach_house' ? 'Kai Fish Market' : 'Hana Property & Housing'}
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Pure Harvester 3-Stage Contract Status Badge (Warzone Only - Hidden in Lobby, Safezone & MAP PREVIEW) */}
             {playMode !== 'editor' && peacefulUiState.harvesterContractBadgeVisible && (
@@ -11294,158 +11344,53 @@ export default function App() {
           )}
 
           {/* =================================================================
-              3C-1. TOP-CENTER: inZOI FLOATING DARK FROSTED GLASS UTILITY PILL (City Mode)
+              3C-1B. TOP-CENTER: LIVE AUTO-WALK / MOVING INDICATOR PILL
              ================================================================= */}
-          {hud.worldMode !== 'warzone' && !isInsidePrivateHouse && playMode !== 'editor' && (
-            <div
-              aria-label="Main Utility Bar"
-              data-hud-top-utility-pill="true"
-              className="fixed top-3.5 left-1/2 -translate-x-1/2 z-30 pointer-events-auto flex items-center gap-0.5 px-1.5 py-1 rounded-full bg-[#0d1118]/62 backdrop-blur-xl border border-white/15 shadow-[0_8px_28px_rgba(0,0,0,0.38)] select-none"
-            >
-              <button
-                type="button"
-                data-top-self-profile-btn="true"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  openSmartphoneApp('profile', { toggleIfActive: true });
-                }}
-                className="h-8 px-2.5 rounded-full flex items-center gap-1.5 text-white/88 hover:text-white hover:bg-white/[0.12] transition-all active:scale-95 cursor-pointer"
-                title="View Your Profile"
-              >
-                <User className="w-4 h-4 stroke-[1.75]" aria-hidden="true" />
-                <span className="hidden xl:inline text-[11px] font-medium">Profile</span>
-              </button>
-
-              <button
-                type="button"
-                data-top-self-bag-btn="true"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  openSmartphoneApp('bag', { toggleIfActive: true });
-                }}
-                className={`relative h-8 px-2.5 rounded-full flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer ${
-                  hud.equippedWeapon === 'Joran Fishing'
-                    ? 'bg-emerald-400/20 text-emerald-200 hover:bg-emerald-400/30'
-                    : 'text-white/88 hover:text-white hover:bg-white/[0.12]'
-                }`}
-                title="Open Personal Bag (Fishing Rod & Items)"
-              >
-                <Backpack className="w-4 h-4 stroke-[1.75]" aria-hidden="true" />
-                <span className="hidden xl:inline text-[11px] font-medium">Bag</span>
-                {hud.equippedWeapon === 'Joran Fishing' && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                )}
-              </button>
-
-              <button
-                type="button"
-                data-top-wardrobe-btn="true"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  closeSmartphone();
-                  setIsTargetMenuExpanded(false);
-                  setSelectedTargetUser(null);
-                  setIsProfileModalOpen(false);
-                  setIsKioskModalOpen(false);
-                  setIsSocialChatModalOpen(false);
-                  setIsPersonalWalletModalOpen(false);
-                  setIsPersonalBagModalOpen(false);
-                  setIsDailyMissionsModalOpen(false);
-                  setIsFashionBoutiqueModalOpen(false);
-                  setIsScooterShowroomModalOpen(false);
-                  setIsRealEstateCatalogModalOpen(false);
-                  setIsGrandCasinoModalOpen(false);
-                  setActiveSpecialModal('none');
-                  setActiveTeleportKioskModal('none');
-                  window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-                  window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
-                  setIsGearModalOpen(false);
-                  setIsWardrobeStudioOpen(true);
-                }}
-                className="h-8 px-2.5 rounded-full flex items-center gap-1.5 text-white/88 hover:text-white hover:bg-white/[0.12] transition-all active:scale-95 cursor-pointer"
-                title="Open 3D Wardrobe Studio"
-              >
-                <Shirt className="w-4 h-4 stroke-[1.75]" aria-hidden="true" />
-                <span className="hidden xl:inline text-[11px] font-medium">Wardrobe</span>
-              </button>
-
-              <button
-                type="button"
-                data-top-gear-btn="true"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  openSmartphoneApp('scooters', { toggleIfActive: true });
-                }}
-                className={`relative h-8 px-2.5 rounded-full flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer ${
-                  equippedScooterKind
-                    ? 'bg-emerald-400/20 text-emerald-200 hover:bg-emerald-400/30'
-                    : 'text-white/88 hover:text-white hover:bg-white/[0.12]'
-                }`}
-                title="Open Gear (Ride Your Scooter)"
-              >
-                <Wrench className="w-4 h-4 stroke-[1.75]" aria-hidden="true" />
-                <span className="hidden xl:inline text-[11px] font-medium">Gear</span>
-                {equippedScooterKind && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                )}
-              </button>
-
-              <span aria-hidden="true" className="w-px h-4 bg-white/15 mx-0.5" />
-
-              <button
-                type="button"
-                data-top-self-wallet-btn="true"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  openSmartphoneApp('wallet', { toggleIfActive: true });
-                }}
-                className="relative h-8 px-2.5 rounded-full flex items-center gap-1.5 text-white/88 hover:text-white hover:bg-white/[0.12] transition-all active:scale-95 cursor-pointer"
-                title="Open Your Personal Citizen Wallet"
-              >
-                <Wallet className="w-4 h-4 stroke-[1.75]" aria-hidden="true" />
-                <span className="hidden xl:inline text-[11px] font-medium">Wallet</span>
-                {newAssetCount > 0 && (
-                  <span
-                    data-wallet-new-asset-badge="true"
-                    className="min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center"
+          {playMode !== 'editor' &&
+            worldMode !== 'warzone' &&
+            !isInsidePrivateHouse &&
+            !isInsideGlasshouseCafe &&
+            !isInsideGrandCasino &&
+            !isInsideBeautySalon &&
+            activeSpecialModal === 'none' &&
+            !tramRideCutsceneUi?.active &&
+            (() => {
+              const activeWalkTop = clickToWalkSync ?? hud.clickToWalk ?? null;
+              if (!activeWalkTop?.active) return null;
+              const hasTopObjectiveBanner = Boolean(
+                isPreloadComplete &&
+                  onboardingStep === 'completed' &&
+                  tutorialStage === 'go_to_hana' &&
+                  activeTeleportKioskModal === 'none',
+              );
+              return (
+                <div
+                  data-click-to-walk-container="true"
+                  className={`fixed left-1/2 -translate-x-1/2 z-30 pointer-events-none select-none transition-all duration-200 ${
+                    hasTopObjectiveBanner ? 'top-14' : 'top-3.5'
+                  }`}
+                >
+                  <div
+                    data-click-to-walk-pill="true"
+                    className="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#0d1118]/78 backdrop-blur-xl text-white border border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.42)] text-[11px] font-medium max-w-[320px]"
                   >
-                    {newAssetCount}
-                  </span>
-                )}
-              </button>
-
-              <button
-                type="button"
-                data-top-daily-missions-btn="true"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  openSmartphoneApp('missions', { toggleIfActive: true });
-                }}
-                className={`relative h-8 px-2.5 rounded-full flex items-center gap-1.5 text-white/88 hover:text-white hover:bg-white/[0.12] transition-all active:scale-95 cursor-pointer${showMissionsOnboardingHint ? ' ring-1 ring-amber-300/80 bg-amber-300/15' : ''}`}
-                title="Open Daily Missions"
-              >
-                <ClipboardList className="w-4 h-4 stroke-[1.75]" aria-hidden="true" />
-                <span className="hidden xl:inline text-[11px] font-medium">Missions</span>
-                {showMissionsOnboardingHint && (
-                  <span
-                    data-missions-onboarding-hint="true"
-                    className="px-1.5 py-0.5 rounded-full bg-amber-300 text-slate-950 text-[9px] font-semibold leading-none"
-                  >
-                    Start
-                  </span>
-                )}
-                <span className="px-1.5 py-0.5 rounded-full bg-white/[0.1] text-[10px] font-mono tabular-nums font-medium text-white/85 leading-none">
-                  {dailyMissionsSummary.completedCount}/{dailyMissionsSummary.totalCount}
-                </span>
-                {dailyMissionsSummary.actionableCount > 0 && (
-                  <span
-                    data-top-daily-missions-badge="true"
-                    className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"
-                  />
-                )}
-              </button>
-            </div>
-          )}
+                    <Navigation className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                    <span className="font-mono-tabular truncate text-white/95">
+                      {activeWalkTop.isOnScooter ? 'Scooter' : 'Walking'}{' '}
+                      {activeWalkTop.remainingDistanceM}m
+                      {activeWalkTop.targetLabel ? ` · ${activeWalkTop.targetLabel}` : ''}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCancelClickToWalk}
+                      className="px-2.5 py-0.5 rounded-full bg-rose-500/85 hover:bg-rose-500 text-white font-semibold text-[10px] cursor-pointer shrink-0 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
 
           {/* =================================================================
               3C-2. PRIVATE HOUSE WALK-IN TOP HUD BAR (DECORATE, INVITE FRIEND, EXIT ROOM)
@@ -11649,56 +11594,6 @@ export default function App() {
                   </div>
                 );
               })()}
-
-              {/* City Mode: Minimalist Circular Profile Avatar Button (inZOI top-right badge) */}
-              {hud.worldMode !== 'warzone' && playMode !== 'editor' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setIsTargetMenuExpanded(false);
-                    setSelectedTargetUser(null);
-                    setIsKioskModalOpen(false);
-                    setIsSocialChatModalOpen(false);
-                    setIsPersonalWalletModalOpen(false);
-                    setIsPersonalBagModalOpen(false);
-                    setIsDailyMissionsModalOpen(false);
-                    setActiveSpecialModal('none');
-                    setActiveTeleportKioskModal('none');
-                    window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-                    window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
-                    setIsGearModalOpen(false);
-                    setProfileTargetUser({
-                      id: 0,
-                      name: playerDisplayName || 'BUDDY',
-                      isNpc: false,
-                      isSelf: true,
-                      distance: 0,
-                      team: hud.playerTeam ?? 'blue',
-                      status: 'Online',
-                    });
-                    setIsProfileModalOpen(true);
-                  }}
-                  title={`${playerDisplayName || 'Buddy'} · Open Profile`}
-                  aria-label="Open Profile"
-                  className="relative w-9 h-9 rounded-full bg-[#0d1118]/72 backdrop-blur-xl border border-white/25 hover:border-white/55 shadow-[0_8px_24px_rgba(0,0,0,0.4)] overflow-hidden cursor-pointer transition-all hover:scale-105 active:scale-95"
-                >
-                  <img
-                    src={
-                      characterGender === 'male'
-                        ? '/assets/avatar_hiro.jpg'
-                        : '/assets/avatar_nadia.jpg'
-                    }
-                    alt={playerDisplayName || 'Buddy'}
-                    draggable={false}
-                    className="w-full h-full object-cover object-top"
-                  />
-                  <span
-                    aria-hidden="true"
-                    className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-[#0d1118]"
-                  />
-                </button>
-              )}
             </div>
           </div>
 
@@ -11994,11 +11889,7 @@ export default function App() {
           {playMode !== 'editor' && (
             <div
               data-buddies-chat-bar="true"
-              className={`fixed bottom-3.5 left-4 z-30 pointer-events-auto flex flex-col items-start gap-2 ${
-                isAnyNpcChatBarMode
-                  ? 'w-[calc(100vw-2rem)] max-w-[460px]'
-                  : 'w-[calc(100vw-2rem)] max-w-[310px] sm:max-w-[340px]'
-              }`}
+              className="fixed bottom-3.5 left-4 z-30 pointer-events-auto flex flex-col items-start gap-2 w-[calc(100vw-2rem)] max-w-[310px] sm:max-w-[340px]"
             >
               {/* Incoming Private Chat Notification Popup (Hidden during active NPC Dialogue) */}
               {!isAnyNpcChatBarMode && activePrivateNotificationToast && (
@@ -12024,63 +11915,6 @@ export default function App() {
                     {activePrivateNotificationToast.text}
                   </div>
                 </button>
-              )}
-
-              {!isAnyNpcChatBarMode && isEmotePickerOpen && (
-                <div
-                  data-social-emote-menu="true"
-                  className="flex items-center gap-1 rounded-full bg-[#0d1118]/84 backdrop-blur-xl border border-white/15 shadow-[0_12px_32px_rgba(0,0,0,0.5)] px-2 py-1.5"
-                >
-                  {SOCIAL_EMOTE_QUICK_LIST.map((emote) => (
-                    <button
-                      key={emote.id}
-                      type="button"
-                      data-social-emote-btn={emote.id}
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        dispatchBuddyAction(`playEmote:${emote.id}`);
-                        setIsEmotePickerOpen(false);
-                      }}
-                      className="px-2.5 py-1 rounded-full bg-white/[0.08] hover:bg-white/[0.18] text-white/95 border border-white/10 font-medium text-[10.5px] cursor-pointer active:scale-95 transition-colors"
-                    >
-                      {emote.label}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    data-social-emote-stop="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      dispatchBuddyAction('clearEmote');
-                      setIsEmotePickerOpen(false);
-                    }}
-                    className="px-2.5 py-1 rounded-full bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 border border-rose-400/30 font-medium text-[10.5px] cursor-pointer active:scale-95 transition-colors"
-                  >
-                    Stop
-                  </button>
-                </div>
-              )}
-
-              {/* Bottom-Left Time & Weather Pill (inZOI Bottom-Left Clock Anchor — City Mode) */}
-              {!isAnyNpcChatBarMode && !peacefulUiState.bottomRightWeaponAndHpHudVisible && (
-                <HudWeatherAndTimeControl
-                  contextId="city"
-                  popoverPlacement="top"
-                  popoverAlign="left"
-                  lightingPreset={lightingPreset}
-                  timeOfDayHours={timeOfDayHours}
-                  weatherCondition={weatherCondition}
-                  rainIntensityTier={rainIntensityTier}
-                  autoCycleEnabled={autoTimeCycle}
-                  cityLightsScale={cityLightsScale}
-                  onSelectTimePhase={handleSelectTimePhase}
-                  onCycleTimePhase={handleCycleLighting}
-                  onChangeTimeOfDayHours={handleChangeTimeOfDayHours}
-                  onSelectWeatherCondition={handleSelectWeatherCondition}
-                  onSelectRainIntensityTier={handleSelectRainIntensityTier}
-                  onToggleAutoCycle={handleToggleAutoTimeCycle}
-                  onChangeCityLightsScale={handleChangeCityLightsScale}
-                />
               )}
 
               <form
@@ -12139,7 +11973,7 @@ export default function App() {
                     soundEngine.playUiClick();
                     dispatchBuddyAction(`playEmote:${slashEmote}`);
                     setSocialChatText('');
-                    setIsEmotePickerOpen(false);
+                    setIsQuickPoseModalOpen(false);
                     return;
                   }
 
@@ -12191,32 +12025,48 @@ export default function App() {
                   data-social-chat-send="true"
                   title={isAnyNpcChatBarMode ? 'Ask' : 'Send message'}
                   aria-label={isAnyNpcChatBarMode ? 'Ask' : 'Send'}
-                  className={`h-7 px-2.5 rounded-full font-semibold text-[11px] flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition-colors shrink-0 ${
+                  className={`h-7 px-2.5 rounded-full font-semibold text-[11px] flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition-all shrink-0 ${
                     isAnyNpcChatBarMode
-                      ? 'bg-amber-300/90 hover:bg-amber-200 text-slate-950'
-                      : 'bg-white/[0.12] hover:bg-white/[0.22] text-white'
+                      ? 'bg-gradient-to-br from-amber-300 to-amber-500 hover:brightness-110 text-slate-950 shadow-[0_3px_10px_rgba(245,158,11,0.4)]'
+                      : 'bg-gradient-to-br from-sky-400 to-blue-600 hover:brightness-110 border border-sky-200/45 text-white shadow-[0_3px_10px_rgba(56,189,248,0.42)]'
                   }`}
                 >
-                  <Send className="w-3.5 h-3.5 stroke-[2]" aria-hidden="true" />
+                  <Send className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
                   {isAnyNpcChatBarMode && <span>Ask</span>}
                 </button>
                 {!isAnyNpcChatBarMode && (
                   <button
                     type="button"
+                    data-quick-pose-btn="true"
                     data-social-emote-toggle="true"
                     onClick={() => {
                       soundEngine.playUiClick();
-                      setIsEmotePickerOpen((prev) => !prev);
+                      setIsQuickPoseModalOpen((prev) => {
+                        const next = !prev;
+                        if (next) {
+                          closeSmartphone();
+                          setPairedInteractTarget(null);
+                          setIsSocialChatModalOpen(false);
+                          setIsKioskModalOpen(false);
+                          setIsCitizenDialogueOpen(false);
+                          setActiveSpecialModal('none');
+                          setActiveTeleportKioskModal('none');
+                          window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                          window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+                        }
+                        return next;
+                      });
                     }}
-                    className={`w-7 h-7 rounded-full flex items-center justify-center cursor-pointer active:scale-95 transition-colors shrink-0 ${
-                      isEmotePickerOpen
-                        ? 'bg-sky-400/25 text-sky-200 border border-sky-300/55'
-                        : 'bg-white/[0.08] hover:bg-white/[0.18] text-white/85'
+                    className={`w-7 h-7 rounded-full flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0 ${
+                      isQuickPoseModalOpen || activeQuickPoseId
+                        ? 'bg-gradient-to-br from-cyan-300 to-teal-500 text-slate-950 ring-2 ring-white/80 shadow-[0_3px_12px_rgba(34,211,238,0.55)]'
+                        : 'bg-gradient-to-br from-cyan-400 to-teal-500 hover:brightness-110 border border-cyan-200/45 text-white shadow-[0_3px_10px_rgba(20,184,166,0.42)]'
                     }`}
-                    title="Emotes (/wave, /cheer, /dance, /salute)"
-                    aria-label="Emotes"
+                    title="Pose, Dance & Emotes"
+                    aria-label="Pose, Dance & Emotes"
+                    aria-expanded={isQuickPoseModalOpen}
                   >
-                    <Smile className="w-3.5 h-3.5 stroke-[1.8]" aria-hidden="true" />
+                    <PersonStanding className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
                   </button>
                 )}
                 {!isAnyNpcChatBarMode && (
@@ -12226,6 +12076,8 @@ export default function App() {
                     data-open-smartphone-btn="true"
                     onClick={() => {
                       soundEngine.playUiClick();
+                      setIsQuickPoseModalOpen(false);
+                      setPairedInteractTarget(null);
                       if (isSocialChatModalOpen) {
                         setIsSocialChatModalOpen(false);
                         return;
@@ -12243,12 +12095,12 @@ export default function App() {
                         return next;
                       });
                     }}
-                    className={`relative h-7 w-8 rounded-full flex items-center justify-center cursor-pointer active:scale-95 transition-colors shrink-0 ${
+                    className={`relative h-7 w-8 rounded-full flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0 ${
                       isSocialChatModalOpen
-                        ? 'bg-rose-500/80 hover:bg-rose-500 text-white'
+                        ? 'bg-gradient-to-br from-rose-400 to-red-600 hover:brightness-110 text-white shadow-[0_3px_10px_rgba(244,63,94,0.45)]'
                         : isSmartphoneOsOpen
-                          ? 'bg-purple-400/25 ring-1 ring-purple-300/65'
-                          : 'bg-white/[0.08] hover:bg-white/[0.18]'
+                          ? 'bg-gradient-to-br from-fuchsia-400 to-purple-600 ring-2 ring-white/80 shadow-[0_3px_12px_rgba(168,85,247,0.55)]'
+                          : 'bg-gradient-to-br from-fuchsia-500/45 to-purple-600/55 hover:from-fuchsia-500/65 hover:to-purple-600/75 border border-purple-300/50 shadow-[0_3px_10px_rgba(168,85,247,0.38)]'
                     }`}
                     title={
                       isSocialChatModalOpen
@@ -12326,197 +12178,59 @@ export default function App() {
             hud.worldMode !== 'warzone' &&
             !isAnyNpcChatBarMode &&
             !nearbyWaterZone.canFish &&
-            !lastCaughtFishToast && (
-              <HudBottomAvatarDock
-                playerDisplayName={playerDisplayName || 'Buddy'}
-                characterGender={characterGender}
-                statusLabel={
-                  equippedScooterKind
-                    ? 'Riding'
-                    : activeQuickPoseId
-                      ? 'Posing'
-                      : hud.equippedWeapon === 'Joran Fishing'
-                        ? 'Fishing'
-                        : isInsideGlasshouseCafe
-                          ? 'In Cafe'
-                          : isInsideGrandCasino
-                            ? 'Casino'
-                            : isInsideBeautySalon
-                              ? 'Salon'
-                              : isInsidePrivateHouse
-                                ? 'Home'
-                                : 'Online'
-                }
-                statusTone={
-                  equippedScooterKind || hud.equippedWeapon === 'Joran Fishing'
-                    ? 'emerald'
-                    : activeQuickPoseId
-                      ? 'sky'
-                      : isInsideGlasshouseCafe || isInsideGrandCasino
-                        ? 'amber'
-                        : 'emerald'
-                }
-                isFishingRodEquipped={hud.equippedWeapon === 'Joran Fishing'}
-                equippedScooterKind={equippedScooterKind}
-                hasOwnedScooter={ownedScooterIds.length > 0}
-                canMountScooterOutdoors={
-                  worldMode !== 'warzone' &&
-                  !isInsidePrivateHouse &&
-                  !isInsideGlasshouseCafe &&
-                  !isInsideGrandCasino &&
-                  !isInsideBeautySalon &&
-                  activeSpecialModal === 'none' &&
-                  !hud.isRidingCityTram &&
-                  hud.controlMode !== 'tank'
-                }
-                smartphoneBadgeCount={
-                  unreadPrivateCount + unreadLetterCount + dailyMissionsSummary.actionableCount
-                }
-                isSmartphoneOpen={isSmartphoneOsOpen}
-                pinnedMissionTitle={
-                  missionGuide
-                    ? missionGuide.stage === 'to_kiosk'
-                      ? 'Go to a Teleport Kiosk'
-                      : missionGuide.title
-                    : null
-                }
-                pinnedMissionDistanceM={
-                  missionGuide?.stage === 'direct' ? missionGuideDistanceM : null
-                }
-                completedMissionsCount={dailyMissionsSummary.completedCount}
-                totalMissionsCount={dailyMissionsSummary.totalCount}
-                quickPoseItems={ownedQuickPoseItems}
-                activeQuickPoseId={activeQuickPoseId}
-                onOpenProfile={() => {
-                  openSmartphoneApp('profile', { toggleIfActive: true });
-                }}
-                onOpenWardrobe={() => {
-                  closeSmartphone();
-                  setIsTargetMenuExpanded(false);
-                  setSelectedTargetUser(null);
-                  setIsProfileModalOpen(false);
-                  setIsKioskModalOpen(false);
-                  setIsSocialChatModalOpen(false);
-                  setIsPersonalWalletModalOpen(false);
-                  setIsPersonalBagModalOpen(false);
-                  setIsDailyMissionsModalOpen(false);
-                  setActiveSpecialModal('none');
-                  setActiveTeleportKioskModal('none');
-                  setIsGearModalOpen(false);
-                  setIsWardrobeStudioOpen(true);
-                }}
-                onOpenBag={() => {
-                  openSmartphoneApp('bag', { toggleIfActive: true });
-                }}
-                onOpenMissions={() => {
-                  openSmartphoneApp('missions', { toggleIfActive: true });
-                }}
-                onDismissPinnedMission={() => {
-                  window.dispatchEvent(
-                    new CustomEvent('set-tutorial-waypoint', {
-                      detail: { target: 'none' },
-                    }),
-                  );
-                  clearMissionGuide();
-                }}
-                onOpenCityMap={() => {
-                  closeSmartphone();
-                  selectCityViewTarget('kota', true);
-                }}
-                onTriggerQuickPose={(item) => {
-                  const glbUrl = item.dancePose?.animGlbUrl ?? null;
-                  if (!glbUrl) return;
-                  dispatchBuddyAction(
-                    `playQuickPose:${JSON.stringify({ id: item.id, name: item.name, glbUrl })}`,
-                  );
-                }}
-                onStopQuickPose={() => {
-                  dispatchBuddyAction('stopQuickPose');
-                }}
-                onTriggerEmote={(emoteId) => {
-                  dispatchBuddyAction(`playEmote:${emoteId}`);
-                }}
-                onStopEmote={() => {
-                  dispatchBuddyAction('clearEmote');
-                }}
-                onQuickToggleScooter={() => {
-                  if (equippedScooterKind) {
-                    dispatchBuddyAction('unequipScooter');
-                    return;
-                  }
-                  const canRideNow =
-                    worldMode !== 'warzone' &&
-                    !isInsidePrivateHouse &&
-                    !isInsideGlasshouseCafe &&
-                    !isInsideGrandCasino &&
-                    !isInsideBeautySalon &&
-                    activeSpecialModal === 'none' &&
-                    !hud.isRidingCityTram &&
-                    hud.controlMode !== 'tank';
-                  const ownedFirst = ownedScooterIds.length > 0 ? preferredScooterKind : null;
-                  if (ownedFirst && canRideNow) {
-                    dispatchBuddyAction(`equipScooter:${ownedFirst}`);
-                  } else {
-                    openSmartphoneApp('scooters', { toggleIfActive: true });
-                  }
-                }}
-                onToggleSmartphone={() => {
-                  if (isSmartphoneOsOpen) {
-                    closeSmartphone();
-                  } else {
-                    openSmartphoneApp('home');
-                  }
-                }}
-              />
-            )}
+            !lastCaughtFishToast && (() => {
+              const activeSelectedTarget =
+                selectedTargetUser &&
+                !selectedTargetUser.isSelf &&
+                String(selectedTargetUser.id) !== '0'
+                  ? selectedTargetUser
+                  : null;
+              const isPairedModeActive = Boolean(
+                pairedInteractTarget || pairedStatus?.active,
+              );
+              // Never auto-switch the bottom dock on proximity; only switch after explicit press-and-hold interaction or active pair mode
+              const dockTargetEntity = activeSelectedTarget ?? pairedInteractTarget;
+              const nearbyCycleList = (hud.nearbyRadiusUsers ?? []).filter(
+                (u) => String(u.id) !== '0' && u.distance <= 8.5,
+              );
+              const canCycleNearby =
+                Boolean(dockTargetEntity) && nearbyCycleList.length > 1;
 
-          {/* =================================================================
-              3G. BOTTOM-RIGHT: ECONOMY READOUT + FROSTED SYSTEM CONTROLS (inZOI Style)
-             ================================================================= */}
-          {playMode !== 'editor' && !peacefulUiState.bottomRightWeaponAndHpHudVisible && (
-            <div className="fixed bottom-16 sm:bottom-3.5 right-4 z-30 pointer-events-auto select-none flex flex-col items-end gap-2">
-              {/* Frameless Crisp Economy Readout above system icons (inZOI bottom-right currency) */}
-              <button
-                type="button"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  openSmartphoneApp('wallet', { toggleIfActive: true });
-                }}
-                title="Open Citizen Wallet (LUL, CYON, RESPITE & NEAR)"
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#0d1118]/48 hover:bg-[#0d1118]/75 backdrop-blur-md border border-white/10 hover:border-white/25 text-white drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)] cursor-pointer transition-all active:scale-95"
-              >
-                <span className="font-mono-tabular text-[13px] font-semibold tracking-tight text-white">
-                  {hud.gold.toLocaleString()}
-                </span>
-                <span className="text-[10px] font-medium text-white/65">LUL</span>
-                <Coins className="w-3.5 h-3.5 text-amber-300 shrink-0" aria-hidden="true" />
-              </button>
-
-              {/* Slim Dark Frosted Glass Utility Icon Row */}
-              <div className="flex items-center gap-2">
-                {worldMode !== 'warzone' && (
-                  <button
-                    type="button"
-                    data-city-view-minimap-trigger="true"
-                    onClick={(e) => {
-                      e.currentTarget.blur();
-                      soundEngine.playUiClick();
-                      selectCityViewTarget('kota', true);
-                    }}
-                    title="Open 3D City View Map"
-                    aria-label="Open 3D City View Map"
-                    className="w-9 h-9 rounded-full flex items-center justify-center bg-[#0d1118]/65 hover:bg-[#171d29]/82 backdrop-blur-xl text-white/90 hover:text-white border border-white/15 hover:border-white/30 shadow-[0_6px_20px_rgba(0,0,0,0.35)] cursor-pointer active:scale-95 transition-all"
-                  >
-                    <MapIcon className="w-4 h-4 stroke-[1.75]" aria-hidden="true" />
-                  </button>
-                )}
-                <HudQuickMountScooterControl
-                  ownedScooterIds={ownedScooterIds}
+              return (
+                <HudBottomAvatarDock
+                  playerDisplayName={playerDisplayName || 'Buddy'}
+                  characterGender={characterGender}
+                  statusLabel={
+                    equippedScooterKind
+                      ? 'Riding'
+                      : activeQuickPoseId
+                        ? 'Posing'
+                        : hud.equippedWeapon === 'Joran Fishing'
+                          ? 'Fishing'
+                          : isInsideGlasshouseCafe
+                            ? 'In Cafe'
+                            : isInsideGrandCasino
+                              ? 'Casino'
+                              : isInsideBeautySalon
+                                ? 'Salon'
+                                : isInsidePrivateHouse
+                                  ? 'Home'
+                                  : 'Online'
+                  }
+                  statusTone={
+                    equippedScooterKind || hud.equippedWeapon === 'Joran Fishing'
+                      ? 'emerald'
+                      : activeQuickPoseId
+                        ? 'sky'
+                        : isInsideGlasshouseCafe || isInsideGrandCasino
+                          ? 'amber'
+                          : 'emerald'
+                  }
+                  isFishingRodEquipped={hud.equippedWeapon === 'Joran Fishing'}
                   equippedScooterKind={equippedScooterKind}
-                  preferredScooterKind={preferredScooterKind}
-                  canMountOutdoors={
+                  ownedScooterIds={ownedScooterIds}
+                  canMountScooterOutdoors={
                     worldMode !== 'warzone' &&
-                    hud.worldMode !== 'warzone' &&
                     !isInsidePrivateHouse &&
                     !isInsideGlasshouseCafe &&
                     !isInsideGrandCasino &&
@@ -12525,49 +12239,199 @@ export default function App() {
                     !hud.isRidingCityTram &&
                     hud.controlMode !== 'tank'
                   }
-                  popoverPlacement="top"
-                  onEquipScooter={(kind) => {
-                    soundEngine.playUiClick();
-                    setPreferredScooterKind(kind);
-                    try {
-                      window.localStorage.setItem('bb_preferred_scooter_kind_v1', kind);
-                    } catch {
-                      // ignore storage errors
+                  targetEntity={dockTargetEntity}
+                  isTargetLocked={Boolean(dockTargetEntity)}
+                  isTargetInteractionOpen={isTargetMenuExpanded || isPairedModeActive}
+                  isPairedModeActive={isPairedModeActive}
+                  canCycleTargetEntity={canCycleNearby}
+                  hasOwnedPairedAnimations={ownedPairedItems.length > 0}
+                  onToggleTargetInteraction={() => {
+                    setIsPinTargetPopupOpen(false);
+                    setIsTargetMenuExpanded((prev) => !prev);
+                  }}
+                  onClearTargetEntity={() => {
+                    setIsPinTargetPopupOpen(false);
+                    setSelectedTargetPinId(null);
+                    setIsTargetMenuExpanded(false);
+                    setSelectedTargetUser(null);
+                    window.dispatchEvent(new CustomEvent('clear-character-selection'));
+                  }}
+                  onCycleTargetEntity={() => {
+                    if (!dockTargetEntity || nearbyCycleList.length <= 1) return;
+                    const currentIdx = nearbyCycleList.findIndex(
+                      (u) => String(u.id) === String(dockTargetEntity.id),
+                    );
+                    const nextIdx =
+                      currentIdx >= 0 ? (currentIdx + 1) % nearbyCycleList.length : 0;
+                    const nextUser = nearbyCycleList[nextIdx];
+                    if (nextUser) {
+                      setSelectedTargetUser(nextUser);
+                      window.dispatchEvent(
+                        new CustomEvent('select-character-by-id', {
+                          detail: { id: nextUser.id },
+                        }),
+                      );
                     }
-                    dispatchBuddyAction(`equipScooter:${kind}`);
                   }}
-                  onDismountScooter={() => {
-                    soundEngine.playUiClick();
-                    dispatchBuddyAction('unequipScooter');
+                  onOpenTargetProfile={(entity) => {
+                    setIsTargetMenuExpanded(false);
+                    setPairedInteractTarget(null);
+                    openSmartphoneApp('profile', { profileTarget: entity });
                   }}
-                  onLocateShowroom={() => {
-                    soundEngine.playUiClick();
+                  onWhisperTarget={(entity) => {
+                    closeSmartphone();
+                    setIsTargetMenuExpanded(false);
+                    setPairedInteractTarget(null);
+                    setIsKioskModalOpen(false);
+                    setIsProfileModalOpen(false);
+                    setIsPersonalWalletModalOpen(false);
+                    setActiveSpecialModal('none');
+                    setActiveTeleportKioskModal('none');
+                    window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                    setSelectedPrivateUser(entity);
+                    setIsSocialChatModalOpen(true);
+                  }}
+                  onTalkMerchantTarget={(entity) => {
+                    closeSmartphone();
+                    setIsTargetMenuExpanded(false);
+                    setIsKioskModalOpen(false);
+                    setIsSocialChatModalOpen(false);
+                    setIsPersonalWalletModalOpen(false);
+                    setActiveTeleportKioskModal('none');
+                    window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                    const location =
+                      entity.merchantLocation ??
+                      (entity.id === 'npc_beach' || entity.id === 'npc_kai'
+                        ? 'beach_house'
+                        : 'lobby_cafe');
                     window.dispatchEvent(
-                      new CustomEvent('set-tutorial-waypoint', {
-                        detail: {
-                          target: 'coord',
-                          x: -97.355,
-                          z: -4.574,
-                          color: '#22ff5e',
-                        },
+                      new CustomEvent('open-npc-merchant-ui', {
+                        detail: { location },
                       }),
                     );
                   }}
+                  onTalkCitizenTarget={(entity) => {
+                    closeSmartphone();
+                    openCitizenDialogueForId(String(entity.id), 'sesi_chat');
+                  }}
+                  onGiftTarget={(entity) => {
+                    setIsTargetMenuExpanded(false);
+                    setPairedInteractTarget(null);
+                    const canonicalCitizen = resolveCanonicalCitizenId(String(entity.id));
+                    if (canonicalCitizen) {
+                      closeSmartphone();
+                      openCitizenDialogueForId(canonicalCitizen, 'gift');
+                      return;
+                    }
+                    const isMerchant = Boolean(
+                      entity.isMerchant ||
+                        entity.id === 'npc_hana' ||
+                        entity.id === 'npc_cafe' ||
+                        entity.id === 'npc_kai' ||
+                        entity.id === 'npc_beach',
+                    );
+                    if (isMerchant) {
+                      closeSmartphone();
+                      const location =
+                        entity.merchantLocation ??
+                        (entity.id === 'npc_beach' || entity.id === 'npc_kai'
+                          ? 'beach_house'
+                          : 'lobby_cafe');
+                      window.dispatchEvent(
+                        new CustomEvent('open-npc-merchant-ui', {
+                          detail: { location },
+                        }),
+                      );
+                      return;
+                    }
+                    const recipientHandle =
+                      entity.nearAccountId?.trim() ||
+                      entity.name.replace(/\s*\((ANDA|YOU|KAMU)\)/gi, '').trim();
+                    if (recipientHandle) {
+                      setRespiteTransferRecipient(recipientHandle);
+                    }
+                    setPersonalWalletTab('wallet');
+                    openSmartphoneApp('wallet');
+                  }}
+                  onInteractTarget={(entity) => {
+                    closeSmartphone();
+                    setIsQuickPoseModalOpen(false);
+                    setSelectedTargetUser(entity);
+                    setIsTargetMenuExpanded(true);
+                    setIsKioskModalOpen(false);
+                    setIsProfileModalOpen(false);
+                    setIsSocialChatModalOpen(false);
+                    setIsPersonalWalletModalOpen(false);
+                    setActiveSpecialModal('none');
+                    setActiveTeleportKioskModal('none');
+                    window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                    setPairedInteractTarget(entity);
+                  }}
+                  onOpenProfile={() => {
+                    openSmartphoneApp('profile', { toggleIfActive: true });
+                  }}
+                  onOpenBag={() => {
+                    openSmartphoneApp('bag', { toggleIfActive: true });
+                  }}
+                  onOpenScooterShowroom={() => {
+                    openSmartphoneApp('scooters', { toggleIfActive: true });
+                  }}
+                  onToggleFishingRod={() => {
+                    if (hud.equippedWeapon === 'Joran Fishing') {
+                      setIsChargingCast(false);
+                      setIsHoldingReel(false);
+                      setFishingMinigame(null);
+                      setFishingHintMessage(null);
+                      setFishingPhase('idle');
+                      dispatchBuddyAction('qcEquipWeapon:unarmed');
+                    } else {
+                      dispatchBuddyAction('qcEquipWeapon:fishing_rod');
+                    }
+                  }}
+                  onToggleScooterKind={(kind) => {
+                    if (equippedScooterKind === kind) {
+                      dispatchBuddyAction('unequipScooter');
+                    } else {
+                      dispatchBuddyAction(`equipScooter:${kind}`);
+                    }
+                  }}
                 />
-                <HudAudioVolumeControl
-                  contextId="city"
-                  popoverPlacement="top"
-                  hideMusicButton
-                  isMusicMuted={isMusicMuted}
-                  isSfxMuted={isMuted}
-                  musicVolumePct={musicVolumePct}
-                  sfxVolumePct={audioVolumePct}
-                  onToggleMusicMute={handleToggleMusic}
-                  onToggleSfxMute={handleToggleAudio}
-                  onChangeMusicVolumePct={handleChangeMusicVolumePct}
-                  onChangeSfxVolumePct={handleChangeVolumePct}
-                />
-              </div>
+              );
+            })()}
+
+          {/* =================================================================
+              3G. BOTTOM-RIGHT: UNIFIED TIME, WEATHER & AUDIO CONTROL PILL
+             ================================================================= */}
+          {playMode !== 'editor' && !peacefulUiState.bottomRightWeaponAndHpHudVisible && (
+            <div className="fixed bottom-16 sm:bottom-3.5 right-4 z-30 pointer-events-auto select-none flex flex-col items-end gap-2">
+              <HudWeatherAndTimeControl
+                contextId="city"
+                popoverPlacement="top"
+                popoverAlign="right"
+                lightingPreset={lightingPreset}
+                timeOfDayHours={timeOfDayHours}
+                weatherCondition={weatherCondition}
+                rainIntensityTier={rainIntensityTier}
+                autoCycleEnabled={autoTimeCycle}
+                cityLightsScale={cityLightsScale}
+                onSelectTimePhase={handleSelectTimePhase}
+                onCycleTimePhase={handleCycleLighting}
+                onChangeTimeOfDayHours={handleChangeTimeOfDayHours}
+                onSelectWeatherCondition={handleSelectWeatherCondition}
+                onSelectRainIntensityTier={handleSelectRainIntensityTier}
+                onToggleAutoCycle={handleToggleAutoTimeCycle}
+                onChangeCityLightsScale={handleChangeCityLightsScale}
+                audioControls={{
+                  isMusicMuted,
+                  isSfxMuted: isMuted,
+                  musicVolumePct,
+                  sfxVolumePct: audioVolumePct,
+                  onToggleMusicMute: handleToggleMusic,
+                  onToggleSfxMute: handleToggleAudio,
+                  onChangeMusicVolumePct: handleChangeMusicVolumePct,
+                  onChangeSfxVolumePct: handleChangeVolumePct,
+                }}
+              />
             </div>
           )}
         </div>
@@ -13684,15 +13548,61 @@ export default function App() {
               />
             );
           }
+          if (app === 'city_feed') {
+            const currentLocationLabel =
+              worldMode === 'warzone'
+                ? 'Warzone Arena'
+                : isInsidePrivateHouse
+                  ? isSampleHouseView
+                    ? 'Model House'
+                    : 'Private House'
+                  : isInsideGlasshouseCafe
+                    ? 'Glasshouse Cafe'
+                    : isInsideGrandCasino
+                      ? 'Grand Casino'
+                      : isInsideBeautySalon
+                        ? 'Glow Studio Salon'
+                        : 'Central Plaza';
+            return (
+              <CityFeedModal
+                embeddedInPhone
+                isOpen
+                onClose={closeSmartphone}
+                playerName={playerDisplayName || 'Buddy'}
+                playerUid={hud.nearWalletId || playerUid}
+                characterGender={characterGender}
+                playerTeam={hud.playerTeam ?? 'blue'}
+                currentDistrict={currentLocationLabel}
+                nearbyUsers={hud.nearbyRadiusUsers ?? []}
+                onOpenPlayerProfile={(user) => {
+                  openSmartphoneApp('profile', { profileTarget: user });
+                }}
+                onStartWhisper={(user) => {
+                  if (user.isNpc) return;
+                  openSmartphoneApp('messages', { privateUser: user });
+                }}
+              />
+            );
+          }
+          const socialLockedTab =
+            app === 'contacts'
+              ? 'online'
+              : app === 'public'
+                ? 'public'
+                : app === 'letters'
+                  ? 'letters'
+                  : app === 'settings'
+                    ? 'settings'
+                    : 'private';
           return (
             <SocialChatModal
               {...socialChatCommonProps}
               embeddedInPhone
-              initialTab={
-                app === 'contacts' ? 'online' : selectedPrivateUser ? 'private' : 'public'
-              }
+              lockedTab={socialLockedTab}
+              initialTab={socialLockedTab}
               isOpen
               onClose={closeSmartphone}
+              onSwitchPhoneApp={(targetApp) => openSmartphoneApp(targetApp)}
             />
           );
         }}
@@ -13711,7 +13621,15 @@ export default function App() {
               : missionGuide.title
             : null
         }
-        unreadMessagesCount={unreadPrivateCount + unreadLetterCount}
+        unreadMessagesCount={unreadPrivateCount}
+        unreadLettersCount={unreadLetterCount}
+        onlinePeersCount={
+          filterRealHumanOnlinePlayers(
+            hud.nearbyRadiusUsers ?? [],
+            playerDisplayName,
+            hud.nearWalletId || playerUid,
+          ).length
+        }
         newAssetCount={newAssetCount}
         isFishingRodEquipped={hud.equippedWeapon === 'Joran Fishing'}
         isRidingScooter={Boolean(equippedScooterKind)}
@@ -13722,6 +13640,38 @@ export default function App() {
         onOpenWardrobe={() => {
           closeSmartphone();
           setIsWardrobeStudioOpen(true);
+        }}
+      />
+
+      {/* Style · Pose / Dance / Action / Emotes Left-Docked Glass Modal (mutually exclusive with Smartphone OS) */}
+      <QuickPoseStyleModal
+        isOpen={
+          isQuickPoseModalOpen &&
+          !isSmartphoneOsOpen &&
+          !isSocialChatModalOpen &&
+          !isCitizenDialogueOpen &&
+          !isWardrobeStudioOpen &&
+          !cityViewActive &&
+          activeSpecialModal === 'none'
+        }
+        onClose={() => setIsQuickPoseModalOpen(false)}
+        quickPoseItems={ownedQuickPoseItems}
+        activeQuickPoseId={activeQuickPoseId}
+        onTriggerQuickPose={(item) => {
+          const glbUrl = item.dancePose?.animGlbUrl ?? null;
+          if (!glbUrl) return;
+          dispatchBuddyAction(
+            `playQuickPose:${JSON.stringify({ id: item.id, name: item.name, glbUrl })}`,
+          );
+        }}
+        onStopQuickPose={() => {
+          dispatchBuddyAction('stopQuickPose');
+        }}
+        onTriggerEmote={(emoteId) => {
+          dispatchBuddyAction(`playEmote:${emoteId}`);
+        }}
+        onStopEmote={() => {
+          dispatchBuddyAction('clearEmote');
         }}
       />
 
@@ -13747,6 +13697,8 @@ export default function App() {
           isGrandCasinoModalOpen ||
           isCitizenDialogueOpen ||
           isSmartphoneOsOpen ||
+          isQuickPoseModalOpen ||
+          Boolean(pairedInteractTarget) ||
           activeSpecialModal !== 'none' ||
           activeTeleportKioskModal !== 'none'
         }
@@ -13789,18 +13741,6 @@ export default function App() {
               }
             : null
         }
-        quickPoseItems={ownedQuickPoseItems}
-        activeQuickPoseId={activeQuickPoseId}
-        onTriggerQuickPose={(item) => {
-          const glbUrl = item.dancePose?.animGlbUrl ?? null;
-          if (!glbUrl) return;
-          dispatchBuddyAction(
-            `playQuickPose:${JSON.stringify({ id: item.id, name: item.name, glbUrl })}`,
-          );
-        }}
-        onStopQuickPose={() => {
-          dispatchBuddyAction('stopQuickPose');
-        }}
       />
 
       {/* =====================================================================
@@ -14021,32 +13961,10 @@ export default function App() {
           String(selectedTargetUser.id) !== '0'
             ? selectedTargetUser
             : null;
-        const dockEntity = activeSelectedTarget ?? nearbyDockEntity;
+        const dockEntity = activeSelectedTarget;
 
-        let effectiveDockMode: UnifiedBottomDockActionMode = 'none';
-        if (!isDockBlockedByModal) {
-          if (unifiedBottomDockMode === 'stand_up') {
-            if (fishingPhase === 'idle' && !nearbyWaterZone.canFish) {
-              effectiveDockMode = 'stand_up';
-            }
-          } else if (activeSelectedTarget) {
-            if (fishingPhase === 'idle' && !nearbyWaterZone.canFish) {
-              effectiveDockMode = 'nearby_entity';
-            }
-          } else if (unifiedBottomDockMode === 'work_shift') {
-            if (isInsideGlasshouseCafe && !cafeShiftState.isWorking) {
-              effectiveDockMode = 'work_shift';
-            }
-          } else if (unifiedBottomDockMode === 'sit') {
-            if (fishingPhase === 'idle' && !nearbyWaterZone.canFish) {
-              effectiveDockMode = 'sit';
-            }
-          } else if (unifiedBottomDockMode === 'nearby_entity' && dockEntity) {
-            if (fishingPhase === 'idle' && !nearbyWaterZone.canFish) {
-              effectiveDockMode = 'nearby_entity';
-            }
-          }
-        }
+        // World sit/stand/NPC & Cafe Rota popups are anchored directly beside their 3D radial pins.
+        const effectiveDockMode: UnifiedBottomDockActionMode = 'none';
 
         const nearbyCycleList = (hud.nearbyRadiusUsers ?? []).filter(
           (u) => String(u.id) !== '0' && u.distance <= 8.5,
@@ -14054,8 +13972,288 @@ export default function App() {
         const canCycleNearby =
           Boolean(dockEntity) && nearbyCycleList.length > 1;
 
+        const isWorkShiftPinPopupOpen =
+          !isDockBlockedByModal &&
+          unifiedBottomDockMode === 'work_shift' &&
+          isCafeRotaMenuExpanded &&
+          isInsideGlasshouseCafe &&
+          !cafeShiftState.isWorking;
+
+        const hasOtherActiveWorker = Boolean(cafeShiftState.otherActiveWorker);
+        const rotaQueueList = cafeShiftState.shiftQueue ?? [];
+        const selfRotaQueueIdx = rotaQueueList.findIndex((entry) => entry.isSelf);
+        const isSelfInRotaQueue = selfRotaQueueIdx >= 0;
+        const selfRotaQueueNumber = selfRotaQueueIdx + 1;
+
+        const workShiftMenuItems: PinAnchoredMenuItem[] = [
+          {
+            id: 'view_rota',
+            label: 'View Rota',
+            icon: <ClipboardList className="w-3.5 h-3.5" aria-hidden="true" />,
+            iconWrapClassName: 'bg-stone-200/90 text-slate-800',
+            dataAttr: { 'data-cafe-rota-lihat-giliran-btn': 'true' },
+            onSelect: () => {
+              setIsCafeRotaMenuExpanded(false);
+              setActiveCafeModal('rota');
+            },
+          },
+          !hasOtherActiveWorker
+            ? {
+                id: 'start_work',
+                label: 'Start Work',
+                icon: <UserCheck className="w-3.5 h-3.5" aria-hidden="true" />,
+                iconWrapClassName: 'bg-emerald-100 text-emerald-700',
+                pillAccentClassName: 'border-emerald-300/90 text-emerald-950',
+                badgeText: `0/${CAFE_SHIFT_MAX_ORDERS}`,
+                badgeClassName: 'bg-emerald-100 text-emerald-800',
+                dataAttr: { 'data-cafe-rota-mulai-kerja-btn': 'true' },
+                onSelect: () => {
+                  setIsCafeRotaMenuExpanded(false);
+                  handleStartCafeWorkShift();
+                },
+              }
+            : !isSelfInRotaQueue
+              ? {
+                  id: 'join_queue',
+                  label: 'Join Queue',
+                  icon: <Users className="w-3.5 h-3.5" aria-hidden="true" />,
+                  iconWrapClassName: 'bg-sky-100 text-sky-700',
+                  pillAccentClassName: 'border-sky-300/90 text-sky-950',
+                  badgeText: `#${rotaQueueList.length + 1}`,
+                  badgeClassName: 'bg-sky-100 text-sky-800',
+                  dataAttr: { 'data-cafe-rota-ikut-antrian-btn': 'true' },
+                  onSelect: () => {
+                    setIsCafeRotaMenuExpanded(false);
+                    handleStartCafeWorkShift();
+                  },
+                }
+              : {
+                  id: 'leave_queue',
+                  label: `Queue #${selfRotaQueueNumber} · Leave`,
+                  icon: <Users className="w-3.5 h-3.5" aria-hidden="true" />,
+                  iconWrapClassName: 'bg-amber-100 text-amber-700',
+                  pillAccentClassName: 'border-amber-300/90 text-amber-950',
+                  dataAttr: { 'data-cafe-rota-keluar-antrian-btn': 'true' },
+                  onSelect: () => {
+                    setIsCafeRotaMenuExpanded(false);
+                    handleLeaveCafeWorkShiftQueue();
+                  },
+                },
+          {
+            id: 'cafe_atm',
+            label: 'ATM · Exchange',
+            icon: <Zap className="w-3.5 h-3.5" aria-hidden="true" />,
+            iconWrapClassName: 'bg-amber-100 text-amber-700',
+            dataAttr: { 'data-cafe-rota-atm-btn': 'true' },
+            onSelect: () => {
+              setIsCafeRotaMenuExpanded(false);
+              setActiveCafeModal('atm');
+            },
+          },
+        ];
+
+        const workShiftHeaderStrip = cafeShiftState.otherActiveWorker ? (
+          <div className="rounded-full px-3 py-1 bg-[#141926]/82 backdrop-blur-xl border border-white/25 shadow-lg text-white flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wider">
+            <span className="text-sky-300 truncate">
+              WORKING: {cafeShiftState.otherActiveWorker.name}
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-sky-400/20 text-sky-200 border border-sky-300/30 font-mono-tabular">
+              {cafeShiftState.otherActiveWorker.ordersServed}/
+              {cafeShiftState.otherActiveWorker.maxOrders}
+            </span>
+          </div>
+        ) : undefined;
+
+        const targetPopupItems: PinAnchoredMenuItem[] = (() => {
+          if (!dockEntity) return [];
+          const cleanEntityName = dockEntity.name
+            .replace(/\s*\((ANDA|YOU|KAMU)\)/gi, '')
+            .trim();
+          const isMerchantEntity = Boolean(
+            dockEntity.isMerchant ||
+              dockEntity.id === 'npc_hana' ||
+              dockEntity.id === 'npc_cafe' ||
+              dockEntity.id === 'npc_kai' ||
+              dockEntity.id === 'npc_beach',
+          );
+          const isCitizenNpcEntity = Boolean(dockEntity.isNpc && !isMerchantEntity);
+          const isWhisperablePlayer = Boolean(
+            !dockEntity.isNpc &&
+              !dockEntity.isSelf &&
+              !cleanEntityName.toUpperCase().startsWith('BUDDY #'),
+          );
+
+          const items: PinAnchoredMenuItem[] = [
+            {
+              id: 'profile',
+              label: `View ${cleanEntityName} Profile`,
+              icon: <User className="w-3.5 h-3.5" aria-hidden="true" />,
+              iconWrapClassName: 'bg-sky-100 text-sky-700',
+              dataAttr: { 'data-nearby-entity-profile-btn': 'true' },
+              onSelect: () => {
+                setIsPinTargetPopupOpen(false);
+                setIsTargetMenuExpanded(false);
+                setPairedInteractTarget(null);
+                openSmartphoneApp('profile', { profileTarget: dockEntity });
+              },
+            },
+          ];
+
+          if (isMerchantEntity) {
+            items.push({
+              id: 'talk_merchant',
+              label: `Talk to ${cleanEntityName}`,
+              icon: <MessageSquare className="w-3.5 h-3.5" aria-hidden="true" />,
+              iconWrapClassName: 'bg-amber-100 text-amber-700',
+              dataAttr: { 'data-nearby-entity-talk-btn': 'true' },
+              onSelect: () => {
+                setIsPinTargetPopupOpen(false);
+                closeSmartphone();
+                setIsTargetMenuExpanded(false);
+                setIsKioskModalOpen(false);
+                setIsSocialChatModalOpen(false);
+                setIsPersonalWalletModalOpen(false);
+                setActiveTeleportKioskModal('none');
+                window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                const location =
+                  dockEntity.merchantLocation ??
+                  (dockEntity.id === 'npc_beach' || dockEntity.id === 'npc_kai'
+                    ? 'beach_house'
+                    : 'lobby_cafe');
+                window.dispatchEvent(
+                  new CustomEvent('open-npc-merchant-ui', {
+                    detail: { location },
+                  }),
+                );
+              },
+            });
+          } else if (isCitizenNpcEntity) {
+            items.push({
+              id: 'talk_citizen',
+              label: `Talk to ${cleanEntityName}`,
+              icon: <MessageSquare className="w-3.5 h-3.5" aria-hidden="true" />,
+              iconWrapClassName: 'bg-emerald-100 text-emerald-700',
+              dataAttr: { 'data-nearby-citizen-talk-btn': 'true' },
+              onSelect: () => {
+                setIsPinTargetPopupOpen(false);
+                closeSmartphone();
+                openCitizenDialogueForId(String(dockEntity.id), 'sesi_chat');
+              },
+            });
+          } else if (isWhisperablePlayer) {
+            items.push({
+              id: 'whisper_player',
+              label: `Whisper ${cleanEntityName}`,
+              icon: <MessageCircle className="w-3.5 h-3.5" aria-hidden="true" />,
+              iconWrapClassName: 'bg-emerald-100 text-emerald-700',
+              dataAttr: { 'data-nearby-entity-whisper-btn': 'true' },
+              onSelect: () => {
+                setIsPinTargetPopupOpen(false);
+                closeSmartphone();
+                setIsTargetMenuExpanded(false);
+                setPairedInteractTarget(null);
+                setIsKioskModalOpen(false);
+                setIsProfileModalOpen(false);
+                setIsPersonalWalletModalOpen(false);
+                setActiveSpecialModal('none');
+                setActiveTeleportKioskModal('none');
+                window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                setSelectedPrivateUser(dockEntity);
+                setIsSocialChatModalOpen(true);
+              },
+            });
+          }
+
+          items.push({
+            id: 'gift',
+            label: 'Send Gift',
+            icon: <Gift className="w-3.5 h-3.5" aria-hidden="true" />,
+            iconWrapClassName: 'bg-rose-100 text-rose-600',
+            onSelect: () => {
+              setIsPinTargetPopupOpen(false);
+              setIsTargetMenuExpanded(false);
+              setPairedInteractTarget(null);
+              const canonicalCitizen = resolveCanonicalCitizenId(String(dockEntity.id));
+              if (canonicalCitizen) {
+                closeSmartphone();
+                openCitizenDialogueForId(canonicalCitizen, 'gift');
+                return;
+              }
+              if (isMerchantEntity) {
+                closeSmartphone();
+                const location =
+                  dockEntity.merchantLocation ??
+                  (dockEntity.id === 'npc_beach' || dockEntity.id === 'npc_kai'
+                    ? 'beach_house'
+                    : 'lobby_cafe');
+                window.dispatchEvent(
+                  new CustomEvent('open-npc-merchant-ui', {
+                    detail: { location },
+                  }),
+                );
+                return;
+              }
+              const recipientHandle =
+                dockEntity.nearAccountId?.trim() || cleanEntityName;
+              if (recipientHandle) {
+                setRespiteTransferRecipient(recipientHandle);
+              }
+              setPersonalWalletTab('wallet');
+              openSmartphoneApp('wallet');
+            },
+          });
+
+          if (ownedPairedItems.length > 0) {
+            items.push({
+              id: 'paired_interact',
+              label: 'Paired Interact',
+              icon: <HeartHandshake className="w-3.5 h-3.5" aria-hidden="true" />,
+              iconWrapClassName: 'bg-fuchsia-100 text-fuchsia-700',
+              pillAccentClassName: 'border-fuchsia-200/95',
+              dataAttr: { 'data-nearby-entity-interact-btn': 'true' },
+              onSelect: () => {
+                setIsPinTargetPopupOpen(false);
+                closeSmartphone();
+                setIsQuickPoseModalOpen(false);
+                setSelectedTargetUser(dockEntity);
+                setIsTargetMenuExpanded(true);
+                setIsKioskModalOpen(false);
+                setIsProfileModalOpen(false);
+                setIsSocialChatModalOpen(false);
+                setIsPersonalWalletModalOpen(false);
+                setActiveSpecialModal('none');
+                setActiveTeleportKioskModal('none');
+                window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                setPairedInteractTarget(dockEntity);
+              },
+            });
+          }
+
+          return items;
+        })();
+
         return (
           <>
+            <PinAnchoredInteractionMenu
+              isOpen={isWorkShiftPinPopupOpen}
+              anchorPinId="cafe_rota_board"
+              menuDataAttrs={{ 'data-cafe-giliran-kerja-menu': 'true' }}
+              headerStrip={workShiftHeaderStrip}
+              items={workShiftMenuItems}
+              onClose={() => setIsCafeRotaMenuExpanded(false)}
+            />
+            <PinAnchoredInteractionMenu
+              isOpen={
+                !isDockBlockedByModal &&
+                isPinTargetPopupOpen &&
+                Boolean(selectedTargetPinId) &&
+                Boolean(dockEntity)
+              }
+              anchorPinId={selectedTargetPinId}
+              menuDataAttrs={{ 'data-nearby-entity-action-menu': 'true' }}
+              items={targetPopupItems}
+              onClose={() => setIsPinTargetPopupOpen(false)}
+            />
             <CafeWorkShiftBottomDock
             isVisible={effectiveDockMode !== 'none'}
             actionMode={effectiveDockMode}
@@ -14090,7 +14288,8 @@ export default function App() {
             hasOwnedPairedAnimations={ownedPairedItems.length > 0}
             onInteractEntity={(entity) => {
               soundEngine.playUiClick();
-              setIsTargetMenuExpanded(false);
+              setSelectedTargetUser(entity);
+              setIsTargetMenuExpanded(true);
               setIsKioskModalOpen(false);
               setIsProfileModalOpen(false);
               setIsSocialChatModalOpen(false);
@@ -14466,6 +14665,7 @@ export default function App() {
         isOpen={isCitizenDialogueOpen && hud.worldMode !== 'warzone'}
         citizenId={activeCitizenId}
         openSeq={citizenOpenSeq}
+        initialTab={citizenInitialTab}
         friendshipStore={citizenFriendshipStore}
         caughtFishBucket={caughtFishBucket}
         isRaining={weatherCondition === 'hujan'}

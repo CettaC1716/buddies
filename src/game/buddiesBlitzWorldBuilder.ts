@@ -196,10 +196,6 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
     { id: 529, kind: 'bench', x: -9.5, z: 41.8, rotY: Math.PI, scale: 1.35 },
     { id: 586, kind: 'recycle_bin', x: -12.0, z: -41.8, rotY: 0.0, scale: 1.08 },
     { id: 587, kind: 'recycle_bin', x: -12.0, z: 41.8, rotY: Math.PI, scale: 1.08 },
-
-    // Relocated from Central Island per CENTRAL_PARK_PROP_RELOCATION_MANIFEST (off sidewalks & roads)
-    { id: 530, kind: 'lamppost_1b', x: -55.5, z: -24.5, rotY: 0.0, scale: 1.15 },
-    { id: 531, kind: 'lamppost_1b', x: -55.5, z: 24.5, rotY: Math.PI / 2, scale: 1.15 },
   ],
 };
 
@@ -230,6 +226,8 @@ export function loadSavedArenaLayout(): ArenaMapLayout {
         parsed.props = parsed.props.filter(
           (p) =>
             p.id !== 491 &&
+            p.id !== 530 &&
+            p.id !== 531 &&
             !isInsideSouthPlazaGlasshouseFootprint(p.x, p.z) &&
             !isInsideCoastalAmusementParkFootprint(p.x, p.z) &&
             !isInsideNorthGrandCasinoFootprint(p.x, p.z) &&
@@ -634,9 +632,9 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'tennis_fence_east_s', x: -78.82, z: 57.74, halfX: 0.28, halfZ: 5.00, rotY: 0, heightY: 4.00, mat: 'metal' },
     { id: 'tennis_fence_south_w', x: -94.88, z: 62.73, halfX: 3.92, halfZ: 0.28, rotY: 0, heightY: 4.00, mat: 'metal' },
     { id: 'tennis_fence_south_e', x: -82.74, z: 62.73, halfX: 3.92, halfZ: 0.28, rotY: 0, heightY: 4.00, mat: 'metal' },
-    // Central Plaza Halte Trem Shelter Colliders (Windbreak Wall, Black Transit Kiosk, Ticket Machine & Slatted Passenger Bench)
-    { id: 'lobby_tram_shelter_windbreak', x: -56.83, z: 0.0, halfX: 0.28, halfZ: 6.8, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
-    { id: 'halte_teleport_kiosk', x: -59.18, z: 0.0, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
+    // Central Plaza Halte Trem Shelter Colliders (Windbreak Wall, Black Transit Kiosk, Ticket Machine & Slatted Passenger Bench, shifted +4.6m South)
+    { id: 'lobby_tram_shelter_windbreak', x: -56.83, z: 4.6, halfX: 0.28, halfZ: 6.8, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
+    { id: 'halte_teleport_kiosk', x: -59.18, z: 4.6, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
     {
       id: 'central_plaza_info_transit_kiosk',
       x: CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC.kioskX,
@@ -647,8 +645,8 @@ export function buildStaticWorldStructuresList(params: {
       heightY: 4.65,
       mat: 'metal',
     },
-    { id: 'halte_ticket_machine', x: -57.19, z: -5.15, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: 2.30, mat: 'metal' },
-    { id: 'halte_passenger_bench', x: -57.55, z: -2.60, halfX: 0.42, halfZ: 2.30, rotY: 0, heightY: 1.82, mat: 'wood' },
+    { id: 'halte_ticket_machine', x: -57.19, z: -0.55, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: 2.30, mat: 'metal' },
+    { id: 'halte_passenger_bench', x: -57.55, z: 2.00, halfX: 0.42, halfZ: 2.30, rotY: 0, heightY: 1.82, mat: 'wood' },
     // North Residence & South Residence Rail Halte Colliders + Standalone Black Transit Kiosks at Beachfront Harbor & NW Fishing Lake
     { id: 'north_residence_shelter_windbreak', x: 3.5, z: -38.8, halfX: 6.8, halfZ: 0.28, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
     { id: 'north_residence_transit_kiosk', x: 3.5, z: -41.15, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },

@@ -78,12 +78,12 @@ test('minimap percentage <-> world coordinate roundtrip stays accurate across ci
   const topLeft = radarPercentToWorldCoord(-10, -10);
   assert.deepEqual(topLeft, { x: -RADAR_WORLD_HALF_EXTENT, z: -RADAR_WORLD_HALF_EXTENT });
 
-  // Verify GLOW STUDIO POI is registered at (29.5, 14.0) alongside HANA, CAFE, KAI, PARK
+  // Verify GLOW STUDIO POI is registered at (29.5, 15.0) alongside HANA, CAFE, KAI, PARK
   const ids = CITY_MINIMAP_POIS.map((p) => p.id);
   assert.deepEqual(ids, ['hana', 'cafe', 'glow_studio', 'kai', 'park']);
   const glow = CITY_MINIMAP_POIS.find((p) => p.id === 'glow_studio')!;
   assert.equal(glow.x, 29.5);
-  assert.equal(glow.z, 14.0);
+  assert.equal(glow.z, 15.0);
   assert.equal(glow.walkTargetX, SALON_EXTERIOR_DOOR_TRIGGER.x);
   assert.equal(glow.walkTargetZ, SALON_EXTERIOR_DOOR_TRIGGER.z);
 });

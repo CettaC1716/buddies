@@ -35,11 +35,11 @@ const COL_SALON_AWNING = '#f6eee0';
 const COL_SALON_AWNING_TRIM = '#dcc3ae';
 const COL_SALON_MARBLE = '#f7f1e8';
 
-const PODIUM_HALF_W = 4.20;
-const PODIUM_HALF_D = 3.40;
-const CORNER_CURVE_R = 1.65;
-const CURVE_CENTER_X = -PODIUM_HALF_W + CORNER_CURVE_R; // -2.55
-const CURVE_CENTER_Z = PODIUM_HALF_D - CORNER_CURVE_R; // +1.75
+const PODIUM_HALF_W = CENTRAL_PARK_MASTERPLAN.beautySalon.halfX; // 6.30 (12.60m wide)
+const PODIUM_HALF_D = CENTRAL_PARK_MASTERPLAN.beautySalon.halfZ; // 4.40 (8.80m deep)
+const CORNER_CURVE_R = 2.10;
+const CURVE_CENTER_X = -PODIUM_HALF_W + CORNER_CURVE_R; // -4.20
+const CURVE_CENTER_Z = PODIUM_HALF_D - CORNER_CURVE_R; // +2.30
 
 interface CurvePointXZ {
   x: number;
@@ -791,10 +791,10 @@ function buildSalonInteriorFixtures(
   const ceilingGeo = createCurvedPodiumSlabGeo(-0.22, 3.50, 3.58, 0.004);
   ctx.addPart(grp, ceilingGeo, '#fdf6ec', [0, 0, 0], [0, 0, 0], { bounce: 2.60 });
 
-  // Interior backdrop partition wall at z = -2.25m (bright sunlit cream behind vanity & display niches)
-  ctx.addPart(grp, createBeveledBox(6.8, 3.44, 0.14, 0.010), '#f7efe4', [-0.35, 1.78, -2.25], [0, 0, 0], { bounce: 2.66 });
-  // Right-side decorative partition wall at x = +1.36m supporting arched niche facing -X toward curved window
-  ctx.addPart(grp, createBeveledBox(0.14, 3.44, 2.25, 0.010), '#f5eadb', [1.36, 1.78, -1.12], [0, 0, 0], { bounce: 2.66 });
+  // Interior backdrop partition wall at z = -3.10m (bright sunlit cream behind vanity & display niches)
+  ctx.addPart(grp, createBeveledBox(10.2, 3.44, 0.14, 0.010), '#f7efe4', [-0.50, 1.78, -3.10], [0, 0, 0], { bounce: 2.66 });
+  // Right-side decorative partition wall at x = +2.40m supporting arched niche facing -X toward curved window
+  ctx.addPart(grp, createBeveledBox(0.14, 3.44, 3.00, 0.010), '#f5eadb', [2.40, 1.78, -1.60], [0, 0, 0], { bounce: 2.66 });
 
   // 2. Arched Backlit Display Wall Niches stocked with pastel skincare bottles & perfume jars
   const buildDisplayNiche = (nx: number, nz: number, rotY: number) => {
@@ -846,12 +846,12 @@ function buildSalonInteriorFixtures(
       }
     }
   };
-  buildDisplayNiche(-2.85, -2.04, 0.0);
-  buildDisplayNiche(1.18, -0.82, -Math.PI * 0.5);
+  buildDisplayNiche(-4.10, -2.88, 0.0);
+  buildDisplayNiche(2.22, -1.25, -Math.PI * 0.5);
 
   // Chic Reception Desk & Floral Vase inside right entrance vestibule (visible through glass doors)
   const recGrp = new THREE.Group();
-  recGrp.position.set(2.48, 0.075, -1.15);
+  recGrp.position.set(3.85, 0.075, -1.55);
   grp.add(recGrp);
   ctx.addPart(recGrp, createBeveledBox(1.42, 0.96, 0.52, 0.014), '#f3e5d6', [0, 0.48, 0], [0, 0, 0], {
     castShadow: true,
@@ -863,7 +863,7 @@ function buildSalonInteriorFixtures(
 
   // 3. Center White Marble Display Pedestal Table with Makeup Brush Cup & Bottles (curved corner foreground!)
   const pedGrp = new THREE.Group();
-  pedGrp.position.set(-2.05, 0.075, 1.35);
+  pedGrp.position.set(-3.45, 0.075, 1.95);
   grp.add(pedGrp);
 
   ctx.addPart(pedGrp, new THREE.CylinderGeometry(0.64, 0.66, 0.06, 20), COL_SALON_BRASS, [0, 0.03, 0], [0, 0, 0], { bounce: 2.68 });
@@ -923,9 +923,9 @@ function buildSalonInteriorFixtures(
     );
   }
 
-  // 4. Hollywood Bulb-Lit Vanity Mirror + Counter + Cushioned Seat (`x = -0.85, z = -1.65`)
+  // 4. Hollywood Bulb-Lit Vanity Mirror + Counter + Cushioned Seat (`x = -1.65, z = -2.50`)
   const vanGrp = new THREE.Group();
-  vanGrp.position.set(-0.92, 0.075, -1.65);
+  vanGrp.position.set(-1.65, 0.075, -2.50);
   grp.add(vanGrp);
 
   ctx.addPart(vanGrp, createBeveledBox(1.56, 0.84, 0.50, 0.014), '#f8f2ea', [0, 0.42, 0], [0, 0, 0], {
@@ -961,9 +961,9 @@ function buildSalonInteriorFixtures(
     bounce: 2.62,
   });
 
-  // 5. Round Lit Mirror Station + Counter + Seat (`x = +0.54, z = -1.55`)
+  // 5. Round Lit Mirror Station + Counter + Seat (`x = +0.55, z = -2.40`)
   const rndGrp = new THREE.Group();
-  rndGrp.position.set(0.54, 0.075, -1.55);
+  rndGrp.position.set(0.55, 0.075, -2.40);
   grp.add(rndGrp);
 
   ctx.addPart(rndGrp, createBeveledBox(1.04, 0.80, 0.46, 0.014), '#ffffff', [0, 0.40, 0], [0, 0, 0], {
@@ -994,9 +994,9 @@ function buildSalonInteriorFixtures(
 
   // 6. Warm Hanging Pendant Lamps suspended from ceiling over display table & reception
   for (const [px, pz, drop] of [
-    [-2.05, 1.35, 0.92],
-    [0.05, 0.25, 0.82],
-    [2.35, 0.85, 0.86],
+    [-3.45, 1.95, 0.92],
+    [0.15, 0.40, 0.82],
+    [3.75, 1.25, 0.86],
   ] as const) {
     ctx.addPart(grp, new THREE.CylinderGeometry(0.012, 0.012, drop, 6), COL_SALON_BRASS, [px, 3.50 - drop * 0.5, pz], [0, 0, 0], {
       bounce: 2.64,
@@ -1028,13 +1028,13 @@ function buildSalonRooftopGarden(
   rGrp.position.set(0, roofY, 0);
   parent.add(rGrp);
 
-  // 1. Stone perimeter deck & lush manicured green rooftop turf court
-  ctx.addPart(rGrp, createBeveledBox(6.22, 0.06, 4.32, 0.012), '#e5d4c3', [0, 0.0, 0], [0, 0, 0], {
+  // 1. Stone perimeter deck & lush manicured green rooftop turf court (10.2m x 6.2m upper story)
+  ctx.addPart(rGrp, createBeveledBox(9.90, 0.06, 5.90, 0.012), '#e5d4c3', [0, 0.0, 0], [0, 0, 0], {
     receiveShadow: true,
   });
   ctx.addPart(
     rGrp,
-    ctx.applyPlanarUvs(createBeveledBox(5.15, 0.03, 3.25, 0.010), 1.8),
+    ctx.applyPlanarUvs(createBeveledBox(8.60, 0.03, 4.60, 0.010), 1.8),
     '#ffffff',
     [0, 0.025, 0],
     [0, 0, 0],
@@ -1043,29 +1043,29 @@ function buildSalonRooftopGarden(
 
   // 2. Perimeter Hedge Planters & Corner Potted Palms / Greenery
   const hedgePlanterSpecs: readonly [number, number, number, number, number][] = [
-    [0, -1.78, 3.85, 0.46, 0],
-    [-2.65, 0, 2.35, 0.46, Math.PI * 0.5],
-    [2.65, 0, 2.35, 0.46, Math.PI * 0.5],
-    [-1.62, 1.78, 1.75, 0.46, 0],
-    [1.62, 1.78, 1.75, 0.46, 0],
+    [0, -2.55, 6.20, 0.48, 0],
+    [-4.45, 0, 3.60, 0.48, Math.PI * 0.5],
+    [4.45, 0, 3.60, 0.48, Math.PI * 0.5],
+    [-2.65, 2.55, 2.80, 0.48, 0],
+    [2.65, 2.55, 2.80, 0.48, 0],
   ];
   for (const [hx, hz, len, dep, rotY] of hedgePlanterSpecs) {
     buildRooftopGardenPlanterBox(rGrp, ctx, originX, originZ, groupYaw, hx, 0.03, hz, len, dep, rotY, oakTex);
   }
   for (const [px, pz, sc] of [
-    [-2.58, 1.68, 0.78],
-    [2.58, 1.68, 0.78],
-    [-2.58, -1.68, 0.76],
-    [2.58, -1.68, 0.76],
+    [-4.35, 2.45, 0.82],
+    [4.35, 2.45, 0.82],
+    [-4.35, -2.45, 0.80],
+    [4.35, -2.45, 0.80],
   ] as const) {
     buildOliveTreePot(rGrp, ctx, [px, 0.03, pz], sc);
   }
   // Spiky sculptural palm/agave accent planter at front center parapet
-  buildUrnBoxwoodPlanter(rGrp, ctx, [0, 0.03, 1.72], 0.78, 'cone', '#d4b4a2');
+  buildUrnBoxwoodPlanter(rGrp, ctx, [0, 0.03, 2.48], 0.82, 'cone', '#d4b4a2');
 
   // 3. 2-Seat Cushioned Sofa + Coffee Table (Right / East side of rooftop)
   const sofaGrp = new THREE.Group();
-  sofaGrp.position.set(1.26, 0.04, -0.58);
+  sofaGrp.position.set(2.25, 0.04, -0.75);
   sofaGrp.rotation.y = -0.18;
   rGrp.add(sofaGrp);
 
@@ -1106,7 +1106,7 @@ function buildSalonRooftopGarden(
 
   // 4. Round Bistro Table + 3 Chairs (Left / West side of rooftop)
   const bisGrp = new THREE.Group();
-  bisGrp.position.set(-1.32, 0.04, 0.25);
+  bisGrp.position.set(-2.35, 0.04, 0.25);
   rGrp.add(bisGrp);
 
   ctx.addPart(bisGrp, new THREE.CylinderGeometry(0.24, 0.28, 0.04, 12), COL_SALON_BRONZE, [0, 0.02, 0]);
@@ -1208,8 +1208,8 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
     receiveShadow: recvShadow,
   });
 
-  // Curved panoramic window span: Left (-X, z=-1.65) -> Front-Left curve -> Front (+Z, x=+1.25)
-  const showcaseCurve = sampleCornerWindowCurve(-1.65, 1.25, 18, 2);
+  // Curved panoramic window span: Left (-X, z=-2.20) -> Front-Left curve -> Front (+Z, x=+2.40)
+  const showcaseCurve = sampleCornerWindowCurve(-2.20, 2.40, 18, 2);
 
   // Curved blush-stone lower bulkhead (y = 0.24 .. 0.74m) + molded overhanging sill (y = 0.70 .. 0.82m)
   ctx.addPart(grp, createSweptCurvePrismGeo(showcaseCurve, -0.24, 0.0, 0.24, 0.74, 1.8), '#ffffff', [0, 0, 0], [0, 0, 0], {
@@ -1292,24 +1292,24 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
     );
   };
 
-  // Front (+Z = +3.40) divider pier between curved glass (+1.25) and front doorway (+1.62), header & right corner pier
-  addStuccoWall(0.37, wallH, 0.26, [1.435, wallCenterY, PODIUM_HALF_D - 0.13]);
-  addStuccoWall(1.82, 0.22, 0.26, [2.53, 3.63, PODIUM_HALF_D - 0.13]);
-  addStuccoWall(0.76, wallH, 0.26, [3.82, wallCenterY, PODIUM_HALF_D - 0.13]);
-  // Right (+X = +4.20) side profile piers flanking centered side doorway (z in [-0.88 .. +0.88])
-  addStuccoWall(0.26, wallH, 2.52, [PODIUM_HALF_W - 0.13, wallCenterY, 2.14]);
-  addStuccoWall(0.26, wallH, 2.52, [PODIUM_HALF_W - 0.13, wallCenterY, -2.14]);
+  // Front (+Z = +4.40) divider pier between curved glass (+2.40) and front doorway (+2.86), header & right corner pier
+  addStuccoWall(0.46, wallH, 0.26, [2.63, wallCenterY, PODIUM_HALF_D - 0.13]);
+  addStuccoWall(1.82, 0.22, 0.26, [3.76, 3.63, PODIUM_HALF_D - 0.13]);
+  addStuccoWall(1.64, wallH, 0.26, [5.48, wallCenterY, PODIUM_HALF_D - 0.13]);
+  // Right (+X = +6.30) side profile piers flanking centered side doorway (z in [-0.88 .. +0.88])
+  addStuccoWall(0.26, wallH, 3.52, [PODIUM_HALF_W - 0.13, wallCenterY, 2.64]);
+  addStuccoWall(0.26, wallH, 3.52, [PODIUM_HALF_W - 0.13, wallCenterY, -2.64]);
   addStuccoWall(0.26, 0.24, 1.76, [PODIUM_HALF_W - 0.13, 3.62, 0]);
-  // Left (-X = -4.20) rear pier sealing from panoramic window (-1.65) to rear corner (-3.40)
-  addStuccoWall(0.26, wallH, 1.75, [-PODIUM_HALF_W + 0.13, wallCenterY, -2.525]);
-  // Rear (-Z = -3.40) walls flanking centered rear glazed doorway (x in [-0.82 .. +0.82])
-  addStuccoWall(3.38, wallH, 0.26, [-2.51, wallCenterY, -PODIUM_HALF_D + 0.13]);
-  addStuccoWall(3.38, wallH, 0.26, [2.51, wallCenterY, -PODIUM_HALF_D + 0.13]);
+  // Left (-X = -6.30) rear pier sealing from panoramic window (-2.20) to rear corner (-4.40)
+  addStuccoWall(0.26, wallH, 2.20, [-PODIUM_HALF_W + 0.13, wallCenterY, -3.30]);
+  // Rear (-Z = -4.40) walls flanking centered rear glazed doorway (x in [-0.82 .. +0.82])
+  addStuccoWall(5.48, wallH, 0.26, [-3.56, wallCenterY, -PODIUM_HALF_D + 0.13]);
+  addStuccoWall(5.48, wallH, 0.26, [3.56, wallCenterY, -PODIUM_HALF_D + 0.13]);
   addStuccoWall(1.64, 0.24, 0.26, [0, 3.62, -PODIUM_HALF_D + 0.13]);
 
   // Modern Wood & Glass Entrance Doorways + Sleek Cream Awnings + Brass C-Handles
   buildModernGlazedDoorway(grp, glassHost, ctx, {
-    pos: [2.53, 0.0, PODIUM_HALF_D - 0.06],
+    pos: [3.76, 0.0, PODIUM_HALF_D - 0.06],
     rotY: 0,
     width: 1.80,
     height: 3.48,
@@ -1319,7 +1319,7 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
     oakTex,
     handleOnLeft: true,
   });
-  buildSleekCreamAwning(grp, ctx, 2.10, 0.78, 0.28, [2.53, 3.74, PODIUM_HALF_D], 0);
+  buildSleekCreamAwning(grp, ctx, 2.16, 0.80, 0.28, [3.76, 3.74, PODIUM_HALF_D], 0);
 
   buildModernGlazedDoorway(grp, glassHost, ctx, {
     pos: [PODIUM_HALF_W - 0.06, 0.0, 0.0],
@@ -1382,47 +1382,47 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
   });
 
   // Crisp "GLOW STUDIO" Signboards on Front (+Z) & Left (-X) Frieze
-  ctx.addPart(grp, new THREE.PlaneGeometry(4.30, 0.70), '#ffffff', [0.68, 4.21, PODIUM_HALF_D + 0.042], [0, 0, 0], {
+  ctx.addPart(grp, new THREE.PlaneGeometry(5.40, 0.72), '#ffffff', [1.15, 4.21, PODIUM_HALF_D + 0.042], [0, 0, 0], {
     map: glowStudioSignTex,
   });
-  ctx.addPart(grp, createMiteredSignFrameGeo(4.30, 0.70, 0.06, 0.03), COL_SALON_BLUSH_DARK, [0.68, 4.21, PODIUM_HALF_D + 0.028]);
+  ctx.addPart(grp, createMiteredSignFrameGeo(5.40, 0.72, 0.06, 0.03), COL_SALON_BLUSH_DARK, [1.15, 4.21, PODIUM_HALF_D + 0.028]);
 
-  ctx.addPart(grp, new THREE.PlaneGeometry(3.30, 0.70), '#ffffff', [-PODIUM_HALF_W - 0.042, 4.21, -0.82], [0, -Math.PI * 0.5, 0], {
+  ctx.addPart(grp, new THREE.PlaneGeometry(4.10, 0.72), '#ffffff', [-PODIUM_HALF_W - 0.042, 4.21, -1.05], [0, -Math.PI * 0.5, 0], {
     map: glowStudioSignTex,
   });
-  ctx.addPart(grp, createMiteredSignFrameGeo(3.30, 0.70, 0.06, 0.03), COL_SALON_BLUSH_DARK, [-PODIUM_HALF_W - 0.028, 4.21, -0.82], [0, -Math.PI * 0.5, 0]);
+  ctx.addPart(grp, createMiteredSignFrameGeo(4.10, 0.72, 0.06, 0.03), COL_SALON_BLUSH_DARK, [-PODIUM_HALF_W - 0.028, 4.21, -1.05], [0, -Math.PI * 0.5, 0]);
 
   // Glowing Sconces, Topiary Trees, Rainwater Downspout & 2 Sidewalk A-Frame Chalkboard Easels
-  buildBeautyWallSconce(grp, ctx, [3.84, 2.34, PODIUM_HALF_D], 0);
-  buildBeautyWallSconce(grp, ctx, [1.44, 2.34, PODIUM_HALF_D], 0);
-  buildBeautyWallSconce(grp, ctx, [PODIUM_HALF_W, 2.34, -1.16], Math.PI * 0.5);
-  buildBeautyWallSconce(grp, ctx, [PODIUM_HALF_W, 2.34, 1.16], Math.PI * 0.5);
-  buildBeautyWallSconce(grp, ctx, [PODIUM_HALF_W, 2.34, 2.85], Math.PI * 0.5);
-  buildBeautyWallSconce(grp, ctx, [PODIUM_HALF_W, 2.34, -2.85], Math.PI * 0.5);
-  buildBeautyWallSconce(grp, ctx, [-PODIUM_HALF_W, 2.34, -2.50], -Math.PI * 0.5);
-  buildBeautyWallSconce(grp, ctx, [-1.18, 2.34, -PODIUM_HALF_D], Math.PI);
-  buildBeautyWallSconce(grp, ctx, [1.18, 2.34, -PODIUM_HALF_D], Math.PI);
+  buildBeautyWallSconce(grp, ctx, [5.12, 2.34, PODIUM_HALF_D], 0);
+  buildBeautyWallSconce(grp, ctx, [2.62, 2.34, PODIUM_HALF_D], 0);
+  buildBeautyWallSconce(grp, ctx, [PODIUM_HALF_W, 2.34, -1.24], Math.PI * 0.5);
+  buildBeautyWallSconce(grp, ctx, [PODIUM_HALF_W, 2.34, 1.24], Math.PI * 0.5);
+  buildBeautyWallSconce(grp, ctx, [PODIUM_HALF_W, 2.34, 3.45], Math.PI * 0.5);
+  buildBeautyWallSconce(grp, ctx, [PODIUM_HALF_W, 2.34, -3.45], Math.PI * 0.5);
+  buildBeautyWallSconce(grp, ctx, [-PODIUM_HALF_W, 2.34, -3.30], -Math.PI * 0.5);
+  buildBeautyWallSconce(grp, ctx, [-1.45, 2.34, -PODIUM_HALF_D], Math.PI);
+  buildBeautyWallSconce(grp, ctx, [1.45, 2.34, -PODIUM_HALF_D], Math.PI);
 
-  buildRainwaterDownspout(grp, ctx, [PODIUM_HALF_W, 0.0, -1.78], Math.PI * 0.5, 4.74);
+  buildRainwaterDownspout(grp, ctx, [PODIUM_HALF_W, 0.0, -2.18], Math.PI * 0.5, 4.74);
 
   // Spherical topiaries flanking doorways and corners (stone pots)
   const topiarySpots: readonly [number, number][] = [
-    [3.84, PODIUM_HALF_D + 0.40],
-    [1.38, PODIUM_HALF_D + 0.40],
-    [PODIUM_HALF_W + 0.40, -1.24],
-    [PODIUM_HALF_W + 0.40, 1.24],
-    [PODIUM_HALF_W + 0.40, -2.95],
-    [-PODIUM_HALF_W - 0.40, -2.50],
-    [-1.24, -PODIUM_HALF_D - 0.40],
-    [1.24, -PODIUM_HALF_D - 0.40],
+    [5.20, PODIUM_HALF_D + 0.40],
+    [2.56, PODIUM_HALF_D + 0.40],
+    [PODIUM_HALF_W + 0.40, -1.32],
+    [PODIUM_HALF_W + 0.40, 1.32],
+    [PODIUM_HALF_W + 0.40, -3.65],
+    [-PODIUM_HALF_W - 0.40, -3.30],
+    [-1.45, -PODIUM_HALF_D - 0.40],
+    [1.45, -PODIUM_HALF_D - 0.40],
   ];
   for (const [tx, tz] of topiarySpots) {
     buildUrnBoxwoodPlanter(grp, ctx, [tx, 0.02, tz], 0.96, 'sphere', '#d5baaa');
   }
 
   // 2 Sidewalk A-Frame Chalkboard Easels near the curved storefront corner
-  buildSidewalkChalkboardEasel(grp, ctx, [-0.65, 0.02, PODIUM_HALF_D + 0.58], -0.22, chalkTex, oakTex);
-  buildSidewalkChalkboardEasel(grp, ctx, [-PODIUM_HALF_W - 0.58, 0.02, -0.15], -Math.PI * 0.5 + 0.22, chalkTex, oakTex);
+  buildSidewalkChalkboardEasel(grp, ctx, [-1.15, 0.02, PODIUM_HALF_D + 0.58], -0.22, chalkTex, oakTex);
+  buildSidewalkChalkboardEasel(grp, ctx, [-PODIUM_HALF_W - 0.58, 0.02, -0.35], -Math.PI * 0.5 + 0.22, chalkTex, oakTex);
 
   // Visible Interior Salon Showcase
   buildSalonInteriorFixtures(grp, ctx, oakTex, floorTex);
@@ -1473,11 +1473,11 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
   picketGeo.dispose();
   postGeo.dispose();
 
-  // 2F Inset Upper Story Stucco Box (`x in [-3.25..+3.25]`, `z in [-2.30..+2.30]`, `y = 4.94..8.35m`)
-  const upperW = 6.50;
-  const upperD = 4.60;
-  const halfUW = upperW * 0.5;
-  const halfUD = upperD * 0.5;
+  // 2F Inset Upper Story Stucco Box (`x in [-5.10..+5.10]`, `z in [-3.10..+3.10]`, `y = 4.94..8.35m`)
+  const upperW = bs.upperHalfX * 2; // 10.20
+  const upperD = bs.upperHalfZ * 2; // 6.20
+  const halfUW = bs.upperHalfX;
+  const halfUD = bs.upperHalfZ;
   const upperH = sfH - deckY; // 3.41
 
   ctx.addPart(
@@ -1497,7 +1497,7 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
     { map: stuccoTex, castShadow: true, receiveShadow: true },
   );
 
-  // 2F Tall Arched Multi-Pane Windows & French Door (Front 3 bays, Left 2 bays, Right 1 bay, Rear 2 bays)
+  // 2F Tall Arched Multi-Pane Windows & French Door (Front 5 bays, Left 3 bays, Right 2 bays, Rear 3 bays)
   let upperWinIdx = 0;
   const archTheme = {
     trimHex: COL_SALON_BLUSH,
@@ -1510,8 +1510,8 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
     windowRow: 2,
   };
 
-  // Front (+Z = +2.30): flanking arched windows + central French door
-  for (const wx of [-1.95, 1.95]) {
+  // Front (+Z = +3.10): 4 flanking arched windows + central French door
+  for (const wx of [-3.60, -1.80, 1.80, 3.60]) {
     buildArchedCasementWindow(grp, ctx, {
       ...archTheme,
       pos: [wx, deckY + 0.44, halfUD],
@@ -1526,75 +1526,79 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
     ...archTheme,
     pos: [0, deckY + 0.14, halfUD],
     rotY: 0,
-    width: 1.14,
+    width: 1.18,
     rectHeight: 1.88,
     omitSill: true,
     windowId: `beauty-salon-2f-front-door`,
     windowCol: upperWinIdx++,
   });
-  for (const sx of [-0.98, 0.98]) {
+  for (const sx of [-2.70, -0.95, 0.95, 2.70]) {
     buildBeautyWallSconce(grp, ctx, [sx, deckY + 1.55, halfUD], 0);
   }
 
-  // Left (-X = -3.45, 3/4 Isometric Show Side): 2 arched windows + sconces
-  for (const wz of [-1.05, 1.05]) {
+  // Left (-X = -5.10, 3/4 Isometric Show Side): 3 arched windows + sconces
+  for (const wz of [-1.85, 0.0, 1.85]) {
     buildArchedCasementWindow(grp, ctx, {
       ...archTheme,
       pos: [-halfUW, deckY + 0.44, wz],
       rotY: -Math.PI * 0.5,
-      width: 1.06,
+      width: 1.08,
       rectHeight: 1.56,
       windowId: `beauty-salon-2f-left-${upperWinIdx}`,
       windowCol: upperWinIdx++,
     });
   }
-  for (const sz of [-1.92, 0.0, 1.92]) {
+  for (const sz of [-2.65, -0.92, 0.92, 2.65]) {
     buildBeautyWallSconce(grp, ctx, [-halfUW, deckY + 1.55, sz], -Math.PI * 0.5);
   }
 
-  // Right (+X = +3.45, Side Profile Elevation): 1 centered arched window w/ Juliet rail + twin sconces
-  buildArchedCasementWindow(grp, ctx, {
-    ...archTheme,
-    pos: [halfUW, deckY + 0.44, 0],
-    rotY: Math.PI * 0.5,
-    width: 1.18,
-    rectHeight: 1.58,
-    withJulietBar: true,
-    windowId: `beauty-salon-2f-right-0`,
-    windowCol: upperWinIdx++,
-  });
-  for (const sz of [-1.12, 1.12]) {
+  // Right (+X = +5.10, Side Profile Elevation): 2 arched windows w/ Juliet rails + sconces
+  for (const wz of [-1.35, 1.35]) {
+    buildArchedCasementWindow(grp, ctx, {
+      ...archTheme,
+      pos: [halfUW, deckY + 0.44, wz],
+      rotY: Math.PI * 0.5,
+      width: 1.14,
+      rectHeight: 1.58,
+      withJulietBar: true,
+      windowId: `beauty-salon-2f-right-${upperWinIdx}`,
+      windowCol: upperWinIdx++,
+    });
+  }
+  for (const sz of [-2.35, 0.0, 2.35]) {
     buildBeautyWallSconce(grp, ctx, [halfUW, deckY + 1.55, sz], Math.PI * 0.5);
   }
 
-  // Rear (-Z = -2.30): 2 arched windows + center sconce
-  for (const wx of [-1.65, 1.65]) {
+  // Rear (-Z = -3.10): 3 arched windows + sconces
+  for (const wx of [-3.10, 0.0, 3.10]) {
     buildArchedCasementWindow(grp, ctx, {
       ...archTheme,
       pos: [wx, deckY + 0.44, -halfUD],
       rotY: Math.PI,
-      width: 1.08,
+      width: 1.10,
       rectHeight: 1.54,
       windowId: `beauty-salon-2f-rear-${upperWinIdx}`,
       windowCol: upperWinIdx++,
     });
   }
-  buildBeautyWallSconce(grp, ctx, [0, deckY + 1.55, -halfUD], Math.PI);
+  for (const sx of [-1.55, 1.55]) {
+    buildBeautyWallSconce(grp, ctx, [sx, deckY + 1.55, -halfUD], Math.PI);
+  }
 
   // 2F Terrace Corner Potted Olive Trees & Rectangular Greenery Planter Boxes
   for (const [ox, oz] of [
-    [-3.54, 2.52],
-    [3.65, 2.80],
-    [-3.65, -2.80],
-    [3.65, -2.80],
+    [-5.15, 3.30],
+    [5.55, 3.65],
+    [-5.55, -3.65],
+    [5.55, -3.65],
   ] as const) {
-    buildOliveTreePot(grp, ctx, [ox, deckY, oz], 0.92);
+    buildOliveTreePot(grp, ctx, [ox, deckY, oz], 0.94);
   }
-  buildRooftopGardenPlanterBox(grp, ctx, bs.x, bs.z, bs.yaw, -1.52, deckY, 2.92, 1.44, 0.44, 0, oakTex);
-  buildRooftopGardenPlanterBox(grp, ctx, bs.x, bs.z, bs.yaw, 1.52, deckY, 2.92, 1.44, 0.44, 0, oakTex);
-  buildRooftopGardenPlanterBox(grp, ctx, bs.x, bs.z, bs.yaw, -3.76, deckY, -0.35, 1.85, 0.44, Math.PI * 0.5, oakTex);
-  buildRooftopGardenPlanterBox(grp, ctx, bs.x, bs.z, bs.yaw, 3.76, deckY, 0.0, 1.85, 0.44, Math.PI * 0.5, oakTex);
-  buildRooftopGardenPlanterBox(grp, ctx, bs.x, bs.z, bs.yaw, 0.0, deckY, -2.92, 2.10, 0.44, 0, oakTex);
+  buildRooftopGardenPlanterBox(grp, ctx, bs.x, bs.z, bs.yaw, -2.55, deckY, 3.72, 2.40, 0.46, 0, oakTex);
+  buildRooftopGardenPlanterBox(grp, ctx, bs.x, bs.z, bs.yaw, 2.55, deckY, 3.72, 2.40, 0.46, 0, oakTex);
+  buildRooftopGardenPlanterBox(grp, ctx, bs.x, bs.z, bs.yaw, -5.68, deckY, -0.55, 2.90, 0.46, Math.PI * 0.5, oakTex);
+  buildRooftopGardenPlanterBox(grp, ctx, bs.x, bs.z, bs.yaw, 5.68, deckY, 0.0, 3.20, 0.46, Math.PI * 0.5, oakTex);
+  buildRooftopGardenPlanterBox(grp, ctx, bs.x, bs.z, bs.yaw, 0.0, deckY, -3.72, 4.20, 0.46, 0, oakTex);
 
   // =========================================================================
   // 3. TOP CROWN CORNICE, ATTIC PARAPET ("BEAUTY & GLOW" / "BEAUTY & CARE") & ROOFTOP GARDEN
@@ -1635,18 +1639,18 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
   );
 
   // Top Parapet Signage: "BEAUTY & GLOW" (Front + Rear) and "BEAUTY & CARE" (Left 3/4 Isometric side)
-  ctx.addPart(grp, new THREE.PlaneGeometry(5.30, 0.72), '#ffffff', [0, 9.01, halfUD + 0.114], [0, 0, 0], {
+  ctx.addPart(grp, new THREE.PlaneGeometry(6.80, 0.74), '#ffffff', [0, 9.01, halfUD + 0.114], [0, 0, 0], {
     map: beautyGlowSignTex,
   });
-  ctx.addPart(grp, createMiteredSignFrameGeo(5.30, 0.72, 0.055, 0.026), COL_SALON_BLUSH_DARK, [0, 9.01, halfUD + 0.100]);
-  ctx.addPart(grp, new THREE.PlaneGeometry(5.30, 0.72), '#ffffff', [0, 9.01, -halfUD - 0.114], [0, Math.PI, 0], {
+  ctx.addPart(grp, createMiteredSignFrameGeo(6.80, 0.74, 0.055, 0.026), COL_SALON_BLUSH_DARK, [0, 9.01, halfUD + 0.100]);
+  ctx.addPart(grp, new THREE.PlaneGeometry(6.80, 0.74), '#ffffff', [0, 9.01, -halfUD - 0.114], [0, Math.PI, 0], {
     map: beautyGlowSignTex,
   });
-  ctx.addPart(grp, createMiteredSignFrameGeo(5.30, 0.72, 0.055, 0.026), COL_SALON_BLUSH_DARK, [0, 9.01, -halfUD - 0.100], [0, Math.PI, 0]);
-  ctx.addPart(grp, new THREE.PlaneGeometry(3.70, 0.72), '#ffffff', [-halfUW - 0.114, 9.01, 0], [0, -Math.PI * 0.5, 0], {
+  ctx.addPart(grp, createMiteredSignFrameGeo(6.80, 0.74, 0.055, 0.026), COL_SALON_BLUSH_DARK, [0, 9.01, -halfUD - 0.100], [0, Math.PI, 0]);
+  ctx.addPart(grp, new THREE.PlaneGeometry(4.60, 0.74), '#ffffff', [-halfUW - 0.114, 9.01, 0], [0, -Math.PI * 0.5, 0], {
     map: beautyCareSignTex,
   });
-  ctx.addPart(grp, createMiteredSignFrameGeo(3.70, 0.72, 0.055, 0.026), COL_SALON_BLUSH_DARK, [-halfUW - 0.100, 9.01, 0], [0, -Math.PI * 0.5, 0]);
+  ctx.addPart(grp, createMiteredSignFrameGeo(4.60, 0.74, 0.055, 0.026), COL_SALON_BLUSH_DARK, [-halfUW - 0.100, 9.01, 0], [0, -Math.PI * 0.5, 0]);
 
   // Walkable Landscaped Rooftop Garden
   buildSalonRooftopGarden(grp, ctx, bs.x, bs.z, bs.yaw, oakTex, turfTex);

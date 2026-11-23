@@ -1459,24 +1459,24 @@ function runInteriorGridAStar(
   return { waypoints: smoothed, reached };
 }
 
-const SALON_STAIR_1F_MOUTH = { x: -0.45, z: -2.52, floorY: 0.0 };
-const SALON_STAIR_2F_MOUTH = { x: -0.45, z: -4.38, floorY: 3.0 };
+const SALON_STAIR_1F_MOUTH = { x: -0.45, z: -1.95, floorY: 0.0 };
+const SALON_STAIR_2F_MOUTH = { x: -0.45, z: -3.40, floorY: 3.0 };
 
 // Incremental step waypoints along the U-turn staircase (keeps per-step climb <= ~0.55m for
 // both gradual elevation clamping and smooth 3D staircase breadcrumb chevron heights).
 const SALON_STAIR_ASCENT_STEPS: ReadonlyArray<ClickToWalkWaypoint> = [
   SALON_STAIR_1F_MOUTH,
-  { x: -1.65, z: -2.52, floorY: 0.05 },
-  { x: -2.35, z: -2.52, floorY: 0.45 },
-  { x: -3.05, z: -2.52, floorY: 0.90 },
-  { x: -3.55, z: -2.52, floorY: 1.25 },
-  { x: -3.95, z: -2.52, floorY: 1.50 },
-  { x: -3.95, z: -3.45, floorY: 1.50 },
-  { x: -3.95, z: -4.38, floorY: 1.50 },
-  { x: -3.45, z: -4.38, floorY: 1.50 },
-  { x: -2.75, z: -4.38, floorY: 1.82 },
-  { x: -2.05, z: -4.38, floorY: 2.25 },
-  { x: -1.35, z: -4.38, floorY: 2.68 },
+  { x: -1.60, z: -1.95, floorY: 0.05 },
+  { x: -2.30, z: -1.95, floorY: 0.45 },
+  { x: -2.95, z: -1.95, floorY: 0.90 },
+  { x: -3.45, z: -1.95, floorY: 1.25 },
+  { x: -3.92, z: -1.95, floorY: 1.50 },
+  { x: -3.92, z: -2.675, floorY: 1.50 },
+  { x: -3.92, z: -3.40, floorY: 1.50 },
+  { x: -3.40, z: -3.40, floorY: 1.50 },
+  { x: -2.70, z: -3.40, floorY: 1.82 },
+  { x: -2.02, z: -3.40, floorY: 2.25 },
+  { x: -1.35, z: -3.40, floorY: 2.68 },
   SALON_STAIR_2F_MOUTH,
 ];
 

@@ -80,7 +80,7 @@ interface Fish3dThumbnailProps {
   speciesId: string;
   speciesName: string;
   colorHex?: string;
-  variant?: 'compact' | 'dark' | 'card';
+  variant?: 'compact' | 'dark' | 'card' | 'studio';
   onInspect: () => void;
 }
 
@@ -98,11 +98,13 @@ export const Fish3dThumbnail: React.FC<Fish3dThumbnailProps> = ({
   );
 
   const containerStyle =
-    variant === 'card'
-      ? 'w-full h-28 rounded-xl bg-gradient-to-br from-[#eef4fb] via-[#e4eef8] to-[#dbe7f4] border border-slate-200/80 shadow-xs'
-      : variant === 'dark'
-        ? 'w-[88px] h-[54px] rounded-xl bg-gradient-to-br from-slate-900/90 to-slate-800/90 border border-white/15 shrink-0'
-        : 'w-[84px] h-[52px] rounded-xl bg-gradient-to-br from-[#eef4fb] to-[#e2ecf6] border border-slate-200/80 shrink-0';
+    variant === 'studio'
+      ? 'w-full h-full bg-[#f0f1f4]'
+      : variant === 'card'
+        ? 'w-full h-28 rounded-xl bg-gradient-to-br from-[#eef4fb] via-[#e4eef8] to-[#dbe7f4] border border-slate-200/80 shadow-xs'
+        : variant === 'dark'
+          ? 'w-[88px] h-[54px] rounded-xl bg-gradient-to-br from-slate-900/90 to-slate-800/90 border border-white/15 shrink-0'
+          : 'w-[84px] h-[52px] rounded-xl bg-gradient-to-br from-[#eef4fb] to-[#e2ecf6] border border-slate-200/80 shrink-0';
 
   return (
     <button
@@ -114,19 +116,30 @@ export const Fish3dThumbnail: React.FC<Fish3dThumbnailProps> = ({
         soundEngine.playUiClick();
         onInspect();
       }}
-      className={`group relative overflow-hidden flex items-center justify-center cursor-pointer hover:brightness-105 active:scale-[0.98] transition-all select-none ${containerStyle}`}
+      className={`group relative overflow-hidden flex items-center justify-center cursor-pointer hover:brightness-[1.03] active:scale-[0.98] transition-all select-none ${containerStyle}`}
     >
       <div
         style={{
-          background: `radial-gradient(circle at 50% 55%, ${resolvedHex}28 0%, transparent 72%)`,
+          background:
+            variant === 'studio'
+              ? `radial-gradient(65% 65% at 50% 45%, ${resolvedHex}20 0%, transparent 72%)`
+              : `radial-gradient(circle at 50% 55%, ${resolvedHex}28 0%, transparent 72%)`,
         }}
         className="absolute inset-0 pointer-events-none"
       />
+      {variant === 'studio' && portraitUrl && (
+        <div
+          aria-hidden="true"
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[56%] h-2.5 rounded-full bg-black/[0.07] blur-[5px] pointer-events-none"
+        />
+      )}
       {portraitUrl ? (
         <img
           src={portraitUrl}
           alt={speciesName}
-          className="relative z-10 w-full h-full object-contain group-hover:scale-105 transition-transform duration-200 pointer-events-none"
+          className={`relative z-10 w-full h-full object-contain group-hover:scale-105 transition-transform duration-200 pointer-events-none ${
+            variant === 'studio' ? 'p-2 drop-shadow-[0_6px_10px_rgba(15,23,42,0.12)]' : ''
+          }`}
         />
       ) : (
         <span

@@ -1,20 +1,41 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Award,
   Camera,
   Check,
   Copy,
+  Crown,
   Edit3,
   Fish,
+  Flame,
+  Heart,
   Home,
+  Image as ImageIcon,
   MessageCircle,
+  Send,
   Shield,
+  Smile,
+  Sparkles,
+  Star,
+  Trash2,
   Upload,
   User,
   Users,
+  Wallet,
   X,
+  Zap,
 } from 'lucide-react';
 import { NearbyEntityUser } from './SocialChatModal';
 import { soundEngine } from '../game/audio';
+import {
+  CITY_FEED_UPDATED_EVENT,
+  deleteCityFeedPost,
+  fetchCityFeedPosts,
+  publishCityFeedPost,
+  readCachedCityFeedPosts,
+  toggleLikeCityFeedPost,
+  type CityFeedPost,
+} from '../lib/cityFeedService';
 
 export interface PhotoPresetOption {
   id: string;
@@ -22,6 +43,75 @@ export interface PhotoPresetOption {
   url: string;
   cropClassName: string;
 }
+
+export interface StatusFeedPost {
+  id: string;
+  text: string;
+  mood?: string;
+  photoUrl?: string;
+  createdAtMs: number;
+  likes: number;
+  likedBySelf?: boolean;
+}
+
+export type ProfileEmblemIconId =
+  | 'smile'
+  | 'sparkles'
+  | 'crown'
+  | 'flame'
+  | 'heart'
+  | 'zap'
+  | 'star'
+  | 'shield';
+
+export const PROFILE_EMBLEM_ICONS: ReadonlyArray<{
+  id: ProfileEmblemIconId;
+  label: string;
+}> = [
+  { id: 'smile', label: 'Smile' },
+  { id: 'sparkles', label: 'Sparkles' },
+  { id: 'crown', label: 'Crown' },
+  { id: 'flame', label: 'Flame' },
+  { id: 'heart', label: 'Heart' },
+  { id: 'zap', label: 'Zap' },
+  { id: 'star', label: 'Star' },
+  { id: 'shield', label: 'Shield' },
+];
+
+export function renderProfileEmblemIcon(
+  iconId: ProfileEmblemIconId | string | undefined,
+  className = 'w-3 h-3 stroke-[2.4]',
+): React.ReactNode {
+  switch (iconId) {
+    case 'sparkles':
+      return <Sparkles className={className} aria-hidden="true" />;
+    case 'crown':
+      return <Crown className={className} aria-hidden="true" />;
+    case 'flame':
+      return <Flame className={className} aria-hidden="true" />;
+    case 'heart':
+      return <Heart className={className} aria-hidden="true" />;
+    case 'zap':
+      return <Zap className={className} aria-hidden="true" />;
+    case 'star':
+      return <Star className={className} aria-hidden="true" />;
+    case 'shield':
+      return <Shield className={className} aria-hidden="true" />;
+    case 'award':
+      return <Award className={className} aria-hidden="true" />;
+    case 'smile':
+    default:
+      return <Smile className={className} aria-hidden="true" />;
+  }
+}
+
+const STATUS_MOOD_OPTIONS = [
+  'Exploring',
+  'Chill',
+  'Fishing',
+  'Racing',
+  'Trading',
+] as const;
 
 export const PROFILE_PHOTO_PRESETS: PhotoPresetOption[] = [
   {
@@ -63,9 +153,70 @@ export const PROFILE_PHOTO_PRESETS: PhotoPresetOption[] = [
   },
 ];
 
-const STATUS_PHOTO_STORAGE_KEY = 'bb_player_status_photo_v1';
-const AVATAR_PHOTO_STORAGE_KEY = 'bb_player_avatar_photo_v1';
-const STATUS_CAPTION_STORAGE_KEY = 'bb_player_status_caption_v1';
+export const STATUS_PHOTO_STORAGE_KEY = 'bb_player_status_photo_v1';
+export const AVATAR_PHOTO_STORAGE_KEY = 'bb_player_avatar_photo_v1';
+export const STATUS_CAPTION_STORAGE_KEY = 'bb_player_status_caption_v1';
+export const STATUS_FEED_STORAGE_KEY = 'bb_player_status_feed_v1';
+export const EMBLEM_NAME_STORAGE_KEY = 'bb_player_emblem_name_v1';
+export const EMBLEM_ICON_STORAGE_KEY = 'bb_player_emblem_icon_v1';
+export const PROFILE_IDENTITY_UPDATED_EVENT = 'bb-profile-identity-updated';
+
+export function readStoredStatusCoverPhotoUrl(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return window.localStorage.getItem(STATUS_PHOTO_STORAGE_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function readStoredEmblemName(defaultTeam: 'blue' | 'red' = 'blue'): string {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = window.localStorage.getItem(EMBLEM_NAME_STORAGE_KEY);
+      if (saved && saved.trim()) return saved.trim();
+    } catch {
+      // ignore
+    }
+  }
+  return defaultTeam === 'red' ? 'Red Squad' : 'Blue Squad';
+}
+
+export function readStoredEmblemIcon(): ProfileEmblemIconId {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = window.localStorage.getItem(EMBLEM_ICON_STORAGE_KEY) as ProfileEmblemIconId | null;
+      if (saved && PROFILE_EMBLEM_ICONS.some((item) => item.id === saved)) {
+        return saved;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return 'smile';
+}
+
+export function resolveSharedEntityPortraitUrl(
+  entity: NearbyEntityUser,
+  isSelf = false,
+  characterGender: 'male' | 'female' = 'male',
+  customCoverUrl = '',
+): string {
+  if (isSelf) {
+    return (
+      customCoverUrl ||
+      (characterGender === 'female' ? '/assets/avatar_nadia.jpg' : '/assets/avatar_hiro.jpg')
+    );
+  }
+  const lower = entity.name.replace(/\s*\((ANDA|YOU|KAMU)\)/gi, '').trim().toLowerCase();
+  const isFemale =
+    entity.gender === 'female' ||
+    lower.includes('hana') ||
+    lower.includes('nadia') ||
+    lower.includes('mira') ||
+    lower.includes('tari');
+  return isFemale ? '/assets/avatar_nadia.jpg' : '/assets/avatar_hiro.jpg';
+}
 
 export function getPhotoCropClassName(url: string): string {
   if (!url) return 'object-cover object-center';
@@ -78,6 +229,17 @@ export function getPhotoCropClassName(url: string): string {
     return 'object-cover object-[50%_14%] scale-[1.24] origin-[50%_35%]';
   }
   return 'object-cover object-center';
+}
+
+function formatRelativeFeedTime(createdAtMs: number, nowMs: number): string {
+  const diffSec = Math.max(0, Math.floor((nowMs - createdAtMs) / 1000));
+  if (diffSec < 45) return 'Just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay}d ago`;
 }
 
 export interface CharacterProfileModalProps {
@@ -117,8 +279,8 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
   recruitedFamilyCount = 0,
   activeHarvesterCount = 0,
   playerLevel = 1,
-  playerXpLabel,
-  lulBalance = 0,
+  playerXpLabel: _playerXpLabel,
+  lulBalance: _lulBalance = 0,
   onChangePlayerName,
   onStartWhisper,
   embeddedInPhone = false,
@@ -126,16 +288,9 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
   const defaultPhotoUrl =
     characterGender === 'female' ? '/assets/avatar_nadia.jpg' : '/assets/avatar_hiro.jpg';
 
-  const [customStatusPhotoUrl, setCustomStatusPhotoUrl] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        return window.localStorage.getItem(STATUS_PHOTO_STORAGE_KEY) || '';
-      } catch {
-        return '';
-      }
-    }
-    return '';
-  });
+  const [customStatusPhotoUrl, setCustomStatusPhotoUrl] = useState<string>(() =>
+    readStoredStatusCoverPhotoUrl(),
+  );
 
   const [customAvatarPhotoUrl, setCustomAvatarPhotoUrl] = useState<string>(() => {
     if (typeof window !== 'undefined') {
@@ -147,6 +302,13 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
     }
     return '';
   });
+
+  const [emblemName, setEmblemName] = useState<string>(() =>
+    readStoredEmblemName(playerTeam),
+  );
+  const [emblemIconId, setEmblemIconId] = useState<ProfileEmblemIconId>(() =>
+    readStoredEmblemIcon(),
+  );
 
   const [statusCaption, setStatusCaption] = useState<string>(() => {
     if (typeof window !== 'undefined') {
@@ -160,12 +322,39 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
     return 'Exploring The City & Warzone Arena';
   });
 
+  const [statusFeed, setStatusFeed] = useState<StatusFeedPost[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = window.localStorage.getItem(STATUS_FEED_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return [];
+  });
+
+  const [cityFeedSnapshot, setCityFeedSnapshot] = useState<CityFeedPost[]>(() =>
+    readCachedCityFeedPosts(),
+  );
+
   const [isEditingName, setIsEditingName] = useState<boolean>(false);
   const [draftPlayerName, setDraftPlayerName] = useState<string>('');
   const [isEditingCaption, setIsEditingCaption] = useState<boolean>(false);
   const [draftCaption, setDraftCaption] = useState<string>(statusCaption);
+  const [draftEmblemName, setDraftEmblemName] = useState<string>(emblemName);
+  const [draftEmblemIconId, setDraftEmblemIconId] = useState<ProfileEmblemIconId>(emblemIconId);
+  const [feedComposerText, setFeedComposerText] = useState<string>('');
+  const [selectedMood, setSelectedMood] = useState<string>('Exploring');
+  const [attachCoverPhoto, setAttachCoverPhoto] = useState<boolean>(false);
   const [activePhotoPicker, setActivePhotoPicker] = useState<'none' | 'status' | 'avatar'>('none');
   const [copiedUid, setCopiedUid] = useState<boolean>(false);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
   const statusFileInputRef = useRef<HTMLInputElement | null>(null);
   const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -182,8 +371,71 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
       setIsEditingName(false);
       setIsEditingCaption(false);
       setActivePhotoPicker('none');
+      setNowMs(Date.now());
     }
   }, [targetUser, isOpen]);
+
+  useEffect(() => {
+    const syncIdentity = () => {
+      setCustomStatusPhotoUrl(readStoredStatusCoverPhotoUrl());
+      setEmblemName(readStoredEmblemName(playerTeam));
+      setEmblemIconId(readStoredEmblemIcon());
+    };
+    window.addEventListener(PROFILE_IDENTITY_UPDATED_EVENT, syncIdentity);
+    return () => {
+      window.removeEventListener(PROFILE_IDENTITY_UPDATED_EVENT, syncIdentity);
+    };
+  }, [playerTeam]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    void fetchCityFeedPosts().then((posts) => setCityFeedSnapshot(posts));
+    const onFeedUpdated = () => setCityFeedSnapshot(readCachedCityFeedPosts());
+    window.addEventListener(CITY_FEED_UPDATED_EVENT, onFeedUpdated);
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30000);
+    return () => {
+      window.removeEventListener(CITY_FEED_UPDATED_EVENT, onFeedUpdated);
+      window.clearInterval(timer);
+    };
+  }, [isOpen]);
+
+  const persistStatusFeed = (nextFeed: StatusFeedPost[]) => {
+    setStatusFeed(nextFeed);
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(STATUS_FEED_STORAGE_KEY, JSON.stringify(nextFeed));
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  const persistStatusCaption = (nextCaption: string) => {
+    setStatusCaption(nextCaption);
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(STATUS_CAPTION_STORAGE_KEY, nextCaption);
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  const persistEmblem = (nextName: string, nextIcon: ProfileEmblemIconId) => {
+    const cleanEmblem =
+      nextName.trim().slice(0, 24) || (playerTeam === 'red' ? 'Red Squad' : 'Blue Squad');
+    setEmblemName(cleanEmblem);
+    setEmblemIconId(nextIcon);
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(EMBLEM_NAME_STORAGE_KEY, cleanEmblem);
+        window.localStorage.setItem(EMBLEM_ICON_STORAGE_KEY, nextIcon);
+      } catch {
+        // ignore
+      }
+      window.dispatchEvent(new CustomEvent(PROFILE_IDENTITY_UPDATED_EVENT));
+    }
+  };
 
   const isSelfProfile = Boolean(
     targetUser &&
@@ -198,6 +450,15 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
       (targetUser.isNpc || String(targetUser.id).toLowerCase().startsWith('npc_')),
   );
 
+  const isMerchantNpc = Boolean(
+    targetUser &&
+      (targetUser.isMerchant ||
+        targetUser.id === 'npc_hana' ||
+        targetUser.id === 'npc_cafe' ||
+        targetUser.id === 'npc_kai' ||
+        targetUser.id === 'npc_beach'),
+  );
+
   const effectiveTeam: 'blue' | 'red' = isSelfProfile
     ? playerTeam
     : targetUser?.team === 'red'
@@ -208,24 +469,36 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
     ? characterGender === 'female'
       ? 'FEMALE'
       : 'MALE'
-    : cleanTargetName.toLowerCase().includes('hana') ||
-        cleanTargetName.toLowerCase().includes('nadia')
+    : targetUser?.gender === 'female' ||
+        cleanTargetName.toLowerCase().includes('hana') ||
+        cleanTargetName.toLowerCase().includes('nadia') ||
+        cleanTargetName.toLowerCase().includes('mira') ||
+        cleanTargetName.toLowerCase().includes('tari')
       ? 'FEMALE'
       : 'MALE';
 
-  const resolvedStatusPhotoUrl = isSelfProfile
-    ? customStatusPhotoUrl || defaultPhotoUrl
-    : cleanTargetName.toLowerCase().includes('hana') ||
-        cleanTargetName.toLowerCase().includes('nadia')
-      ? '/assets/avatar_nadia.jpg'
-      : '/assets/avatar_hiro.jpg';
+  const effectiveEmblemName = isSelfProfile
+    ? emblemName || (effectiveTeam === 'red' ? 'Red Squad' : 'Blue Squad')
+    : isNpcProfile
+      ? isMerchantNpc
+        ? 'Merchant'
+        : 'Citizen'
+      : `${effectiveTeam === 'red' ? 'Red' : 'Blue'} Squad`;
+
+  const resolvedStatusPhotoUrl = targetUser
+    ? resolveSharedEntityPortraitUrl(
+        targetUser,
+        isSelfProfile,
+        characterGender,
+        customStatusPhotoUrl,
+      )
+    : customStatusPhotoUrl || defaultPhotoUrl;
 
   const resolvedAvatarPhotoUrl = isSelfProfile
     ? customAvatarPhotoUrl || defaultPhotoUrl
-    : cleanTargetName.toLowerCase().includes('hana') ||
-        cleanTargetName.toLowerCase().includes('nadia')
-      ? '/assets/avatar_nadia.jpg'
-      : '/assets/avatar_hiro.jpg';
+    : targetUser
+      ? resolveSharedEntityPortraitUrl(targetUser, false, characterGender, '')
+      : defaultPhotoUrl;
 
   const handleSelectPhotoUrl = (target: 'status' | 'avatar', url: string) => {
     soundEngine.playUiClick();
@@ -237,6 +510,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
         } catch {
           // ignore
         }
+        window.dispatchEvent(new CustomEvent(PROFILE_IDENTITY_UPDATED_EVENT));
       }
     } else {
       setCustomAvatarPhotoUrl(url);
@@ -276,18 +550,106 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
     setIsEditingName(false);
   };
 
+  const selfCityActorId =
+    (playerUid && playerUid.trim()) || `local-${cleanTargetName.toLowerCase()}`;
+
   const handleSaveCaption = () => {
     soundEngine.playUiClick();
     const cleaned = draftCaption.trim().slice(0, 80);
-    setStatusCaption(cleaned);
-    if (typeof window !== 'undefined') {
-      try {
-        window.localStorage.setItem(STATUS_CAPTION_STORAGE_KEY, cleaned);
-      } catch {
-        // ignore
-      }
+    const prevCaption = statusCaption;
+    persistStatusCaption(cleaned);
+    persistEmblem(draftEmblemName, draftEmblemIconId);
+    if (cleaned && cleaned !== prevCaption) {
+      const now = Date.now();
+      const postId = `status-${now}`;
+      const nextPost: StatusFeedPost = {
+        id: postId,
+        text: cleaned,
+        mood: selectedMood || undefined,
+        createdAtMs: now,
+        likes: 0,
+        likedBySelf: false,
+      };
+      persistStatusFeed([nextPost, ...statusFeed].slice(0, 20));
+      void publishCityFeedPost({
+        id: postId,
+        authorId: selfCityActorId,
+        authorNearAccount: playerUid || null,
+        authorName: cleanTargetName || 'Buddy',
+        authorAvatarUrl: resolvedAvatarPhotoUrl,
+        authorTeam: playerTeam,
+        authorGender: characterGender,
+        text: cleaned,
+        mood: selectedMood || undefined,
+        location: 'Buddies City',
+        createdAtMs: now,
+        likedByIds: [],
+        comments: [],
+      });
     }
     setIsEditingCaption(false);
+  };
+
+  const handlePublishFeedPost = () => {
+    const cleaned = feedComposerText.trim().slice(0, 160);
+    if (!cleaned) return;
+    soundEngine.playUiClick();
+    const now = Date.now();
+    const postId = `status-${now}`;
+    const photoUrl = attachCoverPhoto ? resolvedStatusPhotoUrl : undefined;
+    const post: StatusFeedPost = {
+      id: postId,
+      text: cleaned,
+      mood: selectedMood || undefined,
+      photoUrl,
+      createdAtMs: now,
+      likes: 0,
+      likedBySelf: false,
+    };
+    const nextFeed = [post, ...statusFeed].slice(0, 20);
+    persistStatusFeed(nextFeed);
+    persistStatusCaption(cleaned.slice(0, 80));
+    setDraftCaption(cleaned.slice(0, 80));
+    setFeedComposerText('');
+    setAttachCoverPhoto(false);
+    void publishCityFeedPost({
+      id: postId,
+      authorId: selfCityActorId,
+      authorNearAccount: playerUid || null,
+      authorName: cleanTargetName || 'Buddy',
+      authorAvatarUrl: resolvedAvatarPhotoUrl,
+      authorTeam: playerTeam,
+      authorGender: characterGender,
+      text: cleaned,
+      mood: selectedMood || undefined,
+      location: 'Buddies City',
+      photoUrl,
+      createdAtMs: now,
+      likedByIds: [],
+      comments: [],
+    });
+  };
+
+  const handleToggleLikePost = (postId: string) => {
+    soundEngine.playUiClick();
+    const nextFeed = statusFeed.map((item) => {
+      if (item.id !== postId) return item;
+      const nextLiked = !item.likedBySelf;
+      return {
+        ...item,
+        likedBySelf: nextLiked,
+        likes: Math.max(0, item.likes + (nextLiked ? 1 : -1)),
+      };
+    });
+    persistStatusFeed(nextFeed);
+    void toggleLikeCityFeedPost(postId, selfCityActorId);
+  };
+
+  const handleDeleteFeedPost = (postId: string) => {
+    soundEngine.playUiClick();
+    const nextFeed = statusFeed.filter((item) => item.id !== postId);
+    persistStatusFeed(nextFeed);
+    void deleteCityFeedPost(postId, selfCityActorId);
   };
 
   const handleCopyAccountId = () => {
@@ -315,8 +677,8 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
     <div
       className={
         embeddedInPhone
-          ? 'relative w-full h-full bg-[#edf0f5] p-3 text-slate-900 flex flex-col overflow-hidden'
-          : 'relative rounded-[24px] bg-[#e8ecf2]/94 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] p-4 sm:p-5 text-slate-900 flex flex-col max-h-full overflow-hidden'
+          ? 'relative w-full h-full bg-transparent p-3 text-white flex flex-col overflow-hidden'
+          : 'relative rounded-[32px] bg-[#141926]/68 backdrop-blur-2xl border border-white/25 shadow-[0_24px_70px_rgba(0,0,0,0.52)] p-4 sm:p-5 text-white flex flex-col max-h-full overflow-hidden'
       }
     >
       {/* Hidden File Inputs for Custom Photo Uploads */}
@@ -337,43 +699,51 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
 
       {/* TOP HEADER BAR */}
       <div
-        className={`flex items-center justify-between gap-2 border-b border-slate-300/60 shrink-0 ${
+        className={`flex items-center justify-between gap-2 border-b border-white/15 shrink-0 ${
           embeddedInPhone ? 'pb-2.5' : 'pb-3'
         }`}
       >
         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/95 border border-slate-200/80 shadow-xs text-[11.5px] font-semibold text-slate-800">
-            <User className="w-3.5 h-3.5 text-sky-500 stroke-[2.2]" aria-hidden="true" />
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 border border-white/20 text-[11px] font-semibold text-white/95">
+            <User className="w-3.5 h-3.5 text-sky-400 stroke-[2.2]" aria-hidden="true" />
             <span>{isSelfProfile ? 'Citizen Profile' : 'Player Profile'}</span>
           </div>
 
+          {/* Emblem Badge (synced with top-left emblem emot on bottom dock & editable emblem name) */}
           <div
-            className={`inline-flex items-center px-2.5 py-1 rounded-full border text-[10.5px] font-semibold ${
+            data-profile-emblem-badge="true"
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10.5px] font-semibold ${
               isNpcProfile
-                ? 'bg-amber-100/90 text-amber-800 border-amber-200/80'
+                ? 'bg-amber-500/20 text-amber-200 border-amber-400/35'
                 : effectiveTeam === 'red'
-                  ? 'bg-rose-100/90 text-rose-700 border-rose-200/80'
-                  : 'bg-sky-100/90 text-sky-700 border-sky-200/80'
+                  ? 'bg-rose-500/20 text-rose-200 border-rose-400/35'
+                  : 'bg-sky-500/20 text-sky-200 border-sky-400/35'
             }`}
           >
-            <span>
-              {isNpcProfile
-                ? 'Merchant NPC'
-                : `${effectiveTeam === 'red' ? 'Red' : 'Blue'} Team`}
+            <span className="w-4 h-4 rounded-full bg-emerald-400 text-slate-950 flex items-center justify-center shrink-0">
+              {isNpcProfile ? (
+                isMerchantNpc ? (
+                  <Sparkles className="w-2.5 h-2.5 stroke-[2.4]" aria-hidden="true" />
+                ) : (
+                  <User className="w-2.5 h-2.5 stroke-[2.4]" aria-hidden="true" />
+                )
+              ) : (
+                renderProfileEmblemIcon(
+                  isSelfProfile ? emblemIconId : 'smile',
+                  'w-2.5 h-2.5 stroke-[2.4]',
+                )
+              )}
             </span>
+            <span className="truncate max-w-[110px]">{effectiveEmblemName}</span>
           </div>
 
-          {isSelfProfile && (
-            <div
-              data-profile-level-badge="true"
-              className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-100/90 text-emerald-800 border border-emerald-200/80 text-[10.5px] font-semibold"
-            >
-              <span>
-                Lv {playerLevel}
-                {playerXpLabel ? ` · ${playerXpLabel}` : ''}
-              </span>
-            </div>
-          )}
+          {/* Level Badge (Lv X for Players, NPC for NPCs) */}
+          <div
+            data-profile-level-badge="true"
+            className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/35 text-[10.5px] font-semibold"
+          >
+            <span>{isNpcProfile ? 'NPC' : `Lv ${playerLevel}`}</span>
+          </div>
         </div>
 
         {!embeddedInPhone && (
@@ -385,7 +755,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
             }}
             aria-label="Close Profile"
             data-profile-close-btn="true"
-            className="w-8 h-8 rounded-full bg-white/90 hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200/80 shadow-xs flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
+            className="w-8 h-8 rounded-full bg-white/10 hover:bg-rose-500/25 text-white/80 hover:text-rose-200 border border-white/20 flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
           >
             <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
           </button>
@@ -398,17 +768,13 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
           embeddedInPhone ? 'mt-2.5 space-y-2.5' : 'mt-3 space-y-3'
         }`}
       >
-        {/* 1. FEATURED STATUS PHOTO + CIRCULAR PROFILE AVATAR HEADER */}
-        <div
-          className={`rounded-2xl bg-white/95 border border-slate-200/70 shadow-sm ${
-            embeddedInPhone ? 'p-3 space-y-2.5' : 'p-3.5 space-y-3'
-          }`}
-        >
-          {/* Large Featured Square/Showcase Status Photo Frame */}
+        {/* 1. FROSTED PEARL HERO COVER + OVERLAPPING AVATAR + IDENTITY */}
+        <div className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 overflow-hidden shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900">
+          {/* Cover Photo Banner */}
           <div
             data-profile-status-photo-frame="true"
-            className={`relative w-full rounded-xl bg-slate-900 border border-slate-200/70 shadow-xs overflow-hidden ${
-              embeddedInPhone ? 'h-[124px]' : 'h-[138px]'
+            className={`relative w-full bg-slate-200 overflow-hidden ${
+              embeddedInPhone ? 'h-[116px]' : 'h-[132px]'
             }`}
           >
             <img
@@ -417,13 +783,14 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
               draggable={false}
               className={`w-full h-full select-none ${getPhotoCropClassName(resolvedStatusPhotoUrl)}`}
             />
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-900/45 via-transparent to-black/20 pointer-events-none" />
 
-            {/* Top-left Status Photo Label */}
-            <div className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-slate-900/65 backdrop-blur-md text-white/95 border border-white/20 text-[10px] font-medium tracking-wide">
-              <span>Status photo</span>
+            {/* Top-left Status Cover Label */}
+            <div className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-white/85 backdrop-blur-md text-slate-800 border border-white text-[10px] font-semibold tracking-wide shadow-xs">
+              <span>Status cover</span>
             </div>
 
-            {/* Top-right Customize Status Photo Button (Self Only) */}
+            {/* Top-right Customize Cover Photo Button (Self Only) */}
             {isSelfProfile && (
               <button
                 type="button"
@@ -432,122 +799,82 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
                   soundEngine.playUiClick();
                   setActivePhotoPicker((prev) => (prev === 'status' ? 'none' : 'status'));
                 }}
-                className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded-full bg-white/90 hover:bg-white text-slate-800 backdrop-blur-md border border-white/80 shadow-sm text-[10px] font-semibold cursor-pointer transition-colors"
+                className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded-full bg-white/90 hover:bg-white text-slate-800 backdrop-blur-md border border-white text-[10px] font-semibold cursor-pointer transition-colors shadow-xs"
               >
                 <span className="flex items-center gap-1">
-                  <Camera className="w-3 h-3 text-sky-500 stroke-[2.2]" aria-hidden="true" />
-                  <span>Change status photo</span>
+                  <Camera className="w-3 h-3 text-sky-600 stroke-[2.2]" aria-hidden="true" />
+                  <span>Change cover</span>
                 </span>
               </button>
             )}
-
-            {/* Bottom Status Caption Bar */}
-            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950/85 via-slate-900/65 to-transparent px-3 py-2 flex items-center justify-between gap-2">
-              {isSelfProfile && isEditingCaption ? (
-                <div className="flex items-center gap-1.5 w-full">
-                  <input
-                    type="text"
-                    value={draftCaption}
-                    maxLength={80}
-                    onChange={(e) => setDraftCaption(e.target.value)}
-                    onKeyDown={(e) => {
-                      e.stopPropagation();
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleSaveCaption();
-                      }
-                    }}
-                    placeholder="Enter short status..."
-                    className="flex-1 min-w-0 rounded-full bg-white/95 text-slate-900 px-3 py-1 text-[11px] font-medium border border-white/80 shadow-xs focus:outline-none focus:ring-2 focus:ring-sky-400"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSaveCaption}
-                    className="px-3 py-1 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-semibold cursor-pointer shadow-xs transition-colors shrink-0"
-                  >
-                    <span>Save</span>
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div
-                    data-profile-status-caption="true"
-                    className="text-[11.5px] font-medium text-white truncate drop-shadow-xs"
-                  >
-                    {isSelfProfile
-                      ? statusCaption || 'Online in Buddies Blitz'
-                      : isNpcProfile
-                        ? 'Official Exchange & Supply Merchant in The City'
-                        : targetUser?.status || 'Online in Buddies Blitz'}
-                  </div>
-                  {isSelfProfile && (
-                    <button
-                      type="button"
-                      data-edit-status-caption-btn="true"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setDraftCaption(statusCaption);
-                        setIsEditingCaption(true);
-                      }}
-                      className="px-2 py-0.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white text-[10px] font-medium shrink-0 flex items-center gap-1 cursor-pointer transition-colors"
-                    >
-                      <Edit3 className="w-2.5 h-2.5 stroke-[2.2]" aria-hidden="true" />
-                      <span>Edit status</span>
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
           </div>
 
-          {/* Circular Profile Picture Avatar + Player Identity Row */}
-          <div className="flex items-center gap-3">
-            <div className="relative shrink-0">
-              <div
-                data-profile-circular-avatar="true"
-                className={`rounded-full p-[2.5px] shadow-md ${
-                  embeddedInPhone ? 'w-14 h-14' : 'w-16 h-16'
-                } ${
-                  isNpcProfile
-                    ? 'bg-gradient-to-tr from-amber-300 to-yellow-400'
-                    : effectiveTeam === 'red'
-                      ? 'bg-gradient-to-tr from-rose-400 to-pink-300'
-                      : 'bg-gradient-to-tr from-sky-400 to-teal-300'
-                }`}
-              >
-                <div className="w-full h-full rounded-full overflow-hidden bg-slate-100 ring-2 ring-white">
-                  <img
-                    src={resolvedAvatarPhotoUrl}
-                    alt={`${cleanTargetName} Avatar`}
-                    draggable={false}
-                    className={`w-full h-full select-none ${getPhotoCropClassName(resolvedAvatarPhotoUrl)}`}
-                  />
-                </div>
-              </div>
-              {isSelfProfile && (
-                <button
-                  type="button"
-                  data-edit-avatar-photo-btn="true"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setActivePhotoPicker((prev) => (prev === 'avatar' ? 'none' : 'avatar'));
-                  }}
-                  title="Change Circular Profile Avatar"
-                  className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-sky-500 hover:bg-sky-600 text-white border-2 border-white shadow-sm flex items-center justify-center cursor-pointer transition-colors"
+          {/* Overlapping Avatar + Display Name + Live Status Caption */}
+          <div className="px-3.5 pb-3.5 -mt-8 relative z-10 space-y-2.5">
+            <div className="flex items-end justify-between gap-2.5">
+              {/* Overlapping Circular Avatar */}
+              <div className="relative shrink-0">
+                <div
+                  data-profile-circular-avatar="true"
+                  className={`rounded-full p-[2.5px] shadow-[0_8px_18px_rgba(15,23,42,0.22)] ${
+                    embeddedInPhone ? 'w-16 h-16' : 'w-[70px] h-[70px]'
+                  } ${
+                    isNpcProfile
+                      ? 'bg-gradient-to-tr from-amber-400 to-yellow-400'
+                      : effectiveTeam === 'red'
+                        ? 'bg-gradient-to-tr from-rose-500 to-pink-400'
+                        : 'bg-gradient-to-tr from-sky-500 to-teal-400'
+                  }`}
                 >
-                  <Camera className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
-                </button>
-              )}
+                  <div className="w-full h-full rounded-full overflow-hidden bg-slate-200 ring-2 ring-[#eef0f4]">
+                    <img
+                      src={resolvedAvatarPhotoUrl}
+                      alt={`${cleanTargetName} Avatar`}
+                      draggable={false}
+                      className={`w-full h-full select-none ${getPhotoCropClassName(resolvedAvatarPhotoUrl)}`}
+                    />
+                  </div>
+                </div>
+                {isSelfProfile && (
+                  <button
+                    type="button"
+                    data-edit-avatar-photo-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setActivePhotoPicker((prev) => (prev === 'avatar' ? 'none' : 'avatar'));
+                    }}
+                    title="Change Circular Profile Avatar"
+                    className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-slate-900 hover:bg-slate-800 text-white border-2 border-[#eef0f4] shadow-sm flex items-center justify-center cursor-pointer transition-colors"
+                  >
+                    <Camera className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+
+              {/* Right Header Quick Actions (Rename only, LUL badge removed) */}
+              <div className="flex items-center gap-1.5 pb-0.5 flex-wrap justify-end">
+                {isSelfProfile && onChangePlayerName && !isEditingName && (
+                  <button
+                    type="button"
+                    data-profile-edit-username-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setDraftPlayerName(cleanTargetName);
+                      setIsEditingName(true);
+                    }}
+                    className="px-2.5 py-1 rounded-full bg-white hover:bg-slate-50 text-slate-800 border border-slate-200/90 shadow-xs text-[10.5px] font-semibold cursor-pointer transition-colors"
+                  >
+                    <span className="flex items-center gap-1">
+                      <Edit3 className="w-3 h-3 text-sky-600 stroke-[2.2]" aria-hidden="true" />
+                      <span>Rename</span>
+                    </span>
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="flex-1 min-w-0 space-y-1.5">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-100 shrink-0" />
-                <span className="text-[11px] font-medium text-slate-500">
-                  {isSelfProfile ? 'Active citizen' : isNpcProfile ? 'Merchant NPC' : 'Online player'}
-                </span>
-              </div>
-
+            {/* Name + Online Indicator + Attribute Chips */}
+            <div className="space-y-1.5">
               {isSelfProfile && onChangePlayerName && isEditingName ? (
                 <div className="flex items-center gap-1.5">
                   <input
@@ -562,142 +889,546 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
                         handleSaveUsername();
                       }
                     }}
-                    className="flex-1 min-w-0 px-3 py-1 rounded-xl bg-slate-50 text-slate-900 font-semibold text-xs border border-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:bg-white"
+                    className="flex-1 min-w-0 px-3 py-1.5 rounded-xl bg-white text-slate-900 font-semibold text-xs border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-400"
                   />
                   <button
                     type="button"
                     onClick={handleSaveUsername}
-                    className="px-3 py-1 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-[11px] shadow-xs cursor-pointer shrink-0 transition-colors"
+                    className="px-3 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white font-semibold text-[11px] cursor-pointer shrink-0 transition-colors"
                   >
                     <span>Save</span>
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
                   <h2
                     data-profile-display-name="true"
                     className={`font-bold tracking-tight text-slate-900 truncate ${
-                      embeddedInPhone ? 'text-base' : 'text-base sm:text-lg'
+                      embeddedInPhone ? 'text-[17px]' : 'text-lg'
                     }`}
                   >
                     {cleanTargetName}
                   </h2>
-                  {isSelfProfile && onChangePlayerName && (
-                    <button
-                      type="button"
-                      data-profile-edit-username-btn="true"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setDraftPlayerName(cleanTargetName);
-                        setIsEditingName(true);
-                      }}
-                      className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-sky-50 text-slate-700 hover:text-sky-700 border border-slate-200/80 text-[10.5px] font-semibold cursor-pointer shrink-0 transition-colors"
-                    >
-                      <span className="flex items-center gap-1">
-                        <Edit3 className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
-                        <span>Rename</span>
-                      </span>
-                    </button>
-                  )}
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 border border-emerald-200 text-[10px] font-semibold text-emerald-800 shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    <span>
+                      {isSelfProfile ? 'Active' : isNpcProfile ? 'NPC' : 'Online'}
+                    </span>
+                  </span>
                 </div>
               )}
 
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200/70 text-[10px] font-medium">
-                  Gender: {effectiveGenderLabel === 'FEMALE' ? 'Female' : 'Male'}
-                </span>
-                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200/70 text-[10px] font-medium">
-                  Team: {effectiveTeam === 'red' ? 'Red' : 'Blue'}
+              {/* Live Status Headline & Emblem Editor Row */}
+              <div className="rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 px-2.5 py-1.5">
+                {isSelfProfile && isEditingCaption ? (
+                  <div className="space-y-2 py-0.5">
+                    <div className="flex items-center gap-1.5 w-full">
+                      <input
+                        type="text"
+                        value={draftCaption}
+                        maxLength={80}
+                        onChange={(e) => setDraftCaption(e.target.value)}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSaveCaption();
+                          }
+                        }}
+                        placeholder="Update headline status..."
+                        className="flex-1 min-w-0 rounded-lg bg-white text-slate-900 px-2.5 py-1 text-[11px] font-medium border border-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                      />
+                    </div>
+
+                    {/* Emblem Name & Emblem Emot/Icon Selector */}
+                    <div className="flex items-center gap-1.5 w-full">
+                      <span className="text-[10px] font-semibold text-slate-600 shrink-0">
+                        Emblem:
+                      </span>
+                      <input
+                        type="text"
+                        data-profile-emblem-name-input="true"
+                        value={draftEmblemName}
+                        maxLength={24}
+                        onChange={(e) => setDraftEmblemName(e.target.value)}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSaveCaption();
+                          }
+                        }}
+                        placeholder="Emblem name (e.g. Blue Squad)"
+                        className="flex-1 min-w-0 rounded-lg bg-white text-slate-900 px-2.5 py-1 text-[11px] font-semibold border border-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveCaption}
+                        className="px-2.5 py-1 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-semibold cursor-pointer transition-colors shrink-0"
+                      >
+                        <span>Save</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                      {PROFILE_EMBLEM_ICONS.map((iconOpt) => {
+                        const activeIcon = draftEmblemIconId === iconOpt.id;
+                        return (
+                          <button
+                            key={iconOpt.id}
+                            type="button"
+                            data-profile-emblem-icon-btn={iconOpt.id}
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              setDraftEmblemIconId(iconOpt.id);
+                            }}
+                            title={`Emblem icon: ${iconOpt.label}`}
+                            className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
+                              activeIcon
+                                ? 'bg-emerald-400 text-slate-950 border-slate-900 ring-1 ring-slate-900/30 shadow-xs'
+                                : 'bg-white/85 text-slate-700 border-slate-300/80 hover:bg-white'
+                            }`}
+                          >
+                            {renderProfileEmblemIcon(iconOpt.id, 'w-3 h-3 stroke-[2.3]')}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <div
+                      data-profile-status-caption="true"
+                      className="text-[11.5px] font-medium text-slate-700 truncate"
+                    >
+                      {isSelfProfile
+                        ? statusCaption || 'Online in Buddies Blitz'
+                        : isNpcProfile
+                          ? 'Official Exchange & Supply Merchant in The City'
+                          : targetUser?.status || 'Online in Buddies Blitz'}
+                    </div>
+                    {isSelfProfile && (
+                      <button
+                        type="button"
+                        data-edit-status-caption-btn="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setDraftCaption(statusCaption);
+                          setDraftEmblemName(emblemName);
+                          setDraftEmblemIconId(emblemIconId);
+                          setIsEditingCaption(true);
+                        }}
+                        className="px-2 py-0.5 rounded-full bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-950 border border-slate-200/90 shadow-xs text-[10px] font-semibold shrink-0 flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <Edit3 className="w-2.5 h-2.5 stroke-[2.2]" aria-hidden="true" />
+                        <span>Edit</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 text-[10.5px] font-medium text-slate-500 pt-0.5">
+                <span>{effectiveGenderLabel === 'FEMALE' ? 'Female' : 'Male'}</span>
+                <span aria-hidden="true">·</span>
+                <span
+                  data-profile-emblem-label="true"
+                  className="inline-flex items-center gap-1 font-semibold text-slate-700"
+                >
+                  {renderProfileEmblemIcon(
+                    isSelfProfile ? emblemIconId : 'smile',
+                    'w-3 h-3 stroke-[2.2] text-emerald-600',
+                  )}
+                  <span>{effectiveEmblemName}</span>
                 </span>
                 {isSelfProfile && (
-                  <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200/80 text-[10px] font-semibold font-mono">
-                    LUL: {lulBalance.toLocaleString()}
-                  </span>
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span className="tabular-nums">
+                      {statusFeed.length} {statusFeed.length === 1 ? 'post' : 'posts'}
+                    </span>
+                  </>
                 )}
               </div>
             </div>
+
+            {/* INLINE PHOTO PICKER DRAWER */}
+            {isSelfProfile && activePhotoPicker !== 'none' && (
+              <div
+                data-profile-photo-picker={activePhotoPicker}
+                className="p-2.5 rounded-2xl bg-[#dfe4ec]/90 border border-slate-300/70 space-y-2.5 text-slate-900"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold text-slate-800 truncate">
+                    {activePhotoPicker === 'status'
+                      ? 'Select cover photo'
+                      : 'Select circular avatar'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      if (activePhotoPicker === 'status') {
+                        statusFileInputRef.current?.click();
+                      } else {
+                        avatarFileInputRef.current?.click();
+                      }
+                    }}
+                    className="px-2.5 py-1 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-semibold cursor-pointer shrink-0 transition-colors"
+                  >
+                    <span className="flex items-center gap-1">
+                      <Upload className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
+                      <span>Upload</span>
+                    </span>
+                  </button>
+                </div>
+
+                <div
+                  className={`grid gap-1.5 ${
+                    embeddedInPhone ? 'grid-cols-3' : 'grid-cols-3 sm:grid-cols-6'
+                  }`}
+                >
+                  {PROFILE_PHOTO_PRESETS.map((preset) => {
+                    const currentUrl =
+                      activePhotoPicker === 'status'
+                        ? resolvedStatusPhotoUrl
+                        : resolvedAvatarPhotoUrl;
+                    const isSelected = currentUrl === preset.url;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => handleSelectPhotoUrl(activePhotoPicker, preset.url)}
+                        className={`p-1.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center gap-1 min-w-0 ${
+                          isSelected
+                            ? 'bg-white text-slate-900 border-slate-900 ring-1 ring-slate-900/20 shadow-xs'
+                            : 'bg-white/65 text-slate-600 border-slate-200/80 hover:border-slate-300 hover:bg-white'
+                        }`}
+                      >
+                        <div className="w-full h-9 rounded-lg overflow-hidden bg-slate-200">
+                          <img
+                            src={preset.url}
+                            alt={preset.label}
+                            className={`w-full h-full ${preset.cropClassName}`}
+                          />
+                        </div>
+                        <span className="text-[9px] font-semibold truncate w-full text-center">
+                          {preset.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 2. STATUS FEED COMPOSER & TIMELINE */}
+        <div
+          data-profile-status-feed="true"
+          className={`rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 space-y-2.5 ${
+            embeddedInPhone ? 'p-3' : 'p-3.5'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-sky-600 stroke-[2.2]" aria-hidden="true" />
+              <span className="text-[11.5px] font-semibold text-slate-900">Status Feed</span>
+            </div>
+            {isSelfProfile && (
+              <span className="text-[10px] font-medium text-slate-500">
+                Syncs with City Feed
+              </span>
+            )}
           </div>
 
-          {/* INLINE PHOTO PICKER DRAWER (When Changing Status Photo or Circular Avatar) */}
-          {isSelfProfile && activePhotoPicker !== 'none' && (
-            <div
-              data-profile-photo-picker={activePhotoPicker}
-              className="p-3 rounded-2xl bg-slate-50/95 border border-slate-200/80 space-y-2.5"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold text-slate-700 truncate">
-                  {activePhotoPicker === 'status'
-                    ? 'Select featured status photo'
-                    : 'Select circular profile avatar'}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    if (activePhotoPicker === 'status') {
-                      statusFileInputRef.current?.click();
-                    } else {
-                      avatarFileInputRef.current?.click();
+          {isSelfProfile ? (
+            <>
+              {/* Composer Box */}
+              <div className="rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 p-2.5 space-y-2">
+                <textarea
+                  rows={2}
+                  maxLength={160}
+                  value={feedComposerText}
+                  onChange={(e) => setFeedComposerText(e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      handlePublishFeedPost();
                     }
                   }}
-                  className="px-2.5 py-1 rounded-full bg-sky-500 hover:bg-sky-600 text-white shadow-xs text-[10px] font-semibold cursor-pointer shrink-0 transition-colors"
-                >
-                  <span className="flex items-center gap-1">
-                    <Upload className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
-                    <span>Upload image</span>
-                  </span>
-                </button>
+                  placeholder="Share an update to your Status Feed..."
+                  data-profile-status-feed-input="true"
+                  className="w-full resize-none bg-transparent text-[12px] text-slate-900 placeholder:text-slate-400 focus:outline-none leading-snug"
+                />
+
+                {/* Mood Chips */}
+                <div className="flex items-center gap-1 flex-wrap">
+                  {STATUS_MOOD_OPTIONS.map((mood) => {
+                    const active = selectedMood === mood;
+                    return (
+                      <button
+                        key={mood}
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setSelectedMood(active ? '' : mood);
+                        }}
+                        className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold border transition-colors cursor-pointer ${
+                          active
+                            ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                            : 'bg-white/80 text-slate-600 border-slate-200/90 hover:bg-white hover:text-slate-900'
+                        }`}
+                      >
+                        {mood}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Action Row */}
+                <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-300/60">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setAttachCoverPhoto((prev) => !prev);
+                    }}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-semibold border cursor-pointer transition-colors shadow-xs ${
+                      attachCoverPhoto
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-white text-slate-700 border-slate-200/90 hover:bg-slate-50'
+                    }`}
+                  >
+                    <ImageIcon className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
+                    <span>{attachCoverPhoto ? 'Photo attached' : 'Attach cover'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-profile-post-status-btn="true"
+                    disabled={!feedComposerText.trim()}
+                    onClick={handlePublishFeedPost}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300/80 disabled:text-slate-500 text-white text-[10.5px] font-semibold cursor-pointer disabled:cursor-not-allowed transition-colors shadow-xs"
+                  >
+                    <Send className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
+                    <span>Post Status</span>
+                  </button>
+                </div>
               </div>
 
-              <div
-                className={`grid gap-2 ${
-                  embeddedInPhone ? 'grid-cols-3' : 'grid-cols-3 sm:grid-cols-6'
-                }`}
-              >
-                {PROFILE_PHOTO_PRESETS.map((preset) => {
-                  const currentUrl =
-                    activePhotoPicker === 'status'
-                      ? resolvedStatusPhotoUrl
-                      : resolvedAvatarPhotoUrl;
-                  const isSelected = currentUrl === preset.url;
-                  return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => handleSelectPhotoUrl(activePhotoPicker, preset.url)}
-                      className={`p-1.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center gap-1 min-w-0 ${
-                        isSelected
-                          ? 'bg-sky-50 text-sky-900 border-sky-400 ring-2 ring-sky-200 shadow-xs'
-                          : 'bg-white text-slate-600 border-slate-200/80 hover:border-sky-300 hover:bg-slate-50'
-                      }`}
+              {/* Feed Timeline */}
+              {statusFeed.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300/80 bg-[#dfe4ec]/55 py-4 px-3 text-center text-[11px] text-slate-500">
+                  No status posts yet. Write your first update above.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {statusFeed.map((post) => (
+                    <article
+                      key={post.id}
+                      data-profile-feed-item="true"
+                      className="rounded-xl bg-white/85 border border-slate-200/90 p-2.5 space-y-2 shadow-xs"
                     >
-                      <div className="w-full h-9 rounded-lg overflow-hidden bg-slate-100">
-                        <img
-                          src={preset.url}
-                          alt={preset.label}
-                          className={`w-full h-full ${preset.cropClassName}`}
-                        />
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-6 h-6 rounded-full overflow-hidden bg-slate-200 border border-white shadow-xs shrink-0">
+                            <img
+                              src={resolvedAvatarPhotoUrl}
+                              alt={cleanTargetName}
+                              className={`w-full h-full ${getPhotoCropClassName(resolvedAvatarPhotoUrl)}`}
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-[11px] font-semibold text-slate-900 truncate">
+                              {cleanTargetName}
+                            </div>
+                            <div className="flex items-center gap-1 text-[9.5px] text-slate-500">
+                              {post.mood && <span>{post.mood}</span>}
+                              {post.mood && <span aria-hidden="true">·</span>}
+                              <span>{formatRelativeFeedTime(post.createdAtMs, nowMs)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteFeedPost(post.id)}
+                          aria-label="Delete status post"
+                          className="w-6 h-6 rounded-full bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center cursor-pointer transition-colors shrink-0"
+                        >
+                          <Trash2 className="w-3 h-3 stroke-[2]" aria-hidden="true" />
+                        </button>
                       </div>
-                      <span className="text-[9px] font-semibold truncate w-full text-center">
-                        {preset.label}
-                      </span>
-                    </button>
+
+                      <p className="text-[11.5px] text-slate-800 leading-relaxed break-words">
+                        {post.text}
+                      </p>
+
+                      {post.photoUrl && (
+                        <div className="w-full h-24 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
+                          <img
+                            src={post.photoUrl}
+                            alt="Status snapshot"
+                            className={`w-full h-full ${getPhotoCropClassName(post.photoUrl)}`}
+                          />
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleLikePost(post.id)}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold border cursor-pointer transition-colors tabular-nums ${
+                            post.likedBySelf
+                              ? 'bg-rose-50 text-rose-600 border-rose-200'
+                              : 'bg-slate-100/90 text-slate-600 border-slate-200 hover:bg-slate-200/70'
+                          }`}
+                        >
+                          <Heart
+                            className={`w-3 h-3 stroke-[2.2] ${
+                              post.likedBySelf ? 'fill-rose-500 text-rose-500' : ''
+                            }`}
+                            aria-hidden="true"
+                          />
+                          <span>{post.likes}</span>
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            (() => {
+              const targetIdLower = String(targetUser?.id ?? '').trim().toLowerCase();
+              const targetNearLower = String(targetUser?.nearAccountId ?? '').trim().toLowerCase();
+              const targetNameLower = cleanTargetName.toLowerCase();
+              const peerPosts = isNpcProfile
+                ? []
+                : cityFeedSnapshot.filter(
+                    (p) =>
+                      (targetIdLower && p.authorId.toLowerCase() === targetIdLower) ||
+                      (targetNearLower &&
+                        p.authorNearAccount?.toLowerCase() === targetNearLower) ||
+                      (targetNameLower && p.authorName.toLowerCase() === targetNameLower),
                   );
-                })}
-              </div>
-            </div>
+
+              if (peerPosts.length === 0) {
+                return (
+                  <div className="rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 p-2.5 space-y-1.5">
+                    <div className="text-[10px] font-medium text-slate-500">Latest broadcast</div>
+                    <p className="text-[12px] text-slate-800 leading-relaxed">
+                      {isNpcProfile
+                        ? 'Official Exchange & Supply Merchant in Central Plaza.'
+                        : targetUser?.status || 'Exploring Buddies City'}
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-2">
+                  {peerPosts.slice(0, 6).map((post) => (
+                    <article
+                      key={post.id}
+                      className="rounded-xl bg-white/85 border border-slate-200/90 p-2.5 space-y-1.5 shadow-xs"
+                    >
+                      <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                        {post.location && <span>{post.location}</span>}
+                        {post.location && post.mood && <span aria-hidden="true">·</span>}
+                        {post.mood && <span>{post.mood}</span>}
+                        {(post.location || post.mood) && <span aria-hidden="true">·</span>}
+                        <span>{formatRelativeFeedTime(post.createdAtMs, nowMs)}</span>
+                      </div>
+                      <p className="text-[11.5px] text-slate-800 leading-relaxed break-words">
+                        {post.text}
+                      </p>
+                      {post.photoUrl && (
+                        <div className="w-full h-24 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
+                          <img
+                            src={post.photoUrl}
+                            alt="Status snapshot"
+                            className={`w-full h-full ${getPhotoCropClassName(post.photoUrl)}`}
+                          />
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              );
+            })()
           )}
         </div>
 
-        {/* 2. ACCOUNT & WALLET IDENTITY DETAILS */}
+        {/* 3. REAL IN-GAME ASSET SUMMARY (FOR SELF PROFILE) */}
+        {isSelfProfile && (
+          <div
+            className={`rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 space-y-2 ${
+              embeddedInPhone ? 'p-3' : 'p-3.5'
+            }`}
+          >
+            <div className="text-[11px] font-semibold text-slate-700">
+              In-game citizen assets
+            </div>
+
+            <div className={`grid grid-cols-3 ${embeddedInPhone ? 'gap-1.5' : 'gap-2'}`}>
+              {/* Command Plot / House Ownership */}
+              <div
+                data-profile-asset-plot="true"
+                className="min-w-0 p-2 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 flex flex-col justify-between gap-1.5"
+              >
+                <div className="flex items-center gap-1 text-[10px] font-medium text-slate-500 min-w-0">
+                  <Home className="w-3 h-3 text-sky-600 stroke-[2.2] shrink-0" aria-hidden="true" />
+                  <span className="truncate">Estate / Plot</span>
+                </div>
+                <div className="text-[10.5px] font-semibold text-slate-900 leading-tight break-words">
+                  {plotSummaryLabel}
+                </div>
+              </div>
+
+              {/* Caught Fish & Minted Fish NFTs */}
+              <div
+                data-profile-asset-fish="true"
+                className="min-w-0 p-2 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 flex flex-col justify-between gap-1.5"
+              >
+                <div className="flex items-center gap-1 text-[10px] font-medium text-slate-500 min-w-0">
+                  <Fish className="w-3 h-3 text-teal-600 stroke-[2.2] shrink-0" aria-hidden="true" />
+                  <span className="truncate">Fish &amp; NFTs</span>
+                </div>
+                <div className="text-[10.5px] font-semibold text-slate-900 leading-tight break-words">
+                  {caughtFishCount} Caught · {mintedFishNftCount} NFT
+                </div>
+              </div>
+
+              {/* Recruited Family & Active Harvesters */}
+              <div
+                data-profile-asset-units="true"
+                className="min-w-0 p-2 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 flex flex-col justify-between gap-1.5"
+              >
+                <div className="flex items-center gap-1 text-[10px] font-medium text-slate-500 min-w-0">
+                  <Users className="w-3 h-3 text-indigo-600 stroke-[2.2] shrink-0" aria-hidden="true" />
+                  <span className="truncate">Active units</span>
+                </div>
+                <div className="text-[10.5px] font-semibold text-slate-900 leading-tight break-words">
+                  {recruitedFamilyCount} Family · {activeHarvesterCount} Harvester
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 4. ACCOUNT & NEAR WALLET IDENTITY DETAILS */}
         <div
-          className={`rounded-2xl bg-white/95 border border-slate-200/70 shadow-sm space-y-2.5 ${
+          className={`rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 space-y-2.5 ${
             embeddedInPhone ? 'p-3' : 'p-3.5'
           }`}
         >
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <div className="text-[11px] font-medium text-slate-500">
+              <div className="text-[10.5px] font-medium text-slate-500">
                 {isSelfProfile ? 'Account session' : 'Citizen identity'}
               </div>
               <div className="text-xs font-semibold text-slate-900 truncate mt-0.5">
@@ -708,7 +1439,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
                     : cleanTargetName}
               </div>
             </div>
-            <span className="px-2.5 py-0.5 rounded-full bg-sky-50 border border-sky-200/80 text-[10px] font-semibold text-sky-700 shrink-0">
+            <span className="px-2.5 py-0.5 rounded-full bg-white border border-slate-200/90 text-[10px] font-semibold text-slate-700 shrink-0 shadow-xs">
               {isSelfProfile
                 ? playerUid
                   ? 'Registered'
@@ -720,10 +1451,11 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
           </div>
 
           {isSelfProfile && (
-            <div className="p-2.5 rounded-xl bg-slate-50/90 border border-slate-200/70 flex items-center justify-between gap-2">
+            <div className="p-2.5 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 flex items-center justify-between gap-2">
               <div className="min-w-0">
-                <div className="text-[10px] font-semibold text-emerald-700">
-                  NEAR wallet ID
+                <div className="flex items-center gap-1 text-[10px] font-semibold text-emerald-700">
+                  <Wallet className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
+                  <span>NEAR wallet ID</span>
                 </div>
                 <div
                   data-profile-wallet-id="true"
@@ -736,12 +1468,12 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
                 <button
                   type="button"
                   onClick={handleCopyAccountId}
-                  className="px-3 py-1 rounded-full bg-sky-500 hover:bg-sky-600 text-white font-semibold text-[10.5px] shadow-xs cursor-pointer shrink-0 transition-colors"
+                  className="px-3 py-1 rounded-full bg-white hover:bg-slate-50 text-slate-800 border border-slate-200/90 shadow-xs font-semibold text-[10.5px] cursor-pointer shrink-0 transition-colors"
                 >
                   <span className="flex items-center gap-1">
                     {copiedUid ? (
                       <>
-                        <Check className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
+                        <Check className="w-3 h-3 text-emerald-600 stroke-[2.2]" aria-hidden="true" />
                         <span>Copied</span>
                       </>
                     ) : (
@@ -757,64 +1489,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
           )}
         </div>
 
-        {/* 3. REAL IN-GAME ASSET SUMMARY (FOR SELF PROFILE) */}
-        {isSelfProfile && (
-          <div
-            className={`rounded-2xl bg-white/95 border border-slate-200/70 shadow-sm space-y-2 ${
-              embeddedInPhone ? 'p-3' : 'p-3.5'
-            }`}
-          >
-            <div className="text-[11px] font-semibold text-slate-600">
-              In-game citizen assets
-            </div>
-
-            <div className={`grid grid-cols-3 ${embeddedInPhone ? 'gap-1.5' : 'gap-2'}`}>
-              {/* Command Plot / House Ownership */}
-              <div
-                data-profile-asset-plot="true"
-                className="min-w-0 p-2 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col justify-between gap-1.5"
-              >
-                <div className="flex items-center gap-1 text-[10px] font-medium text-slate-500 min-w-0">
-                  <Home className="w-3 h-3 text-sky-500 stroke-[2.2] shrink-0" aria-hidden="true" />
-                  <span className="truncate">Estate / Plot</span>
-                </div>
-                <div className="text-[10.5px] font-semibold text-slate-900 leading-tight break-words">
-                  {plotSummaryLabel}
-                </div>
-              </div>
-
-              {/* Caught Fish & Minted Fish NFTs */}
-              <div
-                data-profile-asset-fish="true"
-                className="min-w-0 p-2 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col justify-between gap-1.5"
-              >
-                <div className="flex items-center gap-1 text-[10px] font-medium text-slate-500 min-w-0">
-                  <Fish className="w-3 h-3 text-teal-500 stroke-[2.2] shrink-0" aria-hidden="true" />
-                  <span className="truncate">Fish &amp; NFTs</span>
-                </div>
-                <div className="text-[10.5px] font-semibold text-slate-900 leading-tight break-words">
-                  {caughtFishCount} Caught · {mintedFishNftCount} NFT
-                </div>
-              </div>
-
-              {/* Recruited Family & Active Harvesters */}
-              <div
-                data-profile-asset-units="true"
-                className="min-w-0 p-2 rounded-xl bg-slate-50/90 border border-slate-200/70 flex flex-col justify-between gap-1.5"
-              >
-                <div className="flex items-center gap-1 text-[10px] font-medium text-slate-500 min-w-0">
-                  <Users className="w-3 h-3 text-indigo-500 stroke-[2.2] shrink-0" aria-hidden="true" />
-                  <span className="truncate">Active units</span>
-                </div>
-                <div className="text-[10.5px] font-semibold text-slate-900 leading-tight break-words">
-                  {recruitedFamilyCount} Family · {activeHarvesterCount} Harvester
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 4. REMOTE REAL PLAYER WHISPER ACTION (Hidden for Self and NPCs) */}
+        {/* 5. REMOTE REAL PLAYER WHISPER ACTION (Hidden for Self and NPCs) */}
         {!isSelfProfile && !isNpcProfile && targetUser && onStartWhisper && (
           <button
             type="button"
@@ -823,20 +1498,20 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
               soundEngine.playUiClick();
               onStartWhisper(targetUser);
             }}
-            className="w-full py-2.5 px-4 rounded-full bg-sky-500 hover:bg-sky-600 text-white shadow-sm font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] transition-all"
+            className="w-full py-2.5 px-4 rounded-full bg-white hover:bg-slate-50 text-slate-900 border border-white/90 shadow-[0_6px_18px_rgba(15,23,42,0.18)] font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] transition-all"
           >
-            <MessageCircle className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+            <MessageCircle className="w-4 h-4 text-sky-600 stroke-[2.2]" aria-hidden="true" />
             <span>Send whisper message</span>
           </button>
         )}
 
-        {/* 5. NPC MERCHANT NOTICE (When inspecting an NPC) */}
+        {/* 6. NPC MERCHANT NOTICE (When inspecting an NPC) */}
         {isNpcProfile && (
-          <div className="p-3.5 rounded-2xl bg-amber-50/95 border border-amber-200/80 shadow-xs flex items-center gap-2.5">
+          <div className="p-3.5 rounded-2xl bg-[#eef0f4]/92 border border-amber-300/80 shadow-sm flex items-center gap-2.5">
             <Shield className="w-4 h-4 text-amber-600 stroke-[2.2] shrink-0" aria-hidden="true" />
-            <div className="text-[11.5px] font-medium text-amber-950 leading-snug">
+            <div className="text-[11.5px] font-medium text-slate-700 leading-snug">
               {cleanTargetName} is an official NPC merchant in The City. Interact using the{' '}
-              <span className="font-semibold">TALK</span> action to open the exchange counter.
+              <span className="font-semibold text-slate-900">TALK</span> action to open the exchange counter.
             </div>
           </div>
         )}

@@ -1578,7 +1578,7 @@ export function buildDynamicWeatherSystem3D(params: {
         }
         // 4 Halte Elevated Platforms (+0.26m)
         if (
-          sdBox2D(p, vec2(-58.9, 0.0), vec2(3.6, 9.4)) <= 0.0 ||
+          sdBox2D(p, vec2(-58.9, 4.6), vec2(3.6, 9.4)) <= 0.0 ||
           sdBox2D(p, vec2(3.5, -40.87), vec2(9.4, 3.6)) <= 0.0 ||
           sdBox2D(p, vec2(-36.5, 40.87), vec2(9.4, 3.6)) <= 0.0 ||
           sdBox2D(p, vec2(79.63, 29.5), vec2(3.6, 9.4)) <= 0.0

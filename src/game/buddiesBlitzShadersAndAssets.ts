@@ -463,9 +463,9 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
 
   float evalMirroredCentralSCurveDist(vec2 p, float az) {
     vec2 q = vec2(p.x, az);
-    float s1 = sdSegment2D(q, vec2(-66.5, 15.0), vec2(-52.0, 15.0));
-    float s2 = sdSegment2D(q, vec2(-52.0, 15.0), vec2(-41.0, 26.0));
-    float s3 = sdSegment2D(q, vec2(-41.0, 26.0), vec2(-25.0, 26.0));
+    float s1 = (p.y <= 0.0) ? sdSegment2D(vec2(p.x, -p.y), vec2(-66.5, 15.0), vec2(-52.0, 15.0)) : 999.0;
+    float s2 = (p.y <= 0.0) ? sdSegment2D(vec2(p.x, -p.y), vec2(-52.0, 15.0), vec2(-41.0, 26.0)) : 999.0;
+    float s3 = (p.y <= 0.0) ? sdSegment2D(vec2(p.x, -p.y), vec2(-41.0, 26.0), vec2(-25.0, 26.0)) : 999.0;
     float s4 = sdSegment2D(q, vec2(-25.0, 26.0), vec2(-14.2, 15.6));
     float s5 = sdSegment2D(q, vec2(-14.2, 0.0), vec2(-14.2, 15.6));
     float s6 = sdSegment2D(q, vec2(-14.2, 15.6), vec2(8.0, 15.6));
@@ -487,8 +487,9 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     float az = abs(p.y);
     vec2 q = vec2(p.x, az);
 
-    float dTramRingBox = sdRoundedBox2D(p, vec2(0.0, 0.0), vec2(70.0, 52.0), 8.0);
-    float dTramRingRoad = abs(dTramRingBox + 1.95) - 5.85;
+    float dTramOuterBox = sdRoundedBox2D(p, vec2(0.0, 0.0), vec2(70.0, 52.0), 8.0);
+    float dTramInnerBox = sdRoundedBox2D(p, vec2(0.0, 0.0), vec2(65.0, 47.0), 9.0);
+    float dTramRingRoad = max(dTramOuterBox - 3.90, -(dTramInnerBox + 2.80));
     float dHarborTurn = sdSegment2D(q, vec2(70.0, 15.0), vec2(76.5, 15.0));
 
     float dBaseWestOuter = sdSegment2D(q, vec2(-60.0, 52.0), vec2(-60.0, 108.0));
@@ -591,11 +592,11 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
   }
 
   float evalInnerTramSidewalkSdf(vec2 p) {
-    float dTram = sdRoundedBox2D(p, vec2(0.0, 0.0), vec2(70.0, 52.0), 8.0);
-    float d = abs(dTram + 10.0) - 2.20;
+    float dInnerTram = sdRoundedBox2D(p, vec2(0.0, 0.0), vec2(65.0, 47.0), 9.0);
+    float d = abs(dInnerTram + 5.0) - 2.20;
     float ax = abs(p.x);
     float az = abs(p.y);
-    if (ax > 57.0 && ax < 63.0) {
+    if (ax > 57.0 && ax < 63.0 && (p.x > 0.0 || p.y < 0.0)) {
       d = max(d, -sdRoundedBox2D(vec2(ax, az), vec2(60.0, 15.0), vec2(3.0, 4.23), 0.0));
     }
     if (az > 39.0 && az < 45.0) {
@@ -603,14 +604,14 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
       d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(19.0, 42.0), vec2(4.23, 3.0), 0.0));
       d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(42.0, 42.0), vec2(4.23, 3.0), 0.0));
     }
-    d = max(d, -sdRoundedBox2D(p, vec2(-58.9, 0.0), vec2(3.35, 9.2), 0.0));
+    d = max(d, -sdRoundedBox2D(p, vec2(-58.9, 4.6), vec2(3.35, 9.2), 0.0));
     d = max(d, -sdRoundedBox2D(p, vec2(3.5, -40.87), vec2(9.2, 3.35), 0.0));
     d = max(d, -sdRoundedBox2D(p, vec2(-36.5, 40.87), vec2(9.2, 3.35), 0.0));
     return d;
   }
 
   float evalHaltePlatformSdf(vec2 p) {
-    float dCentral = sdRoundedBox2D(p, vec2(-58.9, 0.0), vec2(3.6, 9.4), 0.4);
+    float dCentral = sdRoundedBox2D(p, vec2(-58.9, 4.6), vec2(3.6, 9.4), 0.4);
     float dNorth = sdRoundedBox2D(p, vec2(3.5, -40.87), vec2(9.4, 3.6), 0.4);
     float dSouth = sdRoundedBox2D(p, vec2(-36.5, 40.87), vec2(9.4, 3.6), 0.4);
     float dBeach = sdRoundedBox2D(p, vec2(79.63, 29.5), vec2(3.6, 9.4), 0.4);
@@ -1763,8 +1764,10 @@ export function upgradeMeshToBlitzWorldMaterial(
     (srcMat as THREE.Material & { vertexColors?: boolean })?.vertexColors ||
       mesh.geometry?.getAttribute('color'),
   );
+  const alphaTest =
+    srcMat && typeof srcMat.alphaTest === 'number' && srcMat.alphaTest > 0 ? srcMat.alphaTest : 0.0;
   const showcaseNightUniform = getSharedShowcaseNightUniform(windUniforms);
-  const cacheKey = `${baseColor.getHexString()}_${mapTex ? mapTex.uuid : 'nomap'}_${bounceStrength.toFixed(3)}_${hasVertexColor ? 1 : 0}`;
+  const cacheKey = `${baseColor.getHexString()}_${mapTex ? mapTex.uuid : 'nomap'}_${bounceStrength.toFixed(3)}_${hasVertexColor ? 1 : 0}${alphaTest > 0 ? `_at${alphaTest.toFixed(2)}` : ''}`;
   let mat = uniformCache.get(cacheKey);
 
   if (!mat) {
@@ -1774,6 +1777,7 @@ export function upgradeMeshToBlitzWorldMaterial(
         ...THREE.UniformsUtils.clone(THREE.UniformsLib.lights),
         uMap: { value: mapTex },
         uHasMap: { value: mapTex ? 1.0 : 0.0 },
+        uAlphaTest: { value: alphaTest },
         uBaseColor: { value: baseColor },
         uShadowColor: { value: new THREE.Color('#5a4f48') },
         uBounceColor: { value: new THREE.Color('#a4c968') },
@@ -1825,6 +1829,7 @@ export function upgradeMeshToBlitzWorldMaterial(
 
         uniform sampler2D uMap;
         uniform float uHasMap;
+        uniform float uAlphaTest;
         uniform vec3 uBaseColor;
         uniform vec3 uShadowColor;
         uniform vec3 uBounceColor;
@@ -1844,6 +1849,7 @@ export function upgradeMeshToBlitzWorldMaterial(
           vec3 albedo = uBaseColor;
           if (uHasMap > 0.5) {
             vec4 texCol = texture2D(uMap, vUv);
+            if (uAlphaTest > 0.0 && texCol.a < uAlphaTest) discard;
             albedo *= texCol.rgb;
           }
           #if defined( USE_COLOR ) || defined( USE_COLOR_ALPHA )
@@ -9706,6 +9712,7 @@ export interface CharBuddiesGlbRigController {
   eatDuration: number;
   baseRootY: number;
   standingSoleOffsetY: number;
+  standingHeadLocalY?: number;
   bindAnkleHeightY: number;
   bindFootDropPitchRad: number;
   bindFootBallLenM: number;
@@ -15915,34 +15922,72 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
   if (!gltf || !rig.bodyGroupRef) {
     return;
   }
+  const bodyGroup = rig.bodyGroupRef;
+  const isSeatedRider = Boolean(rig.isSeatedRiderRef);
   const template = getSanitizedCharBuddiesTemplate(gltf);
-  // If switching between Female (`charbuddies.glb`) and Male (`mancharacterbuddies.glb`), remove the old GLB root and rebuild
+  const useControllerCache = Boolean(bodyGroup.userData?.__enableGenderControllerCache);
+  const cachedControllers: Map<
+    GLTF,
+    NonNullable<BuddyCharacterRig['customGlbController']>
+  > | null = useControllerCache
+    ? ((bodyGroup.userData.__cachedGlbControllers as
+        | Map<GLTF, NonNullable<BuddyCharacterRig['customGlbController']>>
+        | undefined) ??
+      new Map<GLTF, NonNullable<BuddyCharacterRig['customGlbController']>>())
+    : null;
+  if (useControllerCache && cachedControllers) {
+    bodyGroup.userData.__cachedGlbControllers = cachedControllers;
+  }
+
+  // If switching between Female (`charbuddies.glb`) and Male (`mancharacterbuddies.glb`), stash in cache when enabled or remove the old GLB root and rebuild
   if (
     rig.customGlbController &&
     rig.customGlbController.sourceGltf &&
     rig.customGlbController.sourceGltf !== gltf
   ) {
-    rig.customGlbController.secondaryPhysics?.dispose();
-    rig.customGlbController.mixer.stopAllAction();
-    rig.customGlbController.glbRoot.traverse((node) => {
-      if ((node as THREE.Mesh).isMesh) {
-        const geo = (node as THREE.Mesh).geometry;
-        if (geo?.userData?.__isPerRigUniqueSkinGeometry || geo?.userData?.__isSupplementalSkinGeometry) {
-          geo.dispose();
-        }
+    if (useControllerCache && cachedControllers) {
+      cachedControllers.set(rig.customGlbController.sourceGltf, rig.customGlbController);
+      if (rig.customGlbController.glbRoot.parent) {
+        rig.customGlbController.glbRoot.parent.remove(rig.customGlbController.glbRoot);
       }
-    });
-    if (rig.customGlbController.glbRoot.parent) {
-      rig.customGlbController.glbRoot.parent.remove(rig.customGlbController.glbRoot);
+      rig.customGlbController = undefined;
+    } else {
+      rig.customGlbController.secondaryPhysics?.dispose();
+      rig.customGlbController.mixer.stopAllAction();
+      rig.customGlbController.glbRoot.traverse((node) => {
+        if ((node as THREE.Mesh).isMesh) {
+          const geo = (node as THREE.Mesh).geometry;
+          if (
+            geo?.userData?.__isPerRigUniqueSkinGeometry ||
+            geo?.userData?.__isSupplementalSkinGeometry
+          ) {
+            geo.dispose();
+          }
+        }
+      });
+      if (rig.customGlbController.glbRoot.parent) {
+        rig.customGlbController.glbRoot.parent.remove(rig.customGlbController.glbRoot);
+      }
+      rig.customGlbController = undefined;
     }
-    rig.customGlbController = undefined;
+  }
+  if (!rig.customGlbController && useControllerCache && cachedControllers) {
+    const cachedForTarget = cachedControllers.get(gltf);
+    if (cachedForTarget) {
+      if (cachedForTarget.glbRoot.parent !== bodyGroup) {
+        bodyGroup.add(cachedForTarget.glbRoot);
+      }
+      cachedForTarget.glbRoot.visible = true;
+      cachedForTarget.clips = template.clips;
+      cachedForTarget.lastStepTimeMs = typeof performance !== 'undefined' ? performance.now() : 0;
+      rig.customGlbController = cachedForTarget;
+      return;
+    }
   }
   if (rig.customGlbController) {
     rig.customGlbController.clips = template.clips;
     return;
   }
-  const bodyGroup = rig.bodyGroupRef;
-  const isSeatedRider = Boolean(rig.isSeatedRiderRef);
 
   // Hide any legacy procedural body children while keeping weaponRigGroup, overheadCrateGroup, and stunMesh
   for (const child of bodyGroup.children) {
@@ -16113,6 +16158,17 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
       }
     }
   }
+  let standingHeadLocalY: number | undefined;
+  const initHeadBone = bones.get('Head');
+  if (initHeadBone) {
+    glbRoot.updateWorldMatrix(true, true);
+    const headInitPos = new THREE.Vector3();
+    initHeadBone.getWorldPosition(headInitPos);
+    bodyGroup.worldToLocal(headInitPos);
+    if (Number.isFinite(headInitPos.y) && headInitPos.y > 0.5) {
+      standingHeadLocalY = headInitPos.y;
+    }
+  }
 
   rig.customGlbController = {
     sourceGltf: gltf,
@@ -16136,6 +16192,7 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     eatDuration: template.eatDuration,
     baseRootY,
     standingSoleOffsetY,
+    standingHeadLocalY,
     bindAnkleHeightY,
     bindFootDropPitchRad,
     bindFootBallLenM,
@@ -23074,62 +23131,72 @@ export function createCurvedPlanetEnvironment(
         float aaWorld = max(aaX, aaY);
 
         // 1. Autonomous Tram Loop ("2 markah putus-putus, seperti layaknya jalur untuk trem otonom")
-        //    placed on the INNER Halte-adjacent side (dTramSigned = -5.00m -> |x| = 65.0, |z| = 47.0, R = 3.0m)
-        //    with a white dashed Car-Lane Separator at dTramSigned = -2.20m leaving [-2.20m .. +3.90m] (6.10m) for cars beside the tram:
+        //    placed on the INNER Halte-adjacent side (|x| = 65.0, |z| = 47.0, wide sweeping R = 9.0m around |x|=56.0, |z|=38.0)
+        //    with a white dashed Car-Lane Separator at (|x| = 67.80, |z| = 49.80, R = 8.80m around |x|=59.0, |z|=41.0):
         float dTramSigned = sdRoundedBox2D(p, vec2(0.0, 0.0), vec2(70.0, 52.0), 8.0);
+        float dInnerTramSigned = sdRoundedBox2D(p, vec2(0.0, 0.0), vec2(65.0, 47.0), 9.0);
+        float dLaneDivSigned = sdRoundedBox2D(p, vec2(0.0, 0.0), vec2(67.80, 49.80), 8.80);
         float tramDash = 0.0;
         float carLaneDivider = 0.0;
-        if (dTramSigned > -6.50 && dTramSigned < -1.80) {
+        if (dInnerTramSigned > -1.50 && dTramSigned < -1.50) {
           // Signalized approach clear zones prevent tiny dash stubs between stop bars and zebra crosswalks
-          bool inWestSignalApproach = (p.x < -60.0) && ((p.y > -13.60 && p.y < -3.50) || (p.y > 3.50 && p.y < 13.60));
+          bool inWestSignalApproach = (p.x < -60.0) && (p.y > -13.60 && p.y < -3.50);
+          bool inNorthSignalApproach = (p.y < -43.5) && (p.x > 4.80 && p.x < 14.80);
           bool inEastSignalApproach = (p.x > 60.0) && (abs(p.y) < 3.85);
-          if (!inWestSignalApproach && !inEastSignalApproach) {
-            // Anisotropic tangent/normal screen-space AA along the rounded ring loop
-            vec2 ringTan = (ap.y <= 44.0)
-              ? vec2(0.0, 1.0)
-              : (ap.x > 62.0 && ap.y > 44.0)
-                ? normalize(vec2(-(ap.y - 44.0), ap.x - 62.0))
-                : vec2(1.0, 0.0);
-            vec2 ringNorm = vec2(-ringTan.y, ringTan.x);
-            float aaAlongRing = max(abs(dot(gradP.xy, ringTan)) + abs(dot(gradP.zw, ringTan)), 0.004);
-            float aaPerpRing = max(abs(dot(gradP.xy, ringNorm)) + abs(dot(gradP.zw, ringNorm)), 0.004);
+          if (!inWestSignalApproach && !inNorthSignalApproach && !inEastSignalApproach) {
+            // Twin parallel golden-amber dashed guide lines at ±0.85m around dInnerTramSigned = 0.0 (wide R = 9.0m curve!)
+            if (abs(dInnerTramSigned) < 1.35) {
+              vec2 tramTan = (ap.y <= 38.0)
+                ? vec2(0.0, 1.0)
+                : (ap.x > 56.0 && ap.y > 38.0)
+                  ? normalize(vec2(-(ap.y - 38.0), ap.x - 56.0))
+                  : vec2(1.0, 0.0);
+              vec2 tramNorm = vec2(-tramTan.y, tramTan.x);
+              float aaAlongTram = max(abs(dot(gradP.xy, tramTan)) + abs(dot(gradP.zw, tramTan)), 0.004);
+              float aaPerpTram = max(abs(dot(gradP.xy, tramNorm)) + abs(dot(gradP.zw, tramNorm)), 0.004);
 
-            // Twin parallel golden-amber dashed guide lines at ±0.85m around dTramSigned = -5.00m
-            if (abs(dTramSigned + 5.00) < 1.35) {
               float sTram = 0.0;
-              if (ap.y <= 44.0) {
+              if (ap.y <= 38.0) {
                 sTram = ap.y;
-              } else if (ap.x > 62.0 && ap.y > 44.0) {
-                sTram = 44.0 + 3.0 * atan(ap.y - 44.0, ap.x - 62.0);
+              } else if (ap.x > 56.0 && ap.y > 38.0) {
+                sTram = 38.0 + 9.0 * atan(ap.y - 38.0, ap.x - 56.0);
               } else {
-                sTram = 48.71239 + (62.0 - ap.x);
+                sTram = 52.13717 + (56.0 - ap.x);
               }
-              // Exact quarter-loop multiple (110.71239m / 20 = 5.53562m) -> seamless across x=0 & z=0
-              float tramPitch = 5.53562;
+              // Exact quarter-loop multiple (108.13717m / 20 = 5.40686m) -> seamless across x=0 & z=0
+              float tramPitch = 5.40686;
               float tramCycleIdx = floor(sTram / tramPitch + 0.5);
               float dTramAlong = abs(sTram - tramCycleIdx * tramPitch) - 1.40;
-              float dTwinLine = abs(abs(dTramSigned + 5.00) - 0.85) - 0.135;
-              tramDash = (1.0 - smoothstep(-aaAlongRing, aaAlongRing, dTramAlong))
-                       * (1.0 - smoothstep(-aaPerpRing, aaPerpRing, dTwinLine));
+              float dTwinLine = abs(abs(dInnerTramSigned) - 0.85) - 0.135;
+              tramDash = (1.0 - smoothstep(-aaAlongTram, aaAlongTram, dTramAlong))
+                       * (1.0 - smoothstep(-aaPerpTram, aaPerpTram, dTwinLine));
             }
-            // Crisp dashed white tram-vs-car lane divider at dTramSigned = -2.20m (true R = 5.80m corner)
-            float dLaneDivSigned = dTramSigned + 2.20;
+            // Crisp dashed white tram-vs-car lane divider at (67.80, 49.80) with concentric R = 8.80m corner around (59.0, 41.0)
             if (abs(dLaneDivSigned) < 0.35) {
+              vec2 laneTan = (ap.y <= 41.0)
+                ? vec2(0.0, 1.0)
+                : (ap.x > 59.0 && ap.y > 41.0)
+                  ? normalize(vec2(-(ap.y - 41.0), ap.x - 59.0))
+                  : vec2(1.0, 0.0);
+              vec2 laneNorm = vec2(-laneTan.y, laneTan.x);
+              float aaAlongLane = max(abs(dot(gradP.xy, laneTan)) + abs(dot(gradP.zw, laneTan)), 0.004);
+              float aaPerpLane = max(abs(dot(gradP.xy, laneNorm)) + abs(dot(gradP.zw, laneNorm)), 0.004);
+
               float sLane = 0.0;
-              if (ap.y <= 44.0) {
+              if (ap.y <= 41.0) {
                 sLane = ap.y;
-              } else if (ap.x > 62.0 && ap.y > 44.0) {
-                sLane = 44.0 + 5.8 * atan(ap.y - 44.0, ap.x - 62.0);
+              } else if (ap.x > 59.0 && ap.y > 41.0) {
+                sLane = 41.0 + 8.8 * atan(ap.y - 41.0, ap.x - 59.0);
               } else {
-                sLane = 53.11062 + (62.0 - ap.x);
+                sLane = 54.82301 + (59.0 - ap.x);
               }
-              // Exact quarter-loop multiple (115.11062m / 20 = 5.75553m) -> seamless across x=0 & z=0
-              float lanePitch = 5.75553;
+              // Exact quarter-loop multiple (113.82301m / 20 = 5.69115m) -> seamless across x=0 & z=0
+              float lanePitch = 5.69115;
               float laneCycleIdx = floor(sLane / lanePitch + 0.5);
               float dLaneAlong = abs(sLane - laneCycleIdx * lanePitch) - 1.45;
               float dLanePerp = abs(dLaneDivSigned) - 0.135;
-              carLaneDivider = (1.0 - smoothstep(-aaAlongRing, aaAlongRing, dLaneAlong))
-                             * (1.0 - smoothstep(-aaPerpRing, aaPerpRing, dLanePerp));
+              carLaneDivider = (1.0 - smoothstep(-aaAlongLane, aaAlongLane, dLaneAlong))
+                             * (1.0 - smoothstep(-aaPerpLane, aaPerpLane, dLanePerp));
             }
           }
         }
@@ -23138,10 +23205,12 @@ export function createCurvedPlanetEnvironment(
         float singleDash = 0.0;
         if (dTramSigned > 3.4 || dTramSigned < -7.5) {
           if (mp.y <= 52.5) {
-            // A. Central Warzone Enlarged Mirrored S-Curve Roads (synced 1:1 to evalMirroredCentralSCurveDist)
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-66.5, 15.0), vec2(-52.0, 15.0), 9.30, 0.85, gradP));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-52.0, 15.0), vec2(-41.0, 26.0), 0.85, 0.85, gradP));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-41.0, 26.0), vec2(-25.0, 26.0), 0.85, 1.65, gradP));
+            // A. Central Warzone Enlarged S-Curve Roads (synced 1:1 to evalMirroredCentralSCurveDist; s1-s3 North-only)
+            if (p.y <= 0.0) {
+              singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-66.5, 15.0), vec2(-52.0, 15.0), 9.30, 0.85, gradP));
+              singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-52.0, 15.0), vec2(-41.0, 26.0), 0.85, 0.85, gradP));
+              singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-41.0, 26.0), vec2(-25.0, 26.0), 0.85, 1.65, gradP));
+            }
             singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-25.0, 26.0), vec2(-14.2, 15.6), 1.65, 1.85, gradP));
             singleDash = max(singleDash, evalSegmentCenterDash(p, vec2(-14.2, -15.6), vec2(-14.2, 15.6), 1.85, 1.85, gradP));
             singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-14.2, 15.6), vec2(8.0, 15.6), 1.85, 0.85, gradP));
@@ -23473,15 +23542,16 @@ export function createCurvedPlanetEnvironment(
           // Wet-asphalt rain darkening prior to road-paint layering
           asphaltCol *= mix(1.0, 0.68, uRainFactor);
 
-          // North-South Mirrored Zebra Crosswalks across key intersections (vec2(stripe, inBox))
+          // Zebra Crosswalks across key intersections (synced 1:1 to ZEBRA_CROSSWALK_ZONES, total 13 city zones + 2 Casino throat zones)
           vec2 mp = vec2(p.x, abs(p.y));
           vec2 zc = vec2(0.0);
           zc = max(zc, evalZebraCrosswalk(mp, vec2(-18.0, 42.0), vec2(3.2, 2.2), true, gradP));
           zc = max(zc, evalZebraCrosswalk(mp, vec2(19.0, 42.0), vec2(3.2, 2.2), true, gradP));
           zc = max(zc, evalZebraCrosswalk(mp, vec2(42.0, 42.0), vec2(3.2, 2.2), true, gradP));
-          zc = max(zc, evalZebraCrosswalk(mp, vec2(-60.0, 15.0), vec2(2.2, 3.2), false, gradP));
+          zc = max(zc, evalZebraCrosswalk(p, vec2(-60.0, -15.0), vec2(2.2, 3.2), false, gradP));
           zc = max(zc, evalZebraCrosswalk(mp, vec2(60.0, 15.0), vec2(2.2, 3.2), false, gradP));
-          zc = max(zc, evalZebraCrosswalk(mp, vec2(-68.05, 8.6), vec2(5.2, 2.2), true, gradP));
+          zc = max(zc, evalZebraCrosswalk(p, vec2(-68.05, -8.6), vec2(5.2, 2.2), true, gradP));
+          zc = max(zc, evalZebraCrosswalk(p, vec2(9.8, -50.05), vec2(2.2, 5.2), false, gradP));
           zc = max(zc, evalZebraCrosswalk(p, vec2(68.05, 0.0), vec2(5.2, 2.2), true, gradP));
           zc = max(zc, evalZebraCrosswalk(mp, vec2(-60.0, 58.0), vec2(3.2, 2.2), true, gradP));
           zc = max(zc, evalZebraCrosswalk(mp, vec2(-30.0, 58.0), vec2(3.2, 2.2), true, gradP));
@@ -23492,18 +23562,25 @@ export function createCurvedPlanetEnvironment(
           zc = max(zc, evalZebraCrosswalk(p, vec2(-65.45, -63.25), vec2(1.35, 2.15), false, gradP));
           zc = max(zc, evalZebraCrosswalk(p, vec2(-65.45, -77.95), vec2(1.35, 2.15), false, gradP));
 
-          // Solid Off-White Stop Bars upstream of Signalized Plaza West & East Harbor Crosswalks (anisotropic AA)
+          // Solid Off-White Stop Bars upstream of Signalized Plaza North, North Residence & East Harbor Crosswalks (anisotropic AA)
           float tramStopBar = 0.0;
-          // 1) Central Plaza West signalized approaches (tram northbound -Z + two-way outer car lane)
-          if (p.x >= -73.50 && p.x <= -62.55 && abs(p.y) <= 12.25) {
+          // 1) Central Plaza West North signalized approaches (tram northbound -Z + two-way outer car lane)
+          if (p.x >= -73.50 && p.x <= -62.55 && p.y >= -12.00 && p.y <= -4.80) {
             float fullSpanM = 1.0 - smoothstep(-aaX, aaX, abs(p.x - -68.03) - 5.25); // [-73.28 .. -62.78]
             float carOnlyM = 1.0 - smoothstep(-aaX, aaX, abs(p.x - -70.68) - 2.60);  // [-73.28 .. -68.08]
             float yNbNorth = 1.0 - smoothstep(-aaY, aaY, abs(p.y - -5.40) - 0.21);
-            float yNbSouth = 1.0 - smoothstep(-aaY, aaY, abs(p.y - 11.80) - 0.21);
             float ySbNorth = 1.0 - smoothstep(-aaY, aaY, abs(p.y - -11.40) - 0.21);
-            tramStopBar = max(fullSpanM * max(yNbNorth, yNbSouth), carOnlyM * ySbNorth);
+            tramStopBar = max(fullSpanM * yNbNorth, carOnlyM * ySbNorth);
           }
-          // 2) East Harbor Crosswalk signalized approaches (tram southbound +Z + two-way outer car lane)
+          // 2) North Residence Crosswalk signalized approaches (tram eastbound +X + two-way outer car lane)
+          if (p.y >= -55.50 && p.y <= -44.55 && p.x >= 6.00 && p.x <= 13.60) {
+            float fullSpanNorthM = 1.0 - smoothstep(-aaY, aaY, abs(p.y - -50.03) - 5.25); // [-55.28 .. -44.78]
+            float carOnlyNorthM = 1.0 - smoothstep(-aaY, aaY, abs(p.y - -52.68) - 2.60);  // [-55.28 .. -50.08]
+            float xEbNorth = 1.0 - smoothstep(-aaX, aaX, abs(p.x - 6.60) - 0.21);
+            float xWbNorth = 1.0 - smoothstep(-aaX, aaX, abs(p.x - 13.00) - 0.21);
+            tramStopBar = max(tramStopBar, max(fullSpanNorthM * xEbNorth, carOnlyNorthM * xWbNorth));
+          }
+          // 3) East Harbor Crosswalk signalized approaches (tram southbound +Z + two-way outer car lane)
           if (p.x >= 62.55 && p.x <= 73.50 && abs(p.y) <= 3.75) {
             float fullSpanEastM = 1.0 - smoothstep(-aaX, aaX, abs(p.x - 68.03) - 5.25); // [62.78 .. 73.28]
             float carOnlyEastM = 1.0 - smoothstep(-aaX, aaX, abs(p.x - 70.68) - 2.60);  // [68.08 .. 73.28]
@@ -28610,7 +28687,7 @@ export function createCurvedPlanetEnvironment(
     'CENTRAL PLAZA STOP',
     'TRAM T1 -> NORTH / SOUTH RESIDENCE',
     -61.03,
-    0.0,
+    4.6,
     -Math.PI / 2,
   );
   buildModernUrbanTramStopShelter(
@@ -31451,40 +31528,88 @@ export function createCurvedPlanetEnvironment(
       sz: -1 | 1,
       legXEnd: number,
       openAtLegXEnd: boolean,
+      legZStart = 19.23,
+      openAtLegZStart = false,
     ) => {
+      const arcSteps = 12;
+      const outerSlabArc: [number, number][] = [];
+      const innerSlabArc: [number, number][] = [];
+      const outerCurbArc: [number, number][] = [];
+      const innerCurbArc: [number, number][] = [];
+      for (let i = 0; i <= arcSteps; i++) {
+        const ang = (i / arcSteps) * (Math.PI * 0.5);
+        const ca = Math.cos(ang);
+        const sa = Math.sin(ang);
+        outerSlabArc.push([sx * (56.0 + ca * 6.20), sz * (38.0 + sa * 6.20)]);
+        outerCurbArc.push([sx * (56.0 + ca * 6.10), sz * (38.0 + sa * 6.10)]);
+      }
+      for (let i = arcSteps; i >= 0; i--) {
+        const ang = (i / arcSteps) * (Math.PI * 0.5);
+        const ca = Math.cos(ang);
+        const sa = Math.sin(ang);
+        innerSlabArc.push([sx * (56.0 + ca * 1.80), sz * (38.0 + sa * 1.80)]);
+        innerCurbArc.push([sx * (56.0 + ca * 1.90), sz * (38.0 + sa * 1.90)]);
+      }
+
       addInnerSlabPoly([
-        [sx * 62.20, sz * 19.23],
-        [sx * 62.20, sz * 44.00],
-        [sx * 62.00, sz * 44.20],
+        [sx * 62.20, sz * legZStart],
+        ...outerSlabArc,
         [legXEnd, sz * 44.20],
         [legXEnd, sz * 39.80],
-        [sx * 57.80, sz * 39.80],
-        [sx * 57.80, sz * 19.23],
+        ...innerSlabArc,
+        [sx * 57.80, sz * legZStart],
       ]);
       const legCurbX = openAtLegXEnd ? legXEnd : legXEnd - sx * 0.10;
-      addInnerCurbRun(
-        [
-          [legCurbX, sz * 39.90],
-          [sx * 57.90, sz * 39.90],
-          [sx * 57.90, sz * 19.33],
-          [sx * 62.10, sz * 19.33],
-          [sx * 62.10, sz * 43.96],
-          [sx * 61.96, sz * 44.10],
-          [legCurbX, sz * 44.10],
-        ],
-        !openAtLegXEnd,
-      );
+      const legCurbZ = openAtLegZStart ? sz * legZStart : sz * (legZStart + 0.10);
+      if (openAtLegZStart) {
+        addInnerCurbRun(
+          [
+            [legCurbX, sz * 39.90],
+            ...innerCurbArc,
+            [sx * 57.90, legCurbZ],
+          ],
+          false,
+        );
+        addInnerCurbRun(
+          [
+            [sx * 62.10, legCurbZ],
+            ...outerCurbArc,
+            [legCurbX, sz * 44.10],
+          ],
+          false,
+        );
+        if (!openAtLegXEnd) {
+          addInnerCurbRun(
+            [
+              [legCurbX, sz * 39.90],
+              [legCurbX, sz * 44.10],
+            ],
+            false,
+          );
+        }
+      } else {
+        addInnerCurbRun(
+          [
+            [legCurbX, sz * 39.90],
+            ...innerCurbArc,
+            [sx * 57.90, legCurbZ],
+            [sx * 62.10, legCurbZ],
+            ...outerCurbArc,
+            [legCurbX, sz * 44.10],
+          ],
+          !openAtLegXEnd,
+        );
+      }
     };
 
-    // 4 L-Corner wings (NW, NE, SE closed; SW open at South Halte West ramp x = -45.70)
+    // 4 L-Corner wings (NW, NE, SE closed at z = ±19.23; SW continuous from Central Halte South ramp z = +13.80 to South Halte West ramp x = -45.70)
     addInnerLCornerSidewalk(-1, -1, -22.23, false);
     addInnerLCornerSidewalk(1, -1, 46.23, false);
     addInnerLCornerSidewalk(1, 1, 46.23, false);
-    addInnerLCornerSidewalk(-1, 1, -45.70, true);
+    addInnerLCornerSidewalk(-1, 1, -45.70, true, 13.80, true);
 
-    // West Central Halte aprons (open against Halte ramps at z = ±9.20) & East-Central straight block
-    addInnerOpenSeamRect(-62.20, -57.80, 9.20, 10.77, 'zMin');
-    addInnerOpenSeamRect(-62.20, -57.80, -10.77, -9.20, 'zMax');
+    // West Central Halte North apron (open against Halte North ramp at z = -4.60) & East-Central straight block
+    addInnerOpenSeamRect(-62.20, -57.80, -10.77, -4.60, 'zMax');
     addInnerCurbedRect(57.80, 62.20, -10.77, 10.77);
 
     // North intermediate collector blocks (joining North Residence Halte at x = -5.70 / +12.70)
@@ -31492,7 +31617,7 @@ export function createCurvedPlanetEnvironment(
     addInnerOpenSeamRect(12.70, 14.77, -44.20, -39.80, 'xMin');
     addInnerCurbedRect(23.23, 37.77, -44.20, -39.80);
 
-    // South intermediate collector blocks (joining South Residence Halte East ramp at x = -27.30)
+    // South intermediate collector blocks (South Residence Halte East ramp x = -27.30 -> x = -18 street -> x = +19 street -> x = +42 street)
     addInnerOpenSeamRect(-27.30, -22.23, 39.80, 44.20, 'xMin');
     addInnerCurbedRect(-13.77, 14.77, 39.80, 44.20);
     addInnerCurbedRect(23.23, 37.77, 39.80, 44.20);
@@ -31713,14 +31838,14 @@ export function createCurvedPlanetEnvironment(
     const pedStopMat =
       zone === 'plaza_north'
         ? sigPedPlazaNorthStopMat
-        : zone === 'plaza_south'
-        ? sigPedPlazaSouthStopMat
+        : zone === 'north_residence'
+        ? sigPedPlazaNorthStopMat
         : sigPedEastStopMat;
     const pedWalkMat =
       zone === 'plaza_north'
         ? sigPedPlazaNorthWalkMat
-        : zone === 'plaza_south'
-        ? sigPedPlazaSouthWalkMat
+        : zone === 'north_residence'
+        ? sigPedPlazaNorthWalkMat
         : sigPedEastWalkMat;
 
     // Twin flanking housings at y = 2.18m (matching front elevation flanking boxes in blueprint)
@@ -40062,7 +40187,7 @@ function createTramSideElevationTexture(isFrontCar: boolean): THREE.CanvasTextur
     ctx.fillRect(rx + 10, ry + 10, 6, 6);
   }
 
-  // 5. Helper to draw a Flush Panoramic Side Window with Tinted Glass, Interior Seats & Optional Amber LED Sign
+  // 5. Helper to punch a Flush Panoramic Side Window cutout (filled by translucent clear-white glass shell)
   const drawPanoramicWindow = (xLeft: number, xRight: number, hasLedSign: boolean) => {
     const px = toPx(xLeft);
     const pw = toPx(xRight) - px;
@@ -40075,35 +40200,16 @@ function createTramSideElevationTexture(isFrontCar: boolean): THREE.CanvasTextur
     ctx.roundRect(px, py, pw, ph, 14);
     ctx.fill();
 
-    // Tinted blue-charcoal flush glass gradient
-    const glassGrad = ctx.createLinearGradient(px, py, px, py + ph);
-    glassGrad.addColorStop(0.0, '#233242');
-    glassGrad.addColorStop(0.45, '#32475c');
-    glassGrad.addColorStop(0.85, '#273849');
-    glassGrad.addColorStop(1.0, '#1b2633');
-    ctx.fillStyle = glassGrad;
+    // True alpha cutout so the 3D white-lit interior cabin & opposite windows are visible through clear-white glass
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = '#000000';
     ctx.beginPath();
     ctx.roundRect(px + 6, py + 6, pw - 12, ph - 12, 10);
     ctx.fill();
+    ctx.restore();
 
-    // Subtle interior passenger seat backrest & stanchion pole silhouettes visible inside
-    ctx.fillStyle = 'rgba(20, 28, 38, 0.58)';
-    ctx.fillRect(px + 22, py + ph - 62, 48, 56);
-    ctx.fillRect(px + pw - 70, py + ph - 62, 48, 56);
-    ctx.fillStyle = 'rgba(203, 213, 225, 0.28)';
-    ctx.fillRect(px + pw * 0.5 - 3, py + 12, 6, ph - 24);
-
-    // Diagonal sky reflection highlight across glass
-    ctx.fillStyle = 'rgba(186, 230, 253, 0.10)';
-    ctx.beginPath();
-    ctx.moveTo(px + 18, py + 10);
-    ctx.lineTo(px + pw * 0.48, py + 10);
-    ctx.lineTo(px + pw * 0.26, py + ph - 10);
-    ctx.lineTo(px + 10, py + ph - 10);
-    ctx.closePath();
-    ctx.fill();
-
-    // Glowing Amber LED Destination Sign in the top header of the window ("LINE 1 · CITY CENTER")
+    // Glowing Amber LED Destination Sign header stays opaque inside the top of the middle window
     if (hasLedSign) {
       const sx = px + 18;
       const sy = py + 12;
@@ -40119,18 +40225,18 @@ function createTramSideElevationTexture(isFrontCar: boolean): THREE.CanvasTextur
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.shadowColor = '#f59e0b';
-      ctx.shadowBlur = 8;
-      ctx.fillStyle = '#fbbf24';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = '#fde047';
       ctx.font = 'bold 18px monospace';
       ctx.fillText('LINE 1 · CITY CENTER', sx + sw * 0.5, sy + 16);
-      ctx.fillStyle = '#f59e0b';
+      ctx.fillStyle = '#fbbf24';
       ctx.font = 'bold 13px monospace';
       ctx.fillText('CENTRAL PLAZA', sx + sw * 0.5, sy + 34);
       ctx.restore();
     }
   };
 
-  // 6. Helper to draw a Full-Height Double-Leaf Sliding Passenger Door ("PASSENGER DOORS")
+  // 6. Helper to draw a Full-Height Double-Leaf Sliding Passenger Door with alpha-cutout clear-white glass panes
   const drawDoublePassengerDoor = (xCenter: number) => {
     const doorHalfW = 0.68;
     const px = toPx(xCenter - doorHalfW);
@@ -40159,23 +40265,18 @@ function createTramSideElevationTexture(isFrontCar: boolean): THREE.CanvasTextur
       ctx.roundRect(lx, ly, leafW, lh, 6);
       ctx.fill();
 
-      // Tall rounded-corner glass window inside each door leaf
+      // Alpha-cutout tall rounded-corner glass opening inside each door leaf
       const gx = lx + 12;
       const gw = leafW - 24;
       const gy = ly + 14;
       const gh = lh - 68;
-      const dGlassGrad = ctx.createLinearGradient(gx, gy, gx, gy + gh);
-      dGlassGrad.addColorStop(0.0, '#243444');
-      dGlassGrad.addColorStop(0.5, '#354b60');
-      dGlassGrad.addColorStop(1.0, '#1e2b38');
-      ctx.fillStyle = dGlassGrad;
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = '#000000';
       ctx.beginPath();
       ctx.roundRect(gx, gy, gw, gh, 10);
       ctx.fill();
-
-      // Interior yellow grab handrail visible inside door glass
-      ctx.fillStyle = 'rgba(250, 204, 21, 0.55)';
-      ctx.fillRect(gx + gw * 0.5 - 2, gy + gh * 0.35, 4, gh * 0.55);
+      ctx.restore();
     }
 
     // Central rubber door-leaf division bar
@@ -40193,7 +40294,7 @@ function createTramSideElevationTexture(isFrontCar: boolean): THREE.CanvasTextur
     ctx.beginPath();
     ctx.roundRect(btnX, btnY, 14, 18, 4);
     ctx.fill();
-    ctx.fillStyle = '#22c55e';
+    ctx.fillStyle = '#4ade80';
     ctx.fillRect(btnX + 3, btnY + 4, 8, 10);
   };
 
@@ -40204,10 +40305,22 @@ function createTramSideElevationTexture(isFrontCar: boolean): THREE.CanvasTextur
     drawPanoramicWindow(-2.06, -0.96, true); // Middle window with Amber LED Destination Sign!
     drawPanoramicWindow(-3.36, -2.20, false);
 
-    // Driver Cab Side Panoramic Cheek Window (`x = +1.76m..+3.18m`) curving down with the nose!
-    ctx.fillStyle = '#283a4c';
+    // Driver Cab Side Panoramic Cheek Window (`x = +1.76m..+3.18m`) alpha cutout with dark frame border
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.moveTo(toPx(1.80), toPy(2.82));
+    ctx.lineTo(toPx(2.55), toPy(2.76));
+    ctx.quadraticCurveTo(toPx(3.07), toPy(2.38), toPx(3.26), toPy(1.59));
+    ctx.lineTo(toPx(2.36), toPy(1.40));
+    ctx.lineTo(toPx(1.80), toPy(1.42));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
     ctx.strokeStyle = '#0d1015';
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 6;
     ctx.beginPath();
     ctx.moveTo(toPx(1.76), toPy(2.86));
     ctx.lineTo(toPx(2.58), toPy(2.80));
@@ -40215,14 +40328,17 @@ function createTramSideElevationTexture(isFrontCar: boolean): THREE.CanvasTextur
     ctx.lineTo(toPx(2.35), toPy(1.36));
     ctx.lineTo(toPx(1.76), toPy(1.38));
     ctx.closePath();
-    ctx.fill();
     ctx.stroke();
 
-    // Amber side marker reflector near lower front bumper
-    ctx.fillStyle = '#f59e0b';
+    // Glowing amber side marker lamp near lower front bumper
+    ctx.save();
+    ctx.shadowColor = '#f59e0b';
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = '#fbbf24';
     ctx.beginPath();
-    ctx.roundRect(toPx(2.96), toPy(0.72), 24, 9, 4);
+    ctx.roundRect(toPx(2.96), toPy(0.72), 26, 10, 4);
     ctx.fill();
+    ctx.restore();
   } else {
     // Car 2 (Rear Car): 3 large panoramic windows (+2.20..+3.36, +0.96..+2.06, +0.02..+0.82) + Double passenger door aft (-0.98m)
     drawPanoramicWindow(2.20, 3.36, false);
@@ -40230,10 +40346,22 @@ function createTramSideElevationTexture(isFrontCar: boolean): THREE.CanvasTextur
     drawPanoramicWindow(0.02, 0.82, false);
     drawDoublePassengerDoor(-0.98);
 
-    // Rear Cab Side Quarter Window (`x = -3.28m..-1.76m`)
-    ctx.fillStyle = '#283a4c';
+    // Rear Cab Side Quarter Window (`x = -3.28m..-1.76m`) alpha cutout with dark frame border
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.moveTo(toPx(-1.80), toPy(2.82));
+    ctx.lineTo(toPx(-2.55), toPy(2.76));
+    ctx.quadraticCurveTo(toPx(-3.07), toPy(2.40), toPx(-3.24), toPy(1.61));
+    ctx.lineTo(toPx(-2.36), toPy(1.42));
+    ctx.lineTo(toPx(-1.80), toPy(1.42));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
     ctx.strokeStyle = '#0d1015';
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 6;
     ctx.beginPath();
     ctx.moveTo(toPx(-1.76), toPy(2.86));
     ctx.lineTo(toPx(-2.58), toPy(2.80));
@@ -40241,8 +40369,190 @@ function createTramSideElevationTexture(isFrontCar: boolean): THREE.CanvasTextur
     ctx.lineTo(toPx(-2.35), toPy(1.38));
     ctx.lineTo(toPx(-1.76), toPy(1.38));
     ctx.closePath();
-    ctx.fill();
     ctx.stroke();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
+ * Generates a translucent Clear-White ('Putih Bening') Glazing & Emissive Overlay CanvasTexture
+ * matching the Halte shelter windbreak glass, mounted over the alpha-cutout tram window openings.
+ */
+function createTramSideWindowGlowTexture(isFrontCar: boolean): THREE.CanvasTexture {
+  const W = 2048;
+  const H = 1024;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, W, H);
+
+  const toPx = (x: number) => ((x + 3.60) / 7.20) * W;
+  const toPy = (y: number) => (1.0 - (y - 0.18) / 3.36) * H;
+
+  const drawWindowGlow = (xLeft: number, xRight: number, hasLedSign: boolean) => {
+    const px = toPx(xLeft) + 5;
+    const pw = toPx(xRight) - toPx(xLeft) - 10;
+    const py = toPy(2.86) + 5;
+    const ph = toPy(1.38) - toPy(2.86) - 10;
+
+    // Translucent clear-white ('putih bening') glass pane matching Halte windbreak glass
+    const g = ctx.createLinearGradient(px, py, px, py + ph);
+    g.addColorStop(0.0, 'rgba(232, 244, 250, 0.56)');
+    g.addColorStop(0.45, 'rgba(244, 250, 255, 0.44)');
+    g.addColorStop(1.0, 'rgba(205, 224, 234, 0.50)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.roundRect(px, py, pw, ph, 10);
+    ctx.fill();
+
+    // Subtle crisp white diagonal glass reflection sheen
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
+    ctx.beginPath();
+    ctx.moveTo(px + 16, py + 6);
+    ctx.lineTo(px + pw * 0.46, py + 6);
+    ctx.lineTo(px + pw * 0.24, py + ph - 6);
+    ctx.lineTo(px + 8, py + ph - 6);
+    ctx.closePath();
+    ctx.fill();
+
+    // Crisp pure-white overhead cabin LED ceiling light strip
+    const barY = hasLedSign ? py + 58 : py + 12;
+    ctx.save();
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+    ctx.beginPath();
+    ctx.roundRect(px + 18, barY, pw - 36, 8, 4);
+    ctx.fill();
+    ctx.restore();
+
+    // Clean inner glass rim highlight
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.36)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.roundRect(px + 2, py + 2, pw - 4, ph - 4, 9);
+    ctx.stroke();
+
+    if (hasLedSign) {
+      const sx = px + 13;
+      const sy = py + 7;
+      const sw = pw - 26;
+      const sh = 46;
+      ctx.fillStyle = 'rgba(9, 11, 16, 0.94)';
+      ctx.fillRect(sx, sy, sw, sh);
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = '#f59e0b';
+      ctx.shadowBlur = 14;
+      ctx.fillStyle = '#fef08a';
+      ctx.font = 'bold 18px monospace';
+      ctx.fillText('LINE 1 · CITY CENTER', sx + sw * 0.5, sy + 16);
+      ctx.fillStyle = '#fbbf24';
+      ctx.font = 'bold 13px monospace';
+      ctx.fillText('CENTRAL PLAZA', sx + sw * 0.5, sy + 34);
+      ctx.restore();
+    }
+  };
+
+  const drawDoorGlow = (xCenter: number) => {
+    const doorHalfW = 0.68;
+    const px = toPx(xCenter - doorHalfW);
+    const pw = toPx(xCenter + doorHalfW) - px;
+    const py = toPy(2.94);
+    const ph = toPy(0.26) - py;
+    const leafW = (pw - 18) * 0.5;
+
+    for (let leaf = 0; leaf < 2; leaf++) {
+      const lx = px + 6 + leaf * (leafW + 6);
+      const ly = py + 8;
+      const lh = ph - 26;
+      const gx = lx + 11;
+      const gw = leafW - 22;
+      const gy = ly + 13;
+      const gh = lh - 66;
+
+      const dg = ctx.createLinearGradient(gx, gy, gx, gy + gh);
+      dg.addColorStop(0.0, 'rgba(232, 244, 250, 0.56)');
+      dg.addColorStop(0.5, 'rgba(244, 250, 255, 0.44)');
+      dg.addColorStop(1.0, 'rgba(205, 224, 234, 0.50)');
+      ctx.fillStyle = dg;
+      ctx.beginPath();
+      ctx.roundRect(gx, gy, gw, gh, 10);
+      ctx.fill();
+
+      // Diagonal clear-glass reflection streak on each door leaf
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
+      ctx.beginPath();
+      ctx.moveTo(gx + 8, gy + 8);
+      ctx.lineTo(gx + gw * 0.62, gy + 8);
+      ctx.lineTo(gx + gw * 0.28, gy + gh - 8);
+      ctx.lineTo(gx + 4, gy + gh - 8);
+      ctx.closePath();
+      ctx.fill();
+
+      // Pure-white ceiling strip glow at top of door window
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.fillRect(gx + 8, gy + 10, gw - 16, 7);
+    }
+  };
+
+  if (isFrontCar) {
+    drawDoorGlow(0.98);
+    drawWindowGlow(-0.82, -0.02, false);
+    drawWindowGlow(-2.06, -0.96, true);
+    drawWindowGlow(-3.36, -2.20, false);
+
+    // Driver Cab Side Cheek Window — clear-white translucent glazing
+    const cheekGrad = ctx.createLinearGradient(0, toPy(2.83), 0, toPy(1.39));
+    cheekGrad.addColorStop(0.0, 'rgba(232, 244, 250, 0.56)');
+    cheekGrad.addColorStop(0.5, 'rgba(245, 251, 255, 0.44)');
+    cheekGrad.addColorStop(1.0, 'rgba(205, 224, 234, 0.50)');
+    ctx.fillStyle = cheekGrad;
+    ctx.beginPath();
+    ctx.moveTo(toPx(1.78), toPy(2.83));
+    ctx.lineTo(toPx(2.56), toPy(2.77));
+    ctx.quadraticCurveTo(toPx(3.09), toPy(2.38), toPx(3.28), toPy(1.58));
+    ctx.lineTo(toPx(2.35), toPy(1.39));
+    ctx.lineTo(toPx(1.78), toPy(1.41));
+    ctx.closePath();
+    ctx.fill();
+
+    // Front bumper amber side marker glow
+    ctx.save();
+    ctx.shadowColor = '#f59e0b';
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = '#fde047';
+    ctx.beginPath();
+    ctx.roundRect(toPx(2.96), toPy(0.72), 26, 10, 4);
+    ctx.fill();
+    ctx.restore();
+  } else {
+    drawWindowGlow(2.20, 3.36, false);
+    drawWindowGlow(0.96, 2.06, true);
+    drawWindowGlow(0.02, 0.82, false);
+    drawDoorGlow(-0.98);
+
+    // Rear Cab Side Quarter Window — clear-white translucent glazing
+    const qGrad = ctx.createLinearGradient(0, toPy(2.83), 0, toPy(1.41));
+    qGrad.addColorStop(0.0, 'rgba(232, 244, 250, 0.56)');
+    qGrad.addColorStop(0.5, 'rgba(245, 251, 255, 0.44)');
+    qGrad.addColorStop(1.0, 'rgba(205, 224, 234, 0.50)');
+    ctx.fillStyle = qGrad;
+    ctx.beginPath();
+    ctx.moveTo(toPx(-1.78), toPy(2.83));
+    ctx.lineTo(toPx(-2.56), toPy(2.77));
+    ctx.quadraticCurveTo(toPx(-3.09), toPy(2.40), toPx(-3.26), toPy(1.60));
+    ctx.lineTo(toPx(-2.35), toPy(1.41));
+    ctx.lineTo(toPx(-1.78), toPy(1.41));
+    ctx.closePath();
+    ctx.fill();
   }
 
   const tex = new THREE.CanvasTexture(canvas);
@@ -40281,13 +40591,10 @@ function createTramFrontElevationTexture(): THREE.CanvasTexture {
   ctx.closePath();
   ctx.fill();
 
-  // 3. Panoramic Flush Glazing Glass Surface + Visible Driver Cabin Interior (Seat & Console)
-  const glassGrad = ctx.createLinearGradient(0, toPy(3.10), 0, toPy(1.25));
-  glassGrad.addColorStop(0.0, '#1e2c3a');
-  glassGrad.addColorStop(0.45, '#344c63');
-  glassGrad.addColorStop(0.85, '#263849');
-  glassGrad.addColorStop(1.0, '#16202b');
-  ctx.fillStyle = glassGrad;
+  // 3. Panoramic Flush Windshield alpha cutout (glazed by translucent clear-white glass overlay)
+  ctx.save();
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.fillStyle = '#000000';
   ctx.beginPath();
   ctx.moveTo(toPx(-0.96), toPy(3.08));
   ctx.quadraticCurveTo(toPx(0), toPy(3.16), toPx(0.96), toPy(3.08));
@@ -40296,16 +40603,7 @@ function createTramFrontElevationTexture(): THREE.CanvasTexture {
   ctx.quadraticCurveTo(toPx(-0.98), toPy(2.12), toPx(-0.96), toPy(3.08));
   ctx.closePath();
   ctx.fill();
-
-  // Subtle Driver Cabin Interior Silhouette (Driver Seat Headrest + Console) matching `1. FRONT ELEVATION`
-  ctx.fillStyle = 'rgba(203, 213, 225, 0.16)';
-  ctx.beginPath();
-  ctx.roundRect(toPx(-0.22), toPy(2.26), toPx(0.22) - toPx(-0.22), 110, 18);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(15, 23, 42, 0.65)';
-  ctx.beginPath();
-  ctx.roundRect(toPx(-0.56), toPy(1.66), toPx(0.56) - toPx(-0.56), 95, 16);
-  ctx.fill();
+  ctx.restore();
 
   // 4. Glowing Amber "LED DESTINATION SIGN" at top of windshield ("LINE 1 - CITY CENTER / CENTRAL PLAZA")
   const signX = toPx(-0.78);
@@ -40324,11 +40622,11 @@ function createTramFrontElevationTexture(): THREE.CanvasTexture {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.shadowColor = '#f59e0b';
-  ctx.shadowBlur = 12;
-  ctx.fillStyle = '#fbbf24';
+  ctx.shadowBlur = 14;
+  ctx.fillStyle = '#fde047';
   ctx.font = 'bold 31px monospace';
   ctx.fillText('LINE 1 - CITY CENTER', S * 0.5, signY + 30);
-  ctx.fillStyle = '#f59e0b';
+  ctx.fillStyle = '#fbbf24';
   ctx.font = 'bold 23px monospace';
   ctx.fillText('CENTRAL PLAZA', S * 0.5, signY + 64);
   ctx.restore();
@@ -40347,7 +40645,7 @@ function createTramFrontElevationTexture(): THREE.CanvasTexture {
   ctx.lineTo(toPx(0.58), toPy(2.26));
   ctx.stroke();
 
-  // 6. Diagonal Cheek Panel Seams & Swept Cat-Eye LED Headlights (with 2 glowing projector lenses each!)
+  // 6. Diagonal Cheek Panel Seams & Blazing Swept Cat-Eye LED Headlights (with DRL Light-Tube & Twin Projector Lenses!)
   for (const side of [-1, 1] as const) {
     // Diagonal seam line from lower glass corner to outer bumper
     ctx.strokeStyle = '#334155';
@@ -40357,8 +40655,20 @@ function createTramFrontElevationTexture(): THREE.CanvasTexture {
     ctx.lineTo(toPx(side * 1.24), toPy(0.68));
     ctx.stroke();
 
-    // Swept Cat-Eye Headlight bezel
-    ctx.fillStyle = '#1e2430';
+    // Soft outer headlight radial bloom on the front nose paint around the cat-eye housing
+    const hlCenterX = toPx(side * 0.82);
+    const hlCenterY = toPy(1.15);
+    const outerBloom = ctx.createRadialGradient(hlCenterX, hlCenterY, 12, hlCenterX, hlCenterY, 96);
+    outerBloom.addColorStop(0.0, 'rgba(224, 242, 254, 0.85)');
+    outerBloom.addColorStop(0.45, 'rgba(125, 211, 252, 0.42)');
+    outerBloom.addColorStop(1.0, 'rgba(56, 189, 248, 0.0)');
+    ctx.fillStyle = outerBloom;
+    ctx.beginPath();
+    ctx.arc(hlCenterX, hlCenterY, 96, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Swept Cat-Eye Headlight bezel with glowing cyan-white LED DRL perimeter tube
+    ctx.fillStyle = '#0f172a';
     ctx.beginPath();
     ctx.moveTo(toPx(side * 0.62), toPy(1.20));
     ctx.lineTo(toPx(side * 0.96), toPy(1.38));
@@ -40366,21 +40676,34 @@ function createTramFrontElevationTexture(): THREE.CanvasTexture {
     ctx.lineTo(toPx(side * 0.70), toPy(0.96));
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = '#0f172a';
-    ctx.lineWidth = 4;
+    ctx.save();
+    ctx.shadowColor = '#38bdf8';
+    ctx.shadowBlur = 18;
+    ctx.strokeStyle = '#e0f2fe';
+    ctx.lineWidth = 6;
     ctx.stroke();
+    ctx.restore();
 
-    // Twin glowing white-cyan projector bulbs inside each headlight
+    // Twin high-intensity glowing white-cyan projector bulbs inside each headlight
     for (const bIdx of [0, 1]) {
       const bz = side * (0.74 + bIdx * 0.16);
       const by = 1.08 + bIdx * 0.12;
-      ctx.fillStyle = '#e0f2fe';
+      const bxPx = toPx(bz);
+      const byPy = toPy(by);
+
+      const bulbGlow = ctx.createRadialGradient(bxPx, byPy, 2, bxPx, byPy, 34);
+      bulbGlow.addColorStop(0.0, '#ffffff');
+      bulbGlow.addColorStop(0.4, '#e0f2fe');
+      bulbGlow.addColorStop(0.75, 'rgba(56, 189, 248, 0.65)');
+      bulbGlow.addColorStop(1.0, 'rgba(56, 189, 248, 0.0)');
+      ctx.fillStyle = bulbGlow;
       ctx.beginPath();
-      ctx.arc(toPx(bz), toPy(by), 16, 0, Math.PI * 2);
+      ctx.arc(bxPx, byPy, 34, 0, Math.PI * 2);
       ctx.fill();
+
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.arc(toPx(bz), toPy(by), 9, 0, Math.PI * 2);
+      ctx.arc(bxPx, byPy, 13, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -40401,6 +40724,107 @@ function createTramFrontElevationTexture(): THREE.CanvasTexture {
   // Lower dark grey chin spoiler
   ctx.fillStyle = '#1e222a';
   ctx.fillRect(0, toPy(0.34), S, S - toPy(0.34));
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
+ * Generates a self-illuminated Emissive Glow Overlay CanvasTexture for Car 1's Front Elevation
+ * (warm glowing front windshield, glowing Amber LED destination sign, and high-output white-cyan
+ * swept cat-eye LED headlights).
+ */
+function createTramFrontGlowTexture(): THREE.CanvasTexture {
+  const S = 1024;
+  const canvas = document.createElement('canvas');
+  canvas.width = S;
+  canvas.height = S;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, S, S);
+
+  const toPx = (z: number) => ((z + 1.43) / 2.86) * S;
+  const toPy = (y: number) => (1.0 - (y - 0.18) / 3.36) * S;
+
+  // 1. Translucent Clear-White ('Putih Bening') Panoramic Front Windshield Glazing
+  const glassGrad = ctx.createLinearGradient(0, toPy(3.04), 0, toPy(1.25));
+  glassGrad.addColorStop(0.0, 'rgba(232, 244, 250, 0.56)');
+  glassGrad.addColorStop(0.45, 'rgba(246, 252, 255, 0.44)');
+  glassGrad.addColorStop(1.0, 'rgba(205, 224, 234, 0.50)');
+  ctx.fillStyle = glassGrad;
+  ctx.beginPath();
+  ctx.moveTo(toPx(-0.96), toPy(3.08));
+  ctx.quadraticCurveTo(toPx(0), toPy(3.16), toPx(0.96), toPy(3.08));
+  ctx.quadraticCurveTo(toPx(0.98), toPy(2.12), toPx(0.64), toPy(1.28));
+  ctx.quadraticCurveTo(toPx(0), toPy(1.12), toPx(-0.64), toPy(1.28));
+  ctx.quadraticCurveTo(toPx(-0.98), toPy(2.12), toPx(-0.96), toPy(3.08));
+  ctx.closePath();
+  ctx.fill();
+
+  // Soft diagonal white reflection band across front windshield
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.26)';
+  ctx.beginPath();
+  ctx.moveTo(toPx(-0.76), toPy(2.82));
+  ctx.lineTo(toPx(-0.18), toPy(2.82));
+  ctx.lineTo(toPx(-0.50), toPy(1.36));
+  ctx.lineTo(toPx(-0.78), toPy(1.52));
+  ctx.closePath();
+  ctx.fill();
+
+  // 2. Glowing Amber LED Destination Sign
+  const signX = toPx(-0.78);
+  const signW = toPx(0.78) - signX;
+  const signY = toPy(3.02);
+  const signH = 88;
+  ctx.fillStyle = 'rgba(11, 14, 20, 0.92)';
+  ctx.beginPath();
+  ctx.roundRect(signX, signY, signW, signH, 12);
+  ctx.fill();
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#f59e0b';
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = '#fef08a';
+  ctx.font = 'bold 31px monospace';
+  ctx.fillText('LINE 1 - CITY CENTER', S * 0.5, signY + 30);
+  ctx.fillStyle = '#fbbf24';
+  ctx.font = 'bold 23px monospace';
+  ctx.fillText('CENTRAL PLAZA', S * 0.5, signY + 64);
+  ctx.restore();
+
+  // 3. Blazing Swept Cat-Eye LED Headlights & Radial Light Halos
+  for (const side of [-1, 1] as const) {
+    const hlCenterX = toPx(side * 0.82);
+    const hlCenterY = toPy(1.15);
+
+    const halo = ctx.createRadialGradient(hlCenterX, hlCenterY, 8, hlCenterX, hlCenterY, 128);
+    halo.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+    halo.addColorStop(0.32, 'rgba(224, 242, 254, 0.92)');
+    halo.addColorStop(0.65, 'rgba(56, 189, 248, 0.48)');
+    halo.addColorStop(1.0, 'rgba(56, 189, 248, 0.0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(hlCenterX, hlCenterY, 128, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Swept Cat-Eye DRL outline & glowing core
+    ctx.save();
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(toPx(side * 0.62), toPy(1.20));
+    ctx.lineTo(toPx(side * 0.96), toPy(1.38));
+    ctx.lineTo(toPx(side * 1.04), toPy(1.06));
+    ctx.lineTo(toPx(side * 0.70), toPy(0.96));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -40437,15 +40861,14 @@ function createTramRearElevationTexture(): THREE.CanvasTexture {
   ctx.closePath();
   ctx.fill();
 
-  // 3. Rear Car Windshield Glazing ("CAR WINDSHIELD") with Interior Silhouette
-  const glassGrad = ctx.createLinearGradient(0, toPy(3.00), 0, toPy(1.32));
-  glassGrad.addColorStop(0.0, '#1e2c3a');
-  glassGrad.addColorStop(0.5, '#2f455a');
-  glassGrad.addColorStop(1.0, '#18232e');
-  ctx.fillStyle = glassGrad;
+  // 3. Rear Car Windshield alpha cutout (glazed by translucent clear-white glass overlay)
+  ctx.save();
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.fillStyle = '#000000';
   ctx.beginPath();
   ctx.roundRect(toPx(-0.76), toPy(2.96), toPx(0.76) - toPx(-0.76), toPy(1.36) - toPy(2.96), 22);
   ctx.fill();
+  ctx.restore();
 
   // 4. Rear Glowing Amber "LED WINDSHIELD" Destination Sign ("LINE 1 - CITY CENTER / CENTRAL PLAZA")
   const signX = toPx(-0.68);
@@ -40461,18 +40884,21 @@ function createTramRearElevationTexture(): THREE.CanvasTexture {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.shadowColor = '#f59e0b';
-  ctx.shadowBlur = 10;
-  ctx.fillStyle = '#fbbf24';
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = '#fde047';
   ctx.font = 'bold 28px monospace';
   ctx.fillText('LINE 1 - CITY CENTER', S * 0.5, signY + 28);
-  ctx.fillStyle = '#f59e0b';
+  ctx.fillStyle = '#fbbf24';
   ctx.font = 'bold 21px monospace';
   ctx.fillText('CENTRAL PLAZA', S * 0.5, signY + 58);
   ctx.restore();
 
   // 5. Boomerang-Shaped Red LED Taillights ("STREET LIGHTS") wrapping the lower corners of the rear mask
   for (const side of [-1, 1] as const) {
-    ctx.fillStyle = '#dc2626';
+    ctx.save();
+    ctx.shadowColor = '#ef4444';
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = '#ef4444';
     ctx.strokeStyle = '#450a0a';
     ctx.lineWidth = 4;
     ctx.beginPath();
@@ -40483,9 +40909,10 @@ function createTramRearElevationTexture(): THREE.CanvasTexture {
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
+    ctx.restore();
 
     // Inner glowing white/amber reverse & turn indicator core inside the taillight
-    ctx.fillStyle = '#fecaca';
+    ctx.fillStyle = '#fee2e2';
     ctx.beginPath();
     ctx.arc(toPx(side * 0.82), toPy(1.26), 14, 0, Math.PI * 2);
     ctx.fill();
@@ -40507,6 +40934,224 @@ function createTramRearElevationTexture(): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
+ * Generates a self-illuminated Emissive Glow Overlay CanvasTexture for Car 2's Rear Elevation
+ * (warm glowing rear cabin window, glowing Amber LED destination sign, and glowing red LED taillights).
+ */
+function createTramRearGlowTexture(): THREE.CanvasTexture {
+  const S = 1024;
+  const canvas = document.createElement('canvas');
+  canvas.width = S;
+  canvas.height = S;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, S, S);
+
+  const toPx = (z: number) => ((z + 1.43) / 2.86) * S;
+  const toPy = (y: number) => (1.0 - (y - 0.18) / 3.36) * S;
+
+  // 1. Translucent Clear-White ('Putih Bening') Rear Windshield Glazing
+  const glassGrad = ctx.createLinearGradient(0, toPy(2.96), 0, toPy(1.36));
+  glassGrad.addColorStop(0.0, 'rgba(232, 244, 250, 0.56)');
+  glassGrad.addColorStop(0.5, 'rgba(246, 252, 255, 0.44)');
+  glassGrad.addColorStop(1.0, 'rgba(205, 224, 234, 0.50)');
+  ctx.fillStyle = glassGrad;
+  ctx.beginPath();
+  ctx.roundRect(toPx(-0.76), toPy(2.96), toPx(0.76) - toPx(-0.76), toPy(1.36) - toPy(2.96), 22);
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.26)';
+  ctx.beginPath();
+  ctx.moveTo(toPx(-0.62), toPy(2.74));
+  ctx.lineTo(toPx(-0.14), toPy(2.74));
+  ctx.lineTo(toPx(-0.42), toPy(1.44));
+  ctx.lineTo(toPx(-0.66), toPy(1.44));
+  ctx.closePath();
+  ctx.fill();
+
+  // 2. Rear LED Destination Sign
+  const signX = toPx(-0.68);
+  const signW = toPx(0.68) - signX;
+  const signY = toPy(2.90);
+  const signH = 82;
+  ctx.fillStyle = 'rgba(11, 14, 20, 0.92)';
+  ctx.beginPath();
+  ctx.roundRect(signX, signY, signW, signH, 10);
+  ctx.fill();
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#f59e0b';
+  ctx.shadowBlur = 14;
+  ctx.fillStyle = '#fef08a';
+  ctx.font = 'bold 28px monospace';
+  ctx.fillText('LINE 1 - CITY CENTER', S * 0.5, signY + 28);
+  ctx.fillStyle = '#fbbf24';
+  ctx.font = 'bold 21px monospace';
+  ctx.fillText('CENTRAL PLAZA', S * 0.5, signY + 58);
+  ctx.restore();
+
+  // 3. Boomerang Red LED Taillights Glow
+  for (const side of [-1, 1] as const) {
+    ctx.save();
+    ctx.shadowColor = '#ef4444';
+    ctx.shadowBlur = 28;
+    ctx.fillStyle = '#ff4d4d';
+    ctx.beginPath();
+    ctx.moveTo(toPx(side * 0.86), toPy(1.56));
+    ctx.quadraticCurveTo(toPx(side * 1.02), toPy(1.32), toPx(side * 0.88), toPy(1.08));
+    ctx.lineTo(toPx(side * 0.62), toPy(1.14));
+    ctx.quadraticCurveTo(toPx(side * 0.76), toPy(1.32), toPx(side * 0.72), toPy(1.52));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
+ * Generates a soft radial Corona Halo CanvasTexture for the 3D front headlight lens flares.
+ */
+function createTramHeadlightCoronaTexture(): THREE.CanvasTexture {
+  const S = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = S;
+  canvas.height = S;
+  const ctx = canvas.getContext('2d')!;
+  const c = S * 0.5;
+
+  const grad = ctx.createRadialGradient(c, c, 2, c, c, c);
+  grad.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
+  grad.addColorStop(0.22, 'rgba(240, 249, 255, 0.92)');
+  grad.addColorStop(0.50, 'rgba(125, 211, 252, 0.45)');
+  grad.addColorStop(0.78, 'rgba(56, 189, 248, 0.12)');
+  grad.addColorStop(1.0, 'rgba(56, 189, 248, 0.0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, S, S);
+
+  // Subtle horizontal anamorphic headlight streak
+  const streak = ctx.createLinearGradient(0, c, S, c);
+  streak.addColorStop(0.0, 'rgba(125, 211, 252, 0.0)');
+  streak.addColorStop(0.3, 'rgba(224, 242, 254, 0.45)');
+  streak.addColorStop(0.5, 'rgba(255, 255, 255, 0.95)');
+  streak.addColorStop(0.7, 'rgba(224, 242, 254, 0.45)');
+  streak.addColorStop(1.0, 'rgba(125, 211, 252, 0.0)');
+  ctx.fillStyle = streak;
+  ctx.fillRect(8, c - 7, S - 16, 14);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
+ * Generates a smooth longitudinal gradient CanvasTexture for the 3D volumetric headlight beam cones
+ * (`v = 1` at the headlight lens tip -> `v = 0` at the far end of the beam cone).
+ */
+function createTramHeadlightBeamTexture(): THREE.CanvasTexture {
+  const W = 128;
+  const H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d')!;
+
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0.0, 'rgba(255, 255, 255, 0.62)');
+  grad.addColorStop(0.18, 'rgba(224, 242, 254, 0.44)');
+  grad.addColorStop(0.52, 'rgba(186, 230, 253, 0.20)');
+  grad.addColorStop(0.84, 'rgba(125, 211, 252, 0.06)');
+  grad.addColorStop(1.0, 'rgba(56, 189, 248, 0.0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
+ * Generates a dual-beam forward headlight road illumination pool CanvasTexture
+ * cast onto the asphalt ahead of Car 1.
+ */
+function createTramHeadlightGroundPoolTexture(): THREE.CanvasTexture {
+  const W = 512;
+  const H = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, W, H);
+
+  // Two forward-flaring elliptical headlight beam pools (left & right headlights) + merged center fill
+  for (const zOffset of [-0.21, 0.21, 0.0]) {
+    const isCenter = zOffset === 0.0;
+    const cy = H * (0.5 + zOffset);
+    const cx = W * (isCenter ? 0.44 : 0.36);
+    const rOuter = isCenter ? W * 0.46 : W * 0.42;
+
+    const g = ctx.createRadialGradient(cx * 0.55, cy, 8, cx, cy, rOuter);
+    if (isCenter) {
+      g.addColorStop(0.0, 'rgba(254, 249, 195, 0.38)');
+      g.addColorStop(0.45, 'rgba(224, 242, 254, 0.22)');
+      g.addColorStop(1.0, 'rgba(56, 189, 248, 0.0)');
+    } else {
+      g.addColorStop(0.0, 'rgba(255, 255, 255, 0.68)');
+      g.addColorStop(0.35, 'rgba(224, 242, 254, 0.42)');
+      g.addColorStop(0.72, 'rgba(125, 211, 252, 0.14)');
+      g.addColorStop(1.0, 'rgba(56, 189, 248, 0.0)');
+    }
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rOuter, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
+ * Generates a warm golden ground light spill pool CanvasTexture cast onto the road
+ * alongside the tram's illuminated panoramic side windows.
+ */
+function createTramWindowSideGroundPoolTexture(): THREE.CanvasTexture {
+  const W = 512;
+  const H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, W, H);
+
+  for (const xNorm of [0.22, 0.50, 0.78]) {
+    const cx = W * xNorm;
+    const cy = H * 0.5;
+    const g = ctx.createRadialGradient(cx, cy, 6, cx, cy, H * 0.48);
+    g.addColorStop(0.0, 'rgba(248, 252, 255, 0.46)');
+    g.addColorStop(0.5, 'rgba(224, 242, 254, 0.22)');
+    g.addColorStop(1.0, 'rgba(186, 230, 253, 0.0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, H * 0.48, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
   return tex;
 }
@@ -40752,6 +41397,19 @@ export function createProceduralCityTramConsist(
   const frontCabTex = createTramFrontElevationTexture();
   const rearCabTex = createTramRearElevationTexture();
 
+  // Emissive Window & Headlight Glow Overlay Textures + Volumetric Beam & Ground Pool Textures
+  const car1SideGlowTex = createTramSideWindowGlowTexture(true);
+  const car2SideGlowTex = createTramSideWindowGlowTexture(false);
+  const frontCabGlowTex = createTramFrontGlowTexture();
+  const rearCabGlowTex = createTramRearGlowTexture();
+  const headlightCoronaTex = createTramHeadlightCoronaTexture();
+  const headlightBeamTex = createTramHeadlightBeamTexture();
+  const headlightGroundPoolTex = createTramHeadlightGroundPoolTexture();
+  const windowSideGroundPoolTex = createTramWindowSideGroundPoolTexture();
+
+  const disposableExtraGeos: THREE.BufferGeometry[] = [];
+  const disposableExtraMats: THREE.Material[] = [];
+
   const addTramPart = (
     parent: THREE.Object3D,
     geo: THREE.BufferGeometry,
@@ -40762,11 +41420,13 @@ export function createProceduralCityTramConsist(
     outlineWidth = 0.020,
     roughness = 0.58,
     mapTex?: THREE.Texture,
+    alphaTest = 0.0,
   ): THREE.Mesh => {
     const mat = new THREE.MeshStandardMaterial({
       color: mapTex ? '#ffffff' : colorHex,
       map: mapTex ?? null,
       roughness,
+      ...(alphaTest > 0 ? { alphaTest } : {}),
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(pos[0], pos[1], pos[2]);
@@ -40838,9 +41498,11 @@ export function createProceduralCityTramConsist(
 
   const buildCarRooftopAndArticulationDrum = (
     bodyStaticGroup: THREE.Group,
+    carRootGroup: THREE.Group,
     isFrontCar: boolean,
   ) => {
     // 1. Sculpted Lofted Compound-Curved 3D Car Body Shell + Front/Rear Cab Mask
+    //    (alphaTest = 0.5 punches true window openings; outlineWidth = 0 avoids dark stroke walls blocking glass)
     const { sideRoofGeo, endCapGeo } = buildLoftedTramCarShellGeometries(isFrontCar);
     addTramPart(
       bodyStaticGroup,
@@ -40849,9 +41511,10 @@ export function createProceduralCityTramConsist(
       [0, 0, 0],
       [0, 0, 0],
       [1, 1, 1],
-      0.024,
+      0,
       0.48,
       isFrontCar ? car1SideTex : car2SideTex,
+      0.5,
     );
     addTramPart(
       bodyStaticGroup,
@@ -40860,10 +41523,163 @@ export function createProceduralCityTramConsist(
       [0, 0, 0],
       [0, 0, 0],
       [1, 1, 1],
-      0.022,
+      0,
       0.42,
       isFrontCar ? frontCabTex : rearCabTex,
+      0.5,
     );
+
+    // 1A. 3D Illuminated White-Cabin Metro Interior visible cleanly through the clear-white ('putih bening') windows
+    const dirSign = isFrontCar ? 1 : -1;
+    // Low-floor light slate interior floor deck
+    addTramPart(
+      bodyStaticGroup,
+      new THREE.BoxGeometry(6.10 * scaleL, 0.10 * scaleH, 2.38 * scaleW),
+      '#cbd5e1',
+      [-dirSign * 0.22 * scaleL, 0.56 * scaleH, 0],
+      [0, 0, 0],
+      [1, 1, 1],
+      0,
+      0.78,
+    );
+    // Longitudinal left & right passenger metro benches (positioned in the panoramic window bay, clear of sliding doors)
+    const benchX = -dirSign * 1.65 * scaleL;
+    for (const zSide of [-1, 1] as const) {
+      addTramPart(
+        bodyStaticGroup,
+        new THREE.BoxGeometry(3.25 * scaleL, 0.14 * scaleH, 0.44 * scaleW),
+        '#64748b',
+        [benchX, 1.02 * scaleH, zSide * 0.94 * scaleW],
+        [0, 0, 0],
+        [1, 1, 1],
+        0,
+        0.65,
+      );
+      addTramPart(
+        bodyStaticGroup,
+        new THREE.BoxGeometry(3.15 * scaleL, 0.52 * scaleH, 0.10 * scaleW),
+        '#93c5fd',
+        [benchX, 1.32 * scaleH, zSide * 1.12 * scaleW],
+        [0, 0, 0],
+        [1, 1, 1],
+        0,
+        0.72,
+      );
+    }
+    // Vertical yellow metro grab stanchion poles inside cabin
+    for (const poleX of [-dirSign * 2.55, -dirSign * 1.45, -dirSign * 0.35, dirSign * 0.98]) {
+      for (const zSide of [-1, 1] as const) {
+        addTramPart(
+          bodyStaticGroup,
+          new THREE.CylinderGeometry(0.032 * scaleW, 0.032 * scaleW, 2.48 * scaleH, 8),
+          COL_SAFETY_YELLOW,
+          [poleX * scaleL, 1.84 * scaleH, zSide * 0.62 * scaleW],
+          [0, 0, 0],
+          [1, 1, 1],
+          0,
+          0.45,
+        );
+      }
+    }
+    // Driver console & driver seat inside the outer cab nose/tail
+    addTramPart(
+      bodyStaticGroup,
+      new THREE.BoxGeometry(0.68 * scaleL, 0.84 * scaleH, 1.32 * scaleW),
+      '#1e293b',
+      [dirSign * 2.58 * scaleL, 1.04 * scaleH, 0],
+      [0, 0, 0],
+      [1, 1, 1],
+      0,
+      0.62,
+    );
+    addTramPart(
+      bodyStaticGroup,
+      new THREE.BoxGeometry(0.46 * scaleL, 0.96 * scaleH, 0.54 * scaleW),
+      '#334155',
+      [dirSign * 1.98 * scaleL, 1.24 * scaleH, 0],
+      [0, 0, 0],
+      [1, 1, 1],
+      0,
+      0.72,
+    );
+
+    // Self-lit clean white interior ceiling light panel (keeps cabin bright white through the clear windows at night)
+    const ceilingLightGeo = new THREE.PlaneGeometry(5.65 * scaleL, 1.65 * scaleW);
+    ceilingLightGeo.rotateX(Math.PI / 2);
+    disposableExtraGeos.push(ceilingLightGeo);
+    const ceilingLightMat = new THREE.MeshBasicMaterial({
+      color: '#f8fcff',
+      side: THREE.FrontSide,
+      toneMapped: false,
+    });
+    disposableExtraMats.push(ceilingLightMat);
+    const ceilingLightMesh = new THREE.Mesh(ceilingLightGeo, ceilingLightMat);
+    ceilingLightMesh.position.set(-dirSign * 0.25 * scaleL, 3.16 * scaleH, 0);
+    carRootGroup.add(ceilingLightMesh);
+
+    // 1B. Translucent Clear-White ('Putih Bening') Glazing + LED Sign / Headlight Glow Shell Layer
+    //     (Mounted directly on carRootGroup outside bodyStaticGroup so bakeStaticGroupMeshes preserves transparency!)
+    const sideGlowGeo = sideRoofGeo.clone();
+    const endGlowGeo = endCapGeo.clone();
+    disposableExtraGeos.push(sideGlowGeo, endGlowGeo);
+
+    const sideGlowMat = new THREE.MeshBasicMaterial({
+      map: isFrontCar ? car1SideGlowTex : car2SideGlowTex,
+      transparent: true,
+      opacity: 0.92,
+      side: THREE.FrontSide,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+      toneMapped: false,
+    });
+    const endGlowMat = new THREE.MeshBasicMaterial({
+      map: isFrontCar ? frontCabGlowTex : rearCabGlowTex,
+      transparent: true,
+      opacity: 0.94,
+      side: THREE.FrontSide,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+      toneMapped: false,
+    });
+    disposableExtraMats.push(sideGlowMat, endGlowMat);
+
+    const sideGlowMesh = new THREE.Mesh(sideGlowGeo, sideGlowMat);
+    sideGlowMesh.renderOrder = 2;
+    carRootGroup.add(sideGlowMesh);
+
+    const endGlowMesh = new THREE.Mesh(endGlowGeo, endGlowMat);
+    endGlowMesh.renderOrder = 2;
+    carRootGroup.add(endGlowMesh);
+
+    // 1C. Left & Right Clean Cool-White Cabin Window Ground Light Spill Pools alongside the tram car
+    const halfWid = CITY_TRAM_SPEC.carWidth * 0.5;
+    const sidePoolGeo = new THREE.PlaneGeometry(CITY_TRAM_SPEC.carLength * 0.76, 2.65);
+    sidePoolGeo.rotateX(-Math.PI / 2);
+    disposableExtraGeos.push(sidePoolGeo);
+    const sidePoolMat = new THREE.MeshBasicMaterial({
+      map: windowSideGroundPoolTex,
+      color: '#f0f9ff',
+      transparent: true,
+      opacity: 0.40,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+      toneMapped: false,
+    });
+    disposableExtraMats.push(sidePoolMat);
+
+    for (const zSide of [-1, 1] as const) {
+      const sidePoolMesh = new THREE.Mesh(sidePoolGeo, sidePoolMat);
+      sidePoolMesh.position.set(isFrontCar ? -0.45 : 0.45, 0.05, zSide * (halfWid + 0.85));
+      sidePoolMesh.renderOrder = 1;
+      carRootGroup.add(sidePoolMesh);
+    }
 
     // 2. Cylindrical Dark-Rubber Articulation Drum at the Coupled Inner End (prevents any visual gap during turns!)
     const drumX = (isFrontCar ? -3.56 : 3.56) * scaleL;
@@ -40904,7 +41720,7 @@ export function createProceduralCityTramConsist(
   };
 
   // -------------------------------------------------------------------------
-  // 1. CAR 1 (GERBONG DEPAN — FRONT ELEVATION CAB + CAMERA PODS + PANTOGRAPH)
+  // 1. CAR 1 (GERBONG DEPAN — FRONT ELEVATION CAB + CAMERA PODS + PANTOGRAPH + HEADLIGHT BEAMS)
   // -------------------------------------------------------------------------
   const car1Group = new THREE.Group();
   car1Group.name = 'CityTramCar1_Front';
@@ -40912,7 +41728,111 @@ export function createProceduralCityTramConsist(
 
   const car1StaticBody = new THREE.Group();
   car1Group.add(car1StaticBody);
-  buildCarRooftopAndArticulationDrum(car1StaticBody, true);
+  buildCarRooftopAndArticulationDrum(car1StaticBody, car1Group, true);
+
+  // 1D. 3D Front Headlight Corona Flares, Volumetric Forward Beam Cones & Road Light Pool on Car 1
+  const car1LightingGroup = new THREE.Group();
+  car1LightingGroup.name = 'CityTramCar1_FrontHeadlights';
+  car1Group.add(car1LightingGroup);
+
+  const halfCarLen = CITY_TRAM_SPEC.carLength * 0.5;
+  const coronaGeo = new THREE.PlaneGeometry(1.25, 0.92);
+  coronaGeo.rotateY(Math.PI / 2);
+  disposableExtraGeos.push(coronaGeo);
+  const coronaMat = new THREE.MeshBasicMaterial({
+    map: headlightCoronaTex,
+    color: '#e0f2fe',
+    transparent: true,
+    opacity: 0.96,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  disposableExtraMats.push(coronaMat);
+
+  // Volumetric headlight beam cone geometries (tip at headlight x = 0, flaring forward along +X)
+  const beamLen = 8.6;
+  const outerBeamGeo = new THREE.CylinderGeometry(0.24, 1.48, beamLen, 20, 1, true);
+  outerBeamGeo.translate(0, -beamLen * 0.5, 0);
+  outerBeamGeo.rotateZ(Math.PI / 2);
+  const innerBeamGeo = new THREE.CylinderGeometry(0.13, 0.78, beamLen * 0.78, 16, 1, true);
+  innerBeamGeo.translate(0, -(beamLen * 0.78) * 0.5, 0);
+  innerBeamGeo.rotateZ(Math.PI / 2);
+  disposableExtraGeos.push(outerBeamGeo, innerBeamGeo);
+
+  const outerBeamMat = new THREE.MeshBasicMaterial({
+    map: headlightBeamTex,
+    color: '#bae6fd',
+    transparent: true,
+    opacity: 0.34,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  const innerBeamMat = new THREE.MeshBasicMaterial({
+    map: headlightBeamTex,
+    color: '#ffffff',
+    transparent: true,
+    opacity: 0.48,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  disposableExtraMats.push(outerBeamMat, innerBeamMat);
+
+  const hlX = halfCarLen - 0.14;
+  const hlY = 1.15 * scaleH;
+  const hlZAbs = 0.80 * scaleW;
+
+  for (const zSide of [-1, 1] as const) {
+    const hlZ = zSide * hlZAbs;
+
+    // Glowing 3D Corona Halo right over each swept cat-eye headlight cluster
+    const coronaMesh = new THREE.Mesh(coronaGeo, coronaMat);
+    coronaMesh.position.set(hlX + 0.16, hlY, hlZ);
+    coronaMesh.rotation.y = -zSide * 0.22;
+    coronaMesh.renderOrder = 4;
+    car1LightingGroup.add(coronaMesh);
+
+    // Volumetric forward light beam cones (angled slightly downward onto the track ahead)
+    const beamPivot = new THREE.Group();
+    beamPivot.position.set(hlX + 0.10, hlY - 0.02, hlZ);
+    beamPivot.rotation.set(0, -zSide * 0.04, -0.135);
+    car1LightingGroup.add(beamPivot);
+
+    const outerCone = new THREE.Mesh(outerBeamGeo, outerBeamMat);
+    outerCone.renderOrder = 3;
+    beamPivot.add(outerCone);
+
+    const innerCone = new THREE.Mesh(innerBeamGeo, innerBeamMat);
+    innerCone.renderOrder = 3;
+    beamPivot.add(innerCone);
+  }
+
+  // Forward Road Surface Headlight Pool illuminating the asphalt ahead of Car 1
+  const frontPoolGeo = new THREE.PlaneGeometry(11.2, 7.2);
+  frontPoolGeo.rotateX(-Math.PI / 2);
+  disposableExtraGeos.push(frontPoolGeo);
+  const frontPoolMat = new THREE.MeshBasicMaterial({
+    map: headlightGroundPoolTex,
+    color: '#e0f2fe',
+    transparent: true,
+    opacity: 0.72,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+    toneMapped: false,
+  });
+  disposableExtraMats.push(frontPoolMat);
+  const frontPoolMesh = new THREE.Mesh(frontPoolGeo, frontPoolMat);
+  frontPoolMesh.position.set(halfCarLen + 4.9, 0.055, 0);
+  frontPoolMesh.renderOrder = 1;
+  car1LightingGroup.add(frontPoolMesh);
 
   // 3D Integrated Rearview Electronic Camera Pods ("INTEGRATED REARVIEW ELECTRONIC CAMERA PODS")
   for (const zSide of [-1, 1] as const) {
@@ -40968,7 +41888,7 @@ export function createProceduralCityTramConsist(
   const car1RearBogie = buildLowFloorBogie(car1Group, -2.25);
 
   // -------------------------------------------------------------------------
-  // 2. CAR 2 (GERBONG BELAKANG — REAR ELEVATION CAB + ROOFTOP CONDUITS)
+  // 2. CAR 2 (GERBONG BELAKANG — REAR ELEVATION CAB + ROOFTOP CONDUITS + TAILLIGHT GLOW)
   // -------------------------------------------------------------------------
   const car2Group = new THREE.Group();
   car2Group.name = 'CityTramCar2_Rear';
@@ -40976,7 +41896,29 @@ export function createProceduralCityTramConsist(
 
   const car2StaticBody = new THREE.Group();
   car2Group.add(car2StaticBody);
-  buildCarRooftopAndArticulationDrum(car2StaticBody, false);
+  buildCarRooftopAndArticulationDrum(car2StaticBody, car2Group, false);
+
+  // Subtle Red Taillight Ground Reflection Pool behind Car 2
+  const rearPoolGeo = new THREE.PlaneGeometry(3.4, 4.4);
+  rearPoolGeo.rotateX(-Math.PI / 2);
+  disposableExtraGeos.push(rearPoolGeo);
+  const rearPoolMat = new THREE.MeshBasicMaterial({
+    map: headlightCoronaTex,
+    color: '#ef4444',
+    transparent: true,
+    opacity: 0.36,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+    toneMapped: false,
+  });
+  disposableExtraMats.push(rearPoolMat);
+  const rearPoolMesh = new THREE.Mesh(rearPoolGeo, rearPoolMat);
+  rearPoolMesh.position.set(-halfCarLen - 1.25, 0.05, 0);
+  rearPoolMesh.renderOrder = 1;
+  car2Group.add(rearPoolMesh);
 
   // Additional low-profile roof equipment pod on Car 2 matching side elevation blueprint
   addTramPart(
@@ -41124,7 +42066,17 @@ export function createProceduralCityTramConsist(
       car2SideTex.dispose();
       frontCabTex.dispose();
       rearCabTex.dispose();
+      car1SideGlowTex.dispose();
+      car2SideGlowTex.dispose();
+      frontCabGlowTex.dispose();
+      rearCabGlowTex.dispose();
+      headlightCoronaTex.dispose();
+      headlightBeamTex.dispose();
+      headlightGroundPoolTex.dispose();
+      windowSideGroundPoolTex.dispose();
       for (const g of pleatGeos) g.dispose();
+      for (const g of disposableExtraGeos) g.dispose();
+      for (const m of disposableExtraMats) m.dispose();
     },
   };
 }

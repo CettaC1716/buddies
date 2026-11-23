@@ -17,23 +17,28 @@ import {
  */
 const furniturePortraitCache = new Map<string, string>();
 
-export function getOrRenderFurniturePortraitUrl(catalogId: string): string {
+export function getOrRenderFurniturePortraitUrl(
+  catalogId: string,
+  aspectMode: 'landscape' | 'portrait' = 'landscape',
+): string {
   if (catalogId.startsWith('theme_')) return '';
-  const existing = furniturePortraitCache.get(catalogId);
+  const cacheKey = aspectMode === 'portrait' ? `${catalogId}:portrait` : catalogId;
+  const existing = furniturePortraitCache.get(cacheKey);
   if (existing) return existing;
   if (typeof document === 'undefined') return '';
 
   try {
     const meshGroup = buildOriginalBuddiesCatalogFurnitureMesh(catalogId);
-    const width = 320;
-    const height = 200;
+    const width = aspectMode === 'portrait' ? 280 : 320;
+    const height = aspectMode === 'portrait' ? 300 : 200;
+    const margin = aspectMode === 'portrait' ? 0.065 : 0.075;
     const wrapper = prepareFittedStudioGroup(meshGroup, {
       cameraZ: 2.9,
       fovDeg: 24,
       aspect: width / height,
-      topMarginFrac: 0.075,
-      bottomMarginFrac: 0.075,
-      sideMarginFrac: 0.075,
+      topMarginFrac: margin,
+      bottomMarginFrac: margin,
+      sideMarginFrac: margin,
       pitchRange: [0.24, 0.24],
     });
     wrapper.rotation.set(0.24, 0.62, 0);
@@ -55,7 +60,7 @@ export function getOrRenderFurniturePortraitUrl(catalogId: string): string {
     if (drawnCount > 0) {
       const dataUrl = offscreenCanvas.toDataURL('image/png');
       if (dataUrl && dataUrl.startsWith('data:image/')) {
-        furniturePortraitCache.set(catalogId, dataUrl);
+        furniturePortraitCache.set(cacheKey, dataUrl);
         return dataUrl;
       }
     }
@@ -104,7 +109,8 @@ interface Furniture3dThumbnailProps {
   name: string;
   iconEmoji?: string;
   compact?: boolean;
-  size?: 'compact' | 'normal' | 'hero';
+  size?: 'compact' | 'normal' | 'hero' | 'portrait';
+  variant?: 'dark' | 'studio';
   onInspect?: () => void;
 }
 
@@ -114,37 +120,69 @@ export const Furniture3dThumbnail: React.FC<Furniture3dThumbnailProps> = ({
   iconEmoji,
   compact = false,
   size,
+  variant = 'dark',
   onInspect,
 }) => {
-  const portraitUrl = useMemo(
-    () => getOrRenderFurniturePortraitUrl(catalogId),
-    [catalogId],
-  );
   const resolvedSize = size ?? (compact ? 'compact' : 'normal');
+  const portraitUrl = useMemo(
+    () =>
+      getOrRenderFurniturePortraitUrl(
+        catalogId,
+        resolvedSize === 'portrait' ? 'portrait' : 'landscape',
+      ),
+    [catalogId, resolvedSize],
+  );
   const heightClass =
-    resolvedSize === 'compact'
-      ? 'h-16'
-      : resolvedSize === 'hero'
-        ? 'h-32'
-        : 'h-24';
+    resolvedSize === 'portrait'
+      ? 'h-full'
+      : resolvedSize === 'compact'
+        ? 'h-16'
+        : resolvedSize === 'hero'
+          ? 'h-32'
+          : 'h-24';
 
+  const isStudio = variant === 'studio';
   const themeSpec = THEME_VISUAL_SPECS[catalogId];
   const isInteractive = typeof onInspect === 'function';
 
+  const surfaceClass = isStudio
+    ? 'bg-[#f0f1f4]'
+    : 'bg-gradient-to-br from-[#0f172a] via-[#132338] to-[#09101d] border-2 border-black';
+
   const innerContent = (
     <>
-      <div
-        style={{
-          background:
-            'radial-gradient(65% 65% at 50% 55%, rgba(56, 189, 248, 0.12) 0%, transparent 75%)',
-        }}
-        className="absolute inset-0 pointer-events-none"
-      />
+      {isStudio ? (
+        <>
+          <div
+            style={{
+              background:
+                'radial-gradient(75% 70% at 50% 35%, rgba(255, 255, 255, 0.75) 0%, transparent 75%)',
+            }}
+            className="absolute inset-0 pointer-events-none"
+          />
+          {portraitUrl && (
+            <div
+              aria-hidden="true"
+              className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[56%] h-3 rounded-full bg-black/[0.08] blur-[5px] pointer-events-none"
+            />
+          )}
+        </>
+      ) : (
+        <div
+          style={{
+            background:
+              'radial-gradient(65% 65% at 50% 55%, rgba(56, 189, 248, 0.12) 0%, transparent 75%)',
+          }}
+          className="absolute inset-0 pointer-events-none"
+        />
+      )}
       {portraitUrl ? (
         <img
           src={portraitUrl}
           alt={name}
-          className="relative z-10 w-full h-full object-contain group-hover:scale-105 transition-transform duration-200 pointer-events-none"
+          className={`relative z-10 w-full h-full object-contain group-hover:scale-105 transition-transform duration-200 pointer-events-none ${
+            isStudio ? 'p-2 drop-shadow-[0_6px_10px_rgba(15,23,42,0.14)]' : ''
+          }`}
           draggable={false}
         />
       ) : themeSpec ? (
@@ -160,16 +198,28 @@ export const Furniture3dThumbnail: React.FC<Furniture3dThumbnailProps> = ({
           />
           <div className="relative z-10 flex flex-col items-center gap-1.5 pointer-events-none">
             <div
-              className="w-9 h-9 border-2 border-black bg-black/75 flex items-center justify-center shadow-[2px_2px_0_#000]"
+              className={`w-9 h-9 flex items-center justify-center ${
+                isStudio
+                  ? 'rounded-xl bg-white/90 backdrop-blur-sm shadow-sm border border-black/10'
+                  : 'border-2 border-black bg-black/75 shadow-[2px_2px_0_#000]'
+              }`}
               style={{ color: themeSpec.accentHex }}
             >
               <themeSpec.Icon className="w-5 h-5" aria-hidden="true" />
             </div>
-            <div className="flex items-center gap-1 px-1.5 py-0.5 bg-black/75 border border-black">
+            <div
+              className={`flex items-center gap-1 px-1.5 py-0.5 ${
+                isStudio
+                  ? 'rounded-full bg-white/90 backdrop-blur-sm border border-black/10'
+                  : 'bg-black/75 border border-black'
+              }`}
+            >
               {themeSpec.swatches.map((hex) => (
                 <span
                   key={hex}
-                  className="w-2.5 h-2.5 border border-white/60 inline-block"
+                  className={`w-2.5 h-2.5 inline-block ${
+                    isStudio ? 'rounded-full border border-black/15' : 'border border-white/60'
+                  }`}
                   style={{ backgroundColor: hex }}
                 />
               ))}
@@ -177,13 +227,19 @@ export const Furniture3dThumbnail: React.FC<Furniture3dThumbnailProps> = ({
           </div>
         </>
       ) : (
-        <span className="relative z-10 text-[22px] leading-none pointer-events-none" aria-hidden="true">
+        <span className="relative z-10 text-[26px] leading-none pointer-events-none" aria-hidden="true">
           {iconEmoji || '◆'}
         </span>
       )}
 
       {isInteractive && resolvedSize !== 'compact' && (
-        <span className="absolute bottom-1.5 right-1.5 z-20 inline-flex items-center gap-1 px-1.5 py-0.5 bg-black/80 text-white border border-white/30 text-[8px] font-black uppercase opacity-85 group-hover:opacity-100 group-hover:bg-[#38bdf8] group-hover:text-black group-hover:border-black transition-colors pointer-events-none">
+        <span
+          className={`absolute bottom-1.5 right-1.5 z-20 inline-flex items-center gap-1 px-1.5 py-0.5 text-[8px] font-black uppercase opacity-85 group-hover:opacity-100 transition-colors pointer-events-none ${
+            isStudio
+              ? 'rounded-md bg-white/90 text-neutral-800 border border-black/10 shadow-xs group-hover:bg-neutral-900 group-hover:text-white'
+              : 'bg-black/80 text-white border border-white/30 group-hover:bg-[#38bdf8] group-hover:text-black group-hover:border-black'
+          }`}
+        >
           {catalogId.startsWith('theme_') ? (
             <Maximize2 className="w-2.5 h-2.5" aria-hidden="true" />
           ) : (
@@ -207,7 +263,7 @@ export const Furniture3dThumbnail: React.FC<Furniture3dThumbnailProps> = ({
           soundEngine.playUiClick();
           onInspect();
         }}
-        className={`group relative w-full ${heightClass} bg-gradient-to-br from-[#0f172a] via-[#132338] to-[#09101d] border-2 border-black overflow-hidden flex items-center justify-center cursor-pointer hover:brightness-110 active:scale-[0.99] transition-all select-none`}
+        className={`group relative w-full ${heightClass} ${surfaceClass} overflow-hidden flex items-center justify-center cursor-pointer hover:brightness-[1.03] active:scale-[0.99] transition-all select-none`}
       >
         {innerContent}
       </button>
@@ -217,7 +273,7 @@ export const Furniture3dThumbnail: React.FC<Furniture3dThumbnailProps> = ({
   return (
     <div
       data-furniture-3d-thumb={catalogId}
-      className={`group relative w-full ${heightClass} bg-gradient-to-br from-[#0f172a] via-[#132338] to-[#09101d] border-2 border-black overflow-hidden flex items-center justify-center`}
+      className={`group relative w-full ${heightClass} ${surfaceClass} overflow-hidden flex items-center justify-center`}
     >
       {innerContent}
     </div>

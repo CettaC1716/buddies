@@ -442,11 +442,11 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   // East Outer Ring Boulevard ('single' behind Outer East sidewalk on Harbor Apron, x = 78.85)
   { id: 'lamp_t3_outer_e_n', tier: 3, lampVariant: 'single', district: 'outer_ring', x: 78.85, z: -34.0, rotY: -Math.PI / 2 },
   { id: 'lamp_t3_outer_e_c', tier: 3, lampVariant: 'single', district: 'outer_ring', x: 78.85, z: 8.2, rotY: -Math.PI / 2 },
-  // Inner Tram Ring Main Corners ('corner' on inner grass corners, facing outward over sidewalk + road)
-  { id: 'lamp_t3_inner_nw_c', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: -57.2, z: -39.2, rotY: Math.PI },
-  { id: 'lamp_t3_inner_ne_c', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: 57.2, z: -39.2, rotY: Math.PI / 2 },
-  { id: 'lamp_t3_inner_se_c', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: 57.2, z: 39.2, rotY: 0 },
-  { id: 'lamp_t3_inner_sw_c', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: -57.2, z: 39.2, rotY: -Math.PI / 2 },
+  // Inner Tram Ring Main Corners ('corner' on inner grass corners, facing outward over curved sidewalk + road)
+  { id: 'lamp_t3_inner_nw_c', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: -56.6, z: -38.6, rotY: Math.PI },
+  { id: 'lamp_t3_inner_ne_c', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: 56.6, z: -38.6, rotY: Math.PI / 2 },
+  { id: 'lamp_t3_inner_se_c', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: 56.6, z: 38.6, rotY: 0 },
+  { id: 'lamp_t3_inner_sw_c', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: -56.6, z: 38.6, rotY: -Math.PI / 2 },
   // Inner S-Curve Entrance Grass Corners ('corner' framing W/E S-curve intersections)
   { id: 'lamp_t3_scurve_wn', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: -57.1, z: -20.0, rotY: -Math.PI / 2 },
   { id: 'lamp_t3_scurve_ws', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: -57.1, z: 20.0, rotY: Math.PI },
@@ -885,63 +885,7 @@ export const CITY_BUILDING_GLOW_MANIFEST: readonly BuildingGlowPaneSpec[] = (() 
       ),
     ),
 
-    // 5. 4 City Halte Shelters — Flush Backlit Transit Route Windbreak Glass (`local y=2.28, z=-4.18`)
-    withSeededTiming(
-      {
-        id: 'glow_halte_central',
-        building: 'halte_shelters',
-        x: -56.842,
-        y: 2.28,
-        z: 0.0,
-        rotY: -Math.PI / 2,
-        width: 4.5,
-        height: 1.56,
-        colorHex: '#d8f3ff',
-      },
-      0.58,
-    ),
-    withSeededTiming(
-      {
-        id: 'glow_halte_north_res',
-        building: 'halte_shelters',
-        x: 3.5,
-        y: 2.28,
-        z: -38.812,
-        rotY: Math.PI,
-        width: 4.5,
-        height: 1.56,
-        colorHex: '#d8f3ff',
-      },
-      0.58,
-    ),
-    withSeededTiming(
-      {
-        id: 'glow_halte_south_res',
-        building: 'halte_shelters',
-        x: -36.5,
-        y: 2.28,
-        z: 38.812,
-        rotY: 0,
-        width: 4.5,
-        height: 1.56,
-        colorHex: '#d8f3ff',
-      },
-      0.58,
-    ),
-    withSeededTiming(
-      {
-        id: 'glow_halte_harbor',
-        building: 'halte_shelters',
-        x: 81.672,
-        y: 2.28,
-        z: 29.5,
-        rotY: -Math.PI / 2,
-        width: 4.5,
-        height: 1.56,
-        colorHex: '#d8f3ff',
-      },
-      0.58,
-    ),
+    // (Halte shelters use their own clean translucent route-map windbreak glass without extra window-glow overlay panes.)
 
     // (Boutique Tower upper casements & 1F storefronts use 3D `cityWindowSpec` staggered lighting in
     //  `buddiesUrbanPlazaBuildingsBuilder.ts`; no flat manifest panes overlap `'off'` upper rooms.)
@@ -1003,7 +947,7 @@ export interface TrafficTrackSample {
 
 export interface TrafficStopBarSpec {
   id: string;
-  signalGroup: 'plaza' | 'east';
+  signalGroup: 'plaza' | 'north' | 'east';
   /** Expected unit heading direction at this stop bar */
   axis: 'x' | 'z';
   dirSign: 1 | -1;
@@ -1396,12 +1340,12 @@ const SCURVE_CENTRAL_TRACK = compileTrafficTrack(
   3.6,
 );
 
-// 4. West Oasis & S-Curve Boulevard Circuit (right-hand drive weaving around NW Oasis Lake & West Ring)
+// 4. West Oasis & SW Boulevard Circuit (right-hand drive via West Ring, open North S-curve, Equator, open South x=-18 connector, & South Ring)
 const SCURVE_WEST_TRACK = compileTrafficTrack(
   'scurve_west',
   offsetClosedPolylineRight(
     [
-      [-70.92, 15.0],
+      [-70.92, 52.92],
       [-70.92, -15.0],
       [-52.0, -15.0],
       [-41.0, -26.0],
@@ -1409,11 +1353,11 @@ const SCURVE_WEST_TRACK = compileTrafficTrack(
       [-14.2, -15.6],
       [-14.2, 15.6],
       [-25.0, 26.0],
-      [-41.0, 26.0],
-      [-52.0, 15.0],
+      [-18.0, 33.0],
+      [-18.0, 52.92],
     ],
     CAR_LANE_OFFSET_M,
-  ),
+  ).map((wp, idx) => (idx === 0 ? { ...wp, filletRadius: 7.32 } : wp)),
   3.6,
 );
 
@@ -1461,16 +1405,7 @@ export const CITY_TRAFFIC_TRACKS: Record<TrafficLoopId, CompiledTrafficTrack> = 
  * and `PLAZA_TRAFFIC_SIGNAL_SPEC`.
  */
 export const TRAFFIC_SIGNAL_STOP_BARS: readonly TrafficStopBarSpec[] = [
-  // Central Plaza West Northbound (inner car lane + central tramway)
-  {
-    id: 'plaza_nb_south',
-    signalGroup: 'plaza',
-    axis: 'z',
-    dirSign: -1,
-    stopCoord: PLAZA_TRAFFIC_SIGNAL_SPEC.southStopBarZ, // +11.80
-    minOrtho: -73.6,
-    maxOrtho: -67.5,
-  },
+  // Central Plaza West Northbound (single North crosswalk stop bar z = -5.40)
   {
     id: 'plaza_nb_north',
     signalGroup: 'plaza',
@@ -1480,7 +1415,7 @@ export const TRAFFIC_SIGNAL_STOP_BARS: readonly TrafficStopBarSpec[] = [
     minOrtho: -73.6,
     maxOrtho: -67.5,
   },
-  // Central Plaza West Southbound (outer car lane)
+  // Central Plaza West Southbound (outer car lane ahead of North crosswalk z = -11.40)
   {
     id: 'plaza_sb_north',
     signalGroup: 'plaza',
@@ -1490,14 +1425,25 @@ export const TRAFFIC_SIGNAL_STOP_BARS: readonly TrafficStopBarSpec[] = [
     minOrtho: -73.6,
     maxOrtho: -68.0,
   },
+  // North Residence Eastbound (inner car lane x = +6.60)
   {
-    id: 'plaza_sb_south',
-    signalGroup: 'plaza',
-    axis: 'z',
+    id: 'north_res_eb',
+    signalGroup: 'north',
+    axis: 'x',
     dirSign: 1,
-    stopCoord: 5.4,
-    minOrtho: -73.6,
-    maxOrtho: -68.0,
+    stopCoord: PLAZA_TRAFFIC_SIGNAL_SPEC.northResStopBarX, // +6.60
+    minOrtho: -55.9,
+    maxOrtho: -48.0,
+  },
+  // North Residence Westbound (outer car lane x = +13.00)
+  {
+    id: 'north_res_wb',
+    signalGroup: 'north',
+    axis: 'x',
+    dirSign: -1,
+    stopCoord: PLAZA_TRAFFIC_SIGNAL_SPEC.northResWestboundStopBarX, // +13.00
+    minOrtho: -55.9,
+    maxOrtho: -49.5,
   },
   // East Harbor Southbound (inner car lane)
   {
@@ -1590,15 +1536,47 @@ function minDistToTramConsist(
 ): number {
   const halfLen = CITY_TRAM_SPEC.carLength * 0.5;
   const halfWid = CITY_TRAM_SPEC.carWidth * 0.5;
+  const jointForwardX = Math.cos(tramState.joint.yaw);
+  const jointForwardZ = -Math.sin(tramState.joint.yaw);
+  const jointHalfLen = Math.max(CITY_TRAM_SPEC.jointLength, tramState.joint.spanLength) * 0.5 + 0.65;
+  const jointHalfWid = CITY_TRAM_SPEC.carWidth * 0.49;
+
+  const sections = [
+    {
+      x: tramState.car1.x,
+      z: tramState.car1.z,
+      forwardX: tramState.car1.forwardX,
+      forwardZ: tramState.car1.forwardZ,
+      halfX: halfLen,
+      halfZ: halfWid,
+    },
+    {
+      x: tramState.joint.x,
+      z: tramState.joint.z,
+      forwardX: jointForwardX,
+      forwardZ: jointForwardZ,
+      halfX: jointHalfLen,
+      halfZ: jointHalfWid,
+    },
+    {
+      x: tramState.car2.x,
+      z: tramState.car2.z,
+      forwardX: tramState.car2.forwardX,
+      forwardZ: tramState.car2.forwardZ,
+      halfX: halfLen,
+      halfZ: halfWid,
+    },
+  ] as const;
+
   let best = Infinity;
-  for (const car of [tramState.car1, tramState.car2] as const) {
-    const dx = x - car.x;
-    const dz = z - car.z;
-    const rightX = -car.forwardZ;
-    const rightZ = car.forwardX;
-    const lLong = Math.abs(dx * car.forwardX + dz * car.forwardZ);
+  for (const sec of sections) {
+    const dx = x - sec.x;
+    const dz = z - sec.z;
+    const rightX = -sec.forwardZ;
+    const rightZ = sec.forwardX;
+    const lLong = Math.abs(dx * sec.forwardX + dz * sec.forwardZ);
     const lLat = Math.abs(dx * rightX + dz * rightZ);
-    const d = Math.hypot(Math.max(0, lLong - halfLen), Math.max(0, lLat - halfWid));
+    const d = Math.hypot(Math.max(0, lLong - sec.halfX), Math.max(0, lLat - sec.halfZ));
     if (d < best) best = d;
   }
   return best;
@@ -1630,6 +1608,7 @@ function evalTramTrackCenterOffset(x: number, z: number): number {
 export interface TrafficStepInput {
   tramState: CityTramConsistState;
   plazaSignalState: PlazaTrafficSignalState;
+  northSignalState?: PlazaTrafficSignalState;
   eastSignalState: PlazaTrafficSignalState;
   pedestrians?: ReadonlyArray<{ x: number; z: number }>;
   playerPose?: { x: number; z: number; alive?: boolean } | null;
@@ -1637,7 +1616,7 @@ export interface TrafficStepInput {
 
 /**
  * Advances all pooled AI vehicles smoothly for `dt` seconds while obeying:
- * 1. Central Plaza & East Harbor traffic lights (braking smoothly ahead of stop bars).
+ * 1. Central Plaza, North Residence & East Harbor traffic lights (braking smoothly ahead of stop bars).
  * 2. City Tram consist OBB + forward approach sweep yielding at track crossings.
  * 3. Safe same-lane following headway (`>= 3.4m` stopped, velocity-scaled while cruising).
  * 4. Cross-loop merge/junction right-of-way yielding.
@@ -1651,7 +1630,14 @@ export function stepCityTrafficFleet(
   const stepDt = Math.max(0, Math.min(0.1, dt));
   if (stepDt <= 0) return;
 
-  const { tramState, plazaSignalState, eastSignalState, pedestrians = [], playerPose } = input;
+  const {
+    tramState,
+    plazaSignalState,
+    northSignalState,
+    eastSignalState,
+    pedestrians = [],
+    playerPose,
+  } = input;
 
   for (let i = 0; i < vehicles.length; i++) {
     const v = vehicles[i];
@@ -1662,10 +1648,15 @@ export function stepCityTrafficFleet(
     const noseX = v.x + v.forwardX * v.halfLength;
     const noseZ = v.z + v.forwardZ * v.halfLength;
 
-    // 1. Traffic Signal Stop Bars (Central Plaza & East Harbor)
+    // 1. Traffic Signal Stop Bars (Central Plaza, North Residence & East Harbor)
     for (let si = 0; si < TRAFFIC_SIGNAL_STOP_BARS.length; si++) {
       const bar = TRAFFIC_SIGNAL_STOP_BARS[si];
-      const sig = bar.signalGroup === 'plaza' ? plazaSignalState : eastSignalState;
+      const sig =
+        bar.signalGroup === 'plaza'
+          ? plazaSignalState
+          : bar.signalGroup === 'north'
+            ? (northSignalState ?? plazaSignalState)
+            : eastSignalState;
       if (sig.phase === 'tram_green') continue;
 
       const ortho = bar.axis === 'z' ? v.x : v.z;

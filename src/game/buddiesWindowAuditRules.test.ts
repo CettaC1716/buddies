@@ -569,7 +569,7 @@ test('buildCentralBotanicalPark3D exposes unbaked cityWindowSpec 3D glass meshes
     assert.ok(ids.has('beauty-salon-1f-glass-curve-a'));
     assert.ok(ids.has('beauty-salon-1f-door-front'));
     assert.ok(ids.has('beauty-salon-2f-front-door'));
-    assert.ok(ids.has('beauty-salon-2f-right-0'));
+    assert.ok(ids.has('beauty-salon-2f-right-8'));
 
     const beautyGlassHost = park.group.getObjectByName('UrbanPlazaBeautySalonGlassHost');
     assert.ok(beautyGlassHost, 'UrbanPlazaBeautySalonGlassHost must remain unbaked in animatedGroup');
@@ -1079,7 +1079,7 @@ test('buildBeautySalonStudio3D creates curved-corner GLOW STUDIO / BEAUTY & GLOW
         }
       });
       assert.equal(windowSpecs.filter((s) => s.kind === 'storefront').length, 8);
-      assert.equal(windowSpecs.filter((s) => s.kind === 'upper_floor').length, 16);
+      assert.equal(windowSpecs.filter((s) => s.kind === 'upper_floor').length, 26);
 
       const updatedCount = updateCityWindowNightLighting(mock.animatedGroup, 0.9, 2.5);
       assert.ok(updatedCount >= 24);

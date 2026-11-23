@@ -1,15 +1,19 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Backpack,
   Bike,
   ChevronLeft,
   ClipboardList,
   Coins,
+  Globe,
   Home,
   Map as MapIcon,
+  Maximize2,
   MessageCircle,
+  Minimize2,
+  Newspaper,
+  Settings,
   Shirt,
-  Sparkles,
   User,
   Users,
   Wallet,
@@ -27,8 +31,12 @@ export type SmartphoneAppId =
   | 'scooters'
   | 'missions'
   | 'profile'
+  | 'public'
+  | 'city_feed'
   | 'messages'
-  | 'contacts';
+  | 'contacts'
+  | 'letters'
+  | 'settings';
 
 export interface SmartphoneOsModalProps {
   isOpen: boolean;
@@ -49,6 +57,8 @@ export interface SmartphoneOsModalProps {
   actionableMissionsCount: number;
   activeMissionTitle?: string | null;
   unreadMessagesCount: number;
+  unreadLettersCount?: number;
+  onlinePeersCount?: number;
   newAssetCount: number;
   isFishingRodEquipped: boolean;
   isRidingScooter: boolean;
@@ -140,12 +150,29 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
   actionableMissionsCount,
   activeMissionTitle,
   unreadMessagesCount,
+  unreadLettersCount = 0,
+  onlinePeersCount = 0,
   newAssetCount,
   isFishingRodEquipped,
   isRidingScooter,
   onOpenCityMap,
   onOpenWardrobe,
 }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [hasEntered, setHasEntered] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsExpanded(false);
+      setHasEntered(false);
+      return;
+    }
+    const rafId = window.requestAnimationFrame(() => {
+      setHasEntered(true);
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [isOpen]);
+
   useEffect(() => {
     if (!isOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -153,6 +180,8 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
         e.stopPropagation();
         if (activeApp !== 'home') {
           onGoHome();
+        } else if (isExpanded) {
+          setIsExpanded(false);
         } else {
           onClose();
         }
@@ -160,12 +189,24 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, activeApp, onGoHome, onClose]);
+  }, [isOpen, activeApp, isExpanded, onGoHome, onClose]);
 
   if (!isOpen) return null;
 
   const isHome = activeApp === 'home';
-  const isDarkShell = isHome || activeApp === 'wallet';
+  const isDarkShell =
+    isHome ||
+    activeApp === 'profile' ||
+    activeApp === 'city_feed' ||
+    activeApp === 'wallet' ||
+    activeApp === 'bag' ||
+    activeApp === 'scooters' ||
+    activeApp === 'missions' ||
+    activeApp === 'public' ||
+    activeApp === 'messages' ||
+    activeApp === 'contacts' ||
+    activeApp === 'letters' ||
+    activeApp === 'settings';
   const clockLabel = formatClock24h(timeOfDayHours);
   const weatherMeta = WEATHER_DISPLAY[weatherCondition] ?? WEATHER_DISPLAY.cerah;
   const phaseLabel = PHASE_DISPLAY[lightingPreset] ?? 'Daytime';
@@ -223,15 +264,6 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
       onClick: () => openInPhone('bag'),
     },
     {
-      id: 'missions',
-      label: 'Missions',
-      gradient: 'from-violet-400 to-indigo-600',
-      icon: <ClipboardList className="w-6 h-6 text-white stroke-[1.9]" />,
-      badge: actionableMissionsCount > 0 ? actionableMissionsCount : undefined,
-      badgeColor: 'bg-emerald-400 text-slate-950',
-      onClick: () => openInPhone('missions'),
-    },
-    {
       id: 'wallet',
       label: 'Payments',
       gradient: 'from-yellow-400 to-amber-500',
@@ -241,67 +273,85 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
       onClick: () => openInPhone('wallet'),
     },
     {
-      id: 'profile',
-      label: 'Profile',
-      gradient: 'from-cyan-400 to-sky-600',
-      icon: <User className="w-6 h-6 text-white stroke-[1.9]" />,
-      onClick: () => openInPhone('profile'),
+      id: 'public',
+      label: 'Public',
+      gradient: 'from-rose-400 to-pink-600',
+      icon: <Globe className="w-6 h-6 text-white stroke-[1.9]" />,
+      onClick: () => openInPhone('public'),
     },
     {
-      id: 'world_feed',
-      label: 'World Feed',
-      gradient: 'from-rose-400 to-pink-600',
-      icon: <Sparkles className="w-6 h-6 text-white stroke-[1.9]" />,
-      onClick: () => openInPhone('messages'),
+      id: 'letters',
+      label: 'Letters',
+      gradient: 'from-amber-50 to-orange-100 ring-1 ring-white/80',
+      icon: (
+        <img
+          src="/assets/aistudio/writing_2593648_9a87d6fe.png"
+          alt="Letters"
+          className="w-8 h-8 object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.18)] pointer-events-none"
+          draggable={false}
+        />
+      ),
+      badge: unreadLettersCount > 0 ? (unreadLettersCount > 9 ? '9+' : unreadLettersCount) : undefined,
+      badgeColor: 'bg-rose-500 text-white',
+      onClick: () => openInPhone('letters'),
+    },
+    {
+      id: 'settings',
+      label: 'Settings',
+      gradient: 'from-slate-500 to-zinc-700',
+      icon: <Settings className="w-6 h-6 text-white stroke-[1.9]" />,
+      onClick: () => openInPhone('settings'),
+    },
+    {
+      id: 'city_feed',
+      label: 'City Feed',
+      gradient: 'from-cyan-400 to-teal-600',
+      icon: <Newspaper className="w-6 h-6 text-white stroke-[1.9]" />,
+      onClick: () => openInPhone('city_feed'),
     },
   ];
 
   return (
     <div
       role="dialog"
-      aria-modal="true"
+      aria-modal={isExpanded}
       aria-label="Buddies Smartphone"
       data-smartphone-os-modal="true"
       data-smartphone-active-app={activeApp}
+      data-smartphone-expanded={isExpanded ? 'true' : 'false'}
       onPointerDown={(e) => {
-        if (e.target === e.currentTarget) {
+        if (isExpanded && e.target === e.currentTarget) {
           soundEngine.playUiClick();
           onClose();
         }
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/30 backdrop-blur-[2px] pointer-events-auto select-none"
+      className={`fixed inset-0 z-50 select-none transition-colors duration-300 ${
+        isExpanded
+          ? 'bg-black/35 backdrop-blur-[2px] pointer-events-auto'
+          : 'bg-transparent pointer-events-none'
+      }`}
     >
-      {/* Outer Positioning Wrapper so Floating Close Button can overlap Top-Right */}
-      <div className="relative w-full max-w-[392px] sm:max-w-[420px] h-[640px] max-h-[88vh]">
-        {/* Floating Circular Close Button overlapping Top-Right Corner */}
-        <button
-          type="button"
-          data-smartphone-close-btn="true"
-          onClick={() => {
-            soundEngine.playUiClick();
-            onClose();
-          }}
-          aria-label="Close Smartphone"
-          className={`absolute -top-2.5 -right-2.5 z-30 w-8 h-8 rounded-full backdrop-blur-xl border flex items-center justify-center shadow-[0_6px_18px_rgba(0,0,0,0.28)] cursor-pointer transition-all active:scale-95 ${
-            isDarkShell
-              ? 'bg-white/25 hover:bg-white/40 border-white/35 text-white'
-              : 'bg-white hover:bg-slate-100 border-slate-200/90 text-slate-700'
-          }`}
-        >
-          <X className="w-4 h-4 stroke-[2.2]" />
-        </button>
-
+      {/* Outer Positioning Wrapper: slides in docked on the left by default; expands & centers when toggled */}
+      <div
+        className={`fixed pointer-events-auto transition-all duration-300 ease-out ${
+          isExpanded
+            ? 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(560px,calc(100vw-2rem))] h-[min(680px,88vh)] opacity-100'
+            : `left-3 sm:left-4 top-14 bottom-[76px] my-auto w-[min(340px,calc(100vw-1.5rem))] sm:w-[356px] max-h-[620px] ${
+                hasEntered ? 'translate-x-0 opacity-100' : '-translate-x-10 opacity-0'
+              }`
+        }`}
+      >
         {/* Unified Smartphone OS Frame */}
         <div
-          className={`w-full h-full rounded-[34px] overflow-hidden flex flex-col backdrop-blur-2xl shadow-[0_24px_70px_rgba(0,0,0,0.52)] border transition-colors duration-200 ${
+          className={`w-full h-full rounded-[32px] overflow-hidden flex flex-col backdrop-blur-2xl shadow-[0_24px_70px_rgba(0,0,0,0.52)] border transition-colors duration-200 ${
             isDarkShell
-              ? 'bg-[#141926]/62 border-white/25 text-white'
+              ? 'bg-[#141926]/68 border-white/25 text-white'
               : 'bg-[#f4f6f9]/98 border-white/80 text-slate-900'
           }`}
         >
           {/* Persistent Phone Status Bar */}
           <div
-            className={`shrink-0 flex items-center justify-between text-[10.5px] font-medium px-5 pt-3 pb-2 transition-colors ${
+            className={`shrink-0 flex items-center justify-between text-[10.5px] font-medium px-4 pt-3 pb-2 transition-colors ${
               isDarkShell
                 ? 'text-white/90'
                 : 'bg-white/95 text-slate-700 border-b border-slate-200/60'
@@ -315,7 +365,26 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
               <span className="tracking-wide font-semibold">BLITZ OS</span>
             </div>
             <span className="font-mono tabular-nums font-semibold">{clockLabel}</span>
-            <span className="font-mono tabular-nums opacity-85">92%</span>
+            <div className="flex items-center gap-2">
+              <span className="font-mono tabular-nums opacity-85">92%</span>
+              <button
+                type="button"
+                data-smartphone-nav-close="true"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  onClose();
+                }}
+                aria-label="Close Smartphone"
+                title="Close"
+                className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all cursor-pointer active:scale-90 ${
+                  isDarkShell
+                    ? 'bg-white/12 hover:bg-white/25 border-white/20 text-white/90 hover:text-white'
+                    : 'bg-slate-100 hover:bg-slate-200 border-slate-200/90 text-slate-700 hover:text-slate-950'
+                }`}
+              >
+                <X className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
+              </button>
+            </div>
           </div>
 
           {/* Middle Flexible Screen */}
@@ -323,7 +392,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
             {isHome ? (
               <div className="flex-1 min-h-0 flex flex-col px-4 pt-2 pb-3 overflow-y-auto">
                 {/* Clock + Weather Header */}
-                <div className="flex items-end justify-between px-1 mb-4">
+                <div className="flex items-end justify-between px-1 mb-3">
                   <div>
                     <div className="text-[10.5px] font-semibold uppercase tracking-wider text-white/75">
                       {phaseLabel}
@@ -344,7 +413,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
                 </div>
 
                 {/* 2 White Bento Widgets (Missions + Wallet Balance) */}
-                <div className="grid grid-cols-2 gap-2.5 mb-5">
+                <div className="grid grid-cols-2 gap-2.5 mb-3.5">
                   {/* Widget 1: Daily Mission Notes */}
                   <button
                     type="button"
@@ -360,7 +429,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
                         {completedMissionsCount}/{totalMissionsCount}
                       </span>
                     </div>
-                    <div className="p-2.5 flex-1 flex flex-col justify-between min-h-[76px]">
+                    <div className="p-2.5 flex-1 flex flex-col justify-between min-h-[72px]">
                       <div className="text-[11px] font-semibold text-slate-900 leading-snug line-clamp-2">
                         {activeMissionTitle || 'Daily City Goals'}
                       </div>
@@ -382,7 +451,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
                       <Coins className="w-3 h-3 shrink-0" />
                       <span>Wallet Balance</span>
                     </div>
-                    <div className="p-2.5 flex-1 flex flex-col justify-between min-h-[76px]">
+                    <div className="p-2.5 flex-1 flex flex-col justify-between min-h-[72px]">
                       <div>
                         <div className="text-[9.5px] text-slate-500">Available Funds</div>
                         <div className="text-sm font-bold text-slate-900 font-mono tabular-nums mt-0.5">
@@ -399,7 +468,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
                 </div>
 
                 {/* 4-Column Squircle App Icon Grid */}
-                <div className="grid grid-cols-4 gap-x-2.5 gap-y-3.5 px-0.5 flex-1 content-start">
+                <div className="grid grid-cols-4 gap-x-2.5 gap-y-3 px-0.5 flex-1 content-start">
                   {gridApps.map((app) => (
                     <button
                       key={app.id}
@@ -470,12 +539,12 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
                       <span className="relative w-11 h-11 rounded-[13px] bg-gradient-to-br from-sky-400 to-blue-500 shadow-md flex items-center justify-center transition-transform group-hover:scale-105 group-active:scale-95">
                         <MessageCircle className="w-5 h-5 text-white stroke-[2]" />
                         {unreadMessagesCount > 0 && (
-                          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-sky-300 text-slate-950 text-[9px] font-bold flex items-center justify-center border border-white/70">
+                          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center border border-white/70">
                             {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
                           </span>
                         )}
                       </span>
-                      <span className="text-[9.5px] font-medium text-white/90">Messages</span>
+                      <span className="text-[9.5px] font-medium text-white/90">Private</span>
                     </button>
 
                     <button
@@ -484,10 +553,15 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
                       onClick={() => openInPhone('contacts')}
                       className="group flex flex-col items-center gap-1 cursor-pointer"
                     >
-                      <span className="w-11 h-11 rounded-[13px] bg-gradient-to-br from-lime-400 to-emerald-500 shadow-md flex items-center justify-center transition-transform group-hover:scale-105 group-active:scale-95">
+                      <span className="relative w-11 h-11 rounded-[13px] bg-gradient-to-br from-lime-400 to-emerald-500 shadow-md flex items-center justify-center transition-transform group-hover:scale-105 group-active:scale-95">
                         <Users className="w-5 h-5 text-white stroke-[2]" />
+                        {onlinePeersCount > 0 && (
+                          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-emerald-400 text-slate-950 text-[9px] font-bold flex items-center justify-center border border-white/70">
+                            {onlinePeersCount > 9 ? '9+' : onlinePeersCount}
+                          </span>
+                        )}
                       </span>
-                      <span className="text-[9.5px] font-medium text-white/90">Contacts</span>
+                      <span className="text-[9.5px] font-medium text-white/90">Online</span>
                     </button>
                   </div>
                 </div>
@@ -499,7 +573,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
             )}
           </div>
 
-          {/* Real Smartphone Bottom Navigation Bar (Back · Home · Close) */}
+          {/* Real Smartphone Bottom Navigation Bar (Back · Home · Expand) */}
           <nav
             aria-label="Smartphone Navigation"
             data-smartphone-nav-bar="true"
@@ -547,20 +621,24 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
 
             <button
               type="button"
-              data-smartphone-nav-close="true"
+              data-smartphone-expand-btn="true"
               onClick={() => {
                 soundEngine.playUiClick();
-                onClose();
+                setIsExpanded((prev) => !prev);
               }}
-              aria-label="Close Smartphone"
-              title="Close"
+              aria-label={isExpanded ? 'Perkecil Smartphone ke kiri' : 'Perlebar Smartphone'}
+              title={isExpanded ? 'Perkecil ke sisi kiri' : 'Perlebar'}
               className={`w-10 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer active:scale-90 ${
                 isDarkShell
                   ? 'hover:bg-white/12 text-white/75 hover:text-white'
                   : 'hover:bg-slate-100 text-slate-600 hover:text-slate-950'
               }`}
             >
-              <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+              {isExpanded ? (
+                <Minimize2 className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+              ) : (
+                <Maximize2 className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+              )}
             </button>
           </nav>
         </div>

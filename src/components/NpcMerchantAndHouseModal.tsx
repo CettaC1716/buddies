@@ -12,6 +12,7 @@ import {
   Sparkles,
   Store,
   Trash2,
+  Wifi,
   X,
 } from 'lucide-react';
 import {
@@ -1975,90 +1976,20 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         aria-label="MMORPG AI Merchant Dialogue & Exchange"
         data-npc-merchant-modal="true"
         data-lobby-gold-exchange-modal="true"
-        className={`fixed left-4 top-16 bottom-20 z-40 w-[calc(100vw-2rem)] max-w-[540px] flex flex-col select-none transition-all duration-300 ease-out transform ${
+        data-chat-glass-modal="true"
+        className={`fixed left-3 sm:left-4 top-14 bottom-[76px] my-auto z-40 w-[min(340px,calc(100vw-1.5rem))] sm:w-[356px] max-h-[620px] flex flex-col select-none transition-all duration-300 ease-out transform ${
           isNpcOpen
             ? 'translate-x-0 opacity-100 pointer-events-auto'
             : '-translate-x-[120%] opacity-0 pointer-events-none'
         }`}
       >
-      <div className="relative flex-1 flex flex-col rounded-[24px] bg-[#e8ecf2]/94 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] p-4 sm:p-5 text-slate-900 overflow-hidden min-h-0">
-        {/* Top Bar: Clean Pill Navigation Tabs + Circular Close */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-300/60 shrink-0">
-          <div className="flex items-center gap-1.5 flex-wrap [&_button:disabled]:opacity-40 [&_button:disabled]:cursor-not-allowed">
-            <button
-              type="button"
-              data-gold-exchange-balance="true"
-              onClick={() => {
-                soundEngine.playUiClick();
-                setActiveTab('sesi_chat');
-              }}
-              className={`px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer transition-all ${
-                activeTab === 'sesi_chat'
-                  ? 'bg-sky-500 text-white shadow-sm'
-                  : 'bg-white/90 hover:bg-white text-slate-600 hover:text-slate-900 border border-slate-200/80'
-              }`}
-            >
-              <span>Chat Session</span>
-            </button>
-
-            <button
-              type="button"
-              data-merchant-exchange-tab="true"
-              onClick={() => {
-                soundEngine.playUiClick();
-                if (activeTab === 'transaksi' && exchangeQuickMode !== null) {
-                  setExchangeQuickMode(null);
-                } else {
-                  setActiveTab('transaksi');
-                }
-              }}
-              className={`px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer transition-all ${
-                activeTab === 'transaksi'
-                  ? 'bg-emerald-500 text-white shadow-sm'
-                  : 'bg-white/90 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 border border-slate-200/80'
-              }`}
-            >
-              <span>
-                {exchangeQuickMode ? EXCHANGE_QUICK_MODE_LABELS[exchangeQuickMode] : 'Exchange'}
-              </span>
-            </button>
-
-            {merchantLocation === 'beach_house' && (
-              <button
-                type="button"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  setActiveTab('katalog');
-                }}
-                className={`px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer transition-all ${
-                  activeTab === 'katalog'
-                    ? 'bg-sky-500 text-white shadow-sm'
-                    : 'bg-white/90 hover:bg-sky-50 text-slate-600 hover:text-sky-700 border border-slate-200/80'
-                }`}
-              >
-                <span>Catalog</span>
-              </button>
-            )}
-
-            {merchantLocation === 'beach_house' && (
-              <button
-                type="button"
-                data-fish-market-tab="true"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  setActiveTab('fish_market');
-                }}
-                className={`px-3 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer transition-all ${
-                  activeTab === 'fish_market'
-                    ? 'bg-teal-500 text-white shadow-sm'
-                    : 'bg-white/90 hover:bg-teal-50 text-slate-600 hover:text-teal-700 border border-slate-200/80'
-                }`}
-              >
-                <span>Fish Market ({caughtFishBucket.length})</span>
-              </button>
-            )}
+      <div className="relative flex-1 flex flex-col rounded-[32px] bg-[#141926]/68 backdrop-blur-2xl border border-white/25 shadow-[0_24px_70px_rgba(0,0,0,0.52)] text-white overflow-hidden min-h-0">
+        {/* Top Status Strip: BLITZ OS + Close Icon (replaces expand button) */}
+        <div className="shrink-0 flex items-center justify-between text-[10.5px] font-medium px-4 pt-3 pb-1.5 text-white/90">
+          <div className="flex items-center gap-1.5">
+            <Wifi className="w-3 h-3 text-white/85" aria-hidden="true" />
+            <span className="tracking-wide font-semibold">BLITZ OS</span>
           </div>
-
           <button
             type="button"
             data-gold-exchange-close="true"
@@ -2066,33 +1997,133 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               soundEngine.playUiClick();
               onClose();
             }}
-            className="w-8 h-8 rounded-full bg-white/90 hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200/80 shadow-xs flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
+            className="w-6 h-6 rounded-full flex items-center justify-center border bg-white/12 hover:bg-rose-500/35 border-white/20 text-white/90 hover:text-white cursor-pointer active:scale-90 transition-all shrink-0"
             aria-label="Close NPC Dialogue"
+            title="Close"
           >
-            <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+            <X className="w-3.5 h-3.5 stroke-[2.3]" aria-hidden="true" />
           </button>
         </div>
 
-        {/* Tab Content Viewport */}
-        <div className="mt-3 flex-1 flex flex-col overflow-y-auto pr-0.5 space-y-3 min-h-0">
+        {/* Active Chat Person Header */}
+        <div className="shrink-0 flex items-center justify-between gap-2.5 px-3.5 py-2 border-b border-white/12">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <img
+              src={npcShortName === 'HANA' ? '/assets/avatar_nadia.jpg' : '/assets/avatar_hiro.jpg'}
+              alt={npcShortName === 'HANA' ? 'Hana' : 'Kai'}
+              draggable={false}
+              className="w-8 h-8 rounded-full object-cover object-top ring-1 ring-white/25 shrink-0"
+            />
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-white leading-tight truncate">
+                {npcShortName === 'HANA' ? 'Hana' : 'Kai'}
+              </div>
+              <div className="text-[10px] text-white/65 leading-tight truncate">
+                {merchantLocation === 'lobby_cafe'
+                  ? 'Central Plaza · Property & Exchange'
+                  : 'Beachfront Harbor · Fish Market'}
+              </div>
+            </div>
+          </div>
+          <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.75)] shrink-0" />
+        </div>
+
+        {/* Compact Dark Glass Navigation Tabs */}
+        <div className="shrink-0 flex items-center gap-1.5 flex-wrap px-3.5 py-2 border-b border-white/10 [&_button:disabled]:opacity-40 [&_button:disabled]:cursor-not-allowed">
+          <button
+            type="button"
+            data-gold-exchange-balance="true"
+            onClick={() => {
+              soundEngine.playUiClick();
+              setActiveTab('sesi_chat');
+            }}
+            className={`px-3 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-all ${
+              activeTab === 'sesi_chat'
+                ? 'bg-sky-500 text-white shadow-sm'
+                : 'bg-white/10 hover:bg-white/18 text-white/75 hover:text-white border border-white/10'
+            }`}
+          >
+            <span>Chat Session</span>
+          </button>
+
+          <button
+            type="button"
+            data-merchant-exchange-tab="true"
+            onClick={() => {
+              soundEngine.playUiClick();
+              if (activeTab === 'transaksi' && exchangeQuickMode !== null) {
+                setExchangeQuickMode(null);
+              } else {
+                setActiveTab('transaksi');
+              }
+            }}
+            className={`px-3 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-all ${
+              activeTab === 'transaksi'
+                ? 'bg-emerald-500 text-white shadow-sm'
+                : 'bg-white/10 hover:bg-white/18 text-white/75 hover:text-white border border-white/10'
+            }`}
+          >
+            <span>
+              {exchangeQuickMode ? EXCHANGE_QUICK_MODE_LABELS[exchangeQuickMode] : 'Exchange'}
+            </span>
+          </button>
+
+          {merchantLocation === 'beach_house' && (
+            <button
+              type="button"
+              onClick={() => {
+                soundEngine.playUiClick();
+                setActiveTab('katalog');
+              }}
+              className={`px-3 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-all ${
+                activeTab === 'katalog'
+                  ? 'bg-sky-500 text-white shadow-sm'
+                  : 'bg-white/10 hover:bg-white/18 text-white/75 hover:text-white border border-white/10'
+              }`}
+            >
+              <span>Catalog</span>
+            </button>
+          )}
+
+          {merchantLocation === 'beach_house' && (
+            <button
+              type="button"
+              data-fish-market-tab="true"
+              onClick={() => {
+                soundEngine.playUiClick();
+                setActiveTab('fish_market');
+              }}
+              className={`px-3 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-all ${
+                activeTab === 'fish_market'
+                  ? 'bg-teal-500 text-white shadow-sm'
+                  : 'bg-white/10 hover:bg-white/18 text-white/75 hover:text-white border border-white/10'
+              }`}
+            >
+              <span>Fish ({caughtFishBucket.length})</span>
+            </button>
+          )}
+        </div>
+
+        {/* Tab Content Viewport (No bottom footer) */}
+        <div className="flex-1 flex flex-col overflow-y-auto px-3.5 py-3 space-y-3 min-h-0 bg-transparent">
           {/* ===============================================================
               TAB 1: LIVE CHAT SESSION (Interactive Game Concierge)
              =============================================================== */}
           {activeTab === 'sesi_chat' && (
-            <div className="flex-1 flex flex-col justify-between gap-3 min-h-0">
+            <div className="flex-1 flex flex-col justify-between gap-2.5 min-h-0">
               {/* Scrollable Conversation Thread */}
-              <div className="flex-1 overflow-y-auto px-2.5 py-3 rounded-2xl bg-[#f2f4f8] border border-slate-200/70 space-y-3 min-h-0">
+              <div className="flex-1 overflow-y-auto space-y-3 min-h-0">
                 {chatHistory.map((entry) =>
                   entry.role === 'player' ? (
                     <div key={entry.id} className="flex flex-col items-end">
                       <div className="flex items-center gap-1.5 mb-1 px-1.5">
-                        <span className="text-[10px] font-semibold text-slate-500">You</span>
+                        <span className="text-[10px] font-semibold text-white/75">You</span>
                       </div>
                       <div
                         data-player-chat-bubble="true"
                         className="max-w-[85%] px-3.5 py-2.5 rounded-2xl rounded-tr-sm bg-sky-500 text-white shadow-sm"
                       >
-                        <p className="text-xs sm:text-[13px] font-medium leading-relaxed">
+                        <p className="text-xs font-medium leading-relaxed">
                           {entry.text}
                         </p>
                       </div>
@@ -2100,12 +2131,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   ) : (
                     <div key={entry.id} className="flex flex-col items-start">
                       <div className="flex items-center gap-1.5 mb-1 px-1.5">
-                        <span className="text-[10px] font-semibold text-slate-600">
+                        <span className="text-[10px] font-semibold text-white/75">
                           {npcShortName === 'HANA' ? 'Hana' : 'Kai'}
                         </span>
                       </div>
-                      <div className="max-w-[88%] px-3.5 py-2.5 rounded-2xl rounded-tl-sm bg-white text-slate-800 border border-slate-200/60 shadow-sm">
-                        <p className="text-xs sm:text-[13px] font-medium leading-relaxed">
+                      <div className="max-w-[85%] px-3.5 py-2.5 rounded-2xl rounded-tl-sm bg-[#eef0f4]/92 text-slate-900 border border-white/80 shadow-sm">
+                        <p className="text-xs font-medium leading-relaxed text-slate-900">
                           {entry.text}
                         </p>
                       </div>
@@ -2115,24 +2146,19 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
                 {/* Active NPC Reply Bubble */}
                 <div className="flex flex-col items-start">
-                  <div className="flex items-center justify-between gap-2 w-full mb-1 px-1.5">
-                    <span className="inline-flex items-center gap-1.5 text-[10.5px] font-semibold text-slate-700">
-                      <span className="w-2 h-2 rounded-full bg-teal-500" />
-                      <span>{npcShortName === 'HANA' ? 'Hana' : 'Kai'}</span>
-                    </span>
-                    <span className="text-[10px] text-slate-400">
-                      {merchantLocation === 'lobby_cafe'
-                        ? 'Central Plaza'
-                        : 'Beachfront Harbor'}
+                  <div className="flex items-center gap-1.5 mb-1 px-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                    <span className="text-[10px] font-semibold text-white/75">
+                      {npcShortName === 'HANA' ? 'Hana' : 'Kai'}
                     </span>
                   </div>
                   <div
                     data-npc-chat-bubble="true"
-                    className="w-full px-4 py-3 rounded-2xl rounded-tl-sm bg-white text-slate-800 border border-slate-200/70 shadow-sm"
+                    className="max-w-[85%] px-3.5 py-2.5 rounded-2xl rounded-tl-sm bg-[#eef0f4]/92 text-slate-900 border border-white/80 shadow-sm"
                   >
-                    <p className="text-xs sm:text-[13px] font-medium leading-relaxed text-slate-800 min-h-[48px]">
+                    <p className="text-xs font-medium leading-relaxed text-slate-900">
                       {isNpcThinking ? (
-                        <span className="text-slate-400">Typing...</span>
+                        <span className="text-slate-500">Typing...</span>
                       ) : (
                         <>
                           {npcTypedText}
@@ -2145,12 +2171,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   </div>
                 </div>
 
-                {/* Guest Sign-In Callout (Compact 1-row pill) */}
+                {/* Guest Sign-In Callout (Compact 1-row dark glass card) */}
                 {!walletConnected && onConnectWallet && (
-                  <div className="px-3.5 py-2.5 rounded-2xl bg-white text-slate-800 border border-slate-200/80 shadow-sm flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-600 truncate">
-                      <LogIn className="w-3.5 h-3.5 text-emerald-500 shrink-0" aria-hidden="true" />
-                      <span>Sign in to buy &amp; exchange</span>
+                  <div className="px-3 py-2.5 rounded-2xl bg-white/10 text-white border border-white/15 backdrop-blur-md flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-white/85 truncate">
+                      <LogIn className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
+                      <span className="truncate">Sign in to buy &amp; exchange</span>
                     </span>
                     <button
                       type="button"
@@ -2159,7 +2185,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         soundEngine.playUiClick();
                         onConnectWallet();
                       }}
-                      className="px-3.5 py-1 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs font-semibold text-[11px] cursor-pointer transition-colors shrink-0"
+                      className="px-3 py-1 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white shadow-xs font-semibold text-[10.5px] cursor-pointer transition-colors shrink-0"
                     >
                       Sign in
                     </button>
@@ -2411,24 +2437,24 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     </div>
                   )}
 
-                {/* Hana Property Pitch Card (Compact icon-first action card) */}
+                {/* Hana Property Pitch Card (Compact dark glass card) */}
                 {merchantLocation === 'lobby_cafe' &&
                   !hasHouseOwnership &&
                   pitchView === 'full' && (
                     <div
                       data-hana-property-pitch="true"
-                      className="p-3.5 rounded-2xl bg-white text-slate-900 border border-slate-200/80 shadow-sm space-y-2.5"
+                      className="p-3 rounded-2xl bg-white/10 text-white border border-white/15 backdrop-blur-md space-y-2.5"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-sky-700">
-                          <Home className="w-3.5 h-3.5 text-sky-500" aria-hidden="true" />
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-sky-300">
+                          <Home className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
                           <span>Your First Home</span>
                         </span>
                         <button
                           type="button"
                           aria-label="Dismiss property offer for now"
                           onClick={() => setPitchViewBoth('hidden')}
-                          className="w-6 h-6 rounded-full bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 flex items-center justify-center cursor-pointer transition-colors"
+                          className="w-6 h-6 rounded-full bg-white/10 hover:bg-rose-500/30 text-white/70 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
                         >
                           <X className="w-3.5 h-3.5" aria-hidden="true" />
                         </button>
@@ -2442,7 +2468,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               soundEngine.playUiClick();
                               onViewModelHouse();
                             }}
-                            className="py-2 px-3 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs font-semibold text-[11px] cursor-pointer active:scale-[0.99] transition-all inline-flex items-center justify-center gap-1.5"
+                            className="py-2 px-2.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white shadow-xs font-semibold text-[10.5px] cursor-pointer active:scale-[0.99] transition-all inline-flex items-center justify-center gap-1.5"
                           >
                             <Eye className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                             <span>Model House</span>
@@ -2452,7 +2478,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           type="button"
                           data-hana-view-catalog-btn="true"
                           onClick={openPitchCatalog}
-                          className="py-2 px-3 rounded-full bg-slate-100 hover:bg-sky-50 text-slate-800 hover:text-sky-700 border border-slate-200/80 font-semibold text-[11px] cursor-pointer active:scale-[0.99] transition-all inline-flex items-center justify-center gap-1.5"
+                          className="py-2 px-2.5 rounded-full bg-white/14 hover:bg-white/22 text-white border border-white/15 font-semibold text-[10.5px] cursor-pointer active:scale-[0.99] transition-all inline-flex items-center justify-center gap-1.5"
                         >
                           <Store className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                           <span>View Catalog</span>
@@ -2466,36 +2492,36 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             soundEngine.playUiClick();
                             onOpenTeleportKioskFromPitch();
                           }}
-                          className="w-full py-2 rounded-full bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200/80 font-semibold text-[11px] cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors"
+                          className="w-full py-2 rounded-full bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 border border-sky-300/30 font-semibold text-[10.5px] cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors"
                         >
-                          <MapPin className="w-3.5 h-3.5 text-sky-500" aria-hidden="true" />
+                          <MapPin className="w-3.5 h-3.5 text-sky-300" aria-hidden="true" />
                           <span>Open Teleport Kiosk</span>
                         </button>
                       )}
                     </div>
                   )}
 
-                {/* Hana Welcome Bonus Card (Compact 1-line) */}
+                {/* Hana Welcome Bonus Card */}
                 {merchantLocation === 'lobby_cafe' &&
                   walletConnected &&
                   (!hanaWelcomeNearClaimed || hanaClaimResult?.ok) && (
                     <div
                       data-hana-onboarding-tutorial-box="true"
-                      className="p-3.5 rounded-2xl bg-emerald-50/90 text-slate-900 border border-emerald-200/80 shadow-sm space-y-2.5"
+                      className="p-3 rounded-2xl bg-emerald-500/18 text-white border border-emerald-300/35 backdrop-blur-md space-y-2.5"
                     >
                       {!hanaWelcomeNearClaimed && !hanaClaimResult?.ok ? (
                         <>
                           <div className="flex items-center justify-between gap-2">
-                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
-                              <Gift className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
+                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-200">
+                              <Gift className="w-3.5 h-3.5 text-emerald-300" aria-hidden="true" />
                               <span>Starter Bonus</span>
                             </span>
-                            <span className="px-2.5 py-0.5 rounded-full bg-white text-emerald-700 border border-emerald-200/80 text-[10.5px] font-semibold">
+                            <span className="text-[10.5px] font-semibold text-emerald-200">
                               0.30 NEAR
                             </span>
                           </div>
                           {hanaClaimResult?.error && (
-                            <div className="p-2.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200/80 text-[11px] font-medium">
+                            <div className="p-2 rounded-xl bg-rose-500/20 text-rose-200 border border-rose-400/35 text-[11px] font-medium">
                               {hanaClaimResult.error}
                             </div>
                           )}
@@ -2523,10 +2549,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 setIsClaimingHanaNear(false);
                               }
                             }}
-                            className={`w-full py-2.5 rounded-full font-semibold text-xs shadow-xs transition-all ${
+                            className={`w-full py-2 rounded-full font-semibold text-xs shadow-xs transition-all ${
                               isClaimingHanaNear
-                                ? 'bg-slate-200 text-slate-500 cursor-wait'
-                                : 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer active:scale-[0.99]'
+                                ? 'bg-white/15 text-white/55 cursor-wait'
+                                : 'bg-emerald-500 hover:bg-emerald-400 text-white cursor-pointer active:scale-[0.99]'
                             }`}
                           >
                             {isClaimingHanaNear ? 'Claiming...' : 'Claim Starter Pack'}
@@ -2534,7 +2560,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         </>
                       ) : (
                         <div className="space-y-1.5">
-                          <div className="flex items-center justify-between gap-2 text-xs font-medium text-emerald-800">
+                          <div className="flex items-center justify-between gap-2 text-xs font-medium text-emerald-200">
                             <span>Starter pack added: 0.30 NEAR + 100 LUL + 20 CYON.</span>
                             {hanaClaimResult?.txHash && (
                               <a
@@ -2544,7 +2570,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 }
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-sky-600 hover:text-sky-700 underline font-mono text-[11px]"
+                                className="text-sky-300 hover:text-sky-200 underline font-mono text-[11px]"
                               >
                                 Receipt
                               </a>
@@ -2558,8 +2584,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 <div ref={chatScrollEndRef} />
               </div>
 
-              {/* Clean Quick Question Chips + Clear Chat Footer */}
-              <div className="pt-2.5 border-t border-slate-300/60 shrink-0 space-y-2">
+              {/* Quick Question Chips + Clear Chat (No phone footer) */}
+              <div className="pt-2 border-t border-white/12 shrink-0 space-y-1.5">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {(
                     [
@@ -2575,7 +2601,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         soundEngine.playUiClick();
                         submitPlayerQuestion(prompt);
                       }}
-                      className="px-3 py-1.5 rounded-xl bg-white hover:bg-sky-50 text-slate-700 hover:text-sky-800 border border-slate-200/90 shadow-xs text-[11px] font-medium cursor-pointer transition-colors"
+                      className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/18 text-white/90 border border-white/12 text-[10.5px] font-medium cursor-pointer transition-colors"
                     >
                       {prompt}
                     </button>
@@ -2584,7 +2610,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     type="button"
                     data-chat-clear-btn="true"
                     onClick={handleClearChat}
-                    className="ml-auto px-3 py-1.5 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200/70 text-[10.5px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-colors shrink-0"
+                    className="ml-auto px-2.5 py-1 rounded-full bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 border border-rose-400/30 text-[10px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-colors shrink-0"
                   >
                     <Trash2 className="w-3 h-3" aria-hidden="true" />
                     <span>Clear chat</span>

@@ -51,15 +51,19 @@ import {
  * Returns true if `(worldX, worldZ)` sits inside a painted Zebra Crosswalk curb-to-curb corridor
  * (bridging the slight overhang between road half-width `3.9m..4.2m` and painted stripe half-span `3.2m`).
  */
-export function isPointOnPedestrianCrosswalkCorridor(worldX: number, worldZ: number): boolean {
+export function isPointOnPedestrianCrosswalkCorridor(
+  worldX: number,
+  worldZ: number,
+  lateralPad = 0.35,
+): boolean {
   const az = Math.abs(worldZ);
   for (let i = 0; i < ZEBRA_CROSSWALK_ZONES.length; i++) {
     const zc = ZEBRA_CROSSWALK_ZONES[i];
     const testZ = zc.mirroredZ ? az : worldZ;
     // Extend along the road-crossing axis beyond the 4.2m S-curve / 3.9m ring asphalt half-width
     // so crosswalk entries never get pinched shut on the 1.5m nav grid.
-    const padX = zc.hx >= zc.hz ? 1.45 : 0.35;
-    const padZ = zc.hz > zc.hx ? 1.45 : 0.35;
+    const padX = zc.hx >= zc.hz ? 1.45 : lateralPad;
+    const padZ = zc.hz > zc.hx ? 1.45 : lateralPad;
     if (Math.abs(worldX - zc.cx) <= zc.hx + padX && Math.abs(testZ - zc.cz) <= zc.hz + padZ) {
       return true;
     }
@@ -237,7 +241,9 @@ export function buildArenaNavGrids(params: {
       const wx = pedestrianGrid.minX + (col + 0.5) * pedestrianGrid.cellSize;
       const idx = row * pedestrianGrid.cols + col;
       const roadSdf = evaluateRoadNetworkSdf(wx, wz);
-      const onCrosswalk = isPointOnPedestrianCrosswalkCorridor(wx, wz);
+      // Require cell centers to sit inside the painted stripe lateral width (lateralPad = 0)
+      // so 1.5m grid edge cells overhanging into the stop-bar gap do not invite jaywalking.
+      const onCrosswalk = isPointOnPedestrianCrosswalkCorridor(wx, wz, 0.0);
       if (onCrosswalk) {
         cellCosts[idx] = 0.55;
       } else if (roadSdf <= 0.25) {

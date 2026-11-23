@@ -120,7 +120,7 @@ export const CENTRAL_PARK_PERIMETER_VERTICES: readonly [number, number][] = [
  * - Natural Honey-Oak Timber Pergola & Water Lily Pond (`29.5, -14.8`) wrapped in Wisteria
  * - 3-Story Stepped European Boutique & Rooftop Garden Tower (`12.2, -0.4`) on West Plaza
  * - Cozy Bites & Sips European Cafe Pavilion (`45.2, -0.6`) with outdoor bistro seating on East Plaza
- * - 2-Story Curved-Corner Beauty & Glow / Glow Studio Salon (`29.5, +14.0`) with Rooftop Garden
+ * - 2-Story Curved-Corner Beauty & Glow / Glow Studio Salon (`29.5, +15.0`) with Rooftop Garden
  * - Solid Wave Stone Benches, Ornate Dual-Basket Brass Lampposts & Blooming Pink Sakura Trees
  */
 export const CENTRAL_PARK_MASTERPLAN = {
@@ -178,10 +178,12 @@ export const CENTRAL_PARK_MASTERPLAN = {
   },
   beautySalon: {
     x: 29.5,
-    z: 14.0,
+    z: 15.0,
     yaw: Math.PI, // Front storefront & curved corner face North (-Z) toward Civic Cascade Fountain
-    halfX: 4.2, // World X span [25.3 .. 33.7] (>= 4.7m clear of flanking trees at x=20.6 & x=38.4)
-    halfZ: 3.4, // World Z span [10.6 .. 17.4] (keeps South Lawn North Promenade 8.2 & South Gate 21.7 wide open)
+    halfX: 6.3, // World X span [23.2 .. 35.8] (12.6m exterior width, synced 1:1 with 12.0m interior + 0.30m walls)
+    halfZ: 4.4, // World Z span [10.6 .. 19.4] (8.8m exterior depth, synced 1:1 with 8.2m interior + 0.30m walls)
+    upperHalfX: 5.1, // 2F inset upper story width 10.2m with 1.2m side wrap-around balconies
+    upperHalfZ: 3.1, // 2F inset upper story depth 6.2m with 1.3m front/rear wrap-around balconies
     groundFloorHeight: 4.92,
     secondFloorHeight: 8.35,
     totalHeight: 9.7,
@@ -279,12 +281,12 @@ export const CENTRAL_PARK_CANOPY_TREES: readonly CentralParkCanopyTreeSpec[] = [
   { id: 'urban_sakura_west_nw', species: 'pink_sakura', x: -3.2, z: -7.8, rotY: 0.35, scale: 1.06 },
   { id: 'urban_sakura_west_sw', species: 'pink_sakura', x: -3.2, z: 7.8, rotY: -0.35, scale: 1.06 },
   { id: 'urban_sakura_pergola_nw', species: 'pink_sakura', x: 20.6, z: -15.8, rotY: 0.55, scale: 1.08 },
-  { id: 'urban_sakura_south_sw', species: 'pink_sakura', x: 20.6, z: 15.8, rotY: -0.52, scale: 1.04 },
+  { id: 'urban_sakura_south_sw', species: 'pink_sakura', x: 17.6, z: 11.0, rotY: -0.52, scale: 1.04 },
   { id: 'urban_sakura_east_ne', species: 'pink_sakura', x: 51.2, z: -7.2, rotY: 0.25, scale: 1.05 },
   { id: 'urban_sakura_east_se', species: 'pink_sakura', x: 51.2, z: 7.2, rotY: -0.25, scale: 1.05 },
   { id: 'urban_oak_pergola_ne', species: 'mature_oak', x: 38.4, z: -15.8, rotY: -0.4, scale: 1.08 },
   { id: 'urban_oak_lawn_sw', species: 'mature_oak', x: 43.5, z: -9.2, rotY: 0.65, scale: 0.98 },
-  { id: 'urban_oak_southeast', species: 'mature_oak', x: 38.4, z: 15.8, rotY: 0.85, scale: 1.02 },
+  { id: 'urban_oak_southeast', species: 'mature_oak', x: 41.4, z: 11.0, rotY: 0.85, scale: 1.02 },
 ];
 
 /**
@@ -373,8 +375,6 @@ export const CENTRAL_PARK_PROP_RELOCATION_MANIFEST: readonly CentralParkPropRelo
   { id: 525, kind: 'bench', fromX: 25.2, fromZ: 0.0, toX: -47.5, toZ: 10.2, toRotY: -Math.PI / 2, reason: 'Relocated legacy central bench to SW Oasis lakeside lawn' },
   { id: 582, kind: 'recycle_bin', fromX: 24.5, fromZ: -2.3, toX: -47.5, toZ: -7.8, toRotY: -Math.PI / 2, reason: 'Paired with relocated bench 524 at NW Oasis' },
   { id: 583, kind: 'recycle_bin', fromX: 24.5, fromZ: 2.3, toX: -47.5, toZ: 7.8, toRotY: -Math.PI / 2, reason: 'Paired with relocated bench 525 at SW Oasis' },
-  { id: 530, kind: 'lamppost_1b', fromX: -6.2, fromZ: -7.2, toX: -55.5, toZ: -24.5, toRotY: 0.0, reason: 'Relocated industrial lamp to NW Oasis corner grass' },
-  { id: 531, kind: 'lamppost_1b', fromX: -6.2, fromZ: 7.2, toX: -55.5, toZ: 24.5, toRotY: Math.PI / 2, reason: 'Relocated industrial lamp to SW Oasis corner grass' },
   { id: 575, kind: 'flower_cluster', fromX: 26.5, fromZ: -4.2, toX: -44.5, toZ: -9.8, toRotY: 0.6, reason: 'Moved legacy flower cluster to NW Oasis grass border' },
   { id: 576, kind: 'flower_cluster', fromX: 26.5, fromZ: 4.2, toX: -44.5, toZ: 9.8, toRotY: -0.6, reason: 'Moved legacy flower cluster to SW Oasis grass border' },
   { id: 598, kind: 'river_rock', fromX: 48.0, fromZ: -8.5, toX: -37.2, toZ: -11.8, toRotY: 0.7, reason: 'Moved boulder to NW Oasis lakeside shore' },

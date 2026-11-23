@@ -5628,10 +5628,10 @@ export const CITY_TRAM_SPEC = {
 } as const;
 
 const CITY_TRAM_CORNER_WAYPOINTS: readonly CityTramCornerWaypoint[] = [
-  { x: -65.0, z: -47.0, filletRadius: 3.0 }, // NW Inner Halte-Side Tram Curve (adjacent to |x|=62.2, |z|=44.2 curb)
-  { x: 65.0, z: -47.0, filletRadius: 3.0 },  // NE Inner Halte-Side Tram Curve
-  { x: 65.0, z: 47.0, filletRadius: 3.0 },   // SE Inner Halte-Side Tram Curve
-  { x: -65.0, z: 47.0, filletRadius: 3.0 },  // SW Inner Halte-Side Tram Curve
+  { x: -65.0, z: -47.0, filletRadius: 9.0 }, // NW Wide R=9.0m Inner Halte-Side Tram Curve (around |x|=56.0, |z|=38.0)
+  { x: 65.0, z: -47.0, filletRadius: 9.0 },  // NE Wide R=9.0m Inner Halte-Side Tram Curve
+  { x: 65.0, z: 47.0, filletRadius: 9.0 },   // SE Wide R=9.0m Inner Halte-Side Tram Curve
+  { x: -65.0, z: 47.0, filletRadius: 9.0 },  // SW Wide R=9.0m Inner Halte-Side Tram Curve
 ];
 
 interface CompiledTramSegment {
@@ -5949,6 +5949,63 @@ export function evaluateCityTramConsistState(leadDistanceMeters: number): CityTr
     leadDistance: wrappedDist,
     totalTrackLength: totalLength,
   };
+}
+
+export interface CityTramCollisionObb {
+  x: number;
+  z: number;
+  yaw: number;
+  halfX: number;
+  halfZ: number;
+  forwardX: number;
+  forwardZ: number;
+}
+
+/**
+ * Returns the 3 solid OBB collision hulls for the 2-Car Articulated City Tram:
+ * `[Car 1 (Front), Articulation Joint (Accordion Bellows Connector), Car 2 (Rear)]`.
+ * The articulation joint OBB overlaps slightly into both car bulkheads so characters
+ * can never walk or slip through the connector between Car 1 and Car 2 even on tight turns.
+ */
+export function getCityTramCollisionObbs(
+  tramState: CityTramConsistState,
+): [CityTramCollisionObb, CityTramCollisionObb, CityTramCollisionObb] {
+  const carHalfX = CITY_TRAM_SPEC.carLength * 0.5;
+  const carHalfZ = CITY_TRAM_SPEC.carWidth * 0.5;
+  const jointForwardX = Math.cos(tramState.joint.yaw);
+  const jointForwardZ = -Math.sin(tramState.joint.yaw);
+  const jointHalfX = Math.max(CITY_TRAM_SPEC.jointLength, tramState.joint.spanLength) * 0.5 + 0.65;
+  const jointHalfZ = CITY_TRAM_SPEC.carWidth * 0.49;
+
+  return [
+    {
+      x: tramState.car1.x,
+      z: tramState.car1.z,
+      yaw: tramState.car1.yaw,
+      halfX: carHalfX,
+      halfZ: carHalfZ,
+      forwardX: tramState.car1.forwardX,
+      forwardZ: tramState.car1.forwardZ,
+    },
+    {
+      x: tramState.joint.x,
+      z: tramState.joint.z,
+      yaw: tramState.joint.yaw,
+      halfX: jointHalfX,
+      halfZ: jointHalfZ,
+      forwardX: jointForwardX,
+      forwardZ: jointForwardZ,
+    },
+    {
+      x: tramState.car2.x,
+      z: tramState.car2.z,
+      yaw: tramState.car2.yaw,
+      halfX: carHalfX,
+      halfZ: carHalfZ,
+      forwardX: tramState.car2.forwardX,
+      forwardZ: tramState.car2.forwardZ,
+    },
+  ];
 }
 
 // ============================================================================
@@ -6406,6 +6463,12 @@ export const PLAZA_TRAFFIC_SIGNAL_SPEC = {
   crosswalkHalfZ: 2.2,
   northStopBarZ: -5.4,
   southStopBarZ: 11.8,
+  northResCrosswalkX: 9.8,
+  northResCrosswalkMinZ: -55.9,
+  northResCrosswalkMaxZ: -44.2,
+  northResCrosswalkHalfX: 2.2,
+  northResStopBarX: 6.6,
+  northResWestboundStopBarX: 13.0,
   eastCrosswalkMinX: 62.2,
   eastCrosswalkMaxX: 73.9,
   eastCrosswalkZ: 0.0,
@@ -6419,26 +6482,28 @@ export const PLAZA_TRAFFIC_SIGNAL_SPEC = {
 
 export interface CityTrafficSignalPoleSpec {
   id: string;
-  zone: 'plaza_north' | 'plaza_south' | 'east_harbor';
+  zone: 'plaza_north' | 'north_residence' | 'east_harbor';
   x: number;
   y: number;
   z: number;
-  /** Which direction (+1 = +X, -1 = -X) the curved cantilever arm reaches over the road. */
+  /** Which direction (+1 = local +X, -1 = local -X) the curved cantilever arm reaches over the road. */
   armDirX: -1 | 1;
+  /** Optional Y rotation (radians); 0 for N-S roads (arm along X), Math.PI/2 for E-W roads (arm along Z). */
+  rotY?: number;
   armReachM: number;
   boomHeightY: number;
 }
 
 /**
  * Exact positions of the 6 Curved Steel Cantilever Traffic Signal Poles
- * covering Central Plaza's Dual Crosswalks (z = ±8.60) and East Harbor Crosswalk (z = 0.0),
- * with higher 6.45m booms over the Halte-adjacent tram corridor to clear the 5.59m pantograph.
+ * covering Central Plaza's North Crosswalk (z = -8.60), North Residence Crosswalk (x = +9.80, z = -50.05),
+ * and East Harbor Crosswalk (z = 0.0), with high booms over the Halte-adjacent tram corridor to clear the 5.59m pantograph.
  */
 export const CITY_TRAFFIC_SIGNAL_POLE_SPECS: readonly CityTrafficSignalPoleSpec[] = [
   { id: 'plaza_north_inner', zone: 'plaza_north', x: -61.82, y: 0.085, z: -10.15, armDirX: -1, armReachM: 3.18, boomHeightY: 7.25 },
   { id: 'plaza_north_outer', zone: 'plaza_north', x: -74.22, y: 0.085, z: -11.05, armDirX: 1, armReachM: 3.15, boomHeightY: 5.65 },
-  { id: 'plaza_south_inner', zone: 'plaza_south', x: -61.82, y: 0.085, z: 10.15, armDirX: -1, armReachM: 3.18, boomHeightY: 7.25 },
-  { id: 'plaza_south_outer', zone: 'plaza_south', x: -74.22, y: 0.085, z: 11.05, armDirX: 1, armReachM: 3.15, boomHeightY: 5.65 },
+  { id: 'north_res_inner', zone: 'north_residence', x: 13.15, y: 0.085, z: -43.82, armDirX: 1, rotY: Math.PI / 2, armReachM: 3.18, boomHeightY: 7.25 },
+  { id: 'north_res_outer', zone: 'north_residence', x: 6.75, y: 0.085, z: -56.22, armDirX: -1, rotY: Math.PI / 2, armReachM: 3.15, boomHeightY: 6.45 },
   { id: 'east_harbor_inner', zone: 'east_harbor', x: 61.82, y: 0.085, z: 2.85, armDirX: 1, armReachM: 3.18, boomHeightY: 7.25 },
   { id: 'east_harbor_outer', zone: 'east_harbor', x: 74.22, y: 0.085, z: 2.85, armDirX: -1, armReachM: 3.15, boomHeightY: 5.65 },
 ];
@@ -6480,15 +6545,15 @@ export const CITY_TRAFFIC_SIGN_SPECS: readonly CityTrafficSignSpec[] = [
   { id: 'sign_tram_south_e', kind: 'tram_lane_only', x: 48.0, y: 0.085, z: 43.72, rotY: Math.PI / 2 },
 
   // Halte Boarding Info (exactly 1 sign per Halte, clear of boarding ramps, shelters & walkways)
-  { id: 'sign_halte_plaza', kind: 'halte_stop', x: -56.25, y: 0.26, z: -7.8, rotY: -Math.PI / 2 },
-  { id: 'sign_halte_north_res', kind: 'halte_stop', x: 13.30, y: 0.085, z: -43.72, rotY: 0 },
+  { id: 'sign_halte_plaza', kind: 'halte_stop', x: -56.25, y: 0.26, z: -2.8, rotY: -Math.PI / 2 },
+  { id: 'sign_halte_north_res', kind: 'halte_stop', x: -6.35, y: 0.085, z: -43.72, rotY: 0 },
   { id: 'sign_halte_south_res', kind: 'halte_stop', x: -46.30, y: 0.085, z: 43.72, rotY: Math.PI },
   { id: 'sign_halte_harbor', kind: 'halte_stop', x: 74.38, y: 0.085, z: 39.2, rotY: 0 },
 
   // Symmetric Pedestrian & Crosswalk Warnings on Outer Curb Strips (zero stair/crosswalk obstruction)
   { id: 'sign_pedwarn_plaza_n', kind: 'pedestrian_warning', x: -74.32, y: 0.085, z: -17.8, rotY: Math.PI },
   { id: 'sign_pedwarn_plaza_s', kind: 'pedestrian_warning', x: -74.32, y: 0.085, z: 17.8, rotY: 0 },
-  { id: 'sign_ped_north_blvd', kind: 'pedestrian_crosswalk', x: 4.45, y: 0.085, z: -56.42, rotY: Math.PI / 2 },
+  { id: 'sign_ped_north_blvd', kind: 'pedestrian_crosswalk', x: 21.85, y: 0.085, z: -56.42, rotY: Math.PI / 2 },
   { id: 'sign_ped_south_blvd', kind: 'pedestrian_crosswalk', x: -4.45, y: 0.085, z: 56.42, rotY: -Math.PI / 2 },
 
   // Essential Urban Slow-Zone & Harbor Tram Crossing Alerts
@@ -6561,11 +6626,11 @@ export function createInitialPlazaTrafficSignalState(
 }
 
 function evalInnerHalteTramTrackDist(worldX: number, worldZ: number): number {
-  const dx = Math.abs(worldX) - 62.0;
-  const dz = Math.abs(worldZ) - 44.0;
+  const dx = Math.abs(worldX) - 56.0;
+  const dz = Math.abs(worldZ) - 38.0;
   const outside = Math.hypot(Math.max(dx, 0), Math.max(dz, 0));
   const inside = Math.min(Math.max(dx, dz), 0);
-  const signedOffset = outside + inside - 3.0;
+  const signedOffset = outside + inside - 9.0;
   return Math.abs(signedOffset);
 }
 
@@ -6575,14 +6640,34 @@ function isTramConsistOccupyingCorridorZBand(
   zMin: number,
   zMax: number,
 ): boolean {
-  const halfLen = CITY_TRAM_SPEC.carLength * 0.5 + 0.6;
-  const cars = [tramState.car1, tramState.car2] as const;
-  for (let i = 0; i < cars.length; i++) {
-    const car = cars[i];
-    if (Math.abs(car.x - corridorX) > 2.4) continue;
-    const carMinZ = car.z - Math.abs(car.forwardZ) * halfLen;
-    const carMaxZ = car.z + Math.abs(car.forwardZ) * halfLen;
-    if (carMaxZ >= zMin && carMinZ <= zMax) {
+  const sections = getCityTramCollisionObbs(tramState);
+  for (let i = 0; i < sections.length; i++) {
+    const sec = sections[i];
+    if (Math.abs(sec.x - corridorX) > 2.4) continue;
+    const halfLen = sec.halfX + 0.6;
+    const secMinZ = sec.z - Math.abs(sec.forwardZ) * halfLen;
+    const secMaxZ = sec.z + Math.abs(sec.forwardZ) * halfLen;
+    if (secMaxZ >= zMin && secMinZ <= zMax) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isTramConsistOccupyingCorridorXBand(
+  tramState: CityTramConsistState,
+  corridorZ: number,
+  xMin: number,
+  xMax: number,
+): boolean {
+  const sections = getCityTramCollisionObbs(tramState);
+  for (let i = 0; i < sections.length; i++) {
+    const sec = sections[i];
+    if (Math.abs(sec.z - corridorZ) > 2.4) continue;
+    const halfLen = sec.halfX + 0.6;
+    const secMinX = sec.x - Math.abs(sec.forwardX) * halfLen;
+    const secMaxX = sec.x + Math.abs(sec.forwardX) * halfLen;
+    if (secMaxX >= xMin && secMinX <= xMax) {
       return true;
     }
   }
@@ -6591,7 +6676,7 @@ function isTramConsistOccupyingCorridorZBand(
 
 /**
  * Evaluates whether pedestrians may safely walk across Central Plaza's North (`z = -8.60`)
- * and South (`z = +8.60`) crosswalks based on the live traffic signal and physical track occupancy.
+ * crosswalk based on the live traffic signal and physical track occupancy.
  */
 export function evaluatePlazaCrosswalkWalkStates(
   signal: PlazaTrafficSignalState,
@@ -6603,13 +6688,30 @@ export function evaluatePlazaCrosswalkWalkStates(
   tramInSouthCrosswalk: boolean;
 } {
   const tramInNorthCrosswalk = isTramConsistOccupyingCorridorZBand(tramState, -65.0, -11.4, -5.8);
-  const tramInSouthCrosswalk = isTramConsistOccupyingCorridorZBand(tramState, -65.0, 5.8, 11.4);
   const isRedForTram = signal.phase === 'tram_red';
   return {
     northWalkAllowed: isRedForTram && !tramInNorthCrosswalk,
-    southWalkAllowed: isRedForTram && !tramInSouthCrosswalk,
+    southWalkAllowed: false,
     tramInNorthCrosswalk,
-    tramInSouthCrosswalk,
+    tramInSouthCrosswalk: false,
+  };
+}
+
+/**
+ * Evaluates whether pedestrians may safely cross North Residence's Crosswalk (`x = +9.80`, `z ≈ -50.05`)
+ * without conflicting with the eastbound tram (`z = -47.0`).
+ */
+export function evaluateNorthResidenceCrosswalkWalkState(
+  signal: PlazaTrafficSignalState,
+  tramState: CityTramConsistState,
+): {
+  walkAllowed: boolean;
+  tramInCrosswalk: boolean;
+} {
+  const tramInCrosswalk = isTramConsistOccupyingCorridorXBand(tramState, -47.0, 7.0, 12.6);
+  return {
+    walkAllowed: signal.phase === 'tram_red' && !tramInCrosswalk,
+    tramInCrosswalk,
   };
 }
 
@@ -6702,6 +6804,7 @@ export function stepCityTramTrafficSpeedAndDistance(params: {
   dt: number;
   tramState: CityTramConsistState;
   signalState: PlazaTrafficSignalState;
+  northSignalState?: PlazaTrafficSignalState;
   eastSignalState?: PlazaTrafficSignalState;
   holdAtSafezoneHalte: boolean;
   hasSouthWaiter?: boolean;
@@ -6732,26 +6835,30 @@ export function stepCityTramTrafficSpeedAndDistance(params: {
     return false;
   };
 
-  // 1A. West Northbound Track: Central Plaza Traffic Signals (x ≈ -65.0, forwardZ < -0.5)
+  // 1A. West Northbound Track: Central Plaza North Traffic Signal (x ≈ -65.0, forwardZ < -0.5)
   const car1 = tramState.car1;
+  const car1NoseX = car1.x + car1.forwardX * (CITY_TRAM_SPEC.carLength * 0.5);
   const car1NoseZ = car1.z + car1.forwardZ * (CITY_TRAM_SPEC.carLength * 0.5);
   const onWestNorthbound = Math.abs(car1.x - -65.0) < 2.2 && car1.forwardZ < -0.5;
   if (
     onWestNorthbound &&
     (signalState.phase === 'tram_amber' || signalState.phase === 'tram_red')
   ) {
-    const westBars = [
-      PLAZA_TRAFFIC_SIGNAL_SPEC.southStopBarZ,
-      PLAZA_TRAFFIC_SIGNAL_SPEC.northStopBarZ,
-    ] as const;
-    for (let bi = 0; bi < westBars.length; bi++) {
-      if (applyStopBarApproach(car1NoseZ - westBars[bi])) {
-        break;
-      }
-    }
+    applyStopBarApproach(car1NoseZ - PLAZA_TRAFFIC_SIGNAL_SPEC.northStopBarZ);
   }
 
-  // 1B. East Southbound Track: East Harbor Traffic Signal (x ≈ +65.0, forwardZ > +0.5)
+  // 1B. North Eastbound Track: North Residence Traffic Signal (z ≈ -47.0, forwardX > +0.5)
+  const northSignal = params.northSignalState;
+  const onNorthEastbound = Math.abs(car1.z - -47.0) < 2.2 && car1.forwardX > 0.5;
+  if (
+    northSignal &&
+    onNorthEastbound &&
+    (northSignal.phase === 'tram_amber' || northSignal.phase === 'tram_red')
+  ) {
+    applyStopBarApproach(PLAZA_TRAFFIC_SIGNAL_SPEC.northResStopBarX - car1NoseX);
+  }
+
+  // 1C. East Southbound Track: East Harbor Traffic Signal (x ≈ +65.0, forwardZ > +0.5)
   const eastSignal = params.eastSignalState;
   const onEastSouthbound = Math.abs(car1.x - 65.0) < 2.2 && car1.forwardZ > 0.5;
   if (
@@ -6811,9 +6918,10 @@ export function shouldPedestrianYieldForTramOrSignal(params: {
   probeZ: number;
   tramState: CityTramConsistState;
   signalState: PlazaTrafficSignalState;
+  northSignalState?: PlazaTrafficSignalState;
   eastSignalState?: PlazaTrafficSignalState;
 }): boolean {
-  const { x, z, probeX, probeZ, tramState, signalState, eastSignalState } = params;
+  const { x, z, probeX, probeZ, tramState, signalState, northSignalState, eastSignalState } = params;
   const npcRoadSdf = evaluateRoadNetworkSdf(x, z);
   const probeRoadSdf = evaluateRoadNetworkSdf(probeX, probeZ);
   const steppingOntoRoad = npcRoadSdf > 0.15 && npcRoadSdf <= 3.8 && probeRoadSdf <= 0.25;
@@ -6822,21 +6930,19 @@ export function shouldPedestrianYieldForTramOrSignal(params: {
   const probeTrackDist = evalInnerHalteTramTrackDist(probeX, probeZ);
   const steppingOntoTramTrack = npcTrackDist > 1.95 && probeTrackDist <= 2.85;
 
-  // Compute physical OBB distance + 20m forward sweep ahead of Car 1 nose
+  // Compute physical OBB distance across Car 1, Articulation Joint, and Car 2 + 20m forward sweep ahead of Car 1 nose
   const minDistToTramConsist = (tx: number, tz: number): number => {
     let best = Infinity;
-    const cars = [tramState.car1, tramState.car2] as const;
-    const halfLen = CITY_TRAM_SPEC.carLength * 0.5;
-    const halfWid = CITY_TRAM_SPEC.carWidth * 0.5;
-    for (let i = 0; i < cars.length; i++) {
-      const car = cars[i];
-      const dx = tx - car.x;
-      const dz = tz - car.z;
-      const rightX = -car.forwardZ;
-      const rightZ = car.forwardX;
-      const lLong = Math.abs(dx * car.forwardX + dz * car.forwardZ);
+    const sections = getCityTramCollisionObbs(tramState);
+    for (let i = 0; i < sections.length; i++) {
+      const sec = sections[i];
+      const dx = tx - sec.x;
+      const dz = tz - sec.z;
+      const rightX = -sec.forwardZ;
+      const rightZ = sec.forwardX;
+      const lLong = Math.abs(dx * sec.forwardX + dz * sec.forwardZ);
       const lLat = Math.abs(dx * rightX + dz * rightZ);
-      const obbDist = Math.hypot(Math.max(0, lLong - halfLen), Math.max(0, lLat - halfWid));
+      const obbDist = Math.hypot(Math.max(0, lLong - sec.halfX), Math.max(0, lLat - sec.halfZ));
       if (obbDist < best) best = obbDist;
     }
     return best;
@@ -6847,23 +6953,38 @@ export function shouldPedestrianYieldForTramOrSignal(params: {
     return false;
   }
 
-  // 1A. Plaza Signalized Crosswalks (North z = -8.60 & South z = +8.60)
+  // 1A. Plaza North Signalized Crosswalk (z = -8.60)
   const inPlazaCrossBand =
     x >= -76.5 &&
     x <= -59.5 &&
-    Math.abs(Math.abs(z) - PLAZA_TRAFFIC_SIGNAL_SPEC.southCrosswalkZ) <= 3.6;
+    Math.abs(z - PLAZA_TRAFFIC_SIGNAL_SPEC.northCrosswalkZ) <= 3.6;
   if (inPlazaCrossBand && (steppingOntoRoad || steppingOntoTramTrack)) {
     const walkStates = evaluatePlazaCrosswalkWalkStates(signalState, tramState);
-    const walkAllowed = z < 0 ? walkStates.northWalkAllowed : walkStates.southWalkAllowed;
     const crossingClosing =
       signalState.phase === 'tram_red' &&
       signalState.phaseElapsedSec >= PLAZA_TRAFFIC_SIGNAL_SPEC.redDurationSec - 1.2;
-    if (!walkAllowed || (steppingOntoRoad && crossingClosing)) {
+    if (!walkStates.northWalkAllowed || (steppingOntoRoad && crossingClosing)) {
       return true;
     }
   }
 
-  // 1B. East Harbor Signalized Crosswalk (z = 0.0, x ≈ +68.05)
+  // 1B. North Residence Signalized Crosswalk (x = +9.80, z ≈ -50.05)
+  const inNorthResCrossBand =
+    northSignalState &&
+    z >= -58.5 &&
+    z <= -41.5 &&
+    Math.abs(x - PLAZA_TRAFFIC_SIGNAL_SPEC.northResCrosswalkX) <= 3.6;
+  if (inNorthResCrossBand && (steppingOntoRoad || steppingOntoTramTrack)) {
+    const northWalk = evaluateNorthResidenceCrosswalkWalkState(northSignalState, tramState);
+    const northClosing =
+      northSignalState.phase === 'tram_red' &&
+      northSignalState.phaseElapsedSec >= PLAZA_TRAFFIC_SIGNAL_SPEC.redDurationSec - 1.2;
+    if (!northWalk.walkAllowed || (steppingOntoRoad && northClosing)) {
+      return true;
+    }
+  }
+
+  // 1C. East Harbor Signalized Crosswalk (z = 0.0, x ≈ +68.05)
   const inEastHarborCrossBand =
     eastSignalState &&
     x >= 59.5 &&
@@ -12007,7 +12128,7 @@ export const LOBBY_TRAM_RETURN_PADS: readonly LobbyTramReturnPadSpec[] = [
     id: 'north_lobby_pad',
     side: 'north',
     x: -60.52,
-    z: -4.6,
+    z: 0.0,
     radius: 1.45,
     colorHex: '#38bdf8',
     style: 'crate_pad_hologram',
@@ -12017,7 +12138,7 @@ export const LOBBY_TRAM_RETURN_PADS: readonly LobbyTramReturnPadSpec[] = [
     id: 'south_lobby_pad',
     side: 'south',
     x: -60.52,
-    z: 4.6,
+    z: 9.2,
     radius: 1.45,
     colorHex: '#38bdf8',
     style: 'crate_pad_hologram',
@@ -12027,13 +12148,13 @@ export const LOBBY_TRAM_RETURN_PADS: readonly LobbyTramReturnPadSpec[] = [
 
 export const LOBBY_TRAM_SHELTER_SPEC = {
   shelterCenterX: -61.03,
-  shelterCenterZ: 0.0,
+  shelterCenterZ: 4.6,
   westEdgeX: -62.2,
   eastEdgeX: -55.6,
   canopyCenterX: -57.68,
-  canopyCenterZ: 0.0,
+  canopyCenterZ: 4.6,
   platformCenterX: -58.9,
-  platformCenterZ: 0.0,
+  platformCenterZ: 4.6,
   platformLength: 18.4,
   centralPlatformLength: 15.4,
   platformWidth: 6.6,
@@ -12041,9 +12162,9 @@ export const LOBBY_TRAM_SHELTER_SPEC = {
   canopyWidth: 2.58,
   canopyHeight: 3.35,
   returnPadX: -60.52,
-  returnPadZ: -4.6,
+  returnPadZ: 0.0,
   southReturnPadX: -60.52,
-  southReturnPadZ: 4.6,
+  southReturnPadZ: 9.2,
   returnPadRadius: 1.45,
   returnPads: LOBBY_TRAM_RETURN_PADS,
   label: 'CENTRAL PLAZA',
@@ -13495,6 +13616,51 @@ export function computeTeamMirrorCameraPose(params: {
   };
 }
 
+export const NPC_DIALOGUE_ORBIT_BOUNDS = {
+  minYawOffsetRad: -1.18,
+  maxYawOffsetRad: 1.18,
+  minPitchOffsetRad: -0.26,
+  maxPitchOffsetRad: 0.44,
+  minDistanceScale: 0.78,
+  maxDistanceScale: 2.08,
+  defaultDistanceScale: 1.0,
+} as const;
+
+export function clampNpcDialoguePortraitOrbit(input: {
+  orbitYawOffsetRad?: number;
+  orbitPitchOffsetRad?: number;
+  portraitDistanceScale?: number;
+}): {
+  orbitYawOffsetRad: number;
+  orbitPitchOffsetRad: number;
+  portraitDistanceScale: number;
+} {
+  const rawYaw = input.orbitYawOffsetRad ?? 0;
+  const rawPitch = input.orbitPitchOffsetRad ?? 0;
+  const rawDistScale =
+    input.portraitDistanceScale ?? NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale;
+  return {
+    orbitYawOffsetRad: Number.isFinite(rawYaw)
+      ? Math.max(
+          NPC_DIALOGUE_ORBIT_BOUNDS.minYawOffsetRad,
+          Math.min(NPC_DIALOGUE_ORBIT_BOUNDS.maxYawOffsetRad, rawYaw),
+        )
+      : 0,
+    orbitPitchOffsetRad: Number.isFinite(rawPitch)
+      ? Math.max(
+          NPC_DIALOGUE_ORBIT_BOUNDS.minPitchOffsetRad,
+          Math.min(NPC_DIALOGUE_ORBIT_BOUNDS.maxPitchOffsetRad, rawPitch),
+        )
+      : 0,
+    portraitDistanceScale: Number.isFinite(rawDistScale)
+      ? Math.max(
+          NPC_DIALOGUE_ORBIT_BOUNDS.minDistanceScale,
+          Math.min(NPC_DIALOGUE_ORBIT_BOUNDS.maxDistanceScale, rawDistScale),
+        )
+      : NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale,
+  };
+}
+
 export interface NpcDialoguePortraitPoseInput {
   npcX: number;
   npcY: number;
@@ -13505,7 +13671,17 @@ export interface NpcDialoguePortraitPoseInput {
   fovDeg?: number;
   isSitting?: boolean;
   sitLiftY?: number;
+  /**
+   * Optional live bone-measured vertical drop (in world meters) of the character's Head bone
+   * below their normal standing Head height. When finite, overrides the static isSitting drop
+   * so low/seated/paired animations (e.g. Inseparable Sit on a bench or ground poses) keep the
+   * camera centered on the actual animated character rather than empty standing air.
+   */
+  boneDropY?: number;
   npcScale?: number;
+  orbitYawOffsetRad?: number;
+  orbitPitchOffsetRad?: number;
+  portraitDistanceScale?: number;
 }
 
 export interface NpcDialoguePortraitPoseResult {
@@ -13518,8 +13694,8 @@ export interface NpcDialoguePortraitPoseResult {
 
 /**
  * Frames any City NPC (Hana/Kai merchants or roaming district citizens) in the
- * right-side waist-up ("setengah badan") portrait view so the left-side dialogue
- * drawer remains unobstructed.
+ * right-side portrait view so the left-side dialogue drawer remains unobstructed,
+ * while supporting bounded camera orbit and zoom-out for full-body observation.
  */
 export function computeNpcDialoguePortraitPose(
   input: NpcDialoguePortraitPoseInput,
@@ -13529,32 +13705,349 @@ export function computeNpcDialoguePortraitPose(
   const fx = rawLen > 1e-4 ? input.frontDirX / rawLen : 1;
   const fz = rawLen > 1e-4 ? input.frontDirZ / rawLen : 0;
   const scale = input.npcScale ?? 1.0;
-  const npcCamDist = 2.42 * scale;
+  const baseDist = 2.42 * scale;
   const halfFovTan = Math.tan(((fovDeg * Math.PI) / 180) * 0.5);
   const activeAspect = Math.max(1.0, Math.min(2.4, input.aspect || 1.6));
+  const staticSitDrop = input.isSitting ? (0.40 - (input.sitLiftY ?? 0)) * scale : 0;
+  const sitDrop =
+    typeof input.boneDropY === 'number' && Number.isFinite(input.boneDropY)
+      ? Math.max(staticSitDrop, input.boneDropY)
+      : staticSitDrop;
+
+  // Keep NPC facing anchored to the base viewer direction so orbiting lets the user inspect side angles.
+  const baseLateralShift = 0.44 * baseDist * halfFovTan * activeAspect;
+  const baseLookAtX = input.npcX - fz * baseLateralShift;
+  const baseLookAtZ = input.npcZ + fx * baseLateralShift;
+  const baseCamX = baseLookAtX + fx * baseDist;
+  const baseCamZ = baseLookAtZ + fz * baseDist;
+  const faceCamYaw = Math.atan2(baseCamX - input.npcX, baseCamZ - input.npcZ);
+
+  const clampedOrbit = clampNpcDialoguePortraitOrbit({
+    orbitYawOffsetRad: input.orbitYawOffsetRad,
+    orbitPitchOffsetRad: input.orbitPitchOffsetRad,
+    portraitDistanceScale: input.portraitDistanceScale,
+  });
+  const cosYaw = Math.cos(clampedOrbit.orbitYawOffsetRad);
+  const sinYaw = Math.sin(clampedOrbit.orbitYawOffsetRad);
+  const vx = fx * cosYaw + fz * sinYaw;
+  const vz = -fx * sinYaw + fz * cosYaw;
+
+  const npcCamDist = baseDist * clampedOrbit.portraitDistanceScale;
+  const cosPitch = Math.cos(clampedOrbit.orbitPitchOffsetRad);
+  const sinPitch = Math.sin(clampedOrbit.orbitPitchOffsetRad);
+  const horizDist = cosPitch * npcCamDist;
   const lateralShift = 0.44 * npcCamDist * halfFovTan * activeAspect;
-  // Camera looks along (-fx, 0, -fz); screen-left horizontal axis is (-fz, +fx),
-  // offsetting the optical axis so the NPC lands around ndc.x ~ +0.44 (right half).
-  const lookAtX = input.npcX - fz * lateralShift;
-  const lookAtZ = input.npcZ + fx * lateralShift;
-  const camX = lookAtX + fx * npcCamDist;
-  const camZ = lookAtZ + fz * npcCamDist;
-  const sitDrop = input.isSitting ? (0.40 - (input.sitLiftY ?? 0)) * scale : 0;
+
+  // Camera looks along (-vx, 0, -vz); screen-left horizontal axis is (-vz, +vx),
+  // keeping the NPC framed around ndc.x ~ +0.44 even while rotating/zooming.
+  const lookAtX = input.npcX - vz * lateralShift;
+  const lookAtZ = input.npcZ + vx * lateralShift;
+  const zoomOutSpan =
+    NPC_DIALOGUE_ORBIT_BOUNDS.maxDistanceScale -
+    NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale;
+  const zoomOutT =
+    zoomOutSpan > 1e-4
+      ? Math.max(
+          0,
+          Math.min(
+            1,
+            (clampedOrbit.portraitDistanceScale -
+              NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale) /
+              zoomOutSpan,
+          ),
+        )
+      : 0;
+  // As the player zooms out, lower target Y toward mid-body so full head-to-toe outfit stays in view.
+  const targetCenterOffset = 2.70 + (1.72 - 2.70) * zoomOutT;
+  const effectiveSitDrop = sitDrop * (1.0 - 0.45 * zoomOutT);
+  const lookAtY = input.npcY + targetCenterOffset * scale - effectiveSitDrop;
+  const camX = lookAtX + vx * horizDist;
+  const camZ = lookAtZ + vz * horizDist;
+  const baseEyeBiasY =
+    clampedOrbit.orbitPitchOffsetRad === 0 && zoomOutT === 0 ? 0.04 * scale : 0;
+  const camY = Math.max(
+    input.npcY + 0.35 * scale,
+    lookAtY + sinPitch * npcCamDist + baseEyeBiasY,
+  );
   return {
     cameraPos: {
       x: camX,
-      y: input.npcY + 2.74 * scale - sitDrop,
+      y: camY,
       z: camZ,
     },
     lookAtPos: {
       x: lookAtX,
-      y: input.npcY + 2.70 * scale - sitDrop,
+      y: lookAtY,
       z: lookAtZ,
     },
     fovDeg,
-    faceCamYaw: Math.atan2(camX - input.npcX, camZ - input.npcZ),
+    faceCamYaw,
   };
 }
+
+export interface BoneTrackedPortraitMetricsInput {
+  anchorX: number;
+  anchorZ: number;
+  groundY: number;
+  scale?: number;
+  headWorldX?: number;
+  headWorldY?: number;
+  headWorldZ?: number;
+  standingHeadHeightWorld?: number;
+  leftShoulderX?: number;
+  leftShoulderZ?: number;
+  rightShoulderX?: number;
+  rightShoulderZ?: number;
+}
+
+export interface BoneTrackedPortraitMetricsResult {
+  centerX: number;
+  centerZ: number;
+  boneDropY: number;
+  torsoForwardX: number | null;
+  torsoForwardZ: number | null;
+}
+
+/**
+ * Computes live bone-tracked horizontal anchor `(centerX, centerZ)`, vertical head drop `boneDropY`,
+ * and true world-space torso facing direction `(torsoForwardX, torsoForwardZ)` from an animated rig.
+ *
+ * In the character rig's upright bind space (`+Z` face-forward, `+Y` up), `RightArm`/`RightShoulder`
+ * sits at `-X` and `LeftArm`/`LeftShoulder` sits at `+X`. Therefore the vector from right shoulder
+ * to left shoulder `L = Left - Right` rotated 90 degrees clockwise in XZ `(-Lz, +Lx)` points along
+ * the character's actual chest/face forward regardless of root offset or paired animation rotation.
+ */
+export function computeBoneTrackedPortraitMetrics(
+  input: BoneTrackedPortraitMetricsInput,
+): BoneTrackedPortraitMetricsResult {
+  const scale = Math.max(0.35, input.scale ?? 1.0);
+  const maxHorizOffset = 2.6 * scale;
+  let centerX = input.anchorX;
+  let centerZ = input.anchorZ;
+  if (
+    typeof input.headWorldX === 'number' &&
+    Number.isFinite(input.headWorldX) &&
+    typeof input.headWorldZ === 'number' &&
+    Number.isFinite(input.headWorldZ)
+  ) {
+    const dx = input.headWorldX - input.anchorX;
+    const dz = input.headWorldZ - input.anchorZ;
+    const dist = Math.hypot(dx, dz);
+    if (dist <= maxHorizOffset) {
+      centerX = input.headWorldX;
+      centerZ = input.headWorldZ;
+    } else if (dist > 1e-4) {
+      centerX = input.anchorX + (dx / dist) * maxHorizOffset;
+      centerZ = input.anchorZ + (dz / dist) * maxHorizOffset;
+    }
+  }
+
+  let boneDropY = 0;
+  if (typeof input.headWorldY === 'number' && Number.isFinite(input.headWorldY)) {
+    const defaultStandingHeadH = 2.82 * scale;
+    const standingHeadH =
+      typeof input.standingHeadHeightWorld === 'number' &&
+      Number.isFinite(input.standingHeadHeightWorld) &&
+      input.standingHeadHeightWorld > 0.5 * scale
+        ? input.standingHeadHeightWorld
+        : defaultStandingHeadH;
+    const currentHeadAboveGround = input.headWorldY - input.groundY;
+    const rawDrop = standingHeadH - currentHeadAboveGround;
+    boneDropY = Math.max(-0.55 * scale, Math.min(2.25 * scale, rawDrop));
+  }
+
+  let torsoForwardX: number | null = null;
+  let torsoForwardZ: number | null = null;
+  if (
+    typeof input.leftShoulderX === 'number' &&
+    Number.isFinite(input.leftShoulderX) &&
+    typeof input.leftShoulderZ === 'number' &&
+    Number.isFinite(input.leftShoulderZ) &&
+    typeof input.rightShoulderX === 'number' &&
+    Number.isFinite(input.rightShoulderX) &&
+    typeof input.rightShoulderZ === 'number' &&
+    Number.isFinite(input.rightShoulderZ)
+  ) {
+    const lx = input.leftShoulderX - input.rightShoulderX;
+    const lz = input.leftShoulderZ - input.rightShoulderZ;
+    const lLen = Math.hypot(lx, lz);
+    if (lLen > 1e-3) {
+      torsoForwardX = -lz / lLen;
+      torsoForwardZ = lx / lLen;
+    }
+  }
+
+  return {
+    centerX,
+    centerZ,
+    boneDropY,
+    torsoForwardX,
+    torsoForwardZ,
+  };
+}
+
+/**
+ * Resolves the optimal camera front direction for an active Paired Duo pose/dance:
+ * - When both characters face the same direction (e.g. side-by-side bench sit `Inseparable Sit`,
+ *   where `dot(playerFwd, partnerFwd) > 0.35`), frames them from their shared front direction
+ *   so the camera looks at their faces from in front of the bench instead of behind the backrest.
+ * - When characters face each other or opposite directions (e.g. hugs, ballroom dances), preserves
+ *   the side-by-side perpendicular framing (`fallbackFrontDirX/Z`).
+ */
+export function resolvePairedSessionPortraitDirection(params: {
+  fallbackFrontDirX: number;
+  fallbackFrontDirZ: number;
+  playerTorsoForwardX?: number | null;
+  playerTorsoForwardZ?: number | null;
+  partnerTorsoForwardX?: number | null;
+  partnerTorsoForwardZ?: number | null;
+}): { frontDirX: number; frontDirZ: number } {
+  const {
+    fallbackFrontDirX,
+    fallbackFrontDirZ,
+    playerTorsoForwardX,
+    playerTorsoForwardZ,
+    partnerTorsoForwardX,
+    partnerTorsoForwardZ,
+  } = params;
+  if (
+    typeof playerTorsoForwardX === 'number' &&
+    Number.isFinite(playerTorsoForwardX) &&
+    typeof playerTorsoForwardZ === 'number' &&
+    Number.isFinite(playerTorsoForwardZ) &&
+    typeof partnerTorsoForwardX === 'number' &&
+    Number.isFinite(partnerTorsoForwardX) &&
+    typeof partnerTorsoForwardZ === 'number' &&
+    Number.isFinite(partnerTorsoForwardZ)
+  ) {
+    const p1Len = Math.hypot(playerTorsoForwardX, playerTorsoForwardZ);
+    const p2Len = Math.hypot(partnerTorsoForwardX, partnerTorsoForwardZ);
+    if (p1Len > 1e-3 && p2Len > 1e-3) {
+      const f1x = playerTorsoForwardX / p1Len;
+      const f1z = playerTorsoForwardZ / p1Len;
+      const f2x = partnerTorsoForwardX / p2Len;
+      const f2z = partnerTorsoForwardZ / p2Len;
+      const dot = f1x * f2x + f1z * f2z;
+      if (dot > 0.35) {
+        const sumX = f1x + f2x;
+        const sumZ = f1z + f2z;
+        const sumLen = Math.hypot(sumX, sumZ);
+        if (sumLen > 1e-3) {
+          return {
+            frontDirX: sumX / sumLen,
+            frontDirZ: sumZ / sumLen,
+          };
+        }
+      }
+    }
+  }
+  const fbLen = Math.hypot(fallbackFrontDirX, fallbackFrontDirZ);
+  return {
+    frontDirX: fbLen > 1e-4 ? fallbackFrontDirX / fbLen : 1,
+    frontDirZ: fbLen > 1e-4 ? fallbackFrontDirZ / fbLen : 0,
+  };
+}
+
+export interface PosePortraitInspectTargetInput {
+  mode: 'solo' | 'paired';
+  playerX: number;
+  playerZ: number;
+  playerYaw: number;
+  partnerX?: number;
+  partnerZ?: number;
+  lineYaw?: number;
+  cameraPosX?: number;
+  cameraPosZ?: number;
+}
+
+export interface PosePortraitInspectTargetResult {
+  centerX: number;
+  centerZ: number;
+  frontDirX: number;
+  frontDirZ: number;
+  defaultDistanceScale: number;
+}
+
+/**
+ * Resolves the right-side portrait target center, viewer front direction, and default zoom
+ * for Solo Pose/Dance or Paired Duo Pose/Dance inspection using the same NPC dialogue camera
+ * framing and bounded orbit/zoom limits.
+ */
+export function computePosePortraitInspectTarget(
+  input: PosePortraitInspectTargetInput,
+): PosePortraitInspectTargetResult {
+  if (input.mode === 'solo') {
+    const rawFx = Math.cos(input.playerYaw);
+    const rawFz = -Math.sin(input.playerYaw);
+    const fLen = Math.hypot(rawFx, rawFz);
+    return {
+      centerX: input.playerX,
+      centerZ: input.playerZ,
+      frontDirX: fLen > 1e-4 ? rawFx / fLen : 1,
+      frontDirZ: fLen > 1e-4 ? rawFz / fLen : 0,
+      defaultDistanceScale: NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale,
+    };
+  }
+
+  const hasPartnerCoord =
+    typeof input.partnerX === 'number' &&
+    Number.isFinite(input.partnerX) &&
+    typeof input.partnerZ === 'number' &&
+    Number.isFinite(input.partnerZ);
+  const centerX = hasPartnerCoord ? (input.playerX + input.partnerX!) * 0.5 : input.playerX;
+  const centerZ = hasPartnerCoord ? (input.playerZ + input.partnerZ!) * 0.5 : input.playerZ;
+
+  let axisX = Math.cos(input.playerYaw);
+  let axisZ = -Math.sin(input.playerYaw);
+  if (typeof input.lineYaw === 'number' && Number.isFinite(input.lineYaw)) {
+    axisX = Math.cos(input.lineYaw);
+    axisZ = -Math.sin(input.lineYaw);
+  } else if (hasPartnerCoord) {
+    const dx = input.partnerX! - input.playerX;
+    const dz = input.partnerZ! - input.playerZ;
+    const dLen = Math.hypot(dx, dz);
+    if (dLen > 0.05) {
+      axisX = dx / dLen;
+      axisZ = dz / dLen;
+    }
+  }
+  const aLen = Math.hypot(axisX, axisZ);
+  const ux = aLen > 1e-4 ? axisX / aLen : 1;
+  const uz = aLen > 1e-4 ? axisZ / aLen : 0;
+
+  // Frame paired characters perpendicular to their face-to-face line so both bodies stand
+  // side-by-side in the right half of the viewport, picking the side closer to current camera.
+  const perpAX = -uz;
+  const perpAZ = ux;
+  let frontDirX = perpAX;
+  let frontDirZ = perpAZ;
+  if (
+    typeof input.cameraPosX === 'number' &&
+    Number.isFinite(input.cameraPosX) &&
+    typeof input.cameraPosZ === 'number' &&
+    Number.isFinite(input.cameraPosZ)
+  ) {
+    const camDx = input.cameraPosX - centerX;
+    const camDz = input.cameraPosZ - centerZ;
+    if (camDx * perpAX + camDz * perpAZ < 0) {
+      frontDirX = -perpAX;
+      frontDirZ = -perpAZ;
+    }
+  }
+
+  const defaultDistanceScale = clampNpcDialoguePortraitOrbit({
+    portraitDistanceScale: 1.22,
+  }).portraitDistanceScale;
+
+  return {
+    centerX,
+    centerZ,
+    frontDirX,
+    frontDirZ,
+    defaultDistanceScale,
+  };
+}
+
 
 /**
  * Converts screen-relative WASD / Arrow Key input (`inputForward`: W=+1, S=-1; `inputRight`: D=+1, A=-1)
@@ -13966,14 +14459,14 @@ export const CITY_TRANSIT_DESTINATIONS: readonly CityTransitDestinationSpec[] = 
     thumbnailUrl: '/docs/hero-2-tram-station.jpg',
     kioskX: -59.18,
     kioskY: 0.26,
-    kioskZ: 0.0,
+    kioskZ: 4.6,
     kioskRotY: -Math.PI / 2,
     spawnX: -90.80,
     spawnZ: -9.4,
     spawnYaw: Math.PI / 2,
     hasHalteShelter: true,
     shelterX: -61.03,
-    shelterZ: 0.0,
+    shelterZ: 4.6,
     shelterRotY: -Math.PI / 2,
     tramTrackDistance: 44.0,
   },
@@ -15060,6 +15553,99 @@ export interface CityAmbientNpcLocalAvoidanceDecision {
   blocked: boolean;
 }
 
+export interface SeatSpotCoord {
+  id?: string;
+  x: number;
+  z: number;
+}
+
+export interface SeatedActorOccupancy {
+  id?: string;
+  x: number;
+  z: number;
+  isSitting: boolean;
+}
+
+export interface NpcAlternateSeatCandidate {
+  id?: string;
+  x: number;
+  z: number;
+  yaw: number;
+  seatLiftY?: number;
+  label?: string;
+  sitVariant?: string;
+}
+
+export interface NpcSeatOverrideState {
+  wpIdx: number;
+  x: number;
+  z: number;
+  yaw: number;
+  seatLiftY: number;
+  label?: string;
+}
+
+/**
+ * Returns true if any currently seated actor (local player, ambient NPC, or online peer)
+ * occupies the given seat spot within `thresholdM` (default 0.92m, preserving adjacent
+ * twin-bench seats spaced ~1.6m apart for sitting together).
+ */
+export function isSeatSpotOccupiedByActors(
+  spot: SeatSpotCoord,
+  occupants: readonly SeatedActorOccupancy[],
+  thresholdM = 0.92,
+  ignoreActorId?: string,
+): boolean {
+  for (let i = 0; i < occupants.length; i++) {
+    const occ = occupants[i];
+    if (!occ.isSitting) continue;
+    if (ignoreActorId !== undefined && occ.id === ignoreActorId) continue;
+    if (Math.hypot(occ.x - spot.x, occ.z - spot.z) <= thresholdM) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Finds the nearest unoccupied alternate seat near an occupied `sit_relax` target so an
+ * ambient NPC can smoothly switch to a nearby free bench/chair instead of sitting on top
+ * of someone else or freezing. Returns null when all nearby candidates are occupied.
+ */
+export function findNearestUnoccupiedSeatForNpc(params: {
+  targetX: number;
+  targetZ: number;
+  npcX: number;
+  npcZ: number;
+  npcId?: string;
+  candidateSeats: readonly NpcAlternateSeatCandidate[];
+  occupants: readonly SeatedActorOccupancy[];
+  maxSearchRadiusM?: number;
+  occupancyRadiusM?: number;
+}): NpcAlternateSeatCandidate | null {
+  const maxR = params.maxSearchRadiusM ?? 16.0;
+  const occR = params.occupancyRadiusM ?? 0.92;
+  let bestSeat: NpcAlternateSeatCandidate | null = null;
+  let bestScore = Infinity;
+
+  for (let i = 0; i < params.candidateSeats.length; i++) {
+    const seat = params.candidateSeats[i];
+    // Only substitute standard upright seats/benches unless no variant filter is needed
+    if (seat.sitVariant && seat.sitVariant !== 'chair') continue;
+    const distFromTarget = Math.hypot(seat.x - params.targetX, seat.z - params.targetZ);
+    // Exclude the occupied target seat itself and anything outside the local cluster
+    if (distFromTarget <= occR || distFromTarget > maxR) continue;
+    if (isSeatSpotOccupiedByActors(seat, params.occupants, occR, params.npcId)) continue;
+    const distFromNpc = Math.hypot(seat.x - params.npcX, seat.z - params.npcZ);
+    const score = distFromTarget + distFromNpc * 0.35;
+    if (score < bestScore) {
+      bestScore = score;
+      bestSeat = seat;
+    }
+  }
+  return bestSeat;
+}
+
 export interface CityAmbientNpcStepInput {
   preset: CityAmbientNpcPreset;
   x: number;
@@ -15082,6 +15668,12 @@ export interface CityAmbientNpcStepInput {
   yieldForHazard?: boolean;
   separationX?: number;
   separationZ?: number;
+  /** Temporary alternate seat override active for the current/just-arrived sit_relax stop. */
+  seatOverride?: NpcSeatOverrideState | null;
+  /** True when the NPC's targeted sit_relax seat is already occupied by another character. */
+  isTargetSeatOccupied?: boolean;
+  /** Unoccupied nearby seat chosen as fallback when the targeted sit_relax seat is occupied. */
+  alternateSeat?: NpcAlternateSeatCandidate | null;
   isDirectTargetClear?: (
     fromX: number,
     fromZ: number,
@@ -15117,6 +15709,7 @@ export interface CityAmbientNpcStepResult {
   lastProgressZ: number;
   avoidSide: number;
   avoidTimer: number;
+  seatOverride?: NpcSeatOverrideState | null;
 }
 
 function normalizeRadiansSigned(angle: number): number {
@@ -15197,13 +15790,15 @@ export function stepCityAmbientNpcSchedule(
       lastProgressZ,
       avoidSide: 0,
       avoidTimer: 0,
+      seatOverride: null,
     };
   }
 
   const safeIdx =
     ((input.waypointIdx % waypoints.length) + waypoints.length) % waypoints.length;
   const targetWp = waypoints[safeIdx];
-  const prevWp = waypoints[(safeIdx - 1 + waypoints.length) % waypoints.length];
+  const prevIdx = (safeIdx - 1 + waypoints.length) % waypoints.length;
+  const prevWp = waypoints[prevIdx];
 
   if (waypoints.length === 1 || preset.speedMps <= 0.01) {
     const soloActivity = targetWp.activity ?? preset.activity;
@@ -15235,18 +15830,22 @@ export function stepCityAmbientNpcSchedule(
       lastProgressZ: targetWp.z,
       avoidSide: 0,
       avoidTimer: 0,
+      seatOverride: null,
     };
   }
 
   // Dwelling at the previous arrived stop performing its activity (sitting, fishing, cafe, sightseeing)
   if (input.pauseTimer > 0) {
+    const activeDwellOverride =
+      input.seatOverride && input.seatOverride.wpIdx === prevIdx ? input.seatOverride : null;
     const nextPause = Math.max(0, input.pauseTimer - dt);
     const stopActivity = prevWp.activity ?? preset.activity;
     const isSittingNow = stopActivity === 'sit_relax';
     const gazeOffset = computeAmbientDwellYawOffset(stopActivity, elapsedSec);
+    const baseDwellYaw = activeDwellOverride ? activeDwellOverride.yaw : prevWp.yaw;
     const desiredYaw =
-      prevWp.yaw !== undefined
-        ? prevWp.yaw + gazeOffset
+      baseDwellYaw !== undefined
+        ? baseDwellYaw + gazeOffset
         : input.yaw + Math.sin(elapsedSec * 0.45) * 0.004;
     return {
       x: input.x,
@@ -15256,8 +15855,10 @@ export function stepCityAmbientNpcSchedule(
       isMoving: false,
       isSitting: isSittingNow,
       activeActivity: stopActivity,
-      activeStatusLabel: prevWp.label ?? preset.activityLabel,
-      activeSeatLiftY: prevWp.seatLiftY ?? preset.seatLiftY ?? 0,
+      activeStatusLabel: activeDwellOverride?.label ?? prevWp.label ?? preset.activityLabel,
+      activeSeatLiftY: activeDwellOverride
+        ? activeDwellOverride.seatLiftY
+        : (prevWp.seatLiftY ?? preset.seatLiftY ?? 0),
       activeHoldingCafeItemId: resolveAmbientHoldingCafeItemId(prevWp, targetWp, true),
       waypointIdx: safeIdx,
       pauseTimer: nextPause,
@@ -15269,6 +15870,7 @@ export function stepCityAmbientNpcSchedule(
       lastProgressZ: input.z,
       avoidSide: 0,
       avoidTimer: 0,
+      seatOverride: nextPause > 0 ? activeDwellOverride : null,
     };
   }
 
@@ -15276,7 +15878,65 @@ export function stepCityAmbientNpcSchedule(
   const targetGoalActivity = targetWp.activity ?? preset.activity;
   const travelActivity: CityAmbientNpcActivity =
     targetWp.moveMode === 'jog' ? 'jog_exercise' : 'walk_patrol';
-  const travelStatusLabel = targetWp.label ?? preset.activityLabel;
+
+  let activeSeatOverride: NpcSeatOverrideState | null =
+    input.seatOverride && input.seatOverride.wpIdx === safeIdx ? input.seatOverride : null;
+  let goalX = activeSeatOverride ? activeSeatOverride.x : targetWp.x;
+  let goalZ = activeSeatOverride ? activeSeatOverride.z : targetWp.z;
+  let goalYaw = activeSeatOverride ? activeSeatOverride.yaw : targetWp.yaw;
+  let goalSeatLiftY = activeSeatOverride
+    ? activeSeatOverride.seatLiftY
+    : (targetWp.seatLiftY ?? preset.seatLiftY ?? 0);
+  let travelStatusLabel = activeSeatOverride?.label ?? targetWp.label ?? preset.activityLabel;
+
+  // Seat conflict handling: if our aimed `sit_relax` chair/bench is already occupied by a player,
+  // another NPC, or a remote peer, switch to an unoccupied nearby seat OR skip & keep roaming.
+  if (targetGoalActivity === 'sit_relax' && input.isTargetSeatOccupied) {
+    if (input.alternateSeat) {
+      activeSeatOverride = {
+        wpIdx: safeIdx,
+        x: input.alternateSeat.x,
+        z: input.alternateSeat.z,
+        yaw: input.alternateSeat.yaw,
+        seatLiftY: input.alternateSeat.seatLiftY ?? goalSeatLiftY,
+        label: input.alternateSeat.label ?? travelStatusLabel,
+      };
+      goalX = activeSeatOverride.x;
+      goalZ = activeSeatOverride.z;
+      goalYaw = activeSeatOverride.yaw;
+      goalSeatLiftY = activeSeatOverride.seatLiftY;
+      travelStatusLabel = activeSeatOverride.label ?? travelStatusLabel;
+      navPath = [];
+      navWaypointIndex = 0;
+      navPathGoalKey = '';
+      stuckTimer = 0;
+    } else {
+      const skipIdx = (safeIdx + 1) % waypoints.length;
+      return {
+        x: input.x,
+        z: input.z,
+        yaw: input.yaw,
+        speedMps: 0,
+        isMoving: false,
+        isSitting: false,
+        activeActivity: travelActivity,
+        activeStatusLabel: waypoints[skipIdx]?.label ?? preset.activityLabel,
+        activeSeatLiftY: 0,
+        activeHoldingCafeItemId: resolveAmbientHoldingCafeItemId(prevWp, targetWp, false),
+        waypointIdx: skipIdx,
+        pauseTimer: 0,
+        navPath: [],
+        navWaypointIndex: 0,
+        navPathGoalKey: '',
+        stuckTimer: 0,
+        lastProgressX: input.x,
+        lastProgressZ: input.z,
+        avoidSide: 0,
+        avoidTimer: 0,
+        seatOverride: null,
+      };
+    }
+  }
 
   // Politely yield at crosswalks when a city tram is approaching
   if (input.yieldForHazard) {
@@ -15301,11 +15961,12 @@ export function stepCityAmbientNpcSchedule(
       lastProgressZ: input.z,
       avoidSide,
       avoidTimer,
+      seatOverride: activeSeatOverride,
     };
   }
 
-  const totalDx = targetWp.x - input.x;
-  const totalDz = targetWp.z - input.z;
+  const totalDx = goalX - input.x;
+  const totalDz = goalZ - input.z;
   const distToFinal = Math.hypot(totalDx, totalDz);
   const baseArrivalRadius =
     preset.arrivalRadiusM ?? (targetGoalActivity === 'sit_relax' ? 1.85 : 1.15);
@@ -15315,15 +15976,15 @@ export function stepCityAmbientNpcSchedule(
     const nextIdx = (safeIdx + 1) % waypoints.length;
     const dwellDuration = targetWp.durationSec ?? preset.pauseSecAtWaypoint;
     return {
-      x: targetWp.x,
-      z: targetWp.z,
-      yaw: targetWp.yaw ?? input.yaw,
+      x: goalX,
+      z: goalZ,
+      yaw: goalYaw ?? input.yaw,
       speedMps: 0,
       isMoving: false,
       isSitting: targetGoalActivity === 'sit_relax',
       activeActivity: targetGoalActivity,
       activeStatusLabel: travelStatusLabel,
-      activeSeatLiftY: targetWp.seatLiftY ?? preset.seatLiftY ?? 0,
+      activeSeatLiftY: goalSeatLiftY,
       activeHoldingCafeItemId: targetWp.holdingCafeItemId ?? null,
       waypointIdx: nextIdx,
       pauseTimer: dwellDuration,
@@ -15331,19 +15992,20 @@ export function stepCityAmbientNpcSchedule(
       navWaypointIndex: 0,
       navPathGoalKey: '',
       stuckTimer: 0,
-      lastProgressX: targetWp.x,
-      lastProgressZ: targetWp.z,
+      lastProgressX: goalX,
+      lastProgressZ: goalZ,
       avoidSide: 0,
       avoidTimer: 0,
+      seatOverride: activeSeatOverride,
     };
   }
 
   // Steer via A* pathfinder (preferring sidewalks & Zebra Crosswalks when using pedestrianGrid)
-  let steerX = targetWp.x;
-  let steerZ = targetWp.z;
+  let steerX = goalX;
+  let steerZ = goalZ;
   const isSitGoal = targetGoalActivity === 'sit_relax';
   if (input.navGrid) {
-    const goalKey = `${safeIdx}:${targetWp.x.toFixed(1)},${targetWp.z.toFixed(1)}`;
+    const goalKey = `${safeIdx}:${goalX.toFixed(1)},${goalZ.toFixed(1)}`;
     const movedSinceCheck = Math.hypot(input.x - lastProgressX, input.z - lastProgressZ);
     if (movedSinceCheck > 0.35) {
       lastProgressX = input.x;
@@ -15384,11 +16046,12 @@ export function stepCityAmbientNpcSchedule(
           lastProgressZ: input.z,
           avoidSide,
           avoidTimer,
+          seatOverride: activeSeatOverride,
         };
       }
       if (input.canReplan !== false) {
         input.onReplan?.();
-        const res = findPathAStar(input.navGrid, input.x, input.z, targetWp.x, targetWp.z, {
+        const res = findPathAStar(input.navGrid, input.x, input.z, goalX, goalZ, {
           allowDiagonal: true,
           maxIterations: 22500,
           smoothPath: true,
@@ -15396,7 +16059,7 @@ export function stepCityAmbientNpcSchedule(
         navPath =
           res.waypoints.length > 0
             ? res.waypoints
-            : [{ x: targetWp.x, z: targetWp.z }];
+            : [{ x: goalX, z: goalZ }];
         navWaypointIndex = 0;
         navPathGoalKey = goalKey;
         if (stuckTriggered) {
@@ -15443,7 +16106,7 @@ export function stepCityAmbientNpcSchedule(
       const node = navPath[navWaypointIndex];
       const isFinalAStarNode = navWaypointIndex >= navPath.length - 1;
       const distToNode = Math.hypot(node.x - input.x, node.z - input.z);
-      const nodeToTargetDist = Math.hypot(targetWp.x - node.x, targetWp.z - node.z);
+      const nodeToTargetDist = Math.hypot(goalX - node.x, goalZ - node.z);
       // Only take the direct-to-target approach shortcut if the segment is genuinely clear of static obstacles
       const wantsDirectShortcut =
         isFinalAStarNode &&
@@ -15456,16 +16119,16 @@ export function stepCityAmbientNpcSchedule(
           input.navGrid,
           input.x,
           input.z,
-          targetWp.x,
-          targetWp.z,
+          goalX,
+          goalZ,
           isSitGoal,
         ) &&
         (input.isDirectTargetClear
-          ? input.isDirectTargetClear(input.x, input.z, targetWp.x, targetWp.z, isSitGoal)
+          ? input.isDirectTargetClear(input.x, input.z, goalX, goalZ, isSitGoal)
           : true);
       if (directShortcutClear) {
-        steerX = targetWp.x;
-        steerZ = targetWp.z;
+        steerX = goalX;
+        steerZ = goalZ;
       } else {
         steerX = node.x;
         steerZ = node.z;
@@ -15500,8 +16163,7 @@ export function stepCityAmbientNpcSchedule(
   let effectiveSpeed = moveSpeed;
   let steppedMoving = true;
   if (input.localAvoidance) {
-    const isFinalTarget =
-      Math.hypot(steerX - targetWp.x, steerZ - targetWp.z) <= 0.05;
+    const isFinalTarget = Math.hypot(steerX - goalX, steerZ - goalZ) <= 0.05;
     const avoidRes = input.localAvoidance({
       x: input.x,
       z: input.z,
@@ -15552,6 +16214,7 @@ export function stepCityAmbientNpcSchedule(
     lastProgressZ,
     avoidSide,
     avoidTimer,
+    seatOverride: activeSeatOverride,
   };
 }
 

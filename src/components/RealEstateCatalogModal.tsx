@@ -18,8 +18,8 @@ import {
   Tag,
   User,
   Wallet,
-  X,
 } from 'lucide-react';
+import { TabletDeviceMockupShell } from './TabletDeviceMockupShell';
 import {
   MERCHANT_CATALOG_ITEMS,
   countOwnedMerchantItems,
@@ -683,41 +683,32 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
         soundEngine.playUiCancel();
         onClose();
       }}
-      className="fixed inset-0 z-[210] flex items-center justify-center p-3 sm:p-6 bg-slate-950/55 backdrop-blur-sm pointer-events-auto select-none"
+      className="fixed inset-0 z-[210] flex items-center justify-center p-2.5 sm:p-5 bg-black/25 backdrop-blur-[2px] pointer-events-auto select-none"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-5xl h-[min(680px,92vh)] rounded-[26px] bg-[#edf0f5]/95 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.3)] text-slate-900 overflow-hidden flex flex-col"
-      >
-        {/* Top Storefront Header Bar */}
-        <div className="flex items-center justify-between gap-4 px-5 py-3.5 bg-white/95 border-b border-slate-200/80 shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-2xl bg-sky-50 text-sky-600 border border-sky-200/70 flex items-center justify-center shrink-0">
-              <Home className="w-5 h-5" aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <h2 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 truncate">
-                Real Estate &amp; Interior Studio Catalog
-              </h2>
-              <p className="text-xs text-slate-500 truncate">
-                Central Plaza Agency · Private House Deeds, Collector Furniture &amp; Property Market
-              </p>
-            </div>
-          </div>
-
+      <TabletDeviceMockupShell
+        appLabel="ESTATE STUDIO"
+        title="Real Estate & Interior Studio Catalog"
+        subtitle="Central Plaza Agency · Private House Deeds, Collector Furniture & Property Market"
+        headerIcon={<Home className="w-5 h-5" aria-hidden="true" />}
+        maxWidthClass="max-w-5xl"
+        heightClass="h-[min(700px,92vh)]"
+        onClose={onClose}
+        closeAriaLabel="Close Real Estate Catalog"
+        closeButtonProps={{ 'data-realestate-catalog-close': 'true' }}
+        headerRight={
           <div className="flex items-center gap-2 shrink-0">
             <div
               data-testid="catalog-modal-respite-balance"
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-100 border border-slate-200/80 text-xs font-mono tabular-nums font-semibold text-slate-800 whitespace-nowrap shrink-0"
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 border border-white/15 text-xs font-mono tabular-nums font-semibold text-white whitespace-nowrap shrink-0"
             >
-              <Coins className="w-3.5 h-3.5 text-teal-600 shrink-0" aria-hidden="true" />
-              <span className="font-bold text-slate-900">
+              <Coins className="w-3.5 h-3.5 text-teal-400 shrink-0" aria-hidden="true" />
+              <span className="font-bold text-white">
                 {respiteBalance.toLocaleString()} RESPITE
               </span>
-              <span className="text-slate-400" aria-hidden="true">
+              <span className="text-white/35" aria-hidden="true">
                 /
               </span>
-              <span className="font-semibold text-sky-700">
+              <span className="font-semibold text-sky-300">
                 {cyonBalance.toLocaleString()} CYON
               </span>
             </div>
@@ -730,84 +721,71 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                   soundEngine.playUiClick();
                   onConnectWallet();
                 }}
-                className="px-3.5 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                className="px-3.5 py-1.5 rounded-full bg-sky-500 hover:bg-sky-400 text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
               >
                 Sign In
               </button>
             )}
-
-            <button
-              type="button"
-              aria-label="Close Real Estate Catalog"
-              data-realestate-catalog-close="true"
-              onClick={() => {
-                soundEngine.playUiCancel();
-                onClose();
-              }}
-              className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center cursor-pointer transition-colors shrink-0"
-            >
-              <X className="w-4 h-4" aria-hidden="true" />
-            </button>
           </div>
-        </div>
+        }
+        subHeader={
+          <div
+            role="tablist"
+            aria-label="Hana Property Catalog Categories"
+            data-hana-catalog-tabs="true"
+            className="flex items-center justify-between gap-3 px-5 py-2.5 bg-white/[0.03] border-b border-white/10 shrink-0"
+          >
+            <div className="flex items-center gap-2 overflow-x-auto">
+              {(
+                [
+                  { id: 'house', label: 'House', Icon: Home },
+                  { id: 'furniture', label: 'Furniture', Icon: Sofa },
+                  {
+                    id: 'market',
+                    label:
+                      boardListings.length > 0 ? `Market (${boardListings.length})` : 'Market',
+                    Icon: Tag,
+                  },
+                ] as const
+              ).map((tab) => {
+                const active = activeCatalogTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    data-hana-catalog-tab={tab.id}
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setActionFeedback(null);
+                      setActiveCatalogTab(tab.id);
+                    }}
+                    className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
+                      active
+                        ? 'bg-white text-slate-950 shadow-xs'
+                        : 'bg-white/10 hover:bg-white/15 text-white/75 border border-white/15'
+                    }`}
+                  >
+                    <tab.Icon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
 
-        {/* Hana Catalog Menu Tabs */}
-        <div
-          role="tablist"
-          aria-label="Hana Property Catalog Categories"
-          data-hana-catalog-tabs="true"
-          className="flex items-center justify-between gap-3 px-5 py-2.5 bg-white/70 border-b border-slate-200/75 shrink-0"
-        >
-          <div className="flex items-center gap-2 overflow-x-auto">
-            {(
-              [
-                { id: 'house', label: 'House', Icon: Home },
-                { id: 'furniture', label: 'Furniture', Icon: Sofa },
-                {
-                  id: 'market',
-                  label:
-                    boardListings.length > 0 ? `Market (${boardListings.length})` : 'Market',
-                  Icon: Tag,
-                },
-              ] as const
-            ).map((tab) => {
-              const active = activeCatalogTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  data-hana-catalog-tab={tab.id}
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setActionFeedback(null);
-                    setActiveCatalogTab(tab.id);
-                  }}
-                  className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
-                    active
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200/80'
-                  }`}
-                >
-                  <tab.Icon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
+            <div className="hidden md:flex items-center gap-2 text-xs text-white/55 font-medium whitespace-nowrap shrink-0">
+              <span>
+                {activeCatalogTab === 'house'
+                  ? `${HOUSE_SERIES_CATALOG.length} Architectural Deeds`
+                  : activeCatalogTab === 'furniture'
+                    ? `${catalogFurnitureItems.length} Studio Items`
+                    : `${boardListings.length} Active Listings`}
+              </span>
+            </div>
           </div>
-
-          <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 font-medium whitespace-nowrap shrink-0">
-            <span>
-              {activeCatalogTab === 'house'
-                ? `${HOUSE_SERIES_CATALOG.length} Architectural Deeds`
-                : activeCatalogTab === 'furniture'
-                  ? `${catalogFurnitureItems.length} Studio Items`
-                  : `${boardListings.length} Active Listings`}
-            </span>
-          </div>
-        </div>
-
+        }
+      >
         {/* Main Scrollable Content Area */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
           {/* ===============================================================
@@ -819,8 +797,8 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
                 {/* Left Column: Architectural Exterior / Interior Hero Card */}
                 <div className="lg:col-span-6 flex flex-col">
-                  <div className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-2.5 flex-1 flex flex-col">
-                    <div className="relative w-full h-[250px] sm:h-[310px] lg:h-[348px] shrink-0 rounded-xl bg-[#eef2f7] overflow-hidden">
+                  <div className="rounded-2xl bg-white/[0.06] border border-white/15 shadow-sm p-2.5 flex-1 flex flex-col">
+                    <div className="relative w-full h-[240px] sm:h-[300px] lg:h-[336px] shrink-0 rounded-xl bg-slate-900 overflow-hidden">
                       <img
                         src={
                           houseStageAngle === 'exterior'
@@ -832,13 +810,13 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                         draggable={false}
                         className="absolute inset-0 w-full h-full object-cover select-none"
                       />
-                      <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-950/70 via-slate-950/25 to-transparent pointer-events-none" />
+                      <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-950/75 via-slate-950/25 to-transparent pointer-events-none" />
                       <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
-                        <span className="px-3 py-1 rounded-full bg-slate-950/60 backdrop-blur-md border border-white/15 text-[11px] font-medium text-white truncate">
+                        <span className="px-3 py-1 rounded-full bg-slate-950/70 backdrop-blur-md border border-white/15 text-[11px] font-medium text-white truncate">
                           {selectedHouse.location} ·{' '}
                           {houseStageAngle === 'exterior' ? 'Exterior Elevation' : 'Interior Studio'}
                         </span>
-                        <div className="flex items-center gap-1 p-0.5 rounded-full bg-slate-950/65 backdrop-blur-md border border-white/15 shrink-0">
+                        <div className="flex items-center gap-1 p-0.5 rounded-full bg-slate-950/70 backdrop-blur-md border border-white/15 shrink-0">
                           {(['exterior', 'interior'] as const).map((angle) => (
                             <button
                               key={angle}
@@ -866,19 +844,19 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                 {/* Right Column: Bento Property Purchase & Specs Card */}
                 <div
                   data-buy-house-section="true"
-                  className="lg:col-span-6 rounded-2xl bg-white border border-slate-200/75 shadow-sm p-5 flex flex-col justify-between gap-4"
+                  className="lg:col-span-6 rounded-2xl bg-white/[0.06] border border-white/15 shadow-sm p-5 flex flex-col justify-between gap-4"
                 >
                   <div className="space-y-3">
                     <div className="flex items-center flex-wrap gap-1.5 text-[11px]">
-                      <span className="px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200/70 font-semibold">
+                      <span className="px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-400/30 font-semibold">
                         {selectedHouse.subtitle}
                       </span>
-                      <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium">
+                      <span className="px-2.5 py-0.5 rounded-full bg-white/10 text-white/80 border border-white/10 font-medium">
                         {selectedHouse.location}
                       </span>
                     </div>
 
-                    <h3 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 leading-tight">
+                    <h3 className="text-2xl sm:text-3xl font-bold tracking-tight text-white leading-tight">
                       {selectedHouse.title}
                     </h3>
 
@@ -886,7 +864,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                       <div
                         data-testid="catalog-selected-house-price"
                         className={`text-2xl font-mono font-bold tabular-nums whitespace-nowrap ${
-                          selectedHouseIsOwnedDeed ? 'text-emerald-700' : 'text-slate-900'
+                          selectedHouseIsOwnedDeed ? 'text-emerald-300' : 'text-white'
                         }`}
                       >
                         {selectedHouseIsOwnedDeed
@@ -899,14 +877,14 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                         rel="noopener noreferrer"
                         aria-label={`View ${selectedHouse.title} NFT on NEAR Explorer`}
                         onClick={() => soundEngine.playSoftTap()}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80 text-[11px] font-semibold tracking-wide cursor-pointer transition-colors whitespace-nowrap shrink-0"
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white/90 border border-white/15 text-[11px] font-semibold tracking-wide cursor-pointer transition-colors whitespace-nowrap shrink-0"
                       >
                         <span>NFT</span>
                         <ExternalLink className="w-3 h-3" aria-hidden="true" />
                       </a>
                     </div>
 
-                    <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
+                    <p className="text-xs sm:text-sm text-white/65 leading-relaxed">
                       {selectedHouse.description}
                     </p>
 
@@ -914,10 +892,10 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                       {selectedHouse.specs.map((sp) => (
                         <div
                           key={sp.label}
-                          className="min-w-0 rounded-xl bg-[#f3f5f9] border border-slate-200/60 px-3 py-2"
+                          className="min-w-0 rounded-xl bg-white/[0.05] border border-white/10 px-3 py-2"
                         >
-                          <div className="text-[11px] text-slate-500 truncate">{sp.label}</div>
-                          <div className="text-xs font-semibold text-slate-900 truncate mt-0.5">
+                          <div className="text-[11px] text-white/50 truncate">{sp.label}</div>
+                          <div className="text-xs font-semibold text-white truncate mt-0.5">
                             {sp.value}
                           </div>
                         </div>
@@ -925,14 +903,14 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="space-y-2.5 pt-3 border-t border-slate-100">
+                  <div className="space-y-2.5 pt-3 border-t border-white/10">
                     {actionFeedback && (
                       <div
                         role="status"
                         className={`px-3.5 py-2.5 rounded-xl text-xs font-medium border ${
                           actionFeedback.ok
-                            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                            : 'bg-rose-50 border-rose-200 text-rose-700'
+                            ? 'bg-emerald-500/15 border-emerald-400/35 text-emerald-200'
+                            : 'bg-rose-500/15 border-rose-400/35 text-rose-200'
                         }`}
                       >
                         {actionFeedback.text}
@@ -949,7 +927,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                             onClose();
                             onEnterOwnHouse(selectedHouse.id);
                           }}
-                          className="h-11 px-4 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
+                          className="h-11 px-4 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white shadow-sm font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
                         >
                           <Home className="w-4 h-4 shrink-0" aria-hidden="true" />
                           <span>Go to Your House</span>
@@ -968,9 +946,9 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                             onClose();
                             onViewModelHouse(selectedHouse.id);
                           }}
-                          className="h-11 px-4 rounded-full bg-white hover:bg-slate-100 text-slate-800 border border-slate-200/90 shadow-xs font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
+                          className="h-11 px-4 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/15 shadow-xs font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
                         >
-                          <Eye className="w-4 h-4 text-sky-600 shrink-0" aria-hidden="true" />
+                          <Eye className="w-4 h-4 text-sky-400 shrink-0" aria-hidden="true" />
                           <span>{selectedHouse.previewLabel}</span>
                         </button>
                       ) : null}
@@ -982,7 +960,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                             soundEngine.playUiClick();
                             onConnectWallet();
                           }}
-                          className="h-11 px-4 rounded-full bg-sky-600 hover:bg-sky-500 text-white shadow-sm font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
+                          className="h-11 px-4 rounded-full bg-sky-500 hover:bg-sky-400 text-white shadow-sm font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
                         >
                           <Wallet className="w-4 h-4 shrink-0" aria-hidden="true" />
                           <span>Connect Wallet to Buy</span>
@@ -999,14 +977,14 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                           onClick={() => void handleBuyHouseDeed(selectedHouse.id)}
                           className={`h-11 px-4 rounded-full font-semibold text-xs flex items-center justify-center gap-2 transition-colors whitespace-nowrap ${
                             selectedHouseIsOwnedDeed
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-pointer'
+                              ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/35 cursor-pointer'
                               : selectedHouseLockedOther
-                                ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                                ? 'bg-white/[0.06] text-white/40 border border-white/10 cursor-not-allowed'
                                 : isHouseOwned
-                                  ? 'bg-sky-600 hover:bg-sky-500 text-white shadow-sm cursor-pointer'
+                                  ? 'bg-sky-500 hover:bg-sky-400 text-white shadow-sm cursor-pointer'
                                   : canAffordHouse && !isBuyingAsset
-                                    ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-sm cursor-pointer'
-                                    : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                                    ? 'bg-sky-500 hover:bg-sky-400 text-white shadow-sm cursor-pointer'
+                                    : 'bg-white/[0.06] text-white/40 border border-white/10 cursor-not-allowed'
                           }`}
                         >
                           {selectedHouseIsOwnedDeed ? (
@@ -1037,7 +1015,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                           onClose();
                           onOpenWalletTopUp();
                         }}
-                        className="w-full h-9 px-3.5 rounded-full bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200/80 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
+                        className="w-full h-9 px-3.5 rounded-full bg-teal-500/15 hover:bg-teal-500/25 text-teal-200 border border-teal-400/30 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
                       >
                         <Coins className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                         <span>
@@ -1054,7 +1032,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
               {/* Single-Row Selectable Property Cards Strip */}
               <div className="pt-1">
                 <div
-                  className="flex flex-nowrap gap-3 overflow-x-auto scroll-smooth pb-1 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-slate-200/60 [&::-webkit-scrollbar-thumb]:bg-slate-400/70 [&::-webkit-scrollbar-thumb]:rounded-full"
+                  className="flex flex-nowrap gap-3 overflow-x-auto scroll-smooth pb-1 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-white/5 [&::-webkit-scrollbar-thumb]:bg-white/25 [&::-webkit-scrollbar-thumb]:rounded-full"
                   data-hana-house-architecture-grid="true"
                 >
                   {HOUSE_SERIES_CATALOG.map((house) => {
@@ -1069,13 +1047,13 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                         data-katalog-card={house.katalogCardId}
                         data-house-style-card={house.id}
                         onClick={() => handleSelectHouseCard(house.id)}
-                        className={`group shrink-0 w-[212px] sm:w-[232px] rounded-2xl p-2 bg-white border transition-all cursor-pointer flex items-center gap-3 text-left ${
+                        className={`group shrink-0 w-[212px] sm:w-[232px] rounded-2xl p-2 border transition-all cursor-pointer flex items-center gap-3 text-left ${
                           isActiveCard
-                            ? 'border-slate-900 ring-2 ring-slate-900/10 shadow-md'
-                            : 'border-slate-200/80 shadow-xs hover:shadow-sm hover:border-slate-300'
+                            ? 'bg-sky-500/20 border-sky-400/75 ring-1 ring-sky-400/40 shadow-md'
+                            : 'bg-white/[0.06] border-white/12 hover:bg-white/[0.11] hover:border-white/25'
                         }`}
                       >
-                        <div className="w-[78px] h-[58px] shrink-0 rounded-xl overflow-hidden bg-[#f3f5f9]">
+                        <div className="w-[78px] h-[58px] shrink-0 rounded-xl overflow-hidden bg-slate-900">
                           <img
                             src={house.exteriorImg}
                             alt={house.title}
@@ -1085,15 +1063,15 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                           />
                         </div>
                         <div className="min-w-0 flex-1 pr-1">
-                          <div className="text-xs font-semibold text-slate-900 truncate">
+                          <div className="text-xs font-semibold text-white truncate">
                             {house.title}
                           </div>
-                          <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                          <div className="text-[11px] text-white/55 truncate mt-0.5">
                             {house.location}
                           </div>
                           <div
                             className={`text-[11px] font-mono tabular-nums font-semibold mt-0.5 truncate ${
-                              houseOwned ? 'text-emerald-700' : 'text-slate-700'
+                              houseOwned ? 'text-emerald-300' : 'text-white/80'
                             }`}
                           >
                             {houseOwned ? 'Owned Deed' : `${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE`}
@@ -1116,9 +1094,9 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
                 {/* Left Column: 360 Interactive Drag-Only 3D Showcase or Theme Art */}
                 <div className="lg:col-span-6 flex flex-col">
-                  <div className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-2.5 flex-1 flex flex-col">
+                  <div className="rounded-2xl bg-white/[0.06] border border-white/15 shadow-sm p-2.5 flex-1 flex flex-col">
                     {isSelectedTheme && selectedThemeSpec ? (
-                      <div className="relative w-full h-[250px] sm:h-[310px] lg:h-[348px] shrink-0 rounded-xl overflow-hidden bg-slate-900 flex flex-col justify-end">
+                      <div className="relative w-full h-[240px] sm:h-[300px] lg:h-[336px] shrink-0 rounded-xl overflow-hidden bg-slate-900 flex flex-col justify-end">
                         <img
                           src={selectedThemeSpec.imageSrc}
                           alt={selectedFurnitureItem.name}
@@ -1129,7 +1107,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                         <div
                           className={`absolute inset-0 bg-gradient-to-br ${selectedThemeSpec.overlayClass}`}
                         />
-                        <div className="relative z-10 m-3 px-3.5 py-2.5 rounded-xl flex items-center justify-between gap-3 bg-slate-950/65 backdrop-blur-md border border-white/15">
+                        <div className="relative z-10 m-3 px-3.5 py-2.5 rounded-xl flex items-center justify-between gap-3 bg-slate-950/70 backdrop-blur-md border border-white/15">
                           <span className="text-xs font-medium text-white">
                             House Theme Architectural Palette
                           </span>
@@ -1149,7 +1127,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                       <div
                         ref={viewportBoxRef}
                         data-testid="catalog-furniture-3d-viewport"
-                        className="relative w-full h-[250px] sm:h-[310px] lg:h-[348px] shrink-0 rounded-xl bg-gradient-to-b from-[#f7f9fc] via-[#eef2f7] to-[#e4eaf2] overflow-hidden cursor-grab active:cursor-grabbing touch-none"
+                        className="relative w-full h-[240px] sm:h-[300px] lg:h-[336px] shrink-0 rounded-xl bg-gradient-to-b from-[#f7f9fc] via-[#eef2f7] to-[#e4eaf2] overflow-hidden cursor-grab active:cursor-grabbing touch-none"
                         onPointerDown={(e) => {
                           viewStateRef.current.dragging = true;
                           viewStateRef.current.lastX = e.clientX;
@@ -1188,7 +1166,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                           className="absolute inset-0 w-full h-full block"
                         />
                         <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
-                          <span className="px-3 py-1 rounded-full bg-white/85 backdrop-blur-md border border-slate-200/80 text-[11px] font-medium text-slate-600 shadow-xs">
+                          <span className="px-3 py-1 rounded-full bg-slate-950/75 backdrop-blur-md border border-white/15 text-[11px] font-medium text-white shadow-xs">
                             ‹ drag to turn it around ›
                           </span>
                         </div>
@@ -1198,15 +1176,15 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                 </div>
 
                 {/* Right Column: Bento Card with Category Kicker, Title, Price, Specs & Buy Controls */}
-                <div className="lg:col-span-6 rounded-2xl bg-white border border-slate-200/75 shadow-sm p-5 flex flex-col justify-between gap-4">
+                <div className="lg:col-span-6 rounded-2xl bg-white/[0.06] border border-white/15 shadow-sm p-5 flex flex-col justify-between gap-4">
                   <div className="space-y-3">
                     <div className="flex items-center flex-wrap gap-1.5 text-[11px]">
-                      <span className="px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200/70 font-semibold">
+                      <span className="px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-400/30 font-semibold">
                         {selectedFurnitureItem.category === 'nft_house_theme'
                           ? 'House Theme NFT'
                           : 'Collector Furniture NFT'}
                       </span>
-                      <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium">
+                      <span className="px-2.5 py-0.5 rounded-full bg-white/10 text-white/80 border border-white/10 font-medium">
                         {selectedFurnitureItem.interiorSlot
                           ? SLOT_LABELS[selectedFurnitureItem.interiorSlot] ?? 'Interior Slot'
                           : 'Full Interior & Exterior'}
@@ -1215,7 +1193,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
 
                     <h3
                       data-testid="catalog-selected-furniture-title"
-                      className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 leading-tight"
+                      className="text-2xl sm:text-3xl font-bold tracking-tight text-white leading-tight"
                     >
                       {selectedFurnitureItem.name}
                     </h3>
@@ -1223,7 +1201,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                     <div className="flex items-center justify-between gap-3 pt-0.5">
                       <div
                         data-testid="catalog-selected-furniture-price"
-                        className="text-2xl font-mono font-bold text-slate-900 tabular-nums whitespace-nowrap"
+                        className="text-2xl font-mono font-bold text-white tabular-nums whitespace-nowrap"
                       >
                         {furnitureQuote.buyPrice}{' '}
                         {selectedFurnitureItem.currency === 'RESPITE'
@@ -1238,7 +1216,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                           rel="noopener noreferrer"
                           aria-label={`View ${selectedFurnitureItem.name} NFT on NEAR Explorer`}
                           onClick={() => soundEngine.playSoftTap()}
-                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80 text-[11px] font-semibold tracking-wide cursor-pointer transition-colors whitespace-nowrap shrink-0"
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-white/90 border border-white/15 text-[11px] font-semibold tracking-wide cursor-pointer transition-colors whitespace-nowrap shrink-0"
                         >
                           <span>NFT</span>
                           <ExternalLink className="w-3 h-3" aria-hidden="true" />
@@ -1246,40 +1224,40 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                       )}
                     </div>
 
-                    <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
+                    <p className="text-xs sm:text-sm text-white/65 leading-relaxed">
                       {selectedFurnitureItem.description}
                     </p>
 
                     <div className="grid grid-cols-3 gap-2 pt-1">
-                      <div className="min-w-0 rounded-xl bg-[#f3f5f9] border border-slate-200/60 px-3 py-2">
-                        <div className="text-[11px] text-slate-500 truncate">In Stock</div>
-                        <div className="text-xs font-semibold text-slate-900 tabular-nums mt-0.5">
+                      <div className="min-w-0 rounded-xl bg-white/[0.05] border border-white/10 px-3 py-2">
+                        <div className="text-[11px] text-white/50 truncate">In Stock</div>
+                        <div className="text-xs font-semibold text-white tabular-nums mt-0.5">
                           {furnitureQuote.stock} available
                         </div>
                       </div>
-                      <div className="min-w-0 rounded-xl bg-[#f3f5f9] border border-slate-200/60 px-3 py-2">
-                        <div className="text-[11px] text-slate-500 truncate">Your Bag</div>
-                        <div className="text-xs font-semibold text-slate-900 tabular-nums mt-0.5">
+                      <div className="min-w-0 rounded-xl bg-white/[0.05] border border-white/10 px-3 py-2">
+                        <div className="text-[11px] text-white/50 truncate">Your Bag</div>
+                        <div className="text-xs font-semibold text-white tabular-nums mt-0.5">
                           {isFurnitureOwned ? `${Math.max(1, furnitureOwnedCount)} owned` : '0 owned'}
                         </div>
                       </div>
-                      <div className="min-w-0 rounded-xl bg-[#f3f5f9] border border-slate-200/60 px-3 py-2">
-                        <div className="text-[11px] text-slate-500 truncate">Currency</div>
-                        <div className="text-xs font-semibold text-teal-700 mt-0.5">
+                      <div className="min-w-0 rounded-xl bg-white/[0.05] border border-white/10 px-3 py-2">
+                        <div className="text-[11px] text-white/50 truncate">Currency</div>
+                        <div className="text-xs font-semibold text-teal-300 mt-0.5">
                           {selectedFurnitureItem.currency}
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="space-y-2.5 pt-3 border-t border-slate-100">
+                  <div className="space-y-2.5 pt-3 border-t border-white/10">
                     {actionFeedback && (
                       <div
                         role="status"
                         className={`px-3.5 py-2.5 rounded-xl text-xs font-medium border ${
                           actionFeedback.ok
-                            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                            : 'bg-rose-50 border-rose-200 text-rose-700'
+                            ? 'bg-emerald-500/15 border-emerald-400/35 text-emerald-200'
+                            : 'bg-rose-500/15 border-rose-400/35 text-rose-200'
                         }`}
                       >
                         {actionFeedback.text}
@@ -1289,7 +1267,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                     {lastTxReceipt && (
                       <div
                         data-catalog-buy-receipt="true"
-                        className="px-3.5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-800 flex items-center justify-between gap-2"
+                        className="px-3.5 py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-400/35 text-xs font-medium text-emerald-200 flex items-center justify-between gap-2"
                       >
                         <span>Transaction confirmed</span>
                         <a
@@ -1299,7 +1277,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                           }
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-sky-700 hover:text-sky-900 underline font-mono"
+                          className="text-sky-300 hover:text-sky-200 underline font-mono"
                         >
                           View Tx on NearBlocks ↗
                         </a>
@@ -1313,7 +1291,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                           soundEngine.playUiClick();
                           onConnectWallet();
                         }}
-                        className="w-full h-11 px-4 rounded-full bg-sky-600 hover:bg-sky-500 text-white shadow-sm font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
+                        className="w-full h-11 px-4 rounded-full bg-sky-500 hover:bg-sky-400 text-white shadow-sm font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
                       >
                         <Wallet className="w-4 h-4 shrink-0" aria-hidden="true" />
                         <span>
@@ -1326,7 +1304,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                         <button
                           type="button"
                           disabled
-                          className="h-11 px-4 rounded-full bg-slate-100 text-slate-400 border border-slate-200 text-xs font-semibold flex items-center justify-center gap-2 cursor-not-allowed whitespace-nowrap"
+                          className="h-11 px-4 rounded-full bg-white/[0.06] text-white/40 border border-white/10 text-xs font-semibold flex items-center justify-center gap-2 cursor-not-allowed whitespace-nowrap"
                         >
                           <ShoppingBag className="w-4 h-4 shrink-0" aria-hidden="true" />
                           <span>Needs a House Deed</span>
@@ -1337,14 +1315,14 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                             soundEngine.playUiClick();
                             setActiveCatalogTab('house');
                           }}
-                          className="h-11 px-4 rounded-full bg-slate-900 hover:bg-slate-800 text-white shadow-sm font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
+                          className="h-11 px-4 rounded-full bg-sky-500 hover:bg-sky-400 text-white shadow-sm font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
                         >
                           <Home className="w-4 h-4 shrink-0" aria-hidden="true" />
                           <span>Browse Houses</span>
                         </button>
                       </div>
                     ) : isFurnitureOwned && !selectedFurnitureItem.interiorSlot ? (
-                      <div className="w-full h-11 px-4 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold text-xs flex items-center justify-center gap-2 whitespace-nowrap">
+                      <div className="w-full h-11 px-4 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/35 font-semibold text-xs flex items-center justify-center gap-2 whitespace-nowrap">
                         <Check className="w-4 h-4 shrink-0" aria-hidden="true" />
                         <span>Owned in Studio · Ready to Apply</span>
                       </div>
@@ -1356,8 +1334,8 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                         onClick={() => void handleBuySelectedFurniture()}
                         className={`w-full h-11 px-4 rounded-full font-semibold text-xs flex items-center justify-center gap-2 transition-colors whitespace-nowrap ${
                           canBuyFurniture && !isBuyingAsset
-                            ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-sm cursor-pointer'
-                            : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                            ? 'bg-sky-500 hover:bg-sky-400 text-white shadow-sm cursor-pointer'
+                            : 'bg-white/[0.06] text-white/40 border border-white/10 cursor-not-allowed'
                         }`}
                       >
                         <ShoppingBag className="w-4 h-4 shrink-0" aria-hidden="true" />
@@ -1381,7 +1359,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                           onClose();
                           onOpenWalletTopUp();
                         }}
-                        className="w-full h-9 px-3.5 rounded-full bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200/80 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
+                        className="w-full h-9 px-3.5 rounded-full bg-teal-500/15 hover:bg-teal-500/25 text-teal-200 border border-teal-400/30 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
                       >
                         <Coins className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                         <span>
@@ -1407,8 +1385,8 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                     onClick={() => handleSlideFurnitureStrip(-1)}
                     className={`w-9 h-[86px] rounded-2xl border flex items-center justify-center shrink-0 transition-colors ${
                       furnitureSliderState.canPrev
-                        ? 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200/80 shadow-xs cursor-pointer'
-                        : 'bg-white/50 text-slate-300 border-slate-200/50 cursor-not-allowed'
+                        ? 'bg-white/10 hover:bg-white/20 text-white border-white/15 shadow-xs cursor-pointer'
+                        : 'bg-white/[0.03] text-white/25 border-white/10 cursor-not-allowed'
                     }`}
                   >
                     <ChevronLeft className="w-5 h-5" aria-hidden="true" />
@@ -1428,7 +1406,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                         track.scrollLeft += e.deltaY;
                       }
                     }}
-                    className="flex-1 flex flex-nowrap gap-2.5 overflow-x-auto scroll-smooth pb-1.5 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-slate-200/60 [&::-webkit-scrollbar-thumb]:bg-slate-400/70 [&::-webkit-scrollbar-thumb]:rounded-full"
+                    className="flex-1 flex flex-nowrap gap-2.5 overflow-x-auto scroll-smooth pb-1.5 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-white/5 [&::-webkit-scrollbar-thumb]:bg-white/25 [&::-webkit-scrollbar-thumb]:rounded-full"
                   >
                     {catalogFurnitureItems.map((item) => {
                       const isActive = selectedFurnitureItem.id === item.id;
@@ -1445,13 +1423,13 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                           onClick={(e) =>
                             handleSelectFurnitureCard(item.id, e.currentTarget)
                           }
-                          className={`group shrink-0 w-[112px] sm:w-[124px] h-[86px] p-1.5 rounded-2xl bg-white border transition-all cursor-pointer flex items-center justify-center ${
+                          className={`group shrink-0 w-[112px] sm:w-[124px] h-[86px] p-1.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-center ${
                             isActive
-                              ? 'border-slate-900 ring-2 ring-slate-900/10 shadow-md'
-                              : 'border-slate-200/80 shadow-xs hover:shadow-sm hover:border-slate-300'
+                              ? 'bg-sky-500/20 border-sky-400/75 ring-1 ring-sky-400/40 shadow-md'
+                              : 'bg-white/[0.06] border-white/12 hover:bg-white/[0.11] hover:border-white/25'
                           }`}
                         >
-                          <div className="relative w-full h-full rounded-xl flex items-center justify-center overflow-hidden bg-[#f3f5f9]">
+                          <div className="relative w-full h-full rounded-xl flex items-center justify-center overflow-hidden bg-[#edf2f8]">
                             {portraitUrl ? (
                               <img
                                 src={portraitUrl}
@@ -1497,8 +1475,8 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                     onClick={() => handleSlideFurnitureStrip(1)}
                     className={`w-9 h-[86px] rounded-2xl border flex items-center justify-center shrink-0 transition-colors ${
                       furnitureSliderState.canNext
-                        ? 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200/80 shadow-xs cursor-pointer'
-                        : 'bg-white/50 text-slate-300 border-slate-200/50 cursor-not-allowed'
+                        ? 'bg-white/10 hover:bg-white/20 text-white border-white/15 shadow-xs cursor-pointer'
+                        : 'bg-white/[0.03] text-white/25 border-white/10 cursor-not-allowed'
                     }`}
                   >
                     <ChevronRight className="w-5 h-5" aria-hidden="true" />
@@ -1513,21 +1491,21 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
              =============================================================== */}
           {activeCatalogTab === 'market' && (
             <div data-property-market-panel="true" className="space-y-5">
-              <div className="rounded-2xl bg-white border border-slate-200/75 shadow-sm px-4 py-3.5 flex items-center justify-between gap-3 flex-wrap">
+              <div className="rounded-2xl bg-white/[0.06] border border-white/15 shadow-sm px-4 py-3.5 flex items-center justify-between gap-3 flex-wrap">
                 <div>
-                  <h3 className="text-base font-bold tracking-tight text-slate-900">
+                  <h3 className="text-base font-bold tracking-tight text-white">
                     Secondary Property &amp; Furniture Market
                   </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
+                  <p className="text-xs text-white/60 mt-0.5">
                     List owned House Deeds or Collector NFT Furniture in escrow, or buy from fellow citizens in RESPITE.
                   </p>
                 </div>
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#f3f5f9] border border-slate-200/70 text-xs text-slate-600 whitespace-nowrap">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/15 text-xs text-white/75 whitespace-nowrap">
                   <span>List</span>
-                  <span aria-hidden="true" className="text-slate-400">→</span>
+                  <span aria-hidden="true" className="text-white/40">→</span>
                   <span>Escrow Pay</span>
-                  <span aria-hidden="true" className="text-slate-400">→</span>
-                  <span className="text-emerald-700 font-semibold">Instant Transfer</span>
+                  <span aria-hidden="true" className="text-white/40">→</span>
+                  <span className="text-emerald-300 font-semibold">Instant Transfer</span>
                 </div>
               </div>
 
@@ -1536,8 +1514,8 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                   role="status"
                   className={`px-3.5 py-2.5 rounded-xl border text-xs font-medium ${
                     marketFeedback.ok
-                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                      : 'bg-rose-50 border-rose-200 text-rose-700'
+                      ? 'bg-emerald-500/15 border-emerald-400/35 text-emerald-200'
+                      : 'bg-rose-500/15 border-rose-400/35 text-rose-200'
                   }`}
                 >
                   {marketFeedback.text}
@@ -1546,15 +1524,15 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
 
               {/* Sell Your Assets */}
               <div className="space-y-2.5">
-                <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  <Tag className="w-3.5 h-3.5 text-sky-600" aria-hidden="true" />
+                <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-white/65">
+                  <Tag className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
                   <span>Sell Your Assets</span>
                 </div>
 
                 {!walletConnected ? (
-                  <div className="p-3.5 rounded-2xl bg-white border border-slate-200/75 shadow-sm flex items-center justify-between gap-3 text-xs font-medium text-slate-600">
+                  <div className="p-3.5 rounded-2xl bg-white/[0.06] border border-white/15 shadow-sm flex items-center justify-between gap-3 text-xs font-medium text-white/75">
                     <div className="flex items-center gap-2">
-                      <LogIn className="w-4 h-4 text-sky-600 shrink-0" aria-hidden="true" />
+                      <LogIn className="w-4 h-4 text-sky-400 shrink-0" aria-hidden="true" />
                       <span>Sign in with your NEAR wallet to list or buy properties.</span>
                     </div>
                     <button
@@ -1563,7 +1541,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                         soundEngine.playUiClick();
                         onConnectWallet();
                       }}
-                      className="px-4 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap shrink-0"
+                      className="px-4 py-1.5 rounded-full bg-sky-500 hover:bg-sky-400 text-white text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap shrink-0"
                     >
                       Sign In
                     </button>
@@ -1572,10 +1550,10 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                   <div className="space-y-2">
                     {hasHouseOwnership && !myHouseListing && (
                       <div
-                        className="p-3 rounded-2xl bg-white border border-slate-200/75 shadow-sm flex items-center gap-3 flex-wrap sm:flex-nowrap"
+                        className="p-3 rounded-2xl bg-white/[0.06] border border-white/15 shadow-sm flex items-center gap-3 flex-wrap sm:flex-nowrap"
                         data-property-list-house="true"
                       >
-                        <div className="w-16 h-12 shrink-0 rounded-xl overflow-hidden bg-[#f3f5f9]">
+                        <div className="w-16 h-12 shrink-0 rounded-xl overflow-hidden bg-slate-900">
                           <img
                             src="/assets/kiosk/house_exterior.jpg"
                             alt="Private House Deed"
@@ -1585,10 +1563,10 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                           />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="text-xs font-semibold truncate text-slate-900">
+                          <div className="text-xs font-semibold truncate text-white">
                             Private House Deed
                           </div>
-                          <div className="text-[11px] text-slate-500">NEP-171 Property Deed</div>
+                          <div className="text-[11px] text-white/55">NEP-171 Property Deed</div>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
                           <input
@@ -1598,9 +1576,9 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                             }
                             inputMode="numeric"
                             aria-label="House listing price in RESPITE"
-                            className="w-16 px-2.5 py-1.5 rounded-full bg-[#f3f5f9] border border-slate-200/90 text-xs font-mono font-semibold text-slate-900 text-right tabular-nums focus:outline-none focus:border-slate-400"
+                            className="w-16 px-2.5 py-1.5 rounded-full bg-white/10 border border-white/20 text-xs font-mono font-semibold text-white text-right tabular-nums focus:outline-none focus:border-sky-400"
                           />
-                          <span className="text-xs font-semibold text-slate-500">R</span>
+                          <span className="text-xs font-semibold text-white/60">R</span>
                           <button
                             type="button"
                             disabled={busyPropertyListingId !== null}
@@ -1631,7 +1609,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                                     },
                               );
                             }}
-                            className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer transition-colors disabled:bg-slate-200 disabled:text-slate-400"
+                            className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-full bg-sky-500 hover:bg-sky-400 text-white text-xs font-semibold cursor-pointer transition-colors disabled:bg-white/10 disabled:text-white/40"
                           >
                             <Tag className="w-3 h-3" aria-hidden="true" />
                             <span>List</span>
@@ -1641,8 +1619,8 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                     )}
 
                     {hasHouseOwnership && myHouseListing && (
-                      <div className="px-3.5 py-2.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 flex items-center gap-2">
-                        <Home className="w-4 h-4 text-emerald-600 shrink-0" aria-hidden="true" />
+                      <div className="px-3.5 py-2.5 rounded-2xl bg-emerald-500/15 border border-emerald-400/35 text-xs font-semibold text-emerald-200 flex items-center gap-2">
+                        <Home className="w-4 h-4 text-emerald-400 shrink-0" aria-hidden="true" />
                         <span>
                           {myHouseListing.status === 'paid'
                             ? 'House paid — click Transfer below'
@@ -1656,10 +1634,10 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                       return (
                         <div
                           key={item.id}
-                          className="p-3 rounded-2xl bg-white border border-slate-200/75 shadow-sm flex items-center gap-3 flex-wrap sm:flex-nowrap"
+                          className="p-3 rounded-2xl bg-white/[0.06] border border-white/15 shadow-sm flex items-center gap-3 flex-wrap sm:flex-nowrap"
                           data-property-list-furniture={item.id}
                         >
-                          <div className="w-16 shrink-0 rounded-xl overflow-hidden">
+                          <div className="w-16 shrink-0 rounded-xl overflow-hidden bg-[#edf2f8]">
                             <Furniture3dThumbnail
                               catalogId={item.id}
                               name={item.name}
@@ -1672,13 +1650,13 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                             />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="text-xs font-semibold truncate text-slate-900">
+                            <div className="text-xs font-semibold truncate text-white">
                               {item.name}
                             </div>
-                            <div className="text-[11px] text-sky-600 font-medium">Collector NFT</div>
+                            <div className="text-[11px] text-sky-300 font-medium">Collector NFT</div>
                           </div>
                           {listed ? (
-                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
+                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/35 text-xs font-semibold">
                               <Check className="w-3 h-3" aria-hidden="true" />
                               <span>Listed</span>
                             </span>
@@ -1694,9 +1672,9 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                                 }
                                 inputMode="numeric"
                                 aria-label={`Listing price for ${item.name} in RESPITE`}
-                                className="w-16 px-2.5 py-1.5 rounded-full bg-[#f3f5f9] border border-slate-200/90 text-xs font-mono font-semibold text-slate-900 text-right tabular-nums focus:outline-none focus:border-slate-400"
+                                className="w-16 px-2.5 py-1.5 rounded-full bg-white/10 border border-white/20 text-xs font-mono font-semibold text-white text-right tabular-nums focus:outline-none focus:border-sky-400"
                               />
-                              <span className="text-xs font-semibold text-slate-500">R</span>
+                              <span className="text-xs font-semibold text-white/60">R</span>
                               <button
                                 type="button"
                                 disabled={busyPropertyListingId !== null}
@@ -1730,7 +1708,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                                         },
                                   );
                                 }}
-                                className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer transition-colors disabled:bg-slate-200 disabled:text-slate-400"
+                                className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-full bg-sky-500 hover:bg-sky-400 text-white text-xs font-semibold cursor-pointer transition-colors disabled:bg-white/10 disabled:text-white/40"
                               >
                                 <Tag className="w-3 h-3" aria-hidden="true" />
                                 <span>List</span>
@@ -1742,8 +1720,8 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                     })}
 
                     {!hasHouseOwnership && listableNftFurniture.length === 0 && (
-                      <div className="p-3.5 rounded-2xl bg-white/75 border border-dashed border-slate-300 flex items-center gap-2 text-xs font-medium text-slate-500">
-                        <PackageOpen className="w-4 h-4 shrink-0 text-slate-400" aria-hidden="true" />
+                      <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-dashed border-white/20 flex items-center gap-2 text-xs font-medium text-white/55">
+                        <PackageOpen className="w-4 h-4 shrink-0 text-white/45" aria-hidden="true" />
                         <span>No House Deed or NFT Furniture owned yet.</span>
                       </div>
                     )}
@@ -1753,14 +1731,14 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
 
               {/* Active Market Board Listings */}
               <div className="space-y-3 pt-2">
-                <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  <Store className="w-3.5 h-3.5 text-sky-600" aria-hidden="true" />
+                <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-white/65">
+                  <Store className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
                   <span>Market Board ({boardListings.length})</span>
                 </div>
 
                 {boardListings.length === 0 ? (
-                  <div className="py-8 px-4 rounded-2xl bg-white/75 border border-dashed border-slate-300 flex flex-col items-center justify-center gap-1.5 text-center text-xs font-medium text-slate-500">
-                    <Store className="w-5 h-5 text-slate-400" aria-hidden="true" />
+                  <div className="py-8 px-4 rounded-2xl bg-white/[0.04] border border-dashed border-white/20 flex flex-col items-center justify-center gap-1.5 text-center text-xs font-medium text-white/55">
+                    <Store className="w-5 h-5 text-white/45" aria-hidden="true" />
                     <span>No active property or furniture listings right now.</span>
                   </div>
                 ) : (
@@ -1782,12 +1760,12 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                       return (
                         <div
                           key={listing.id}
-                          className="rounded-2xl bg-white border border-slate-200/75 shadow-sm hover:shadow-md transition-all p-3.5 flex flex-col gap-3"
+                          className="rounded-2xl bg-white/[0.06] border border-white/15 shadow-sm hover:border-white/30 transition-all p-3.5 flex flex-col gap-3"
                           data-property-listing={listing.id}
                         >
-                          <div className="relative rounded-xl overflow-hidden bg-[#f3f5f9]">
+                          <div className="relative rounded-xl overflow-hidden bg-[#edf2f8]">
                             {listing.asset_kind === 'house' ? (
-                              <div className="w-full h-28 overflow-hidden bg-[#f3f5f9]">
+                              <div className="w-full h-28 overflow-hidden bg-slate-900">
                                 <img
                                   src="/assets/kiosk/house_exterior.jpg"
                                   alt={listing.asset_label}
@@ -1811,23 +1789,23 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
 
                           <div className="flex flex-col gap-2 flex-1">
                             <div>
-                              <div className="text-[11px] font-semibold text-teal-700">
+                              <div className="text-[11px] font-semibold text-teal-300">
                                 {listing.asset_kind === 'house' ? 'House Deed' : 'Collector NFT'}
                                 {listing.status === 'paid' ? ' · Paid' : ''}
                               </div>
-                              <div className="text-sm font-semibold text-slate-900 truncate">
+                              <div className="text-sm font-semibold text-white truncate">
                                 {listing.asset_label}
                               </div>
-                              <div className="inline-flex items-center gap-1 text-[11px] text-slate-500 truncate mt-0.5">
-                                <User className="w-3 h-3 shrink-0 text-slate-400" aria-hidden="true" />
+                              <div className="inline-flex items-center gap-1 text-[11px] text-white/55 truncate mt-0.5">
+                                <User className="w-3 h-3 shrink-0 text-white/45" aria-hidden="true" />
                                 <span className="truncate">
                                   {listing.seller_name || listing.seller_account}
                                 </span>
                               </div>
                             </div>
 
-                            <div className="mt-auto pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
-                              <span className="text-sm font-mono font-bold text-slate-900 tabular-nums">
+                            <div className="mt-auto pt-2.5 border-t border-white/10 flex items-center justify-between gap-2">
+                              <span className="text-sm font-mono font-bold text-white tabular-nums">
                                 {listing.price_respite} RESPITE
                               </span>
 
@@ -1851,13 +1829,13 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                                             },
                                       );
                                     }}
-                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer transition-colors disabled:bg-slate-200 disabled:text-slate-400"
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-semibold cursor-pointer transition-colors disabled:bg-white/10 disabled:text-white/40"
                                   >
                                     <ArrowRightLeft className="w-3 h-3" aria-hidden="true" />
                                     <span>{isBusy ? '...' : 'Transfer'}</span>
                                   </button>
                                 ) : (
-                                  <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-semibold">
+                                  <span className="px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/35 text-xs font-semibold">
                                     {isMyPurchase ? 'Pending' : 'Sold'}
                                   </span>
                                 )
@@ -1872,7 +1850,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                                       text: 'Listing cancelled.',
                                     });
                                   }}
-                                  className="px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer transition-colors"
+                                  className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/85 text-xs font-semibold cursor-pointer transition-colors"
                                 >
                                   Cancel
                                 </button>
@@ -1894,7 +1872,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                                           },
                                     );
                                   }}
-                                  className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer transition-colors disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                                  className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-full bg-sky-500 hover:bg-sky-400 text-white text-xs font-semibold cursor-pointer transition-colors disabled:bg-white/10 disabled:text-white/40 disabled:cursor-not-allowed"
                                 >
                                   <ShoppingBag className="w-3 h-3" aria-hidden="true" />
                                   <span>{isBusy ? '...' : 'Buy'}</span>
@@ -1911,7 +1889,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
             </div>
           )}
         </div>
-      </div>
+      </TabletDeviceMockupShell>
     </div>
   );
 

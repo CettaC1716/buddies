@@ -212,7 +212,7 @@ test('4-tier lamp manifest spans all districts without overlapping roads, water,
   assert.ok(tierCounts[4] >= 8, 'Expected Tier 4 grand Victorian chandelier posts');
   assert.ok(districtsPresent.size >= 9, `Expected city-wide coverage across >=9 districts, got ${districtsPresent.size}`);
   assert.ok(EXISTING_CITY_LAMP_POOL_ANCHORS.length >= 14);
-  assert.ok(CITY_BUILDING_GLOW_MANIFEST.length >= 30);
+  assert.ok(CITY_BUILDING_GLOW_MANIFEST.length >= 26);
 });
 
 test('city illumination levels track dusk, night, dawn, rain, fog, and weatherEnvState.cityLightsScale', () => {
@@ -318,18 +318,18 @@ test('traffic vehicles obey Plaza & East traffic signals, yield to City Tram, ho
   // Move tram far out of the way (East Harbor far corner) when testing Plaza signal alone
   const parkTramFarAway = evaluateCityTramConsistState(240.0);
 
-  // 1. Signal Red-Stop Compliance on Central Plaza South Stop Bar (`z = +11.80`, ring_cw NB)
+  // 1. Signal Red-Stop Compliance on Central Plaza North Stop Bar (`z = -5.40`, ring_cw NB)
   const cwTrack = CITY_TRAFFIC_TRACKS.ring_cw;
   let targetDist = 0;
   for (let d = 0; d < cwTrack.totalLength; d += 0.25) {
     const s = sampleTrafficTrackAtDistance(cwTrack, d);
-    // Find point around x = -69.32, z = +24.5 moving northbound (forwardZ < -0.9)
-    if (s.x < -68 && s.z > 24.0 && s.z < 25.0 && s.forwardZ < -0.9) {
+    // Find point around x = -69.32, z = +7.5 moving northbound (forwardZ < -0.9)
+    if (s.x < -68 && s.z > 7.0 && s.z < 8.0 && s.forwardZ < -0.9) {
       targetDist = d;
       break;
     }
   }
-  assert.ok(targetDist > 0, 'Could not locate ring_cw northbound approach to Plaza stop bar');
+  assert.ok(targetDist > 0, 'Could not locate ring_cw northbound approach to Plaza North stop bar');
 
   const signalVehicle = {
     ...baseFleet[0],
@@ -357,8 +357,8 @@ test('traffic vehicles obey Plaza & East traffic signals, yield to City Tram, ho
   const noseZAtStop = signalVehicle.z + signalVehicle.forwardZ * signalVehicle.halfLength;
   assert.ok(signalVehicle.speedMps <= 0.1, `Expected stopped car at red signal, speed=${signalVehicle.speedMps}`);
   assert.ok(
-    noseZAtStop >= PLAZA_TRAFFIC_SIGNAL_SPEC.southStopBarZ - 0.45,
-    `Vehicle overshot Plaza south stop bar (+11.80): noseZ=${noseZAtStop.toFixed(2)}`,
+    noseZAtStop >= PLAZA_TRAFFIC_SIGNAL_SPEC.northStopBarZ - 0.45,
+    `Vehicle overshot Plaza north stop bar (-5.40): noseZ=${noseZAtStop.toFixed(2)}`,
   );
   assert.equal(signalVehicle.stoppedReason, 'signal');
   assert.equal(signalVehicle.isBraking, true);

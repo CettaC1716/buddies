@@ -658,6 +658,7 @@ export function buildGlowingDoorFloorArrowPad(): {
 
   const arrowMat = new THREE.MeshBasicMaterial({ color: '#38bdf8' });
   const chevronArrow = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.42, 4), arrowMat);
+  chevronArrow.name = 'DoorPadChevronArrow';
   chevronArrow.rotation.x = Math.PI;
   chevronArrow.position.y = 0.65;
   chevronArrow.raycast = () => {};

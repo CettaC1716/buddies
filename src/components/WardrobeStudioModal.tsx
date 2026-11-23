@@ -76,6 +76,7 @@ import {
   resolveWardrobeDraftToModularOutfitUrls,
   resolveWardrobeGlassSurfaceMode,
   sanitizeDraftToOwnedOnly,
+  shouldFlipWardrobeThumbY,
   undoWardrobeDraft,
   type WardrobeBottomTabId,
   type WardrobeCameraFraming,
@@ -260,6 +261,11 @@ const FACE_RAIL_ITEMS: ReadonlyArray<{
 
 function FaceFeaturePreviewGlyph({ item }: { item: WardrobeCatalogItem }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [retryAttempt, setRetryAttempt] = useState(0);
+
+  useEffect(() => {
+    setRetryAttempt(0);
+  }, [item.id, item.thumbUrl]);
 
   useEffect(() => {
     if (item.thumbUrl) return;
@@ -294,6 +300,11 @@ function FaceFeaturePreviewGlyph({ item }: { item: WardrobeCatalogItem }) {
   }, [item]);
 
   if (item.thumbUrl) {
+    const flipY = shouldFlipWardrobeThumbY(item);
+    const resolvedSrc =
+      retryAttempt > 0
+        ? `${item.thumbUrl}${item.thumbUrl.includes('?') ? '&' : '?'}retry=${retryAttempt}`
+        : item.thumbUrl;
     return (
       <div
         className="w-full h-full flex items-center justify-center p-1.5"
@@ -301,13 +312,23 @@ function FaceFeaturePreviewGlyph({ item }: { item: WardrobeCatalogItem }) {
           background: 'radial-gradient(circle at 45% 35%, #f3d4be, #d9b196)',
         }}
       >
-        <img
-          src={item.thumbUrl}
-          alt={item.name}
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          className="w-full h-full object-contain drop-shadow-[0_2px_4px_rgba(0,0,0,0.28)]"
-        />
+        <div className="w-full h-full flex items-center justify-center drop-shadow-[0_2px_4px_rgba(0,0,0,0.28)]">
+          <img
+            src={resolvedSrc}
+            alt={item.name}
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            onError={() => {
+              if (retryAttempt < 2) {
+                window.setTimeout(() => {
+                  setRetryAttempt((prev) => (prev < 2 ? prev + 1 : prev));
+                }, 400 * (retryAttempt + 1));
+              }
+            }}
+            className={`w-full h-full object-contain ${flipY ? '-scale-y-100' : ''}`}
+          />
+        </div>
       </div>
     );
   }
