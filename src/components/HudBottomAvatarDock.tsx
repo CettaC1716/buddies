@@ -8,7 +8,6 @@ import {
   HeartHandshake,
   Lock,
   MessageCircle,
-  Sparkles,
   Square,
   Store,
   User,
@@ -22,13 +21,16 @@ import {
 } from '../game/buddiesUrbanScooterRules';
 import {
   PROFILE_IDENTITY_UPDATED_EVENT,
-  readStoredEmblemIcon,
-  readStoredEmblemName,
   readStoredStatusCoverPhotoUrl,
-  renderProfileEmblemIcon,
-  type ProfileEmblemIconId,
 } from './CharacterProfileModal';
+import { RoleBadgeCircle } from './RoleBadgeCircle';
+import {
+  getAnyRoleBadgeSpec,
+  readStoredRoleBadge,
+  type PlayerRoleBadgeId,
+} from '../game/buddiesProfileIdentity';
 import type { NearbyEntityUser } from './SocialChatModal';
+import { useAdaptiveViewport } from '../lib/useAdaptiveViewport';
 
 export interface HudBottomAvatarDockProps {
   playerDisplayName: string;
@@ -162,18 +164,14 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
   const [customCoverUrl, setCustomCoverUrl] = useState<string>(() =>
     readStoredStatusCoverPhotoUrl(),
   );
-  const [emblemIconId, setEmblemIconId] = useState<ProfileEmblemIconId>(() =>
-    readStoredEmblemIcon(),
-  );
-  const [emblemName, setEmblemName] = useState<string>(() =>
-    readStoredEmblemName(),
+  const [roleBadgeId, setRoleBadgeId] = useState<PlayerRoleBadgeId>(() =>
+    readStoredRoleBadge(),
   );
 
   useEffect(() => {
     const syncProfileIdentity = () => {
       setCustomCoverUrl(readStoredStatusCoverPhotoUrl());
-      setEmblemIconId(readStoredEmblemIcon());
-      setEmblemName(readStoredEmblemName());
+      setRoleBadgeId(readStoredRoleBadge());
     };
     window.addEventListener(PROFILE_IDENTITY_UPDATED_EVENT, syncProfileIdentity);
     window.addEventListener('storage', syncProfileIdentity);
@@ -251,12 +249,243 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
     }
   };
 
+  const adaptive = useAdaptiveViewport();
+  const isPhoneDock = adaptive.isPhone || adaptive.isCompactHeight;
+  const isTabletDock = !isPhoneDock && (adaptive.isTablet || adaptive.width < 1024);
+
+  if (isPhoneDock) {
+    const ownedFirstScooter = URBAN_SCOOTER_CATALOG_ITEMS.find((s) =>
+      ownedScooterIds.includes(s.id),
+    );
+    return (
+      <div
+        data-hud-avatar-dock="true"
+        data-hud-avatar-dock-variant="phone"
+        style={{
+          top: 'calc(2.1rem + var(--safe-top))',
+          left: 'max(0.75rem, var(--safe-left))',
+          maxWidth: 'calc(100vw - 148px)',
+        }}
+        className="fixed z-30 flex items-center gap-1.5 pointer-events-auto select-none"
+      >
+        {/* Compact Avatar Portrait */}
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            data-dock-portrait-btn="true"
+            onClick={() => {
+              soundEngine.playUiClick();
+              if (targetEntity) {
+                if (showTargetInteractionBar) {
+                  onOpenTargetProfile?.(targetEntity);
+                } else {
+                  onToggleTargetInteraction?.();
+                }
+              } else {
+                onOpenProfile();
+              }
+            }}
+            title={
+              targetEntity
+                ? `${displayName} · Interactions`
+                : `${displayName} · Open Profile`
+            }
+            className={`relative w-10 h-10 rounded-xl bg-[#0d1118]/80 backdrop-blur-sm border shadow-[0_8px_22px_rgba(0,0,0,0.45)] overflow-hidden cursor-pointer transition-transform active:scale-95 ${PORTRAIT_FRAME_GRADIENTS[displayTone]} ${
+              showTargetInteractionBar ? 'ring-2 ring-white/60' : ''
+            }`}
+          >
+            <img
+              src={displayPortraitUrl}
+              alt={displayName}
+              draggable={false}
+              className={`w-full h-full ${getDockPhotoCropClassName(displayPortraitUrl)}`}
+            />
+          </button>
+          <span
+            aria-hidden="true"
+            data-dock-emblem-badge={hasTarget ? (targetIsMerchant ? 'merchant' : targetEntity?.roleBadge ?? 'target') : roleBadgeId}
+            className="absolute -top-1 -left-1 pointer-events-none"
+          >
+            {hasTarget && targetIsCitizen ? (
+              <span className={`w-4 h-4 rounded-full border border-[#0d1118] flex items-center justify-center shadow ${CORNER_BADGE_BG[displayTone]}`}>
+                <User className="w-2.5 h-2.5 stroke-[2.4]" />
+              </span>
+            ) : (
+              <RoleBadgeCircle
+                roleId={hasTarget ? targetEntity?.roleBadge : roleBadgeId}
+                isNpcMerchant={hasTarget && targetIsMerchant}
+                size="xs"
+              />
+            )}
+          </span>
+        </div>
+
+        {/* Compact Single-Row Quick Actions Pill */}
+        {showTargetInteractionBar && targetEntity ? (
+          <div
+            data-dock-target-interaction-bar="true"
+            className="h-10 px-2 rounded-2xl bg-[#0d1118]/82 backdrop-blur-sm border border-sky-300/40 shadow-[0_8px_24px_rgba(0,0,0,0.45)] flex items-center gap-1.5 overflow-x-auto no-scrollbar"
+          >
+            <button
+              type="button"
+              data-target-action="profile"
+              onClick={() => {
+                soundEngine.playUiClick();
+                onOpenTargetProfile?.(targetEntity);
+              }}
+              aria-label={`View ${displayName} Profile`}
+              className="w-7 h-7 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95"
+            >
+              <User className="w-3.5 h-3.5 stroke-[2.2]" />
+            </button>
+            <button
+              type="button"
+              data-target-action="whisper"
+              onClick={handleWhisperOrTalk}
+              aria-label={targetIsRealPlayer ? `Whisper ${displayName}` : `Talk to ${displayName}`}
+              className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-400 to-green-600 text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95"
+            >
+              <MessageCircle className="w-3.5 h-3.5 stroke-[2.2]" />
+            </button>
+            <button
+              type="button"
+              data-target-action="gift"
+              onClick={() => {
+                soundEngine.playUiClick();
+                onGiftTarget?.(targetEntity);
+              }}
+              aria-label={`Send Gift to ${displayName}`}
+              className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-400 to-rose-600 text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95"
+            >
+              <Gift className="w-3.5 h-3.5 stroke-[2.2]" />
+            </button>
+            {hasOwnedPairedAnimations && onInteractTarget && (
+              <button
+                type="button"
+                data-target-action="paired"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  onInteractTarget(targetEntity);
+                }}
+                aria-label={`Paired Interact with ${displayName}`}
+                className="w-7 h-7 rounded-full bg-gradient-to-br from-fuchsia-400 to-purple-600 text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95"
+              >
+                <HeartHandshake className="w-3.5 h-3.5 stroke-[2.2]" />
+              </button>
+            )}
+            <button
+              type="button"
+              data-target-action="close"
+              onClick={() => {
+                soundEngine.playUiClick();
+                onClearTargetEntity?.();
+              }}
+              aria-label="Back to own dock"
+              className="w-6 h-6 rounded-full bg-white/10 text-white/80 flex items-center justify-center shrink-0 cursor-pointer"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        ) : (
+          <div className="h-10 px-2 rounded-2xl bg-[#0d1118]/72 backdrop-blur-sm border border-white/18 shadow-[0_8px_24px_rgba(0,0,0,0.4)] flex items-center gap-1.5 min-w-0">
+            <button
+              type="button"
+              onClick={() => {
+                soundEngine.playUiClick();
+                if (targetEntity) {
+                  onToggleTargetInteraction?.();
+                } else {
+                  onOpenProfile();
+                }
+              }}
+              className="min-w-0 max-w-[78px] text-left cursor-pointer"
+            >
+              <div className="text-[11px] font-semibold text-white truncate leading-tight">
+                {displayName}
+              </div>
+              <div className="text-[9px] text-white/60 truncate leading-tight">
+                {displayStatusLabel}
+              </div>
+            </button>
+
+            <span className="w-px h-5 bg-white/15 shrink-0" aria-hidden="true" />
+
+            <button
+              type="button"
+              data-dock-quick-fishing-rod="true"
+              onClick={() => {
+                soundEngine.playUiClick();
+                onToggleFishingRod();
+              }}
+              aria-label={isFishingRodEquipped ? 'Unequip Fishing Rod' : 'Equip Fishing Rod'}
+              className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all ${
+                isFishingRodEquipped
+                  ? 'bg-gradient-to-br from-emerald-400 to-teal-500 text-white ring-1 ring-white'
+                  : 'bg-sky-500/35 border border-sky-300/40 text-sky-100'
+              }`}
+            >
+              <Fish className="w-3.5 h-3.5 stroke-[2.2]" />
+            </button>
+
+            <button
+              type="button"
+              data-dock-tab-scooter="true"
+              onClick={() => {
+                soundEngine.playUiClick();
+                if (equippedScooterKind) {
+                  onToggleScooterKind(equippedScooterKind);
+                } else if (ownedFirstScooter && canMountScooterOutdoors) {
+                  onToggleScooterKind(ownedFirstScooter.kind);
+                } else {
+                  onOpenScooterShowroom();
+                }
+              }}
+              aria-label="Scooters & Rides"
+              className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all ${
+                equippedScooterKind
+                  ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white ring-1 ring-white'
+                  : 'bg-amber-500/30 border border-amber-300/40 text-amber-100'
+              }`}
+            >
+              <Bike className="w-3.5 h-3.5 stroke-[2.2]" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                soundEngine.playUiClick();
+                onOpenBag();
+              }}
+              aria-label="Open My Things"
+              className="w-7 h-7 rounded-full bg-emerald-500/30 border border-emerald-300/40 text-emerald-100 flex items-center justify-center shrink-0 cursor-pointer active:scale-95"
+            >
+              <Backpack className="w-3.5 h-3.5 stroke-[2.2]" />
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       data-hud-avatar-dock="true"
-      className="fixed bottom-3.5 left-1/2 -translate-x-1/2 z-30 hidden lg:flex flex-col items-center gap-2 pointer-events-none select-none"
+      data-hud-avatar-dock-variant={isTabletDock ? 'tablet' : 'desktop'}
+      style={
+        isTabletDock
+          ? {
+              bottom: 'max(0.75rem, var(--safe-bottom))',
+              right: 'max(1rem, var(--safe-right))',
+            }
+          : undefined
+      }
+      className={
+        isTabletDock
+          ? 'fixed z-30 flex flex-col items-end gap-2 pointer-events-none select-none'
+          : 'fixed bottom-3.5 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 pointer-events-none select-none'
+      }
     >
-      {/* Main Constant-Width 2-Tier Hero Dock */}
+      {/* Main Constant-Width 2-Tier Hero Dock (Scaled slightly on Tablet) */}
       <div className="pointer-events-auto flex items-end gap-2">
         {/* Left: Portrait Card with top-left overlapping status badge */}
         <div className="relative shrink-0">
@@ -280,9 +509,11 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                 ? showTargetInteractionBar
                   ? `${displayName} · View Profile`
                   : `${displayName} · Open Interactions`
-                : `${displayName} · ${emblemName} · Click to open Profile`
+                : `${displayName} · ${getAnyRoleBadgeSpec(roleBadgeId).label} · Click to open Profile`
             }
-            className={`group relative w-[72px] h-[94px] rounded-2xl bg-[#0d1118]/75 backdrop-blur-sm border shadow-[0_12px_34px_rgba(0,0,0,0.48)] overflow-hidden cursor-pointer transition-all active:scale-95 ${PORTRAIT_FRAME_GRADIENTS[displayTone]} ${
+            className={`group relative ${
+              isTabletDock ? 'w-[58px] h-[78px]' : 'w-[72px] h-[94px]'
+            } rounded-2xl bg-[#0d1118]/75 backdrop-blur-sm border shadow-[0_12px_34px_rgba(0,0,0,0.48)] overflow-hidden cursor-pointer transition-all active:scale-95 ${PORTRAIT_FRAME_GRADIENTS[displayTone]} ${
               showTargetInteractionBar ? 'ring-2 ring-white/60' : ''
             }`}
           >
@@ -296,31 +527,43 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
               aria-hidden="true"
               className={`absolute inset-0 bg-gradient-to-b ${PORTRAIT_FRAME_GRADIENTS[displayTone]} pointer-events-none`}
             />
-            <span className="absolute bottom-1.5 inset-x-1 text-[10.5px] font-semibold tracking-tight text-white text-center truncate drop-shadow-[0_1px_3px_rgba(0,0,0,0.75)]">
+            <span className="absolute bottom-1.5 inset-x-1 text-[10px] sm:text-[10.5px] font-semibold tracking-tight text-white text-center truncate drop-shadow-[0_1px_3px_rgba(0,0,0,0.75)]">
               {displayStatusLabel}
             </span>
           </button>
-          {/* Top-left overlapping circular emblem/target icon badge */}
+          {/* Top-left overlapping circular role badge */}
           <span
             aria-hidden="true"
-            data-dock-emblem-badge={hasTarget ? 'target' : emblemIconId}
-            title={hasTarget ? displayStatusLabel : emblemName}
-            className={`absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full border-2 border-[#0d1118] flex items-center justify-center shadow-md pointer-events-none ${CORNER_BADGE_BG[displayTone]}`}
+            data-dock-emblem-badge={hasTarget ? (targetIsMerchant ? 'merchant' : targetEntity?.roleBadge ?? 'target') : roleBadgeId}
+            title={
+              hasTarget
+                ? targetIsMerchant
+                  ? 'Merchant'
+                  : getAnyRoleBadgeSpec(targetEntity?.roleBadge).label
+                : getAnyRoleBadgeSpec(roleBadgeId).label
+            }
+            className="absolute -top-1.5 -left-1.5 pointer-events-none"
           >
-            {hasTarget ? (
-              targetIsMerchant ? (
-                <Sparkles className="w-3 h-3 stroke-[2.4]" />
-              ) : (
+            {hasTarget && targetIsCitizen ? (
+              <span className={`w-5 h-5 rounded-full border-2 border-[#0d1118] flex items-center justify-center shadow-md ${CORNER_BADGE_BG[displayTone]}`}>
                 <User className="w-3 h-3 stroke-[2.4]" />
-              )
+              </span>
             ) : (
-              renderProfileEmblemIcon(emblemIconId, 'w-3 h-3 stroke-[2.4]')
+              <RoleBadgeCircle
+                roleId={hasTarget ? targetEntity?.roleBadge : roleBadgeId}
+                isNpcMerchant={hasTarget && targetIsMerchant}
+                size="sm"
+              />
             )}
           </span>
         </div>
 
-        {/* Right: Constant-Width (252px) 2-Tier Frosted Glass Stack */}
-        <div className="flex flex-col gap-1.5 w-[252px] shrink-0">
+        {/* Right: Constant-Width 2-Tier Frosted Glass Stack */}
+        <div
+          className={`flex flex-col gap-1.5 shrink-0 ${
+            isTabletDock ? 'w-[228px]' : 'w-[252px]'
+          }`}
+        >
           {/* TOP TIER: Clean Character/Target Name Pill (flex-1) + Color-Coded Bag & Motor Switcher */}
           <div className="w-full h-[38px] flex items-center gap-1.5">
             {/* Pill 1: Clean Name Only (full room so name never truncates) */}
@@ -640,8 +883,8 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                     soundEngine.playUiClick();
                     onOpenScooterShowroom();
                   }}
-                  title="Open Scooters Showroom"
-                  aria-label="Open Scooters Showroom"
+                  title="Open My Vehicles"
+                  aria-label="Open My Vehicles"
                   className="w-9 h-9 rounded-full bg-gradient-to-br from-rose-400 to-pink-600 hover:brightness-110 border border-rose-200/50 text-white shadow-[0_4px_12px_rgba(244,63,94,0.4)] flex items-center justify-center transition-all active:scale-95 cursor-pointer"
                 >
                   <Store className="w-4 h-4 stroke-[2.1]" aria-hidden="true" />
@@ -686,8 +929,8 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                     soundEngine.playUiClick();
                     onOpenBag();
                   }}
-                  title="Open Personal Bag"
-                  aria-label="Open Personal Bag"
+                  title="Open My Things"
+                  aria-label="Open My Things"
                   className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 hover:brightness-110 border border-emerald-200/50 text-white shadow-[0_4px_12px_rgba(16,185,129,0.42)] flex items-center justify-center transition-all active:scale-95 cursor-pointer"
                 >
                   <Backpack className="w-4 h-4 stroke-[2.1]" aria-hidden="true" />

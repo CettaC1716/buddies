@@ -900,11 +900,20 @@ export function evaluateHarborSeabedDrop(worldX: number, worldZ: number): number
   const { waterSdf } = evaluateSeHarborSdf(worldX, worldZ);
   const sandyMask = evaluateEastCoastalSandyMask(worldZ);
 
-  // Box 1 (-1.00m terrace drop): begins at x = 92.2..97.6 on Kai's Beach (z > 45.2) and x = 98.8..100.4 in Beach Club
+  // Box 1 (-1.00m terrace drop): begins at x = 92.2..97.6 on Kai's Beach (z > 45.2) and x = 93.5..97.2 in Beach Club
   const kaiBlend = smoothstep(44.8, 45.6, worldZ);
-  const box1Start = 98.8 + (92.2 - 98.8) * kaiBlend;
-  const box1End = 100.4 + (97.6 - 100.4) * kaiBlend;
-  const box1Drop = -1.0 * smoothstep(box1Start, box1End, worldX);
+  const box1Start = 93.5 + (92.2 - 93.5) * kaiBlend;
+  const box1End = 97.2 + (97.6 - 97.2) * kaiBlend;
+  let box1Drop = -1.0 * smoothstep(box1Start, box1End, worldX);
+
+  // Extra subsurface basin clearance beneath the built Beach Club terraces & pools (x in [93.5..121.4], z in [-96.8..45.4])
+  // Matches GLSL evalHarborSeabedDrop 1:1 so underlying sand/slope triangles never poke through terrace decks or pool basins.
+  const clubPoolPit =
+    smoothstep(93.5, 97.2, worldX) *
+    (1.0 - smoothstep(118.8, 121.4, worldX)) *
+    smoothstep(-96.8, -94.5, worldZ) *
+    (1.0 - smoothstep(44.2, 45.4, worldZ));
+  box1Drop -= 0.85 * clubPoolPit;
 
   // Box 2 (-2.00m golden beach sand drop): reaches -2.00m at x = 121.4 along Beach Club and x = 122.2 on Kai's Beach
   const box2Start = 118.8 + (119.8 - 118.8) * kaiBlend;
@@ -1041,8 +1050,12 @@ export function getBaseProceduralGroundElevation(worldX: number, worldZ: number)
       const deckStep = smoothstep(77.3, 78.15, worldX) * (0.82 - 0.24);
       seBoardwalkElev = (walkUp + deckStep) * zMask;
     } else if (worldX <= 92.2) {
-      // Main Elevated Weathered Timber Boardwalk Deck (+0.82m)
-      seBoardwalkElev = 0.82 * zMask;
+      // Main Elevated Weathered Timber Boardwalk Deck (+0.82m); smoothly join VIP Mezzanine (+0.64m at z=45.2) for x in (91.2..92.2]
+      if (worldX > 91.2 && worldZ <= 46.2) {
+        seBoardwalkElev = 0.64 + (0.82 - 0.64) * smoothstep(45.2, 46.2, worldZ);
+      } else {
+        seBoardwalkElev = 0.82 * zMask;
+      }
       // Slight elevation for Shower Pebble Drain Basin (x in [81.6..85.6], z in [70.2..75.4])
       if (worldX >= 81.6 && worldX <= 85.6 && worldZ >= 70.2 && worldZ <= 75.4) {
         seBoardwalkElev = 1.02 * zMask;
@@ -1123,7 +1136,7 @@ export function getBaseProceduralGroundElevation(worldX: number, worldZ: number)
   let baseArenaElev = baseLandElev;
   // Inside the built Tropical Beach Club footprint, use the exact multi-tiered terrace / pool basin elevation
   if (
-    worldX >= 78.33 &&
+    worldX >= 78.35 &&
     worldX <= 123.8 &&
     worldZ >= -96.5 &&
     worldZ <= (worldX <= 91.2 ? 46.2 : 45.2)

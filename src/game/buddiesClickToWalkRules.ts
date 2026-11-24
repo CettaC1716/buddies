@@ -69,6 +69,7 @@ import {
   evaluateHaltePlatformSdf,
 } from './buddiesPlanetCurvature';
 import {
+  classifyBeachClubSurface,
   evaluateBeachClubPoolWaterSdf,
 } from './buddiesBeachClubRules';
 import {
@@ -87,6 +88,7 @@ import {
   computeLocalPedestrianAvoidance2D,
   getAuditedStaticWorldStructures,
   isSegmentClearOfAuditedStaticObstacles2D,
+  isStaticColliderBelowMoverFeet,
 } from './buddiesCharacterCollisionRules';
 
 export const CITY_NAV_MIN_COORD = -125.0;
@@ -417,24 +419,83 @@ function getDefaultTreesAndSolidProps(): {
   return { trees, props };
 }
 
-function isInStaircaseCorridor(x: number, z: number): boolean {
+function getStairMaskCode(x: number, z: number): number {
   for (let i = 0; i < WORLD_STAIRCASE_CORRIDORS.length; i++) {
     const c = WORLD_STAIRCASE_CORRIDORS[i];
     if (x >= c.minX && x <= c.maxX && z >= c.minZ && z <= c.maxZ) {
-      return true;
+      if (c.openSides) return 3;
+      return c.axis === 'z' ? 2 : 1;
     }
+  }
+  return 0;
+}
+
+function isInStaircaseCorridor(x: number, z: number): boolean {
+  return getStairMaskCode(x, z) !== 0;
+}
+
+function isAStarStepElevAllowed(
+  currElev: number,
+  nextElev: number,
+  currStair: number,
+  nextStair: number,
+  dx: number,
+  dz: number,
+): boolean {
+  const delta = Math.abs(nextElev - currElev);
+  if (delta <= 0.92) return true;
+  const xStairValid =
+    (currStair === 1 || nextStair === 1) && (dx !== 0 || (currStair === 1 && nextStair === 1));
+  const zStairValid =
+    (currStair === 2 || nextStair === 2) && (dz !== 0 || (currStair === 2 && nextStair === 2));
+  const openStairValid = currStair === 3 || nextStair === 3;
+  if (xStairValid || zStairValid || openStairValid) {
+    return delta <= 1.45;
   }
   return false;
 }
 
 function isOceanBlockedAt(x: number, z: number): boolean {
-  if (evaluateBeachClubPoolWaterSdf(x, z) < -0.15) return true;
+  if (evaluateBeachClubPoolWaterSdf(x, z) < 0.15) return true;
   const waterSdf = evaluateSeHarborSdf(x, z).waterSdf;
   if (waterSdf >= 0.25) return false;
   if (isPointOnBeachfrontStiltCabinDeck(x, z)) {
     return false;
   }
   return true;
+}
+
+function rasterizeHeightAwareObbToNavGrid(
+  grid: AStarNavGrid,
+  elevations: Float32Array,
+  st: StaticWorldStructureObb,
+  effHalfX: number,
+  effHalfZ: number,
+  pad: number,
+): void {
+  const cosR = Math.abs(Math.cos(st.rotY));
+  const sinR = Math.abs(Math.sin(st.rotY));
+  const ex = effHalfX + pad;
+  const ez = effHalfZ + pad;
+  const worldHalfX = ex * cosR + ez * sinR + grid.cellSize;
+  const worldHalfZ = ex * sinR + ez * cosR + grid.cellSize;
+  const minCell = worldToNavGridCell(grid, st.x - worldHalfX, st.z - worldHalfZ);
+  const maxCell = worldToNavGridCell(grid, st.x + worldHalfX, st.z + worldHalfZ);
+  for (let gz = minCell.gz; gz <= maxCell.gz; gz++) {
+    const wz = grid.minZ + (gz + 0.5) * grid.cellSize;
+    for (let gx = minCell.gx; gx <= maxCell.gx; gx++) {
+      const idx = gz * grid.cols + gx;
+      if (grid.blocked[idx] !== 0) continue;
+      const wx = grid.minX + (gx + 0.5) * grid.cellSize;
+      if (!pointInObb2D(wx, wz, st.x, st.z, effHalfX, effHalfZ, st.rotY, pad)) {
+        continue;
+      }
+      if (isStaticColliderBelowMoverFeet(st.heightY, elevations[idx], st.isRetainingWall)) {
+        continue;
+      }
+      grid.blocked[idx] = 1;
+    }
+  }
 }
 
 /**
@@ -475,8 +536,9 @@ export function buildCityNavGrid(options: CityNavGridOptions = {}): CityNavGridH
       const wx = grid.minX + (col + 0.5) * grid.cellSize;
       const idx = row * grid.cols + col;
       elevations[idx] = getTerrainElevation(wx, wz);
-      if (isInStaircaseCorridor(wx, wz)) {
-        stairMask[idx] = 1;
+      const stairCode = getStairMaskCode(wx, wz);
+      if (stairCode !== 0) {
+        stairMask[idx] = stairCode;
       }
 
       if (
@@ -492,6 +554,7 @@ export function buildCityNavGrid(options: CityNavGridOptions = {}): CityNavGridH
 
       const roadSdf = evaluateRoadNetworkSdf(wx, wz);
       const onCrosswalk = isPointOnPedestrianCrosswalkCorridor(wx, wz);
+      const beachClubSurface = classifyBeachClubSurface(wx, wz);
       if (mode === 'scooter') {
         if (roadSdf <= 0.25 || onCrosswalk) {
           cellCosts[idx] = 0.65;
@@ -499,7 +562,9 @@ export function buildCityNavGrid(options: CityNavGridOptions = {}): CityNavGridH
           evaluateHaltePlatformSdf(wx, wz) <= 0.65 ||
           evaluateGrandCasinoPavedPlatformSdf(wx, wz) <= 0.55 ||
           isPointInsideCentralIslandEnvelope(wx, wz) ||
-          (wx <= -74.0 && wx >= -110.75 && Math.abs(wz) <= 44.5)
+          (wx <= -74.0 && wx >= -110.75 && Math.abs(wz) <= 44.5) ||
+          beachClubSurface === 'stone_road' ||
+          beachClubSurface === 'wood'
         ) {
           cellCosts[idx] = 0.85;
         } else {
@@ -516,7 +581,9 @@ export function buildCityNavGrid(options: CityNavGridOptions = {}): CityNavGridH
           evaluateGrandCasinoPavedPlatformSdf(wx, wz) <= 0.55 ||
           isPointInsideCentralIslandEnvelope(wx, wz) ||
           (wx <= -74.0 && wx >= -110.75 && Math.abs(wz) <= 44.5) ||
-          evaluateSeHarborSdf(wx, wz).concreteSdf <= 0.55
+          evaluateSeHarborSdf(wx, wz).concreteSdf <= 0.55 ||
+          beachClubSurface === 'stone_road' ||
+          beachClubSurface === 'wood'
         ) {
           cellCosts[idx] = 0.78;
         } else {
@@ -529,7 +596,8 @@ export function buildCityNavGrid(options: CityNavGridOptions = {}): CityNavGridH
   grid.cellCosts = cellCosts;
   grid.minCellCost = minCost;
 
-  // Rasterize audited OBBs (preserving open base gates)
+  // Rasterize audited OBBs height-aware (preserving open base gates and never blocking upper
+  // terraces above retaining walls or lower-terrace structures)
   const obbs = audited.obbs;
   for (let i = 0; i < obbs.length; i++) {
     const st = obbs[i];
@@ -550,7 +618,7 @@ export function buildCityNavGrid(options: CityNavGridOptions = {}): CityNavGridH
     const minBarrierHalf = grid.cellSize * 0.55 - pad;
     const effHalfX = isPole ? st.halfX : Math.max(st.halfX, minBarrierHalf);
     const effHalfZ = isPole ? st.halfZ : Math.max(st.halfZ, minBarrierHalf);
-    rasterizeObbObstacleToNavGrid(grid, st.x, st.z, effHalfX, effHalfZ, st.rotY, pad);
+    rasterizeHeightAwareObbToNavGrid(grid, elevations, st, effHalfX, effHalfZ, pad);
   }
 
   // Rasterize audited circles (Fountain, Lily Pond, Bistro tables, Ontang-Anting, Botanical beds)
@@ -605,15 +673,18 @@ export function isWorldPointStrictlyWalkable(
   if (isOceanBlockedAt(x, z)) return false;
   if (worldMode === 'warzone' && isPointInsideLobbySafezone(x, z)) return false;
 
+  const feetY = getTerrainElevation(x, z);
   for (let i = 0; i < audited.obbs.length; i++) {
     const st = audited.obbs[i];
     if (st.id.endsWith('_gate')) continue;
+    if (isStaticColliderBelowMoverFeet(st.heightY, feetY, st.isRetainingWall)) continue;
     if (pointInObb2D(x, z, st.x, st.z, st.halfX, st.halfZ, st.rotY, radius)) {
       return false;
     }
   }
   for (let i = 0; i < audited.circles.length; i++) {
     const c = audited.circles[i];
+    if (isStaticColliderBelowMoverFeet(c.heightY, feetY, false)) continue;
     const minD = c.radius + radius;
     const dx = x - c.x;
     const dz = z - c.z;
@@ -951,13 +1022,22 @@ export function findCityPathAStar(
       if (sharedClosed[nIdx] !== 0 || grid.blocked[nIdx] !== 0) continue;
 
       if (dx !== 0 && dz !== 0) {
-        if (grid.blocked[cz * cols + (cx + dx)] !== 0 || grid.blocked[(cz + dz) * cols + cx] !== 0) {
+        const orthXIdx = cz * cols + (cx + dx);
+        const orthZIdx = (cz + dz) * cols + cx;
+        if (grid.blocked[orthXIdx] !== 0 || grid.blocked[orthZIdx] !== 0) {
+          continue;
+        }
+        if (
+          !isAStarStepElevAllowed(currElev, elevations[orthXIdx], currStair, stairMask[orthXIdx], dx, 0) ||
+          !isAStarStepElevAllowed(currElev, elevations[orthZIdx], currStair, stairMask[orthZIdx], 0, dz) ||
+          !isAStarStepElevAllowed(elevations[orthXIdx], elevations[nIdx], stairMask[orthXIdx], stairMask[nIdx], 0, dz) ||
+          !isAStarStepElevAllowed(elevations[orthZIdx], elevations[nIdx], stairMask[orthZIdx], stairMask[nIdx], dx, 0)
+        ) {
           continue;
         }
       }
 
-      const maxStep = currStair || stairMask[nIdx] ? 1.45 : 0.92;
-      if (Math.abs(elevations[nIdx] - currElev) > maxStep) {
+      if (!isAStarStepElevAllowed(currElev, elevations[nIdx], currStair, stairMask[nIdx], dx, dz)) {
         continue;
       }
 
@@ -1071,7 +1151,7 @@ function checkCitySegmentContinuous(
   bx: number,
   bz: number,
 ): boolean {
-  const { grid, audited } = nav;
+  const { audited } = nav;
   const dx = bx - ax;
   const dz = bz - az;
   const segLen = Math.hypot(dx, dz);
@@ -1090,7 +1170,7 @@ function checkCitySegmentContinuous(
     return false;
   }
 
-  const stepDist = Math.max(0.85, grid.cellSize * 0.75);
+  const stepDist = 0.45;
   const steps = Math.max(2, Math.ceil(segLen / stepDist));
   let prevElev = getTerrainElevation(ax, az);
   let prevInStair = isInStaircaseCorridor(ax, az);
@@ -2384,6 +2464,7 @@ export function verifyRouteClearOfStructures(
       prevStair = curStair;
       for (const st of nav.audited.obbs) {
         if (st.id.endsWith('_gate')) continue;
+        if (isStaticColliderBelowMoverFeet(st.heightY, curElev, st.isRetainingWall)) continue;
         const res = resolveSolidObbCollision2D(
           px,
           pz,
@@ -2402,6 +2483,7 @@ export function verifyRouteClearOfStructures(
         }
       }
       for (const c of nav.audited.circles) {
+        if (isStaticColliderBelowMoverFeet(c.heightY, curElev, false)) continue;
         if (Math.hypot(px - c.x, pz - c.z) < c.radius + 0.32) {
           return { clear: false, violationReason: `Circle ${c.id} collision at (${px.toFixed(2)}, ${pz.toFixed(2)})` };
         }

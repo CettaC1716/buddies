@@ -15,7 +15,10 @@ import {
   getTerrainElevation,
   wrapPlanetCoord,
 } from './buddiesPlanetCurvature';
-import { evaluateBeachClubPoolWaterSdf } from './buddiesBeachClubRules';
+import {
+  evaluateBeachClubPoolWaterSdf,
+  getBeachClubStairCorridors,
+} from './buddiesBeachClubRules';
 import { CENTRAL_PARK_BOTANICAL_BEDS, CENTRAL_PARK_MASTERPLAN } from './buddiesCentralParkRules';
 import { CITY_LAMP_MANIFEST, type LampTier } from './buddiesCityLightingAndTrafficRules';
 
@@ -57,6 +60,25 @@ export interface StaircaseChannelRect {
   maxX: number;
   minZ: number;
   maxZ: number;
+  /** Climb axis ('x' clamps Z-cheeks; 'z' clamps X-cheeks). Defaults to 'x'. */
+  axis?: 'x' | 'z';
+  /** Wide open edge steps (e.g. boardwalk/promenade stairs) skip lateral cheek clamping. */
+  openSides?: boolean;
+}
+
+/**
+ * Returns true when a static collider's world-space top (`colliderTopY`) sits at or below the
+ * mover's world-space feet elevation (`moverFeetY`) within step clearance, so retaining walls or
+ * lower-terrace structures never snag characters walking on an upper terrace while still solidly
+ * blocking movers standing on a lower terrace.
+ */
+export function isStaticColliderBelowMoverFeet(
+  colliderTopY: number,
+  moverFeetY: number,
+  isRetainingWall = false,
+): boolean {
+  const clearance = isRetainingWall ? 0.14 : 0.05;
+  return moverFeetY >= colliderTopY - clearance;
 }
 
 /**
@@ -66,15 +88,27 @@ export interface StaircaseChannelRect {
  */
 export const WORLD_STAIRCASE_CORRIDORS: readonly StaircaseChannelRect[] = [
   // Central Plaza Grand Staircase (-87.55..-79.10, left of |z|<=8.36 planter cheeks)
-  { id: 'central_plaza_stairs_n', minX: -87.55, maxX: -79.1, minZ: -8.36, maxZ: -0.22 },
-  { id: 'central_plaza_stairs_s', minX: -87.55, maxX: -79.1, minZ: 0.22, maxZ: 8.36 },
+  { id: 'central_plaza_stairs_n', minX: -87.55, maxX: -79.1, minZ: -8.36, maxZ: -0.22, axis: 'x' },
+  { id: 'central_plaza_stairs_s', minX: -87.55, maxX: -79.1, minZ: 0.22, maxZ: 8.36, axis: 'x' },
   // SE Beachfront Promenade Stair 1 & Stair 2 (+0.82m -> -1.00m Box 1 Beach)
-  { id: 'se_beach_stair_1', minX: 92.0, maxX: 97.8, minZ: 70.52, maxZ: 76.48 },
-  { id: 'se_beach_stair_2', minX: 92.0, maxX: 97.8, minZ: 94.32, maxZ: 98.88 },
+  { id: 'se_beach_stair_1', minX: 92.0, maxX: 97.8, minZ: 70.52, maxZ: 76.48, axis: 'x' },
+  { id: 'se_beach_stair_2', minX: 92.0, maxX: 97.8, minZ: 94.32, maxZ: 98.88, axis: 'x' },
   // SE Beachfront West Travertine Boardwalk Access Steps
-  { id: 'se_beach_west_steps', minX: 76.6, maxX: 79.4, minZ: 46.6, maxZ: 101.8 },
+  { id: 'se_beach_west_steps', minX: 76.6, maxX: 79.4, minZ: 46.6, maxZ: 101.8, axis: 'x', openSides: true },
   // Stilt Cabin Wooden Entry Steps (+24m East on widened coastline)
-  { id: 'se_stilt_cabin_stairs', minX: 127.5, maxX: 128.82, minZ: 83.24, maxZ: 85.56 },
+  { id: 'se_stilt_cabin_stairs', minX: 127.5, maxX: 128.82, minZ: 83.24, maxZ: 85.56, axis: 'x' },
+  // East Coastal Beach Club multi-tiered terrace staircases (synced 1:1 with getBeachClubStairCorridors)
+  ...getBeachClubStairCorridors().map(
+    (sf): StaircaseChannelRect => ({
+      id: `beach_club_${sf.id}`,
+      minX: sf.minX,
+      maxX: sf.maxX,
+      minZ: sf.minZ,
+      maxZ: sf.maxZ,
+      axis: sf.axis,
+      openSides: (sf.axis === 'x' ? sf.maxZ - sf.minZ : sf.maxX - sf.minX) >= 8.0,
+    }),
+  ),
 ];
 
 const LAMP_HALF_EXTENT_BY_TIER: Record<LampTier, number> = {
@@ -139,9 +173,12 @@ export function getAuditedStaticWorldStructures(
 
   const obbs: StaticWorldStructureObb[] = [];
   const circles: CircleCollider2D[] = [];
+  const seenBaseIds = new Set<string>();
 
   for (let i = 0; i < baseStructures.length; i++) {
     const st = baseStructures[i];
+    if (seenBaseIds.has(st.id)) continue;
+    seenBaseIds.add(st.id);
     if (st.id === 'central_park_stone_fountain') {
       // Replace oversized square bounding box with true circular stone basin collider (r = 3.70m)
       circles.push({
@@ -861,14 +898,14 @@ export function resolveExtendedWaterMarginGuard2D(params: {
     }
 
     const poolWaterSdf = evaluateBeachClubPoolWaterSdf(x, z);
-    if (poolWaterSdf < -waterMargin) {
+    if (poolWaterSdf < 0.02) {
       const eps = 0.25;
       const gx = evaluateBeachClubPoolWaterSdf(x + eps, z) - evaluateBeachClubPoolWaterSdf(x - eps, z);
       const gz = evaluateBeachClubPoolWaterSdf(x, z + eps) - evaluateBeachClubPoolWaterSdf(x, z - eps);
       const glen = Math.hypot(gx, gz);
       const nx = glen > 1e-4 ? gx / glen : -1.0;
       const nz = glen > 1e-4 ? gz / glen : 0.0;
-      const pushOut = Math.min(2.2, -waterMargin - poolWaterSdf);
+      const pushOut = Math.min(2.2, 0.04 - poolWaterSdf);
       x = wrapPlanetCoord(x + nx * pushOut);
       z = wrapPlanetCoord(z + nz * pushOut);
       const vn = vx * nx + vz * nz;
@@ -936,21 +973,38 @@ export function resolveStaircaseAndElevationGuard2D(params: {
   let { nextX, nextZ, vx, vz } = params;
   let clamped = false;
 
-  // 1. Staircase side cheek containment when walking cleanly up/down a staircase channel
+  // 1. Staircase side cheek containment when walking cleanly up/down a focused staircase channel
   const prevCorridor = isInsideStaircaseCorridor(params.prevX, params.prevZ);
-  if (prevCorridor && nextX >= prevCorridor.minX && nextX <= prevCorridor.maxX) {
+  if (prevCorridor && !prevCorridor.openSides) {
     const pad = Math.min(0.42, params.radius * 0.48);
-    if (nextZ < prevCorridor.minZ + pad && prevCorridor.maxZ - prevCorridor.minZ > pad * 2.5) {
-      nextZ = prevCorridor.minZ + pad;
-      if (vz < 0) vz = 0;
-      clamped = true;
-    } else if (
-      nextZ > prevCorridor.maxZ - pad &&
-      prevCorridor.maxZ - prevCorridor.minZ > pad * 2.5
-    ) {
-      nextZ = prevCorridor.maxZ - pad;
-      if (vz > 0) vz = 0;
-      clamped = true;
+    if ((prevCorridor.axis ?? 'x') === 'x') {
+      if (nextX >= prevCorridor.minX && nextX <= prevCorridor.maxX) {
+        if (nextZ < prevCorridor.minZ + pad && prevCorridor.maxZ - prevCorridor.minZ > pad * 2.5) {
+          nextZ = prevCorridor.minZ + pad;
+          if (vz < 0) vz = 0;
+          clamped = true;
+        } else if (
+          nextZ > prevCorridor.maxZ - pad &&
+          prevCorridor.maxZ - prevCorridor.minZ > pad * 2.5
+        ) {
+          nextZ = prevCorridor.maxZ - pad;
+          if (vz > 0) vz = 0;
+          clamped = true;
+        }
+      }
+    } else if (nextZ >= prevCorridor.minZ && nextZ <= prevCorridor.maxZ) {
+      if (nextX < prevCorridor.minX + pad && prevCorridor.maxX - prevCorridor.minX > pad * 2.5) {
+        nextX = prevCorridor.minX + pad;
+        if (vx < 0) vx = 0;
+        clamped = true;
+      } else if (
+        nextX > prevCorridor.maxX - pad &&
+        prevCorridor.maxX - prevCorridor.minX > pad * 2.5
+      ) {
+        nextX = prevCorridor.maxX - pad;
+        if (vx > 0) vx = 0;
+        clamped = true;
+      }
     }
   }
 
@@ -993,6 +1047,7 @@ export function resolveGroundMoverAuditedCollisions2D(params: {
   vz: number;
   radius: number;
   moverAltitude?: number;
+  moverFeetY?: number;
   audited: AuditedWorldCollidersSet;
   prevX?: number;
   prevZ?: number;
@@ -1036,10 +1091,17 @@ export function resolveGroundMoverAuditedCollisions2D(params: {
       passHit = true;
     }
 
+    const curGroundY = getTerrainElevation(x, z);
+    const approachGroundY =
+      params.prevX !== undefined && params.prevZ !== undefined
+        ? Math.min(curGroundY, getTerrainElevation(params.prevX, params.prevZ))
+        : curGroundY;
+    const moverFeetY = params.moverFeetY ?? approachGroundY + moverAltitude;
+
     const obbs = params.audited.obbs;
     for (let i = 0; i < obbs.length; i++) {
       const st = obbs[i];
-      if (moverAltitude >= st.heightY) continue;
+      if (isStaticColliderBelowMoverFeet(st.heightY, moverFeetY, st.isRetainingWall)) continue;
       if (params.obbFilter && !params.obbFilter(st)) continue;
       if (isExemptSeatObb(st, params.exemptSeatPoint)) continue;
       const maxReach = st.halfX + st.halfZ + params.radius + 1.5;
@@ -1070,7 +1132,7 @@ export function resolveGroundMoverAuditedCollisions2D(params: {
     const circles = params.audited.circles;
     for (let i = 0; i < circles.length; i++) {
       const c = circles[i];
-      if (moverAltitude >= c.heightY) continue;
+      if (isStaticColliderBelowMoverFeet(c.heightY, moverFeetY, false)) continue;
       const maxReach = c.radius + params.radius + 1.5;
       if (Math.abs(x - c.x) > maxReach || Math.abs(z - c.z) > maxReach) continue;
       const res = resolveCapsuleVsCirclePushout2D(
@@ -1272,6 +1334,7 @@ export interface LocalPedestrianAvoidanceInput {
   dirZ: number;
   radius: number;
   moverAltitude?: number;
+  moverFeetY?: number;
   selfGroundY?: number;
   distToSteerTarget: number;
   distToFinal: number;
@@ -1513,14 +1576,25 @@ function evaluateTerrainClearanceAlongRay2D(
     }
 
     const nextCorridor = isInsideStaircaseCorridor(px, pz);
-    if (
-      prevCorridor &&
-      px >= prevCorridor.minX &&
-      px <= prevCorridor.maxX &&
-      prevCorridor.maxZ - prevCorridor.minZ > 1.0 &&
-      (pz < prevCorridor.minZ + 0.24 || pz > prevCorridor.maxZ - 0.24)
-    ) {
-      return Math.max(0, dist - 0.35);
+    if (prevCorridor && !prevCorridor.openSides) {
+      if (
+        (prevCorridor.axis ?? 'x') === 'x' &&
+        px >= prevCorridor.minX &&
+        px <= prevCorridor.maxX &&
+        prevCorridor.maxZ - prevCorridor.minZ > 1.0 &&
+        (pz < prevCorridor.minZ + 0.24 || pz > prevCorridor.maxZ - 0.24)
+      ) {
+        return Math.max(0, dist - 0.35);
+      }
+      if (
+        prevCorridor.axis === 'z' &&
+        pz >= prevCorridor.minZ &&
+        pz <= prevCorridor.maxZ &&
+        prevCorridor.maxX - prevCorridor.minX > 1.0 &&
+        (px < prevCorridor.minX + 0.24 || px > prevCorridor.maxX - 0.24)
+      ) {
+        return Math.max(0, dist - 0.35);
+      }
     }
     const elev = getTerrainElevation(px, pz);
     const maxStep = prevCorridor || nextCorridor ? 1.45 : 0.92;
@@ -1545,6 +1619,7 @@ export function isSegmentClearOfAuditedStaticObstacles2D(params: {
   toZ: number;
   radius: number;
   moverAltitude?: number;
+  moverFeetY?: number;
   audited: AuditedWorldCollidersSet;
   dynamicObbs?: readonly DynamicObbObstacle2D[];
   dynamicCircles?: readonly DynamicCircleObstacle2D[];
@@ -1557,11 +1632,17 @@ export function isSegmentClearOfAuditedStaticObstacles2D(params: {
   const dirX = dx / dist;
   const dirZ = dz / dist;
   const moverAltitude = params.moverAltitude ?? 0;
+  const segFeetY =
+    params.moverFeetY ??
+    Math.min(
+      getTerrainElevation(params.fromX, params.fromZ),
+      getTerrainElevation(params.toX, params.toZ),
+    ) + moverAltitude;
 
   const obbs = params.audited.obbs;
   for (let i = 0; i < obbs.length; i++) {
     const st = obbs[i];
-    if (moverAltitude >= st.heightY) continue;
+    if (isStaticColliderBelowMoverFeet(st.heightY, segFeetY, st.isRetainingWall)) continue;
     if (isExemptSeatObb(st, params.exemptSeatPoint)) continue;
     const maxReach = st.halfX + st.halfZ + params.radius + dist + 0.25;
     if (Math.abs(params.fromX - st.x) > maxReach || Math.abs(params.fromZ - st.z) > maxReach) {
@@ -1590,7 +1671,7 @@ export function isSegmentClearOfAuditedStaticObstacles2D(params: {
   const circles = params.audited.circles;
   for (let i = 0; i < circles.length; i++) {
     const c = circles[i];
-    if (moverAltitude >= c.heightY) continue;
+    if (isStaticColliderBelowMoverFeet(c.heightY, segFeetY, false)) continue;
     const maxReach = c.radius + params.radius + dist + 0.25;
     if (Math.abs(params.fromX - c.x) > maxReach || Math.abs(params.fromZ - c.z) > maxReach) {
       continue;
@@ -1704,6 +1785,7 @@ export function computeLocalPedestrianAvoidance2D(
   const maxSweepR = Math.max(zeroProbeR, angleProbeR);
   const moverAltitude = input.moverAltitude ?? 0;
   const selfGroundY = input.selfGroundY ?? getTerrainElevation(input.x, input.z);
+  const moverFeetY = input.moverFeetY ?? selfGroundY + moverAltitude;
   const stayOffRoads = input.stayOffNonCrosswalkRoads !== false;
   const startRoadSdf = evaluateRoadNetworkSdf(input.x, input.z);
   const startOnNonCrosswalkRoad =
@@ -1714,7 +1796,7 @@ export function computeLocalPedestrianAvoidance2D(
   const obbs = input.audited.obbs;
   for (let i = 0; i < obbs.length; i++) {
     const st = obbs[i];
-    if (moverAltitude >= st.heightY) continue;
+    if (isStaticColliderBelowMoverFeet(st.heightY, moverFeetY, st.isRetainingWall)) continue;
     if (isExemptSeatObb(st, input.exemptSeatPoint)) continue;
     const reach = st.halfX + st.halfZ + maxSweepR + lookDist + 0.55;
     if (Math.abs(input.x - st.x) > reach || Math.abs(input.z - st.z) > reach) continue;
@@ -1728,7 +1810,7 @@ export function computeLocalPedestrianAvoidance2D(
   const circles = input.audited.circles;
   for (let i = 0; i < circles.length; i++) {
     const c = circles[i];
-    if (moverAltitude >= c.heightY) continue;
+    if (isStaticColliderBelowMoverFeet(c.heightY, moverFeetY, false)) continue;
     const reach = c.radius + maxSweepR + lookDist + 0.55;
     if (Math.abs(input.x - c.x) > reach || Math.abs(input.z - c.z) > reach) continue;
     if (nearCircleCount >= nearCircleIndices.length) {

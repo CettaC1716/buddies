@@ -267,8 +267,21 @@ export function isInsideBuildingOrPropFootprint(x: number, z: number): boolean {
   if (x >= -6.0 && x <= 13.0 && z >= -44.4 && z <= -37.2) return true;
   if (x >= -46.0 && x <= -27.0 && z >= 37.2 && z <= 44.4) return true;
   if (x >= 55.2 && x <= 62.5 && z >= 19.2 && z <= 38.2) return true;
-  // East Coastal Beach Club Main Pool Terrace, DJ Stage, Cocktail Bar & Cabanas
-  if (x >= 91.5 && x <= 119.8 && z >= -96.2 && z <= 45.2) return true;
+  // East Coastal Beach Club Main Pool Terrace, Beach Stairs, DJ Stage, Cocktail Bar & Cabanas
+  if (
+    x >= BEACH_CLUB_MASTERPLAN.mainDeck.minX - 0.2 &&
+    x <= BEACH_CLUB_MASTERPLAN.mainDeck.maxX + 2.4 &&
+    z >= BEACH_CLUB_MASTERPLAN.mainDeck.minZ - 0.3 &&
+    z <= BEACH_CLUB_MASTERPLAN.mainDeck.maxZ + 0.3
+  ) {
+    return true;
+  }
+  for (let i = 0; i < BEACH_CLUB_MASTERPLAN.stairFlights.length; i++) {
+    const sf = BEACH_CLUB_MASTERPLAN.stairFlights[i];
+    if (x >= sf.minX - 0.35 && x <= sf.maxX + 0.35 && z >= sf.minZ - 0.35 && z <= sf.maxZ + 0.35) {
+      return true;
+    }
+  }
   if (
     Math.hypot(x - BEACH_CLUB_MASTERPLAN.cocktailBar.cx, z - BEACH_CLUB_MASTERPLAN.cocktailBar.cz) <=
     BEACH_CLUB_MASTERPLAN.cocktailBar.padRadiusM + 0.5
@@ -351,11 +364,11 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   // Glasshouse Cafe West L-Wing Terrace Border (clear of Cafe door, parasol tables, & chandelier at -95.55, 11.6)
   { id: 'lamp_t1_cafe_terrace_1', tier: 1, district: 'glasshouse_cafe', x: -93.85, z: 16.0, rotY: 0 },
   { id: 'lamp_t1_cafe_terrace_2', tier: 1, district: 'glasshouse_cafe', x: -93.85, z: 20.6, rotY: 0 },
-  // Beach Club Western Palm Promenade Approach Bollards (aligned along x = 78.85 border)
-  { id: 'lamp_t1_beach_club_prom_n1', tier: 1, district: 'beach_club', x: 78.85, z: -48.0, rotY: 0 },
-  { id: 'lamp_t1_beach_club_prom_n2', tier: 1, district: 'beach_club', x: 78.85, z: -28.0, rotY: 0 },
-  { id: 'lamp_t1_beach_club_prom_c1', tier: 1, district: 'beach_club', x: 78.85, z: -8.0, rotY: 0 },
-  { id: 'lamp_t1_beach_club_prom_s1', tier: 1, district: 'beach_club', x: 78.85, z: 24.0, rotY: 0 },
+  // Beach Club Western Palm Promenade Approach Bollards (aligned along x = 78.85 border, centered in palm bays & clear of z=±15 entrances)
+  { id: 'lamp_t1_beach_club_prom_n1', tier: 1, district: 'beach_club', x: 78.85, z: -95.5, rotY: 0 },
+  { id: 'lamp_t1_beach_club_prom_n2', tier: 1, district: 'beach_club', x: 78.85, z: -67.0, rotY: 0 },
+  { id: 'lamp_t1_beach_club_prom_c1', tier: 1, district: 'beach_club', x: 78.85, z: -27.0, rotY: 0 },
+  { id: 'lamp_t1_beach_club_prom_s1', tier: 1, district: 'beach_club', x: 78.85, z: 25.0, rotY: 0 },
   // Central Park East Gate Approach & Oasis Lake Scenic Rim (strictly outside Central Park core!)
   { id: 'lamp_t1_park_east_n', tier: 1, district: 'central_park_edge', x: 61.72, z: -8.5, rotY: 0 },
   { id: 'lamp_t1_park_east_s', tier: 1, district: 'central_park_edge', x: 61.72, z: 8.5, rotY: 0 },
@@ -429,8 +442,8 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   { id: 'lamp_t2_res_blue0_w', tier: 2, district: 'residential', x: -49.2, z: 62.6, rotY: 0 },
   { id: 'lamp_t2_res_blue0_e', tier: 2, district: 'residential', x: -40.8, z: 62.6, rotY: 0 },
   // Beach Club Promenade Entry Piers & SE Beachfront Collinear Framing (x = 75.85 matches beach_lamp_1..4)
-  { id: 'lamp_t2_beach_club_entry_n', tier: 2, district: 'beach_club', x: 78.85, z: -72.0, rotY: 0 },
-  { id: 'lamp_t2_beach_club_entry_s', tier: 2, district: 'beach_club', x: 78.85, z: 32.0, rotY: 0 },
+  { id: 'lamp_t2_beach_club_entry_n', tier: 2, district: 'beach_club', x: 78.85, z: -87.0, rotY: 0 },
+  { id: 'lamp_t2_beach_club_entry_s', tier: 2, district: 'beach_club', x: 78.85, z: 35.5, rotY: 0 },
   { id: 'lamp_t2_se_beach_entry', tier: 2, district: 'se_beach', x: 75.85, z: 45.2, rotY: 0 },
   { id: 'lamp_t2_se_beach_south', tier: 2, district: 'se_beach', x: 75.85, z: 103.5, rotY: 0 },
 
@@ -454,9 +467,9 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   { id: 'lamp_t3_outer_s_2', tier: 3, lampVariant: 'single', district: 'outer_ring', x: -22.5, z: 60.9, rotY: Math.PI },
   { id: 'lamp_t3_outer_s_3', tier: 3, lampVariant: 'single', district: 'outer_ring', x: 8.5, z: 60.9, rotY: Math.PI },
   { id: 'lamp_t3_outer_s_4', tier: 3, lampVariant: 'single', district: 'outer_ring', x: 38.5, z: 60.9, rotY: Math.PI },
-  // East Outer Ring Boulevard ('single' behind Outer East sidewalk on Harbor Apron, x = 78.85)
-  { id: 'lamp_t3_outer_e_n', tier: 3, lampVariant: 'single', district: 'outer_ring', x: 78.85, z: -34.0, rotY: -Math.PI / 2 },
-  { id: 'lamp_t3_outer_e_c', tier: 3, lampVariant: 'single', district: 'outer_ring', x: 78.85, z: 8.2, rotY: -Math.PI / 2 },
+  // East Outer Ring Boulevard ('single' behind Outer East sidewalk on Harbor Apron, x = 78.85, centered in palm bays)
+  { id: 'lamp_t3_outer_e_n', tier: 3, lampVariant: 'single', district: 'outer_ring', x: 78.85, z: -37.0, rotY: -Math.PI / 2 },
+  { id: 'lamp_t3_outer_e_c', tier: 3, lampVariant: 'single', district: 'outer_ring', x: 78.85, z: 5.0, rotY: -Math.PI / 2 },
   // Inner Tram Ring Main Corners ('corner' on inner grass corners, facing outward over curved sidewalk + road)
   { id: 'lamp_t3_inner_nw_c', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: -56.6, z: -38.6, rotY: Math.PI },
   { id: 'lamp_t3_inner_ne_c', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: 56.6, z: -38.6, rotY: Math.PI / 2 },
@@ -488,9 +501,9 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   { id: 'lamp_t3_res_n_0e', tier: 3, lampVariant: 'single', district: 'residential', x: 4.65, z: -78.0, rotY: -Math.PI / 2 },
   { id: 'lamp_t3_res_n_e30', tier: 3, lampVariant: 'single', district: 'residential', x: 25.35, z: -78.0, rotY: Math.PI / 2 },
   { id: 'lamp_t3_res_n_e60', tier: 3, lampVariant: 'single', district: 'residential', x: 55.35, z: -78.0, rotY: Math.PI / 2 },
-  // Beach Club North & South Boulevard Verge Streetlamps
-  { id: 'lamp_t3_beach_club_nw', tier: 3, lampVariant: 'single', district: 'beach_club', x: 78.85, z: -64.0, rotY: -Math.PI / 2 },
-  { id: 'lamp_t3_beach_club_sw', tier: 3, lampVariant: 'single', district: 'beach_club', x: 78.85, z: -22.0, rotY: -Math.PI / 2 },
+  // Beach Club North & South Boulevard Verge Streetlamps (centered in palm bays, clear of z=±15 entrances)
+  { id: 'lamp_t3_beach_club_nw', tier: 3, lampVariant: 'single', district: 'beach_club', x: 78.85, z: -77.0, rotY: -Math.PI / 2 },
+  { id: 'lamp_t3_beach_club_sw', tier: 3, lampVariant: 'single', district: 'beach_club', x: 78.85, z: -57.0, rotY: -Math.PI / 2 },
 
   // =========================================================================
   // TIER 4: GRAND MULTI-ARM VICTORIAN CHANDELIER + FLOWER BASKETS (~4.80m) — 11 lamps
@@ -502,9 +515,9 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   // Grand Casino South Forecourt Plaza & North Lawn Approach
   { id: 'lamp_t4_casino_forecourt_s', tier: 4, district: 'grand_casino', x: -68.0, z: -55.5, rotY: Math.PI / 4 },
   { id: 'lamp_t4_casino_forecourt_n', tier: 4, district: 'grand_casino', x: -69.5, z: -88.0, rotY: -Math.PI / 4 },
-  // Beach Club Promenade Architectural Gateway Chandeliers
-  { id: 'lamp_t4_beach_club_gate_n', tier: 4, district: 'beach_club', x: 78.85, z: -41.0, rotY: 0 },
-  { id: 'lamp_t4_beach_club_gate_s', tier: 4, district: 'beach_club', x: 78.85, z: 2.0, rotY: 0 },
+  // Beach Club Promenade Architectural Gateway Chandeliers (centered in palm bays)
+  { id: 'lamp_t4_beach_club_gate_n', tier: 4, district: 'beach_club', x: 78.85, z: -47.0, rotY: 0 },
+  { id: 'lamp_t4_beach_club_gate_s', tier: 4, district: 'beach_club', x: 78.85, z: -5.0, rotY: 0 },
   // Four Outer Corners Outside the Central Urban Plaza Island (strictly outside Central Urban Plaza interior!)
   { id: 'lamp_t4_park_corner_nw', tier: 4, district: 'central_park_edge', x: -20.8, z: -10.5, rotY: Math.PI / 4 },
   { id: 'lamp_t4_park_corner_sw', tier: 4, district: 'central_park_edge', x: -20.8, z: 10.5, rotY: -Math.PI / 4 },

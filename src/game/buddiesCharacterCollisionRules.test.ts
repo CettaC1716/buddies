@@ -4,9 +4,11 @@ import assert from 'node:assert/strict';
 import {
   AMBIENT_NPC_CAPSULE_RADIUS,
   PLAYER_FOOT_CAPSULE_RADIUS,
+  WORLD_STAIRCASE_CORRIDORS,
   computeLocalPedestrianAvoidance2D,
   getAuditedStaticWorldStructures,
   isSegmentClearOfAuditedStaticObstacles2D,
+  isStaticColliderBelowMoverFeet,
   resolveAmbientNpcExemptSeatPoint,
   resolveCapsulePairSeparation2D,
   resolveCapsuleVsCirclePushout2D,
@@ -1030,4 +1032,117 @@ test('stepCityAmbientNpcSchedule guards <=3.8m direct target behind pole and rep
   assert.equal(replannedAtStall, true, 'Must trigger stuck replan around 0.6s instead of waiting 1.8s');
   assert.equal(stalledStep.avoidSide, -1, 'Stuck replan must flip avoidSide to try opposite detour');
   assert.equal(stalledStep.stuckTimer, 0);
+});
+
+test('Beach Club height-aware retaining walls, planters, deduplicated OBBs & multi-axis staircases behave cleanly across terrace levels', () => {
+  const base = buildTestBaseStructures();
+  const audited = getAuditedStaticWorldStructures(base);
+
+  // Zero duplicate static OBB IDs
+  const seenIds = new Set<string>();
+  for (const st of audited.obbs) {
+    assert.equal(seenIds.has(st.id), false, `Duplicate static OBB id ${st.id}`);
+    seenIds.add(st.id);
+  }
+
+  // Every Beach Club stair flight is synced into WORLD_STAIRCASE_CORRIDORS
+  for (const sf of BEACH_CLUB_MASTERPLAN.stairFlights) {
+    const corr = WORLD_STAIRCASE_CORRIDORS.find((c) => c.id === `beach_club_${sf.id}`);
+    assert.ok(corr, `Missing WORLD_STAIRCASE_CORRIDORS entry for ${sf.id}`);
+    assert.equal(corr.axis, sf.axis);
+  }
+
+  // Height-aware helper unit checks
+  assert.equal(isStaticColliderBelowMoverFeet(0.56, 0.64, true), true);
+  assert.equal(isStaticColliderBelowMoverFeet(0.56, -0.56, true), false);
+  assert.equal(isStaticColliderBelowMoverFeet(-1.06, -0.96, true), true);
+  assert.equal(isStaticColliderBelowMoverFeet(-1.06, -2.0, true), false);
+  assert.equal(isStaticColliderBelowMoverFeet(3.5, 2.5, true), false);
+
+  // 1. VIP Mezzanine (+0.64m) vs South Lounge (-0.56m) retaining wall (heightY = 0.56m):
+  //    Upper terrace walk near edge MUST NOT snag on retaining wall below feet.
+  const upperVipWalk = resolveGroundMoverAuditedCollisions2D({
+    x: 96.0,
+    z: 22.0,
+    vx: 0,
+    vz: 2.0,
+    radius: PLAYER_FOOT_CAPSULE_RADIUS,
+    audited,
+  });
+  assert.equal(upperVipWalk.collided, false, 'Retaining wall below VIP Mezzanine (+0.64m) must not block upper terrace walk');
+
+  //    Lower terrace (-0.56m) pressing west into retaining wall MUST be blocked solidly.
+  const lowerLoungeWall = resolveGroundMoverAuditedCollisions2D({
+    x: 96.8,
+    z: 22.0,
+    vx: -2.0,
+    vz: 0,
+    radius: PLAYER_FOOT_CAPSULE_RADIUS,
+    audited,
+  });
+  assert.equal(lowerLoungeWall.collided, true, 'Retaining wall must block movers pressing from lower South Lounge (-0.56m)');
+  assert.ok(lowerLoungeWall.x > 96.8);
+
+  // 2. Oceanfront Infinity Weir retaining wall (heightY = -1.06m):
+  //    Beach Sand (-2.00m) pressing west into weir MUST be blocked solidly (both directly on sand and on fast approach).
+  const sandWeirWall = resolveGroundMoverAuditedCollisions2D({
+    x: 121.45,
+    z: -30.0,
+    vx: -2.0,
+    vz: 0,
+    radius: PLAYER_FOOT_CAPSULE_RADIUS,
+    audited,
+  });
+  assert.equal(sandWeirWall.collided, true, 'Oceanfront infinity weir retaining wall must block movers from -2.00m Beach Sand');
+  assert.ok(sandWeirWall.x > 121.45);
+
+  const sandFastStepWeirWall = resolveGroundMoverAuditedCollisions2D({
+    x: 121.3,
+    z: -30.0,
+    prevX: 121.8,
+    prevZ: -30.0,
+    vx: -2.0,
+    vz: 0,
+    radius: PLAYER_FOOT_CAPSULE_RADIUS,
+    audited,
+  });
+  assert.equal(sandFastStepWeirWall.collided, true, 'Fast step from -2.00m sand into oceanfront weir must remain blocked');
+  assert.ok(sandFastStepWeirWall.x > 121.3);
+
+  // 3. Lower-terrace planter bc_planter_mid_w (topY = -0.03m) blocks -0.56m Mid Lagoon without blocking +0.64m VIP Mezzanine
+  assert.equal(
+    isSegmentClearOfAuditedStaticObstacles2D({
+      fromX: 99.1,
+      fromZ: -35.0,
+      toX: 99.1,
+      toZ: -29.0,
+      radius: 0.48,
+      audited,
+    }),
+    true,
+    'Upper +0.64m VIP Mezzanine walk must ignore lower-terrace bc_planter_mid_w (topY=-0.03)',
+  );
+
+  // 4. Both X-axis and Z-axis Beach Club staircases permit smooth ascents/descents without cheek clamping
+  const zStairStep = resolveStaircaseAndElevationGuard2D({
+    prevX: 95.5,
+    prevZ: -88.5,
+    nextX: 95.5,
+    nextZ: -87.5,
+    vx: 0,
+    vz: 2.5,
+    radius: PLAYER_FOOT_CAPSULE_RADIUS,
+  });
+  assert.equal(zStairStep.clamped, false, 'Z-axis Beach Club stair_cascade_w1 must not clamp Z progression');
+
+  const kaiJoinStep = resolveStaircaseAndElevationGuard2D({
+    prevX: 88.0,
+    prevZ: 44.2,
+    nextX: 88.0,
+    nextZ: 45.8,
+    vx: 0,
+    vz: 2.5,
+    radius: PLAYER_FOOT_CAPSULE_RADIUS,
+  });
+  assert.equal(kaiJoinStep.clamped, false, 'Wide Z-axis stair_prom_kai_boardwalk must stay open and unclamped');
 });

@@ -583,3 +583,58 @@ test('resolvePlayerLocomotionGait walks on short click & WASD without Shift, run
   assert.equal(farClickArriving.gait, 'walk');
   assert.equal(farClickArriving.speedMultiplier, PLAYER_WALK_SPEED_SCALE);
 });
+
+test('Click-to-Walk routes cleanly into, across, and out of Beach Club terraces, stairs, bridges & Kai Boardwalk without snagging or cliff drops', () => {
+  const nav = buildCityNavGrid({ mode: 'foot', worldMode: 'safezone' });
+
+  // Upper VIP Mezzanine next to retaining wall (heightY=0.56 < elevY=0.64) remains strictly walkable
+  assert.equal(
+    isWorldPointStrictlyWalkable(nav, 96.0, 22.0, 0.42),
+    true,
+    'Upper VIP Mezzanine next to retaining wall must stay walkable in height-aware nav grid',
+  );
+
+  // Pool basins remain non-walkable (snapped cleanly to dry deck)
+  assert.equal(isWorldPointStrictlyWalkable(nav, 102.5, -35.0, 0.42), false);
+  assert.equal(isWorldPointStrictlyWalkable(nav, 114.4, 25.4, 0.42), false);
+
+  const beachClubRoutes: ReadonlyArray<{
+    name: string;
+    from: readonly [number, number];
+    to: readonly [number, number];
+    maxDistM?: number;
+  }> = [
+    { name: 'Coastal Road -> Beach Club Promenade', from: [76.0, -14.2], to: [85.0, -14.2] },
+    { name: 'Promenade -> Kai Boardwalk via stair_prom_kai_boardwalk', from: [85.0, 40.0], to: [88.0, 50.0], maxDistM: 18.0 },
+    { name: 'Promenade -> VIP Mezzanine Center', from: [85.0, -14.2], to: [95.0, -14.2] },
+    { name: 'Promenade -> VIP Mezzanine North', from: [85.0, -14.2], to: [95.5, -47.5] },
+    { name: 'Promenade -> North Courtyard', from: [85.0, -14.2], to: [95.0, -92.0] },
+    { name: 'Promenade -> North Pergola', from: [85.0, -93.0], to: [105.0, -95.0] },
+    { name: 'Promenade -> Skylight Dance Floor', from: [85.0, -14.2], to: [104.0, -5.0] },
+    { name: 'Promenade -> Timber Sunbed Peninsula', from: [85.0, -14.2], to: [107.0, -30.0] },
+    { name: 'Promenade -> South Inner Lounge', from: [85.0, -14.2], to: [102.0, 20.0] },
+    { name: 'Promenade -> Cocktail Bar Terrace', from: [85.0, -14.2], to: [92.5, 38.0] },
+    { name: 'Promenade -> Oceanfront Terrace', from: [85.0, -14.2], to: [115.0, -14.2] },
+    { name: 'Promenade -> Golden Sunset Beach Sand', from: [85.0, -14.2], to: [126.0, -14.2] },
+    { name: 'VIP South -> South Inner Lounge', from: [93.5, 20.0], to: [102.0, 20.0] },
+    { name: 'Beach Sand -> Sunbed Peninsula', from: [126.0, -40.0], to: [108.0, -40.0] },
+  ];
+
+  for (const r of beachClubRoutes) {
+    const plan = planCityClickToWalkRoute(nav, r.from[0], r.from[1], r.to[0], r.to[1]);
+    assert.equal(plan.reachable, true, `${r.name} must be reachable`);
+    assert.ok(plan.waypoints.length >= 1, `${r.name} must return >= 1 waypoint`);
+    if (r.maxDistM !== undefined) {
+      assert.ok(
+        plan.totalDistanceM <= r.maxDistM,
+        `${r.name} should connect directly (dist=${plan.totalDistanceM.toFixed(1)}m > ${r.maxDistM}m)`,
+      );
+    }
+    const clr = verifyRouteClearOfStructures(nav, plan.waypoints, plan.startX, plan.startZ);
+    assert.equal(
+      clr.clear,
+      true,
+      `${r.name} violated Beach Club clearance/elevation: ${clr.violationReason}`,
+    );
+  }
+});

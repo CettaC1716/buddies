@@ -10,6 +10,15 @@
  */
 
 import { createClient, SupabaseClient, RealtimeChannel } from '@supabase/supabase-js';
+import {
+  normalizeLetterDecisionState,
+  normalizeLetterKind,
+  type BuddiesLetter,
+  type BuddiesLetterDecisionState,
+  type BuddiesLetterInputKind,
+  type BuddiesLetterKind,
+  type BuddiesLetterPayload,
+} from './lettersRules';
 import type {
   Nep171GamepassSubAccountLedger,
   Nep171OwnershipHistoryEntry,
@@ -26,6 +35,22 @@ import {
   resolveContrastingTextColor,
   sanitizeHexColor,
 } from '../game/buddiesRemotePresenceSync';
+import {
+  DEFAULT_PLAYER_ROLE_BADGE,
+  isPlayerRoleBadgeId,
+  parseProfileIdentityFromSkinsTags,
+  sanitizeLinkInput,
+  sanitizeProjectName,
+  type PlayerRoleBadgeId,
+} from '../game/buddiesProfileIdentity';
+import {
+  isApartmentVisitPermission,
+  isPrivateMessagePermission,
+  parsePrivacySettingsFromSkinsTags,
+  type ApartmentVisitPermission,
+  type PrivateMessagePermission,
+} from '../game/buddiesPrivacySettings';
+import { parseSocialGraphFromSkinsTags } from '../game/buddiesSocialGraph';
 
 const metaEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
 
@@ -412,7 +437,7 @@ export async function syncPlayerBalancesToSupabase(params: {
       updatePayload.owned_token_ids = params.ownedTokenIds.slice(0, 100);
     }
     if (params.unlockedSkins !== undefined) {
-      updatePayload.unlocked_skins = params.unlockedSkins.slice(0, 50);
+      updatePayload.unlocked_skins = params.unlockedSkins.slice(0, 250);
     }
     if (params.displayName !== undefined) {
       updatePayload.display_name = sanitizeDisplayName(params.displayName);
@@ -1552,6 +1577,18 @@ export interface WorldMultiplayerPeerState {
   chatBubbleSeq?: number;
   chatBubbleBgColor?: string | null;
   chatBubbleTextColor?: string | null;
+  roleBadge?: PlayerRoleBadgeId;
+  buildingProject?: string;
+  socialX?: string;
+  socialGithub?: string;
+  socialWebsite?: string;
+  statusCaption?: string;
+  appearOnline?: boolean;
+  allowFriendRequests?: boolean;
+  privateMessages?: PrivateMessagePermission;
+  apartmentVisits?: ApartmentVisitPermission;
+  showWalletAddressOnProfile?: boolean;
+  showThingsOnProfile?: boolean;
 }
 
 export interface WorldMultiplayerEmoteEvent {
@@ -1739,6 +1776,27 @@ export function subscribeToWorldMultiplayer(handlers: {
       chatBubbleSeq: Number.isFinite(raw.chatBubbleSeq) ? Math.max(0, Math.floor(Number(raw.chatBubbleSeq))) : 0,
       chatBubbleBgColor: rawBg,
       chatBubbleTextColor: rawTxt,
+      roleBadge: isPlayerRoleBadgeId(raw.roleBadge) ? raw.roleBadge : DEFAULT_PLAYER_ROLE_BADGE,
+      buildingProject: sanitizeProjectName(raw.buildingProject),
+      socialX: sanitizeLinkInput(raw.socialX),
+      socialGithub: sanitizeLinkInput(raw.socialGithub),
+      socialWebsite: sanitizeLinkInput(raw.socialWebsite),
+      statusCaption: typeof raw.statusCaption === 'string' ? raw.statusCaption.trim().slice(0, 80) : '',
+      appearOnline: typeof raw.appearOnline === 'boolean' ? raw.appearOnline : true,
+      allowFriendRequests:
+        typeof raw.allowFriendRequests === 'boolean' ? raw.allowFriendRequests : true,
+      privateMessages: isPrivateMessagePermission(raw.privateMessages)
+        ? raw.privateMessages
+        : 'everyone',
+      apartmentVisits: isApartmentVisitPermission(raw.apartmentVisits)
+        ? raw.apartmentVisits
+        : 'everyone',
+      showWalletAddressOnProfile:
+        typeof raw.showWalletAddressOnProfile === 'boolean'
+          ? raw.showWalletAddressOnProfile
+          : true,
+      showThingsOnProfile:
+        typeof raw.showThingsOnProfile === 'boolean' ? raw.showThingsOnProfile : true,
     };
   };
 
@@ -2151,42 +2209,20 @@ export async function upsertPropertyListingToSupabase(
   }
 }
 
+export type {
+  BuddiesLetter,
+  BuddiesLetterDecisionState,
+  BuddiesLetterInputKind,
+  BuddiesLetterKind,
+  BuddiesLetterPayload,
+};
+
 /* ------------------------------------------------------------------ */
-/* In-world letters: purchase certificates delivered to a player's     */
-/* phone (PRIVATE tab). A letter is the human-readable confirmation    */
-/* of an on-chain purchase — house deeds and NEP-245 items.            */
+/* In-world letters: official city inbox delivered to a player's       */
+/* phone. Reuses the existing `bb_letters` table without schema        */
+/* changes — legacy purchase rows normalize to `certificate` letters,  */
+/* and decision state lives in the JSON `payload`.                     */
 /* ------------------------------------------------------------------ */
-
-export type BuddiesLetterKind = 'property_purchase' | 'item_purchase';
-
-export interface BuddiesLetterPayload {
-  buyerName?: string;
-  buyerAccount?: string;
-  sellerName?: string;
-  sellerAccount?: string;
-  itemName?: string;
-  itemId?: string;
-  tokenId?: string;
-  assetKind?: string;
-  houseStyle?: string;
-  deedTokenId?: string;
-  estateAccount?: string;
-  priceAmount?: number;
-  priceCurrency?: string;
-  settlementContract?: string;
-  paymentTx?: string;
-}
-
-export interface BuddiesLetter {
-  id: string;
-  recipientAccount: string;
-  kind: BuddiesLetterKind;
-  title: string;
-  payload: BuddiesLetterPayload;
-  txHash: string | null;
-  isRead: boolean;
-  createdAt: string;
-}
 
 interface DbLetterRow {
   id: string;
@@ -2201,22 +2237,40 @@ interface DbLetterRow {
 
 export async function createLetterForAccount(params: {
   recipientAccount: string;
-  kind: BuddiesLetterKind;
+  kind: BuddiesLetterInputKind;
   title: string;
   payload: BuddiesLetterPayload;
   txHash?: string | null;
 }): Promise<boolean> {
   const cleanRecipient = sanitizeAccountId(params.recipientAccount);
   if (!supabase || cleanRecipient.length < 2) return false;
+  const canonicalKind = normalizeLetterKind(params.kind, params.payload);
+  const initialDecision = normalizeLetterDecisionState(canonicalKind, params.payload.decisionState);
+  const enrichedPayload: BuddiesLetterPayload = {
+    ...params.payload,
+    letterKind: canonicalKind,
+    ...(initialDecision ? { decisionState: initialDecision } : {}),
+  };
+  const rowPayload = {
+    recipient_account: cleanRecipient,
+    kind: canonicalKind,
+    title: params.title.slice(0, 160),
+    payload: enrichedPayload,
+    tx_hash: params.txHash ? params.txHash.slice(0, 96) : null,
+  };
   try {
-    const { error } = await supabase.from('bb_letters').insert({
-      recipient_account: cleanRecipient,
-      kind: params.kind,
-      title: params.title.slice(0, 160),
-      payload: params.payload,
-      tx_hash: params.txHash ? params.txHash.slice(0, 96) : null,
+    const { error } = await supabase.from('bb_letters').insert(rowPayload);
+    if (!error) return true;
+    // Fallback if a legacy DB check constraint only permits the original two kind strings.
+    const fallbackKind =
+      params.kind === 'property_purchase' || params.payload.assetKind === 'house'
+        ? 'property_purchase'
+        : 'item_purchase';
+    const { error: retryError } = await supabase.from('bb_letters').insert({
+      ...rowPayload,
+      kind: fallbackKind,
     });
-    return !error;
+    return !retryError;
   } catch {
     return false;
   }
@@ -2236,16 +2290,22 @@ export async function fetchLettersForAccount(
       .order('created_at', { ascending: false })
       .limit(limit);
     if (error || !data) return [];
-    return (data as DbLetterRow[]).map((row) => ({
-      id: row.id,
-      recipientAccount: row.recipient_account,
-      kind: (row.kind === 'property_purchase' ? 'property_purchase' : 'item_purchase') as BuddiesLetterKind,
-      title: row.title,
-      payload: row.payload ?? {},
-      txHash: row.tx_hash,
-      isRead: Boolean(row.is_read),
-      createdAt: row.created_at,
-    }));
+    return (data as DbLetterRow[]).map((row) => {
+      const payload: BuddiesLetterPayload = row.payload ?? {};
+      const kind = normalizeLetterKind(row.kind, payload);
+      const decisionState = normalizeLetterDecisionState(kind, payload.decisionState);
+      return {
+        id: row.id,
+        recipientAccount: row.recipient_account,
+        kind,
+        title: row.title,
+        payload,
+        txHash: row.tx_hash,
+        isRead: Boolean(row.is_read),
+        decisionState,
+        createdAt: row.created_at,
+      };
+    });
   } catch {
     return [];
   }
@@ -2261,5 +2321,130 @@ export async function markLetterRead(letterId: string): Promise<boolean> {
     return !error;
   } catch {
     return false;
+  }
+}
+
+export async function updateLetterDecision(
+  letterId: string,
+  decisionState: Exclude<BuddiesLetterDecisionState, 'pending'>,
+  existingPayload: BuddiesLetterPayload,
+): Promise<boolean> {
+  if (!supabase || !letterId) return false;
+  try {
+    const nextPayload: BuddiesLetterPayload = {
+      ...existingPayload,
+      decisionState,
+      decisionUpdatedAt: new Date().toISOString(),
+    };
+    const { error } = await supabase
+      .from('bb_letters')
+      .update({
+        is_read: true,
+        payload: nextPayload,
+      })
+      .eq('id', letterId);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Player directory search & profile tag lookup (`bb_profiles`)        */
+/* Reuses existing `bb_profiles.unlocked_skins` tag storage.           */
+/* ------------------------------------------------------------------ */
+
+export interface SearchedPlayerProfile {
+  nearAccountId: string;
+  displayName: string;
+  roleBadge: PlayerRoleBadgeId;
+  buildingProject: string;
+  socialX: string;
+  socialGithub: string;
+  socialWebsite: string;
+  allowFriendRequests: boolean;
+  privateMessages: PrivateMessagePermission;
+  apartmentVisits: ApartmentVisitPermission;
+  showWalletAddressOnProfile: boolean;
+  showThingsOnProfile: boolean;
+  friendIds: string[];
+}
+
+function mapDbProfileToSearchedProfile(row: {
+  near_account_id: string;
+  display_name: string | null;
+  unlocked_skins: string[] | null;
+}): SearchedPlayerProfile {
+  const skins = Array.isArray(row.unlocked_skins) ? row.unlocked_skins : [];
+  const identity = parseProfileIdentityFromSkinsTags(skins);
+  const privacy = parsePrivacySettingsFromSkinsTags(skins);
+  const social = parseSocialGraphFromSkinsTags(skins);
+  return {
+    nearAccountId: sanitizeAccountId(row.near_account_id),
+    displayName: sanitizeDisplayName(row.display_name || row.near_account_id),
+    roleBadge: identity.roleBadge ?? DEFAULT_PLAYER_ROLE_BADGE,
+    buildingProject: identity.buildingProject ?? '',
+    socialX: identity.links?.x ?? '',
+    socialGithub: identity.links?.github ?? '',
+    socialWebsite: identity.links?.website ?? '',
+    allowFriendRequests: privacy.allowFriendRequests !== false,
+    privateMessages: privacy.privateMessages ?? 'everyone',
+    apartmentVisits: privacy.apartmentVisits ?? 'everyone',
+    showWalletAddressOnProfile: privacy.showWalletAddressOnProfile !== false,
+    showThingsOnProfile: privacy.showThingsOnProfile !== false,
+    friendIds: (social.friends ?? []).map((f) => f.id),
+  };
+}
+
+export async function searchPlayerProfiles(
+  rawQuery: string,
+  limit = 15,
+): Promise<SearchedPlayerProfile[]> {
+  if (!supabase) return [];
+  const cleaned = rawQuery.replace(/[%_,()]/g, '').trim();
+  if (cleaned.length < 1) return [];
+  try {
+    const pattern = `%${cleaned}%`;
+    const { data, error } = await supabase
+      .from('bb_profiles')
+      .select('near_account_id, display_name, unlocked_skins')
+      .or(`display_name.ilike.${pattern},near_account_id.ilike.${pattern}`)
+      .limit(Math.min(30, Math.max(1, limit)));
+    if (error || !Array.isArray(data)) return [];
+    return (data as Array<{
+      near_account_id: string;
+      display_name: string | null;
+      unlocked_skins: string[] | null;
+    }>)
+      .filter((r) => Boolean(r.near_account_id))
+      .map(mapDbProfileToSearchedProfile);
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchPlayerProfilesByAccounts(
+  accountIds: ReadonlyArray<string>,
+): Promise<SearchedPlayerProfile[]> {
+  if (!supabase || !Array.isArray(accountIds) || accountIds.length === 0) return [];
+  const cleanIds = Array.from(
+    new Set(accountIds.map((id) => sanitizeAccountId(id)).filter((id) => id.length >= 2)),
+  ).slice(0, 60);
+  if (cleanIds.length === 0) return [];
+  try {
+    const { data, error } = await supabase
+      .from('bb_profiles')
+      .select('near_account_id, display_name, unlocked_skins')
+      .in('near_account_id', cleanIds);
+    if (error || !Array.isArray(data)) return [];
+    return (data as Array<{
+      near_account_id: string;
+      display_name: string | null;
+      unlocked_skins: string[] | null;
+    }>)
+      .filter((r) => Boolean(r.near_account_id))
+      .map(mapDbProfileToSearchedProfile);
+  } catch {
+    return [];
   }
 }

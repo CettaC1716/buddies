@@ -1637,21 +1637,25 @@ export function createUnifiedWaterSurfaceMaterial(
         vec3 N = normalize(macroN + vec3(shortGrad.x + capGrad.x + rainRip.x, 0.0, shortGrad.y + capGrad.y + rainRip.y));
         if (N.y < 0.0) N = -N;
 
-        // Beer-Lambert optical water color & depth-dependent transparency (matches NW Oasis Lake palette)
+        // Beer-Lambert optical water color & crystal-clear shallow turquoise transparency so underwater reefs & marine life shine through
         float d = max(waterDepth, 0.0);
-        float shallowT = smoothstep(0.0, 0.25, d);
-        float midT = smoothstep(0.25, 1.08, d);
-        float deepT = smoothstep(1.08, 1.55, d);
+        float shallowT = smoothstep(0.0, 0.42, d);
+        float midT = smoothstep(0.42, 1.32, d);
+        float deepT = smoothstep(1.32, 2.05, d);
 
-        vec3 shallowColDay = mix(vec3(0.07, 0.56, 0.61), vec3(0.06, 0.58, 0.62), 1.0 - uIsOcean);
-        vec3 midColDay = mix(vec3(0.025, 0.40, 0.52), vec3(0.02, 0.42, 0.50), 1.0 - uIsOcean);
-        vec3 deepColDay = mix(vec3(0.012, 0.15, 0.29), vec3(0.015, 0.20, 0.30), 1.0 - uIsOcean);
+        vec3 shallowColDay = mix(vec3(0.06, 0.58, 0.62), vec3(0.14, 0.76, 0.70), uIsOcean);
+        vec3 midColDay = mix(vec3(0.02, 0.42, 0.50), vec3(0.05, 0.60, 0.64), uIsOcean);
+        vec3 deepColDay = mix(vec3(0.015, 0.20, 0.30), vec3(0.016, 0.22, 0.36), uIsOcean);
 
-        vec3 dayWaterCol = mix(shallowColDay, midColDay, shallowT * 0.55 + midT * 0.45);
+        vec3 dayWaterCol = mix(shallowColDay, midColDay, shallowT * 0.48 + midT * 0.52);
         dayWaterCol = mix(dayWaterCol, deepColDay, deepT * 0.85);
         if (uIsPool > 0.5) {
           float poolCaustic = evalVoronoiCaustics(vWorldXZ * 1.55, uTime);
           dayWaterCol += vec3(0.06, 0.24, 0.28) * poolCaustic * (1.0 - deepT * 0.50);
+        } else if (uIsOcean > 0.5 && sandyMask > 0.01) {
+          // Crisp luminous turquoise sunlit caustics shimmering across crystal-clear sandy shallows
+          float shallowCaustic = evalVoronoiCaustics(vWorldXZ * 0.92, uTime);
+          dayWaterCol += vec3(0.12, 0.34, 0.32) * shallowCaustic * (1.0 - deepT) * sandyMask * 0.68;
         }
 
         vec3 weatherWaterScale = mix(vec3(1.0), vec3(0.20, 0.26, 0.44), uTimeOfDayNightFactor);
@@ -1662,11 +1666,11 @@ export function createUnifiedWaterSurfaceMaterial(
         );
         vec3 bodyCol = dayWaterCol * weatherWaterScale;
 
-        float beerAlpha = 1.0 - exp(-d * 1.18);
-        float opticalAlpha = mix(mix(0.06, 0.36, uIsPool), mix(0.20, 0.48, uIsPool), shallowT);
-        opticalAlpha = mix(opticalAlpha, mix(0.64, 0.74, uIsPool), midT);
+        float beerAlpha = 1.0 - exp(-d * mix(1.18, 0.68, uIsOcean * sandyMask));
+        float opticalAlpha = mix(mix(0.05, 0.36, uIsPool), mix(0.16, 0.48, uIsPool), shallowT);
+        opticalAlpha = mix(opticalAlpha, mix(mix(0.58, 0.34, uIsOcean * sandyMask), 0.74, uIsPool), midT);
         opticalAlpha = mix(opticalAlpha, 0.86, deepT);
-        opticalAlpha = mix(opticalAlpha, clamp(beerAlpha, 0.06, 0.88), 0.28);
+        opticalAlpha = mix(opticalAlpha, clamp(beerAlpha, 0.05, 0.88), 0.32);
         if (uIsOcean > 0.5) {
           opticalAlpha = mix(opticalAlpha, 1.0, smoothstep(-28.0, -56.0, harborSdf.y));
         }
@@ -19053,6 +19057,7 @@ export interface BuddyBodyShapeProfile {
   morphWeights: Record<string, number>;
   heightScale: number;
   widthScale: number;
+  headScale?: number;
   baseDollGlbUrl?: string | null;
 }
 
@@ -19060,7 +19065,7 @@ export interface BuddyBodyShapeProfile {
  * Drives the real baked Blend Shapes (morph targets) on the BaseDoll + default garments
  * (`Chest_Build`, `Bust_Size`, `Shoulder_Width`, `Arm_Muscle`, `Waist_Slim`, `Hip_Width`,
  * `Glute_Projection`, `Thigh_Fullness`) together with proportional stature scaling
- * (`heightScale` / `widthScale`) and grounded `baseRootY` adjustment so both starter and
+ * (`heightScale` / `widthScale` / `headScale`) and grounded `baseRootY` adjustment so both starter and
  * modular shop garments deform cleanly without clipping or foot float.
  */
 export function applyBuddyRigBodyShape(
@@ -19072,12 +19077,17 @@ export function applyBuddyRigBodyShape(
         morphWeights: shape.morphWeights ?? {},
         heightScale: Math.max(0.86, Math.min(1.14, Number(shape.heightScale) || 1.0)),
         widthScale: Math.max(0.86, Math.min(1.18, Number(shape.widthScale) || 1.0)),
+        headScale:
+          typeof shape.headScale === 'number' && Number.isFinite(shape.headScale)
+            ? Math.max(0.78, Math.min(1.06, shape.headScale))
+            : 1.0,
         baseDollGlbUrl: shape.baseDollGlbUrl ?? null,
       }
     : {
         morphWeights: {},
         heightScale: 1.0,
         widthScale: 1.0,
+        headScale: 1.0,
         baseDollGlbUrl: null,
       };
 
@@ -19144,6 +19154,11 @@ export function applyBuddyRigBodyShape(
       }
     }
   });
+
+  const headBone = controller.bones.get('Head');
+  if (headBone) {
+    headBone.scale.setScalar(resolved.headScale ?? 1.0);
+  }
 
   glbRoot.userData.activeBodyShapeAppliedMorphs = appliedMorphCount;
   glbRoot.updateMatrixWorld(true);
@@ -20299,6 +20314,18 @@ function stepCharBuddiesGlbRigController(
   if (shouldStepMixer && rawDt >= 0.002) {
     ctrl.lastStepTimeMs = nowMs;
     ctrl.mixer.update(stepDt);
+    const headBone = ctrl.bones.get('Head');
+    if (headBone) {
+      const rawHeadScale =
+        rig.bodyGroupRef?.userData?.desiredBodyShapeProfile?.headScale ??
+        rig.bodyGroupRef?.userData?.desiredFaceCustomization?.tuning?.headScale ??
+        1.0;
+      const targetHeadScale =
+        typeof rawHeadScale === 'number' && Number.isFinite(rawHeadScale)
+          ? Math.max(0.78, Math.min(1.06, rawHeadScale))
+          : 1.0;
+      headBone.scale.setScalar(targetHeadScale);
+    }
   } else if (!shouldStepMixer) {
     return;
   }
@@ -23523,9 +23550,10 @@ export function createCurvedPlanetEnvironment(
           surfaceCol = mix(surfaceCol, dockCol, concreteMask);
         }
 
-        vec3 sandDeep = uDirtDeep * vec3(1.04, 1.06, 1.14);
-        vec3 sandMain = uDirtMain * vec3(1.06, 1.10, 1.24);
-        vec3 sandBright = uDirtHighlight * vec3(0.96, 0.95, 0.96);
+        // Soft pale creamy-champagne tropical beach sand palette (matches reference shoreline — zero garish orange-yellow!)
+        vec3 sandDeep = vec3(0.55, 0.51, 0.37) * uGroundLightTint;
+        vec3 sandMain = vec3(0.75, 0.71, 0.54) * uGroundLightTint;
+        vec3 sandBright = vec3(0.86, 0.83, 0.67) * uGroundLightTint;
         float causticSunScale = mix(1.0, 0.18, uTimeOfDayNightFactor) * (1.0 - 0.68 * uRainFactor);
 
         if (seaMask > 0.001) {
@@ -23535,23 +23563,25 @@ export function createCurvedPlanetEnvironment(
           float bedRipple = sin(p.x * 2.1 + sin(p.y * 0.42) * 1.6 + n2 * 1.4) * 0.5 + 0.5;
           float bedPebbles = smoothstep(0.68, 0.88, n3);
           vec3 shallowSeaSand = mix(sandDeep, sandMain, smoothstep(0.18, 0.82, soilNoise));
-          shallowSeaSand = mix(shallowSeaSand, sandDeep * 0.80, bedRipple * 0.16 + bedPebbles * 0.20);
+          shallowSeaSand = mix(shallowSeaSand, sandDeep * 0.84, bedRipple * 0.14 + bedPebbles * 0.16);
+          // Luminous mint-turquoise tint on the shallow underwater sand floor matching crystal-clear coastal reefs
+          vec3 shallowTurquoiseBed = mix(shallowSeaSand, vec3(0.24, 0.76, 0.70) * uGroundLightTint, smoothstep(0.06, 0.85, seaDepth) * 0.58);
 
           float deepBedT = clamp(
-            max(smoothstep(0.16, 1.38, seaDepth), smoothstep(-3.0, -14.0, harborSdf.y) * 0.85),
+            max(smoothstep(0.55, 1.55, seaDepth), smoothstep(-6.0, -18.0, harborSdf.y) * 0.82),
             0.0,
             1.0
           );
-          vec3 deepMaritimeTealSand = vec3(0.11, 0.31, 0.36) * uGroundLightTint;
-          vec3 seaBedCol = mix(shallowSeaSand, deepMaritimeTealSand, deepBedT * 0.88);
+          vec3 deepMaritimeTealSand = vec3(0.10, 0.34, 0.40) * uGroundLightTint;
+          vec3 seaBedCol = mix(shallowTurquoiseBed, deepMaritimeTealSand, deepBedT * 0.85);
 
-          // Dual-layer Voronoi caustics brightest in shallow clear water & around pier pilings
+          // Dual-layer Voronoi caustics brightest in crystal-clear shallow turquoise water
           float caustics = evalVoronoiCaustics(p, uTime);
           float causticDepthWeight =
-            smoothstep(-0.25, 0.35, 0.35 - harborSdf.y) *
-            mix(1.0, 0.30, smoothstep(0.45, 1.42, seaDepth));
-          vec3 causticTint = mix(vec3(0.74, 0.96, 1.0), uSunColor, 0.55);
-          seaBedCol += causticTint * caustics * 0.54 * causticDepthWeight * causticSunScale;
+            smoothstep(-0.20, 0.40, 0.40 - harborSdf.y) *
+            mix(1.0, 0.28, smoothstep(0.65, 1.55, seaDepth));
+          vec3 causticTint = mix(vec3(0.80, 0.99, 0.98), uSunColor, 0.42);
+          seaBedCol += causticTint * caustics * 0.72 * causticDepthWeight * causticSunScale;
 
           // Contact AO along outer hill concrete seawall tails (|z| > 104.2)
           float quayDist = max(0.0, -harborSdf.y);
@@ -29073,9 +29103,9 @@ export function createCurvedPlanetEnvironment(
     'beachfront_harbor',
     'BEACHFRONT HARBOR STOP',
     'TRAM T1 -> CENTRAL PLAZA / PIER',
-    77.5,
-    29.5,
-    -Math.PI / 2,
+    61.03,
+    28.6,
+    Math.PI / 2,
   );
   // 5) NW FISHING LAKE Standalone Black Transit Kiosk (-44.5, 0.0, -6.5, facing West -X toward lake boardwalk spawn pad)
   buildStandaloneCityTransitKioskEndpoint('nw_fishing_lake', -44.5, 0.0, -6.5, -Math.PI / 2);

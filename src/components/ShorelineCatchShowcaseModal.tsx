@@ -1021,7 +1021,11 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
         ((fishingPhase === 'fighting' && fishingMinigame) || fishingPhase === 'charging') && (
           <div
             data-fishing-gauge-stack="true"
-            className="fixed right-4 sm:right-6 bottom-[166px] sm:bottom-[174px] z-40 pointer-events-none select-none flex flex-col items-center gap-2 w-[84px] px-2 py-3 rounded-2xl bg-[#0d1118]/78 backdrop-blur-xl border border-white/15 shadow-[0_12px_32px_rgba(0,0,0,0.42)]"
+            style={{
+              right: 'max(0.75rem, var(--safe-right))',
+              bottom: 'calc(162px + var(--safe-bottom))',
+            }}
+            className="fixed z-40 pointer-events-none select-none flex flex-col items-center gap-1.5 sm:gap-2 w-[78px] sm:w-[84px] px-2 py-2.5 sm:py-3 rounded-2xl bg-[#0d1118]/78 backdrop-blur-xl border border-white/15 shadow-[0_12px_32px_rgba(0,0,0,0.42)]"
           >
             {fishingPhase === 'fighting' && fishingMinigame && (
               <div className="flex flex-col items-center gap-0.5 text-center">

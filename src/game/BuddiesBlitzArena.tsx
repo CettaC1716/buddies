@@ -4,6 +4,13 @@ import {
   applyBuddyRigFaceCustomization,
   type BuddyFaceCustomizationProfile,
 } from './buddiesFaceCompositor';
+import { computeAdaptiveWorldCameraFov } from './buddiesAdaptiveViewportRules';
+import {
+  isPlayerRoleBadgeId,
+  readStoredProfileIdentity,
+  readStoredRoleBadge,
+  type PlayerRoleBadgeId,
+} from './buddiesProfileIdentity';
 import {
   BUDDIES_CONSTANTS,
   LightingPresetKey,
@@ -280,6 +287,15 @@ import {
   shouldEnableHudBackdropBlur,
   type AdaptiveShadowMapRes,
 } from './buddiesPerfOptimizations';
+import {
+  GRAPHICS_QUALITY_CHANGED_EVENT,
+  readStoredGraphicsQuality,
+  resolveGraphicsQualityProfile,
+  sanitizeGraphicsQualityPreset,
+  shouldRunAdaptiveQualityControls,
+  type GraphicsQualityPreset,
+} from './buddiesGraphicsSettings';
+import { readStoredPrivacySettings } from './buddiesPrivacySettings';
 import {
   loadAllRealBlitzAssets,
   getCachedLoadedBlitzAssets,
@@ -609,6 +625,7 @@ import {
   computeLocalPedestrianAvoidance2D,
   getAuditedStaticWorldStructures,
   isSegmentClearOfAuditedStaticObstacles2D,
+  isStaticColliderBelowMoverFeet,
   resolveAmbientNpcExemptSeatPoint,
   resolveCapsuleVsCirclePushout2D,
   resolveCharacterAgainstDynamicObstacles2D,
@@ -760,8 +777,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       powerPreference: 'high-performance',
     });
 
-    const maxAllowedDpr = isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, 1.25);
-    let currentAdaptiveDpr = maxAllowedDpr;
+    let activeGraphicsQuality: GraphicsQualityPreset = readStoredGraphicsQuality();
+    const initialGraphicsProfile = resolveGraphicsQualityProfile(
+      activeGraphicsQuality,
+      window.devicePixelRatio || 1,
+      isSoftwareGl,
+    );
+    const maxAllowedDpr = initialGraphicsProfile.dprCap;
+    let currentAdaptiveDpr = initialGraphicsProfile.fixedDpr ?? maxAllowedDpr;
     let smoothedFrameMs = 16.67;
     let dprAdjustCooldownFrames = 0;
     const initViewportW = container.clientWidth || window.innerWidth;
@@ -772,11 +795,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.08;
-    // Enable real-time soft PCF shadow maps on hardware GPUs (replaces deprecated PCFSoftShadowMap in Three.js r186+); skip shadow pass on CPU software WebGL
-    renderer.shadowMap.enabled = !isSoftwareGl;
+    // Enable real-time soft PCF shadow maps on hardware GPUs (replaces deprecated PCFSoftShadowMap in Three.js r186+); skip shadow pass on CPU software WebGL or Low quality
+    renderer.shadowMap.enabled = initialGraphicsProfile.shadowsEnabled;
     renderer.shadowMap.type = !isSoftwareGl ? THREE.PCFShadowMap : THREE.BasicShadowMap;
     renderer.shadowMap.autoUpdate = false;
-    renderer.shadowMap.needsUpdate = !isSoftwareGl;
+    renderer.shadowMap.needsUpdate = initialGraphicsProfile.shadowsEnabled;
 
     renderer.domElement.style.display = 'block';
     renderer.domElement.style.width = '100%';
@@ -2380,6 +2403,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       initialMpAppSync?.playerDisplayName?.trim() ||
       (typeof window !== 'undefined' && window.localStorage.getItem('bb_active_display_name')) ||
       'CITIZEN';
+    let playerRoleBadge: PlayerRoleBadgeId = readStoredRoleBadge();
 
     // Listen for select-character-by-id event to synchronize 3D selection ring and nameplate from React HUD
     const onSelectCharacterById = (e: Event) => {
@@ -3088,9 +3112,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     animeSparklePoints.renderOrder = -998;
     scene.add(animeSparklePoints);
 
+    const initialCamAspect =
+      (container.clientWidth || window.innerWidth) /
+      Math.max(1, container.clientHeight || window.innerHeight);
     const camera = new THREE.PerspectiveCamera(
-      BUDDIES_CONSTANTS.camera.fov,
-      (container.clientWidth || window.innerWidth) / (container.clientHeight || window.innerHeight),
+      computeAdaptiveWorldCameraFov(BUDDIES_CONSTANTS.camera.fov, initialCamAspect),
+      initialCamAspect,
       BUDDIES_CONSTANTS.camera.near,
       initialHorizonFog.cameraFar,
     );
@@ -3113,14 +3140,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     const blitzSunOffset = getBlitzDefaultLightDirection().multiplyScalar(52);
     const dirLight = new THREE.DirectionalLight('#ffe9bc', 2.18);
     dirLight.position.copy(blitzSunOffset);
-    dirLight.castShadow = true;
-    let shadowMapRes: AdaptiveShadowMapRes = isSoftwareGl ? 1024 : 2048;
+    dirLight.castShadow = initialGraphicsProfile.shadowsEnabled;
+    let shadowMapRes: AdaptiveShadowMapRes = initialGraphicsProfile.shadowMapRes;
     dirLight.shadow.mapSize.set(shadowMapRes, shadowMapRes);
     const d = 36;
     let shadowTexelWorldSize = (d * 2) / shadowMapRes;
     let shadowResCooldownFrames = 0;
-    let activeFoliageShadowsEnabled = !isSoftwareGl;
-    let activeHudBlurEnabled = !isSoftwareGl;
+    let activeFoliageShadowsEnabled = initialGraphicsProfile.foliageShadowsEnabled;
+    let activeHudBlurEnabled = initialGraphicsProfile.hudBackdropBlurEnabled;
     if (typeof document !== 'undefined') {
       document.documentElement.classList.toggle('hud-blur-lite', !activeHudBlurEnabled);
     }
@@ -3185,7 +3212,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     weatherSystem.syncExternalPresetProp(lightingPresetRef.current, null);
 
     const applyFovMode = (mode: 'webgl35' | 'ortho18') => {
-      camera.fov = mode === 'ortho18' ? BUDDIES_CONSTANTS.camera.pseudoOrthoFov : BUDDIES_CONSTANTS.camera.fov;
+      const baseFov =
+        mode === 'ortho18'
+          ? BUDDIES_CONSTANTS.camera.pseudoOrthoFov
+          : BUDDIES_CONSTANTS.camera.fov;
+      camera.fov = computeAdaptiveWorldCameraFov(baseFov, camera.aspect || 1.6);
       camera.updateProjectionMatrix();
     };
     applyFovModeRef.current = applyFovMode;
@@ -4455,6 +4486,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         isPlayer ? playerCustomDisplayName : (customDisplayName ?? `BUDDY #${nextEntityId}`),
         '',
         false,
+        isPlayer ? playerRoleBadge : undefined,
       );
       nameplate.sprite.position.set(0, NAMEPLATE_SCREEN_SPEC.standingHeadAnchorLocalY, 0);
       nameplate.sprite.visible = false;
@@ -9230,6 +9262,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         playerUnit.nameplate.updatePlate(
           playerCustomDisplayName,
           cafeWorkShiftActive ? 'CAFE SERVER' : '',
+          'player_rookie',
+          playerRoleBadge,
         );
       }
       if (typeof detail.isSampleHouse === 'boolean') {
@@ -11757,13 +11791,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         UNIFIED_WORLD_CRATE_SIZE,
       );
 
-      const nameplate = createGlassmorphicNameplate(2.8, 0.72, peer.displayName, '', false);
+      const nameplate = createGlassmorphicNameplate(
+        2.8,
+        0.72,
+        peer.displayName,
+        '',
+        false,
+        peer.roleBadge,
+      );
       nameplate.sprite.position.set(0, NAMEPLATE_SCREEN_SPEC.standingHeadAnchorLocalY, 0);
       nameplate.sprite.visible = false;
       nameplate.updatePlate(
         peer.displayName,
         '',
         peer.nearAccountId ? 'player_veteran' : 'player_rookie',
+        peer.roleBadge,
       );
       root.add(nameplate.sprite);
 
@@ -11792,7 +11834,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         walkCycle: 0,
         appliedGender: null,
         hasGlbUpgraded: false,
-        lastLabelKey: `${peer.displayName}|${peer.nearAccountId ?? ''}`,
+        lastLabelKey: `${peer.displayName}|${peer.nearAccountId ?? ''}|${peer.roleBadge ?? ''}`,
         lastBubbleText: null,
         lastBubbleRenderKey: '',
         emoteState: mergeRemoteEmoteState(
@@ -13880,6 +13922,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       isVehicle: boolean,
       halfTrackOrFootSpan = 0.42,
     ) => {
+      // Do not emit dust/smoke particles for characters running or walking on foot
+      if (!isVehicle) return;
       const groundSpeed = Math.hypot(vx, vz);
       const prevTimer = roadDustTimerByEntity.get(entityKey) ?? 0;
       const check = shouldEmitRoadSpeedBoostParticles({
@@ -15274,9 +15318,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         playerUnit.jumpOffset = jumpStep.jumpOffset;
         playerUnit.vy = jumpStep.vy;
         playerUnit.isGrounded = false;
-        soundEngine.playJump();
-        const groundY = getTerrainElevation(playerUnit.x, playerUnit.z);
-        spawnBurstParticles(playerUnit.x, groundY + 0.18, playerUnit.z, 6);
       }
     };
 
@@ -18756,7 +18797,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         const nextName = act.slice('setPlayerDisplayName:'.length).trim() || 'YOU';
         playerCustomDisplayName = nextName;
         if (playerUnit?.nameplate?.updatePlate) {
-          playerUnit.nameplate.updatePlate(nextName, '');
+          playerUnit.nameplate.updatePlate(nextName, '', 'player_rookie', playerRoleBadge);
+        }
+      } else if (act.startsWith('setPlayerRoleBadge:')) {
+        const candidateRole = act.slice('setPlayerRoleBadge:'.length).trim();
+        if (isPlayerRoleBadgeId(candidateRole)) {
+          playerRoleBadge = candidateRole;
+          if (playerUnit?.nameplate?.updatePlate) {
+            playerUnit.nameplate.updatePlate(
+              playerCustomDisplayName,
+              cafeWorkShiftActive ? 'CAFE SERVER' : '',
+              'player_rookie',
+              playerRoleBadge,
+            );
+          }
         }
       } else if (act === 'toggleCharacterGender')
         applyCharacterGenderSwitch(getDefaultCharacterGender() === 'male' ? 'female' : 'male');
@@ -20332,17 +20386,38 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
     const onResize = () => {
       if (!container) return;
-      const w = container.clientWidth || window.innerWidth;
-      const h = container.clientHeight || window.innerHeight;
-      const clampedCap = isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, 1.25);
-      currentAdaptiveDpr = Math.min(currentAdaptiveDpr, clampedCap);
+      const w = Math.max(1, container.clientWidth || window.innerWidth);
+      const h = Math.max(1, container.clientHeight || window.innerHeight);
+      const resizeProfile = resolveGraphicsQualityProfile(
+        activeGraphicsQuality,
+        window.devicePixelRatio || 1,
+        isSoftwareGl,
+      );
+      if (resizeProfile.fixedDpr !== null) {
+        currentAdaptiveDpr = resizeProfile.fixedDpr;
+      } else {
+        currentAdaptiveDpr = Math.min(currentAdaptiveDpr, resizeProfile.dprCap);
+      }
       renderer.setPixelRatio(currentAdaptiveDpr);
-      camera.aspect = w / h;
+      const nextAspect = w / h;
+      camera.aspect = nextAspect;
+      if (npcCameraMode === 'none' && !isFullMapOrtho) {
+        const baseFov =
+          cameraFovModeRef.current === 'ortho18'
+            ? BUDDIES_CONSTANTS.camera.pseudoOrthoFov
+            : BUDDIES_CONSTANTS.camera.fov;
+        camera.fov = computeAdaptiveWorldCameraFov(baseFov, nextAspect);
+      }
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
       setBlitzStylizedCharViewportSize(w, h);
     };
     window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    window.visualViewport?.addEventListener('resize', onResize);
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => onResize()) : null;
+    resizeObserver?.observe(container);
 
     // =========================================================================
     // 12. CAMERA SPRING, OBJECT COLLISION SOLVER & MAIN 60FPS ANIMATION LOOP
@@ -21516,9 +21591,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       // 1. Solid Static 3D OBB + Circular Basin Colliders: Retaining Walls, Base Buildings, Plaza/Park/Beach Props, Streetlamps & Signs
       const auditedWorld = getAuditedStaticWorldStructures(getStaticWorldStructures());
       const staticStructures = auditedWorld.obbs;
+      const curMoverGroundY = getTerrainElevation(mover.x, mover.z);
+      const approachMoverGroundY = prevSafe
+        ? Math.min(curMoverGroundY, getTerrainElevation(prevSafe.x, prevSafe.z))
+        : curMoverGroundY;
+      const moverFeetY = approachMoverGroundY + moverAltitude;
       let hitStaticPass1 = false;
       for (const st of staticStructures) {
-        if (moverAltitude >= st.heightY) continue;
+        if (isStaticColliderBelowMoverFeet(st.heightY, moverFeetY, st.isRetainingWall)) continue;
         const maxReach = st.halfX + st.halfZ + 5.5;
         if (Math.abs(mover.x - st.x) > maxReach || Math.abs(mover.z - st.z) > maxReach) continue;
         const gateMatch = /^(blue|red)_plot_([0-3])_gate$/.exec(st.id);
@@ -21595,7 +21675,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
       // Circular static colliders (Central Park Fountain & Lily Pond, Cozy Bistro sets, Ontang-Anting, Botanical Beds)
       for (const c of auditedWorld.circles) {
-        if (moverAltitude >= c.heightY) continue;
+        if (isStaticColliderBelowMoverFeet(c.heightY, moverFeetY, false)) continue;
         const maxReach = c.radius + 5.5;
         if (Math.abs(mover.x - c.x) > maxReach || Math.abs(mover.z - c.z) > maxReach) continue;
         for (const hs of hullSpheres) {
@@ -21648,6 +21728,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           vz: mover.vz,
           radius: moverRadius,
           moverAltitude,
+          moverFeetY: getTerrainElevation(mover.x, mover.z) + moverAltitude,
           audited: auditedWorld,
           prevX: prevSafe?.x,
           prevZ: prevSafe?.z,
@@ -22517,6 +22598,56 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     };
     window.addEventListener('wardrobe-studio-pause', onWardrobeStudioPause);
 
+    const applyGraphicsQualityPreset = (nextPreset: GraphicsQualityPreset) => {
+      activeGraphicsQuality = nextPreset;
+      const profile = resolveGraphicsQualityProfile(
+        nextPreset,
+        window.devicePixelRatio || 1,
+        isSoftwareGl,
+      );
+      currentAdaptiveDpr = profile.fixedDpr ?? profile.dprCap;
+      dprAdjustCooldownFrames = 0;
+      shadowResCooldownFrames = 0;
+
+      const rw = Math.max(1, container?.clientWidth || window.innerWidth);
+      const rh = Math.max(1, container?.clientHeight || window.innerHeight);
+      renderer.setPixelRatio(currentAdaptiveDpr);
+      renderer.setSize(rw, rh, false);
+
+      renderer.shadowMap.enabled = profile.shadowsEnabled;
+      dirLight.castShadow = profile.shadowsEnabled;
+      if (shadowMapRes !== profile.shadowMapRes) {
+        shadowMapRes = profile.shadowMapRes;
+        shadowTexelWorldSize = (d * 2) / shadowMapRes;
+        dirLight.shadow.map?.dispose();
+        dirLight.shadow.map = null;
+        dirLight.shadow.mapSize.set(shadowMapRes, shadowMapRes);
+        if (windUniforms.uDirShadowMapSize) {
+          windUniforms.uDirShadowMapSize.value = shadowMapRes;
+        }
+        syncDirShadowCameraEnvelope(lastShadowHalfSpan, lastShadowFar, true);
+      }
+      renderer.shadowMap.needsUpdate = profile.shadowsEnabled;
+
+      if (activeFoliageShadowsEnabled !== profile.foliageShadowsEnabled) {
+        activeFoliageShadowsEnabled = profile.foliageShadowsEnabled;
+        worldPropBatchManager.setTreeFoliageShadowsEnabled(activeFoliageShadowsEnabled);
+        centralPark.setCanopyShadowsEnabled(activeFoliageShadowsEnabled);
+      }
+      if (activeHudBlurEnabled !== profile.hudBackdropBlurEnabled) {
+        activeHudBlurEnabled = profile.hudBackdropBlurEnabled;
+        if (typeof document !== 'undefined') {
+          document.documentElement.classList.toggle('hud-blur-lite', !activeHudBlurEnabled);
+        }
+      }
+    };
+
+    const onGraphicsQualityChanged = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ preset?: GraphicsQualityPreset }>).detail;
+      applyGraphicsQualityPreset(sanitizeGraphicsQualityPreset(detail?.preset));
+    };
+    window.addEventListener(GRAPHICS_QUALITY_CHANGED_EVENT, onGraphicsQualityChanged);
+
     const animate = (now: number) => {
       if (isDisposed || isWorldPausedForWardrobe) return;
       frameTickCount++;
@@ -22530,6 +22661,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       const currentPlayMode = playModeRef.current;
 
       if (
+        shouldRunAdaptiveQualityControls(activeGraphicsQuality) &&
         !isSoftwareGl &&
         (state === 'playing' || state === 'title') &&
         rawDt > 0.001 &&
@@ -25355,7 +25487,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               }
             } else {
               if (!(playerUnit.isSitting && activeSeatedSpot) && !activePairedSession) {
-                resolveMoverWorldCollisions(playerUnit, 'player_foot', false, 0.72, 2.2, timeSec, true);
+                resolveMoverWorldCollisions(
+                  playerUnit,
+                  'player_foot',
+                  false,
+                  0.72,
+                  2.2,
+                  timeSec,
+                  true,
+                  Math.max(0, playerUnit.jumpOffset),
+                );
               }
               // Open The City flow: in 'lobby' or 'safezone' (The City), players can walk freely between Central Plaza and the city streets!
               // Only in 'warzone' do we prevent walking into the peaceful Central Plaza terrace (x < -75.85).
@@ -25407,22 +25548,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             playerUnit.vy = jumpStep.vy;
             playerUnit.isGrounded = jumpStep.isGrounded;
             playerUnit.jumpBufferTimer = jumpStep.jumpBufferTimer;
-            if (jumpStep.justJumped) {
-              soundEngine.playJump();
-              spawnBurstParticles(
-                playerUnit.x,
-                getTerrainElevation(playerUnit.x, playerUnit.z) + 0.18,
-                playerUnit.z,
-                6,
-              );
-            } else if (jumpStep.justLanded) {
+            if (jumpStep.justLanded) {
               soundEngine.playHeavyThud(3.2, false);
-              spawnBurstParticles(
-                playerUnit.x,
-                getTerrainElevation(playerUnit.x, playerUnit.z) + 0.15,
-                playerUnit.z,
-                5,
-              );
             }
 
             activeSpeed = Math.hypot(playerUnit.vx, playerUnit.vz);
@@ -26770,7 +26897,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                 const footSurface = classifyFootstepSurface(b.x, b.z, footEnvMode);
                 soundEngine.playSurfaceFootstep(
                   footSurface,
-                  clamp(speedMag / 16.0, 0.25, 1.0),
+                  clamp(speedMag / 8.0, 0.45, 1.0),
                   nextStepIdx & 1,
                 );
               }
@@ -30556,6 +30683,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             lastBroadcastCafePreparing = curCafePreparingForBroadcast;
             lastBroadcastCafeWorker = cafeWorkShiftActive;
 
+            const localIdentity = readStoredProfileIdentity();
+            const localStatusCaption =
+              typeof window !== 'undefined'
+                ? (window.localStorage.getItem('bb_player_status_caption_v1') || '').trim().slice(0, 80)
+                : '';
+
             worldMultiplayer.publishLocalPose(
               {
                 nearAccountId: nearSessionState.walletConnected
@@ -30596,6 +30729,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                 chatBubbleSeq: socialTalkSeq,
                 chatBubbleBgColor: curChat ? localBubbleBgColor : null,
                 chatBubbleTextColor: curChat ? localBubbleTextColor : null,
+                roleBadge: playerRoleBadge,
+                buildingProject: localIdentity.buildingProject,
+                socialX: localIdentity.links.x,
+                socialGithub: localIdentity.links.github,
+                socialWebsite: localIdentity.links.website,
+                statusCaption: localStatusCaption,
+                ...(() => {
+                  const localPrivacy = readStoredPrivacySettings();
+                  return {
+                    appearOnline: localPrivacy.appearOnline,
+                    allowFriendRequests: localPrivacy.allowFriendRequests,
+                    privateMessages: localPrivacy.privateMessages,
+                    apartmentVisits: localPrivacy.apartmentVisits,
+                    showWalletAddressOnProfile: localPrivacy.showWalletAddressOnProfile,
+                    showThingsOnProfile: localPrivacy.showThingsOnProfile,
+                  };
+                })(),
               },
               zoneChanged || chatChanged || emoteChanged,
             );
@@ -30759,13 +30909,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           av.innerFootDiscMat.color.setHex(desiredFootHex);
 
           // Update Nameplate & Overhead Chat Speech Bubble (TTL + color preservation)
-          const nextLabelKey = `${peer.displayName}|${peer.nearAccountId ?? ''}`;
+          const nextLabelKey = `${peer.displayName}|${peer.nearAccountId ?? ''}|${peer.roleBadge ?? ''}`;
           if (av.lastLabelKey !== nextLabelKey) {
             av.lastLabelKey = nextLabelKey;
             av.nameplate.updatePlate(
               peer.displayName,
               '',
               peer.nearAccountId ? 'player_veteran' : 'player_rookie',
+              peer.roleBadge,
             );
           }
           const distToPeer = peerInFlatIndoor
@@ -33356,59 +33507,61 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         p.padSign.sprite.visible = false;
       }
 
-      if (!isSoftwareGl && !isFlatIndoorRoomMode && state !== 'paused') {
+      if (renderer.shadowMap.enabled && !isFlatIndoorRoomMode && state !== 'paused') {
         const isAerialOverview =
           isFullMapOverview || (npcCameraMode === 'city_view' && cityViewTarget === 'kota');
 
-        // Adaptive directional shadow map resolution (2048 -> 1536 -> 1024 under GPU load or in wide aerial City View)
-        const shadowResDecision = computeAdaptiveShadowMapRes({
-          smoothedFrameMs,
-          currentRes: shadowMapRes,
-          isSoftwareGl,
-          isFullMapOverview: isAerialOverview,
-          cooldownFrames: shadowResCooldownFrames,
-        });
-        shadowResCooldownFrames = shadowResDecision.nextCooldownFrames;
-        if (shadowResDecision.changed) {
-          shadowMapRes = shadowResDecision.nextRes;
-          shadowTexelWorldSize = (d * 2) / shadowMapRes;
-          dirLight.shadow.map?.dispose();
-          dirLight.shadow.map = null;
-          dirLight.shadow.mapSize.set(shadowMapRes, shadowMapRes);
-          if (windUniforms.uDirShadowMapSize) {
-            windUniforms.uDirShadowMapSize.value = shadowMapRes;
-          }
-          syncDirShadowCameraEnvelope(lastShadowHalfSpan, lastShadowFar, true);
-          renderer.shadowMap.needsUpdate = true;
-        }
-
-        // Adaptive HUD backdrop-blur toggle: disables per-frame compositor blur over WebGL under GPU pressure
-        if (frameTickCount % 15 === 0) {
-          const nextHudBlur = shouldEnableHudBackdropBlur({
-            isSoftwareGl,
+        if (shouldRunAdaptiveQualityControls(activeGraphicsQuality)) {
+          // Adaptive directional shadow map resolution (2048 -> 1536 -> 1024 under GPU load or in wide aerial City View)
+          const shadowResDecision = computeAdaptiveShadowMapRes({
             smoothedFrameMs,
-            currentlyEnabled: activeHudBlurEnabled,
+            currentRes: shadowMapRes,
+            isSoftwareGl,
+            isFullMapOverview: isAerialOverview,
+            cooldownFrames: shadowResCooldownFrames,
           });
-          if (nextHudBlur !== activeHudBlurEnabled) {
-            activeHudBlurEnabled = nextHudBlur;
-            if (typeof document !== 'undefined') {
-              document.documentElement.classList.toggle('hud-blur-lite', !nextHudBlur);
+          shadowResCooldownFrames = shadowResDecision.nextCooldownFrames;
+          if (shadowResDecision.changed) {
+            shadowMapRes = shadowResDecision.nextRes;
+            shadowTexelWorldSize = (d * 2) / shadowMapRes;
+            dirLight.shadow.map?.dispose();
+            dirLight.shadow.map = null;
+            dirLight.shadow.mapSize.set(shadowMapRes, shadowMapRes);
+            if (windUniforms.uDirShadowMapSize) {
+              windUniforms.uDirShadowMapSize.value = shadowMapRes;
+            }
+            syncDirShadowCameraEnvelope(lastShadowHalfSpan, lastShadowFar, true);
+            renderer.shadowMap.needsUpdate = true;
+          }
+
+          // Adaptive HUD backdrop-blur toggle: disables per-frame compositor blur over WebGL under GPU pressure
+          if (frameTickCount % 15 === 0) {
+            const nextHudBlur = shouldEnableHudBackdropBlur({
+              isSoftwareGl,
+              smoothedFrameMs,
+              currentlyEnabled: activeHudBlurEnabled,
+            });
+            if (nextHudBlur !== activeHudBlurEnabled) {
+              activeHudBlurEnabled = nextHudBlur;
+              if (typeof document !== 'undefined') {
+                document.documentElement.classList.toggle('hud-blur-lite', !nextHudBlur);
+              }
             }
           }
-        }
 
-        // Disable opaque foliage shadow proxies during aerial overview or heavy GPU load (with hysteresis)
-        const nextFoliageShadows = shouldEnableFoliageShadows({
-          smoothedFrameMs,
-          currentlyEnabled: activeFoliageShadowsEnabled,
-          isSoftwareGl,
-          isFullMapOverview: isAerialOverview,
-        });
-        if (nextFoliageShadows !== activeFoliageShadowsEnabled) {
-          activeFoliageShadowsEnabled = nextFoliageShadows;
-          worldPropBatchManager.setTreeFoliageShadowsEnabled(nextFoliageShadows);
-          centralPark.setCanopyShadowsEnabled(nextFoliageShadows);
-          renderer.shadowMap.needsUpdate = true;
+          // Disable opaque foliage shadow proxies during aerial overview or heavy GPU load (with hysteresis)
+          const nextFoliageShadows = shouldEnableFoliageShadows({
+            smoothedFrameMs,
+            currentlyEnabled: activeFoliageShadowsEnabled,
+            isSoftwareGl,
+            isFullMapOverview: isAerialOverview,
+          });
+          if (nextFoliageShadows !== activeFoliageShadowsEnabled) {
+            activeFoliageShadowsEnabled = nextFoliageShadows;
+            worldPropBatchManager.setTreeFoliageShadowsEnabled(nextFoliageShadows);
+            centralPark.setCanopyShadowsEnabled(nextFoliageShadows);
+            renderer.shadowMap.needsUpdate = true;
+          }
         }
 
         // Snap directional light target to an exact integer texel stride (6 texels = ~0.21m)
@@ -33455,7 +33608,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         lastShadowUpdateFrame = -999;
       }
 
-      syncDirShadowUniforms(!isSoftwareGl && !isFlatIndoorRoomMode);
+      syncDirShadowUniforms(renderer.shadowMap.enabled && !isFlatIndoorRoomMode);
 
       if (buildingViewMode) {
         const w = renderer.domElement.clientWidth || window.innerWidth;
@@ -33936,7 +34089,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       // Update 2D DOM floating prompt buttons with pixel-perfect Math.round() & Hysteresis at 60 FPS
       updateDirectDomPrompts();
 
-      syncDirShadowUniforms(!isSoftwareGl && !isFlatIndoorRoomMode);
+      syncDirShadowUniforms(renderer.shadowMap.enabled && !isFlatIndoorRoomMode);
 
       // 5. Periodic HUD Snapshot Sync (~4Hz periodic sync while event-driven emitHudImmediately() remains instant)
       hudSyncAccumulator += dt;
@@ -37358,6 +37511,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             distance: number;
             team: 'blue' | 'red';
             status: string;
+            roleBadge?: PlayerRoleBadgeId;
+            buildingProject?: string;
+            socialX?: string;
+            socialGithub?: string;
+            socialWebsite?: string;
+            appearOnline?: boolean;
+            allowFriendRequests?: boolean;
+            privateMessages?: 'everyone' | 'friends_only' | 'no_one';
+            apartmentVisits?: 'everyone' | 'friends' | 'only_me';
+            showWalletAddressOnProfile?: boolean;
+            showThingsOnProfile?: boolean;
           }> = [];
           const curZoneForHud = getLocalMultiplayerZoneKey();
           // 0. Real-Time Online Players across City, Houses & Warzone
@@ -37378,14 +37542,26 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               isMerchant: false,
               distance: Math.round(dist),
               team: rp.team,
+              roleBadge: rp.roleBadge,
+              buildingProject: rp.buildingProject,
+              socialX: rp.socialX,
+              socialGithub: rp.socialGithub,
+              socialWebsite: rp.socialWebsite,
+              appearOnline: rp.appearOnline,
+              allowFriendRequests: rp.allowFriendRequests,
+              privateMessages: rp.privateMessages,
+              apartmentVisits: rp.apartmentVisits,
+              showWalletAddressOnProfile: rp.showWalletAddressOnProfile,
+              showThingsOnProfile: rp.showThingsOnProfile,
               status:
-                rp.zoneKey === 'warzone'
+                rp.statusCaption ||
+                (rp.zoneKey === 'warzone'
                   ? 'In Warzone'
                   : rp.zoneKey.startsWith('house:')
                     ? 'Inside House'
                     : rp.weaponId === 'fishing_rod'
                       ? 'Fishing'
-                      : 'Online in City',
+                      : 'Just visiting'),
             });
           }
           // 1. Nearby Buddy Units (AI Squad & Players)
@@ -38036,6 +38212,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('wardrobe-studio-pause', onWardrobeStudioPause);
+      window.removeEventListener(GRAPHICS_QUALITY_CHANGED_EVENT, onGraphicsQualityChanged);
       window.removeEventListener('buddy-action', onBuddyActionEvent);
       window.removeEventListener('mobile-joystick-input', onMobileJoystickInput);
       window.removeEventListener('blur', onWindowBlurOrVisibilityReset);
@@ -38043,6 +38220,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       window.removeEventListener('focusin', onDocumentFocusIn);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+      window.visualViewport?.removeEventListener('resize', onResize);
+      resizeObserver?.disconnect();
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('wheel', onWheel);

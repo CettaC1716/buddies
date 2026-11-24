@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { Backpack, Check, RotateCw, Shirt, ShoppingBag } from 'lucide-react';
+import { Check, RotateCw, Shirt, ShoppingBag } from 'lucide-react';
 import {
   FASHION_APPAREL_CATALOG_ITEMS,
   type FashionApparelCatalogItem,
@@ -413,7 +413,7 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
       soundEngine.playPickup();
       setFeedbackMsg({
         tone: 'ok',
-        text: `${selectedItem.name} added to your Personal Bag. Open BAG to wear it on your avatar.`,
+        text: `${selectedItem.name} added to your Wardrobe. Open Wardrobe to wear it.`,
       });
     } else {
       soundEngine.playUiCancel();
@@ -469,8 +469,8 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
               }}
               className="px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/15 shadow-xs text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
             >
-              <Backpack className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Bag ({ownedApparelIds.length})</span>
+              <Shirt className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Wardrobe ({ownedApparelIds.length})</span>
             </button>
           </div>
         }
@@ -486,9 +486,9 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
             </div>
 
             <div className="text-xs text-white/55">
-              <span>Purchases are stored in your Personal Bag first</span>
+              <span>Purchases are saved to your Wardrobe</span>
               <span aria-hidden="true"> · </span>
-              <span>Equip anytime from Bag</span>
+              <span>Wear anytime from Wardrobe</span>
             </div>
           </div>
         }
@@ -696,8 +696,8 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
                     <Check className="w-4 h-4 text-emerald-400 shrink-0" />
                     <span>
                       {isCurrentlyWearing
-                        ? 'Currently equipped on your 3D avatar.'
-                        : 'Stored in your Personal Bag — open Bag to wear it.'}
+                        ? 'Wearing now.'
+                        : 'Saved in your Wardrobe — open Wardrobe to wear it.'}
                     </span>
                   </div>
                   <button
@@ -710,8 +710,8 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
                     }}
                     className="w-full py-3 px-4 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white shadow-sm text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap"
                   >
-                    <Backpack className="w-4 h-4 shrink-0" />
-                    <span>Open Personal Bag to Wear / Swap</span>
+                    <Shirt className="w-4 h-4 shrink-0" />
+                    <span>Open Wardrobe to Wear</span>
                   </button>
                 </div>
               )}

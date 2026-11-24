@@ -1,181 +1,181 @@
 import React from 'react';
-import type { LocalTxConfirmRequest } from '../lib/nearClient';
+import { Clock, ShieldCheck, X } from 'lucide-react';
 import { soundEngine } from '../game/audio';
+import {
+  canConfirmPendingTx,
+  formatPendingTxCountdown,
+  formatPendingTxSummary,
+  getPendingTxRemainingSeconds,
+  type PendingWalletTxItem,
+} from '../lib/pendingWalletTxQueue';
 
 /**
- * In-game wallet confirmation — the local (sub-account) wallet reviews and
- * approves every transaction it signs, exactly like an external wallet
- * popup, but rendered inside the game. Rendered by App while a
- * LocalTxConfirmRequest is pending; Approve/Reject resolve the signer.
+ * In-phone glassmorphism transaction confirmation modal.
+ * Rendered inside the Wallet app container (never over the game world).
+ * Confirm/Reject resolve the exact same localTxConfirmHandler promise in nearClient.ts.
  */
 
-const METHOD_LABELS: Record<string, string> = {
-  swap_near_for_respite: 'Swap NEAR -> RESPITE',
-  claim_hana_welcome_near: 'Claim Starter Pack from Hana',
-  claim_hana_welcome_near_attested: 'Claim Starter Pack from Hana (Google verified)',
-  buy_merchant_item: 'Buy item from Merchant Shop',
-  sell_merchant_item: 'Sell item back to Merchant',
-  purchase_citizen_asset: 'Buy House or Companion',
-  list_property_deed: 'List House Deed for sale',
-  list_property_furniture: 'List Furniture NFT for sale',
-  buy_property: 'Buy listed property',
-  cancel_property_listing: 'Cancel property listing',
-  mint_fish_nft: 'Turn Fish into an NFT',
-  mint_fish_nft_attested: 'Turn Fish into an NFT',
-  list_fish_nft: 'List Fish NFT for sale',
-  buy_fish_nft: 'Buy Fish NFT',
-  unlist_fish_nft: 'Remove Fish NFT listing',
-  ft_transfer: 'Transfer RESPITE',
-  nft_transfer: 'Transfer NFT',
-  mt_transfer: 'Transfer Collectible Item',
-  fund_deed_royalty: 'Add to House Account',
-  claim_deed_payout: 'Collect from House Account',
-  authorize_deed_session_key: 'Allow House Access',
-  mint_merchant_item: 'Mint Merchant Item',
-};
-
-const DETAIL_KEY_LABELS: Record<string, string> = {
-  catalog_id: 'Item',
-  token_id: 'Item code',
-  listing_id: 'Listing',
-  item_id: 'Item',
-  amount: 'Amount',
-  price: 'Price',
-  receiver_id: 'Recipient',
-};
-
-function humanizeMethod(_methodName: string): string {
-  // Unmapped methods never leak raw contract names to players.
-  return 'Confirm Transaction';
-}
-
-function formatNearFromYocto(yocto: string): string {
-  try {
-    const raw = BigInt(yocto || '0');
-    if (raw === 0n) return '0';
-    const whole = raw / 10n ** 24n;
-    const frac = raw % 10n ** 24n;
-    const fracStr = frac.toString().padStart(24, '0').slice(0, 6).replace(/0+$/, '');
-    return fracStr ? `${whole}.${fracStr}` : `${whole}`;
-  } catch {
-    return '0';
-  }
-}
-
-function detailRows(request: LocalTxConfirmRequest): Array<[string, string]> {
-  const rows: Array<[string, string]> = [];
-  const args = request.args ?? {};
-  const interesting = ['catalog_id', 'token_id', 'listing_id', 'item_id', 'amount', 'price', 'receiver_id'];
-  for (const key of interesting) {
-    const value = args[key];
-    if (typeof value === 'string' || typeof value === 'number') {
-      rows.push([DETAIL_KEY_LABELS[key] ?? key.replace(/_/g, ' '), String(value)]);
-    }
-  }
-  return rows.slice(0, 3);
-}
-
-interface InGameWalletConfirmModalProps {
-  request: LocalTxConfirmRequest | null;
-  onApprove: () => void;
-  onReject: () => void;
+export interface InGameWalletConfirmModalProps {
+  pendingTx: PendingWalletTxItem | null;
+  nowMs: number;
+  onConfirm: (txId: string) => void;
+  onReject: (txId: string) => void;
+  onClose?: () => void;
 }
 
 export const InGameWalletConfirmModal: React.FC<InGameWalletConfirmModalProps> = ({
-  request,
-  onApprove,
+  pendingTx,
+  nowMs,
+  onConfirm,
   onReject,
+  onClose,
 }) => {
-  if (!request) return null;
+  if (!pendingTx) return null;
 
-  const depositNear = formatNearFromYocto(request.depositYocto);
-  const hasDeposit = depositNear !== '0';
-  const details = detailRows(request);
+  const summary = formatPendingTxSummary(pendingTx.request);
+  const remainingSeconds = getPendingTxRemainingSeconds(pendingTx, nowMs);
+  const isExpired = !canConfirmPendingTx(pendingTx, nowMs);
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Confirm transaction in your in-game wallet"
+      aria-label="Confirm payment in Wallet"
       data-ingame-wallet-confirm="true"
-      className="fixed inset-0 z-[400] flex items-center justify-center bg-slate-950/50 backdrop-blur-sm p-4 select-none"
+      data-ingame-wallet-confirm-expired={isExpired ? 'true' : 'false'}
+      className="absolute inset-0 z-30 flex items-center justify-center bg-[#090d16]/72 backdrop-blur-md p-3.5 select-none"
     >
-      <div className="relative w-full max-w-sm rounded-[28px] bg-[#f4f6f9]/96 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.28)] text-slate-900 overflow-hidden">
-        <div className="px-5 py-4 bg-white/95 border-b border-slate-200/80">
-          <div className="inline-block px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-semibold tracking-wide">
-            In-Game Wallet
+      <div className="relative w-full max-w-[330px] rounded-[24px] bg-gradient-to-b from-[#171d2c]/95 via-[#111622]/94 to-[#0c101a]/96 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_64px_rgba(0,0,0,0.65)] text-white overflow-hidden">
+        <div className="px-4 pt-3.5 pb-3 border-b border-white/12 flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 border border-white/15 text-[10px] font-semibold text-amber-200">
+              <ShieldCheck className="w-3 h-3 shrink-0" aria-hidden="true" />
+              <span>Wallet Review</span>
+            </div>
+            <h2 className="mt-1.5 text-base font-semibold tracking-tight text-white leading-tight">
+              {isExpired ? 'Request Expired' : 'Confirm Request'}
+            </h2>
+            <div className="mt-0.5 text-[11px] font-mono text-white/55 truncate">
+              {pendingTx.request.signerAccountId}
+            </div>
           </div>
-          <h2 className="mt-1.5 text-lg font-semibold tracking-tight text-slate-900 leading-tight">
-            Confirm Transaction
-          </h2>
-          <div className="mt-1 text-xs font-mono text-slate-500 truncate">
-            {request.signerAccountId}
-          </div>
+          {onClose && (
+            <button
+              type="button"
+              onClick={() => {
+                soundEngine.playUiClick();
+                onClose();
+              }}
+              aria-label="Close review"
+              className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white/75 hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
+            >
+              <X className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          )}
         </div>
 
-        <div className="p-5 space-y-4">
-          <div className="rounded-2xl bg-white border border-slate-200/75 shadow-sm p-3.5 space-y-2.5 text-xs">
-            <div className="flex items-start justify-between gap-3">
-              <span className="font-medium text-slate-500">Action</span>
-              <span className="font-semibold text-slate-900 text-right">
-                {METHOD_LABELS[request.methodName] ?? humanizeMethod(request.methodName)}
+        <div className="p-4 space-y-3.5">
+          {/* Expiry pill */}
+          <div
+            className={`flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl border text-[11px] font-medium ${
+              isExpired
+                ? 'bg-rose-500/15 border-rose-400/35 text-rose-200'
+                : remainingSeconds <= 20
+                  ? 'bg-amber-500/15 border-amber-400/35 text-amber-200'
+                  : 'bg-white/[0.06] border-white/12 text-white/75'
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span>{isExpired ? 'This request has expired' : 'Time left to confirm'}</span>
+            </span>
+            {!isExpired && (
+              <span className="font-mono tabular-nums font-semibold">
+                {formatPendingTxCountdown(remainingSeconds)}
               </span>
+            )}
+          </div>
+
+          {/* Request details */}
+          <div className="rounded-2xl bg-white/[0.06] border border-white/12 divide-y divide-white/10 text-xs">
+            <div className="px-3.5 py-2.5 flex items-start justify-between gap-3">
+              <span className="text-white/55 shrink-0">Action</span>
+              <span className="font-semibold text-white text-right">{summary.actionLabel}</span>
             </div>
-            <div className="flex items-start justify-between gap-3">
-              <span className="font-medium text-slate-500">App</span>
-              <span className="font-mono text-slate-700 text-right truncate max-w-[210px]">
-                {request.receiverId}
-              </span>
-            </div>
-            {details.map(([key, value]) => (
-              <div key={key} className="flex items-start justify-between gap-3">
-                <span className="font-medium text-slate-500">{key}</span>
-                <span className="font-mono text-slate-700 text-right truncate max-w-[210px]">{value}</span>
-              </div>
-            ))}
-            {hasDeposit && (
-              <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200/70">
-                <span className="font-semibold text-emerald-900">You pay</span>
-                <span className="font-mono tabular-nums font-bold text-sm text-emerald-800">
-                  {depositNear} NEAR
+
+            {summary.amountLabel && (
+              <div className="px-3.5 py-2.5 flex items-center justify-between gap-3 bg-emerald-500/10">
+                <span className="text-emerald-200 font-medium shrink-0">Amount</span>
+                <span className="font-mono tabular-nums font-bold text-sm text-emerald-300 text-right">
+                  {summary.amountLabel}
                 </span>
               </div>
             )}
-            <div className="flex items-start justify-between gap-3 pt-1 border-t border-slate-100">
-              <span className="font-medium text-slate-500">Network fee</span>
-              <span className="font-medium text-slate-700 text-right">
-                Tiny fee (&lt; 0.01 NEAR, from balance)
+
+            <div className="px-3.5 py-2.5 flex items-start justify-between gap-3">
+              <span className="text-white/55 shrink-0">Recipient</span>
+              <span className="font-mono text-white/85 text-right truncate max-w-[180px]">
+                {summary.recipientLabel}
               </span>
+            </div>
+
+            {summary.detailRows.map(([label, value]) => (
+              <div key={label} className="px-3.5 py-2 flex items-start justify-between gap-3">
+                <span className="text-white/55 shrink-0">{label}</span>
+                <span className="font-mono text-white/80 text-right truncate max-w-[180px]">
+                  {value}
+                </span>
+              </div>
+            ))}
+
+            <div className="px-3.5 py-2 flex items-start justify-between gap-3 text-[11px]">
+              <span className="text-white/50 shrink-0">Fee</span>
+              <span className="text-white/70 text-right">{summary.feeNote}</span>
             </div>
           </div>
 
-          <div className="flex gap-2.5">
+          {/* Actions */}
+          {isExpired ? (
             <button
               type="button"
               data-ingame-wallet-reject="true"
               onClick={() => {
                 soundEngine.playUiClick();
-                onReject();
+                onReject(pendingTx.id);
               }}
-              className="flex-1 py-2.5 px-4 rounded-full bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/90 shadow-xs font-semibold text-xs transition-colors cursor-pointer active:scale-[0.98]"
+              className="w-full py-2.5 px-4 rounded-full bg-white/14 hover:bg-white/22 text-white border border-white/20 font-semibold text-xs transition-colors cursor-pointer active:scale-[0.98]"
             >
-              Cancel
+              Dismiss Expired Request
             </button>
-            <button
-              type="button"
-              data-ingame-wallet-approve="true"
-              onClick={() => {
-                soundEngine.playUiClick();
-                onApprove();
-              }}
-              className="flex-1 py-2.5 px-4 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm font-semibold text-xs transition-colors cursor-pointer active:scale-[0.98]"
-            >
-              Approve
-            </button>
-          </div>
+          ) : (
+            <div className="flex gap-2.5">
+              <button
+                type="button"
+                data-ingame-wallet-reject="true"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  onReject(pendingTx.id);
+                }}
+                className="flex-1 py-2.5 px-4 rounded-full bg-white/10 hover:bg-white/18 text-white/90 border border-white/18 font-semibold text-xs transition-colors cursor-pointer active:scale-[0.98]"
+              >
+                Reject
+              </button>
+              <button
+                type="button"
+                data-ingame-wallet-approve="true"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  onConfirm(pendingTx.id);
+                }}
+                className="flex-1 py-2.5 px-4 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs shadow-sm transition-colors cursor-pointer active:scale-[0.98]"
+              >
+                Confirm
+              </button>
+            </div>
+          )}
 
-          <p className="text-[11px] text-slate-500 text-center leading-relaxed">
-            Confirmed safely by your in-game wallet. Nothing is sent until you approve.
+          <p className="text-[10.5px] text-white/50 text-center leading-relaxed">
+            Nothing is sent until you tap Confirm.
           </p>
         </div>
       </div>

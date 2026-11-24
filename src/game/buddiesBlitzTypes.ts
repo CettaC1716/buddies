@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { AnyRoleBadgeId, PlayerRoleBadgeId } from './buddiesProfileIdentity';
 import {
   LightingPresetKey,
   BuddyClassId,
@@ -242,6 +243,17 @@ export interface HudSnapshot {
     distance: number;
     team: 'blue' | 'red';
     status: string;
+    roleBadge?: PlayerRoleBadgeId;
+    buildingProject?: string;
+    socialX?: string;
+    socialGithub?: string;
+    socialWebsite?: string;
+    appearOnline?: boolean;
+    allowFriendRequests?: boolean;
+    privateMessages?: 'everyone' | 'friends_only' | 'no_one';
+    apartmentVisits?: 'everyone' | 'friends' | 'only_me';
+    showWalletAddressOnProfile?: boolean;
+    showThingsOnProfile?: boolean;
   }>;
   safezonePlotAccessMode?: SafezonePlotAccessMode;
   safezoneAllowedFriends?: string[];
@@ -455,7 +467,12 @@ export interface BuddyUnit {
   };
   nameplate?: {
     sprite: THREE.Mesh | THREE.Sprite;
-    updatePlate: (name: string, sub: string, emblemType?: 'npc' | 'player_rookie' | 'player_veteran') => void;
+    updatePlate: (
+      name: string,
+      sub: string,
+      emblemType?: 'npc' | 'player_rookie' | 'player_veteran',
+      roleBadge?: AnyRoleBadgeId,
+    ) => void;
   };
   teamRing: THREE.Mesh;
   x: number;

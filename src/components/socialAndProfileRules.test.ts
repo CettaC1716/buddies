@@ -225,5 +225,18 @@ describe('SocialChatModal & CharacterProfileModal pure rules', () => {
     assert.equal(deduped[0].bubbleTextColor, '#0f172a');
     assert.equal(deduped[0].isSelf, false);
   });
+
+  it('excludes players who turned off Appear in the Online list from filterRealHumanOnlinePlayers', () => {
+    const peers: NearbyEntityUser[] = [
+      { id: 'visible.testnet', name: 'VisiblePeer', distance: 5, appearOnline: true },
+      { id: 'hidden.testnet', name: 'HiddenPeer', distance: 4, appearOnline: false },
+      { id: 'default.testnet', name: 'DefaultPeer', distance: 6 },
+    ];
+    const filtered = filterRealHumanOnlinePlayers(peers, 'LocalPlayer', 'local.testnet');
+    assert.deepEqual(
+      filtered.map((p) => p.id),
+      ['visible.testnet', 'default.testnet'],
+    );
+  });
 });
 

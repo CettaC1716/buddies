@@ -1,32 +1,79 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Armchair,
   Award,
+  Ban,
+  Bike,
   Camera,
   Check,
   Copy,
   Crown,
   Edit3,
+  ExternalLink,
   Fish,
   Flame,
+  Gift,
+  Globe,
   Heart,
   Home,
   Image as ImageIcon,
   MessageCircle,
   Send,
   Shield,
+  Shirt,
   Smile,
   Sparkles,
   Star,
   Trash2,
   Upload,
   User,
-  Users,
+  UserCheck,
+  UserMinus,
+  UserPlus,
   Wallet,
   X,
   Zap,
 } from 'lucide-react';
 import { NearbyEntityUser } from './SocialChatModal';
+import { RoleBadgeCircle } from './RoleBadgeCircle';
+import {
+  buildProfileAssetTiles,
+  shouldShowProfileAssetTiles,
+  type ProfileAssetTileId,
+} from './myThingsRules';
 import { soundEngine } from '../game/audio';
+import {
+  DEFAULT_PLAYER_ROLE_BADGE,
+  PLAYER_ROLE_BADGES,
+  STATUS_PRESET_OPTIONS,
+  formatProfileLinkDisplay,
+  getAnyRoleBadgeSpec,
+  normalizeProfileLinkHref,
+  readStoredProfileIdentity,
+  sanitizeLinkInput,
+  sanitizeProjectName,
+  writeStoredProfileIdentity,
+  type PlayerProfileIdentity,
+  type PlayerRoleBadgeId,
+} from '../game/buddiesProfileIdentity';
+import {
+  canSendPrivateMessageTo,
+  DEFAULT_PLAYER_PRIVACY_SETTINGS,
+  isPlayerBlocked,
+  PRIVACY_SETTINGS_UPDATED_EVENT,
+  readStoredPrivacySettings,
+  type PlayerPrivacySettings,
+} from '../game/buddiesPrivacySettings';
+import {
+  canShowAddFriendAction,
+  DEFAULT_PLAYER_SOCIAL_GRAPH,
+  hasPendingOutgoingFriendRequest,
+  isFollowingPlayer,
+  isFriendWith,
+  readStoredSocialGraph,
+  SOCIAL_GRAPH_UPDATED_EVENT,
+  type PlayerSocialGraph,
+} from '../game/buddiesSocialGraph';
 import {
   CITY_FEED_UPDATED_EVENT,
   deleteCityFeedPost,
@@ -105,13 +152,7 @@ export function renderProfileEmblemIcon(
   }
 }
 
-const STATUS_MOOD_OPTIONS = [
-  'Exploring',
-  'Chill',
-  'Fishing',
-  'Racing',
-  'Trading',
-] as const;
+const STATUS_MOOD_OPTIONS = STATUS_PRESET_OPTIONS;
 
 export const PROFILE_PHOTO_PRESETS: PhotoPresetOption[] = [
   {
@@ -157,8 +198,6 @@ export const STATUS_PHOTO_STORAGE_KEY = 'bb_player_status_photo_v1';
 export const AVATAR_PHOTO_STORAGE_KEY = 'bb_player_avatar_photo_v1';
 export const STATUS_CAPTION_STORAGE_KEY = 'bb_player_status_caption_v1';
 export const STATUS_FEED_STORAGE_KEY = 'bb_player_status_feed_v1';
-export const EMBLEM_NAME_STORAGE_KEY = 'bb_player_emblem_name_v1';
-export const EMBLEM_ICON_STORAGE_KEY = 'bb_player_emblem_icon_v1';
 export const PROFILE_IDENTITY_UPDATED_EVENT = 'bb-profile-identity-updated';
 
 export function readStoredStatusCoverPhotoUrl(): string {
@@ -170,30 +209,21 @@ export function readStoredStatusCoverPhotoUrl(): string {
   }
 }
 
-export function readStoredEmblemName(defaultTeam: 'blue' | 'red' = 'blue'): string {
-  if (typeof window !== 'undefined') {
-    try {
-      const saved = window.localStorage.getItem(EMBLEM_NAME_STORAGE_KEY);
-      if (saved && saved.trim()) return saved.trim();
-    } catch {
-      // ignore
-    }
+function renderProfileAssetTileIcon(tileId: ProfileAssetTileId): React.ReactNode {
+  switch (tileId) {
+    case 'homes':
+      return <Home className="w-3.5 h-3.5 text-sky-600 stroke-[2.1] shrink-0" aria-hidden="true" />;
+    case 'clothes':
+      return <Shirt className="w-3.5 h-3.5 text-violet-600 stroke-[2.1] shrink-0" aria-hidden="true" />;
+    case 'vehicles':
+      return <Bike className="w-3.5 h-3.5 text-emerald-600 stroke-[2.1] shrink-0" aria-hidden="true" />;
+    case 'furniture':
+      return <Armchair className="w-3.5 h-3.5 text-amber-600 stroke-[2.1] shrink-0" aria-hidden="true" />;
+    case 'fish':
+      return <Fish className="w-3.5 h-3.5 text-teal-600 stroke-[2.1] shrink-0" aria-hidden="true" />;
+    case 'badges':
+      return <Award className="w-3.5 h-3.5 text-indigo-600 stroke-[2.1] shrink-0" aria-hidden="true" />;
   }
-  return defaultTeam === 'red' ? 'Red Squad' : 'Blue Squad';
-}
-
-export function readStoredEmblemIcon(): ProfileEmblemIconId {
-  if (typeof window !== 'undefined') {
-    try {
-      const saved = window.localStorage.getItem(EMBLEM_ICON_STORAGE_KEY) as ProfileEmblemIconId | null;
-      if (saved && PROFILE_EMBLEM_ICONS.some((item) => item.id === saved)) {
-        return saved;
-      }
-    } catch {
-      // ignore
-    }
-  }
-  return 'smile';
 }
 
 export function resolveSharedEntityPortraitUrl(
@@ -250,16 +280,29 @@ export interface CharacterProfileModalProps {
   connectedAccountEmail?: string;
   characterGender?: 'male' | 'female';
   playerTeam?: 'blue' | 'red';
-  claimedPlotIndex?: number | null;
   hasHouseOwnership?: boolean;
+  ownedMerchantItemIds?: readonly string[];
+  ownedApparelIds?: readonly string[];
+  ownedScooterIds?: readonly string[];
   caughtFishCount?: number;
-  mintedFishNftCount?: number;
-  recruitedFamilyCount?: number;
-  activeHarvesterCount?: number;
+  listedFishCount?: number;
+  earnedBadgeIds?: readonly string[];
   playerLevel?: number;
   playerXpLabel?: string;
   lulBalance?: number;
   onChangePlayerName?: (newName: string) => void;
+  profileIdentity?: PlayerProfileIdentity;
+  onChangeProfileIdentity?: (next: PlayerProfileIdentity) => void;
+  privacySettings?: PlayerPrivacySettings;
+  onBlockPlayer?: (target: { id?: string | number | null; name: string }) => void;
+  onUnblockPlayer?: (targetIdOrName: string) => void;
+  socialGraph?: PlayerSocialGraph;
+  onSendFriendRequest?: (
+    user: NearbyEntityUser,
+  ) => Promise<{ ok: boolean; reason?: string }> | { ok: boolean; reason?: string };
+  onRemoveFriend?: (targetIdOrName: string) => void;
+  onToggleFollowPlayer?: (user: NearbyEntityUser) => void;
+  onSendGift?: (user: NearbyEntityUser) => void;
   onStartWhisper?: (user: NearbyEntityUser) => void;
   embeddedInPhone?: boolean;
 }
@@ -272,16 +315,27 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
   connectedAccountEmail,
   characterGender = 'male',
   playerTeam = 'blue',
-  claimedPlotIndex = null,
   hasHouseOwnership = false,
+  ownedMerchantItemIds = [],
+  ownedApparelIds = [],
+  ownedScooterIds = [],
   caughtFishCount = 0,
-  mintedFishNftCount = 0,
-  recruitedFamilyCount = 0,
-  activeHarvesterCount = 0,
+  listedFishCount = 0,
+  earnedBadgeIds,
   playerLevel = 1,
   playerXpLabel: _playerXpLabel,
   lulBalance: _lulBalance = 0,
   onChangePlayerName,
+  profileIdentity: controlledProfileIdentity,
+  onChangeProfileIdentity,
+  privacySettings: controlledPrivacySettings,
+  onBlockPlayer,
+  onUnblockPlayer,
+  socialGraph: controlledSocialGraph,
+  onSendFriendRequest,
+  onRemoveFriend,
+  onToggleFollowPlayer,
+  onSendGift,
   onStartWhisper,
   embeddedInPhone = false,
 }) => {
@@ -303,12 +357,25 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
     return '';
   });
 
-  const [emblemName, setEmblemName] = useState<string>(() =>
-    readStoredEmblemName(playerTeam),
+  const [localProfileIdentity, setLocalProfileIdentity] = useState<PlayerProfileIdentity>(() =>
+    controlledProfileIdentity ?? readStoredProfileIdentity(),
   );
-  const [emblemIconId, setEmblemIconId] = useState<ProfileEmblemIconId>(() =>
-    readStoredEmblemIcon(),
+
+  const activeProfileIdentity = controlledProfileIdentity ?? localProfileIdentity;
+
+  const [localPrivacySettings, setLocalPrivacySettings] = useState<PlayerPrivacySettings>(() =>
+    controlledPrivacySettings ?? readStoredPrivacySettings(),
   );
+  const activePrivacySettings =
+    controlledPrivacySettings ?? localPrivacySettings ?? DEFAULT_PLAYER_PRIVACY_SETTINGS;
+
+  const [localSocialGraph, setLocalSocialGraph] = useState<PlayerSocialGraph>(() =>
+    controlledSocialGraph ?? readStoredSocialGraph(),
+  );
+  const activeSocialGraph =
+    controlledSocialGraph ?? localSocialGraph ?? DEFAULT_PLAYER_SOCIAL_GRAPH;
+  const [friendRequestBusy, setFriendRequestBusy] = useState<boolean>(false);
+  const [friendRequestNotice, setFriendRequestNotice] = useState<string | null>(null);
 
   const [statusCaption, setStatusCaption] = useState<string>(() => {
     if (typeof window !== 'undefined') {
@@ -319,7 +386,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
         // ignore
       }
     }
-    return 'Exploring The City & Warzone Arena';
+    return 'Just visiting';
   });
 
   const [statusFeed, setStatusFeed] = useState<StatusFeedPost[]>(() => {
@@ -347,13 +414,25 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
   const [draftPlayerName, setDraftPlayerName] = useState<string>('');
   const [isEditingCaption, setIsEditingCaption] = useState<boolean>(false);
   const [draftCaption, setDraftCaption] = useState<string>(statusCaption);
-  const [draftEmblemName, setDraftEmblemName] = useState<string>(emblemName);
-  const [draftEmblemIconId, setDraftEmblemIconId] = useState<ProfileEmblemIconId>(emblemIconId);
+  const [draftRoleBadge, setDraftRoleBadge] = useState<PlayerRoleBadgeId>(
+    activeProfileIdentity.roleBadge,
+  );
+  const [draftBuildingProject, setDraftBuildingProject] = useState<string>(
+    activeProfileIdentity.buildingProject,
+  );
+  const [draftLinkX, setDraftLinkX] = useState<string>(activeProfileIdentity.links.x);
+  const [draftLinkGithub, setDraftLinkGithub] = useState<string>(
+    activeProfileIdentity.links.github,
+  );
+  const [draftLinkWebsite, setDraftLinkWebsite] = useState<string>(
+    activeProfileIdentity.links.website,
+  );
   const [feedComposerText, setFeedComposerText] = useState<string>('');
-  const [selectedMood, setSelectedMood] = useState<string>('Exploring');
+  const [selectedMood, setSelectedMood] = useState<string>(STATUS_PRESET_OPTIONS[3]);
   const [attachCoverPhoto, setAttachCoverPhoto] = useState<boolean>(false);
   const [activePhotoPicker, setActivePhotoPicker] = useState<'none' | 'status' | 'avatar'>('none');
   const [copiedUid, setCopiedUid] = useState<boolean>(false);
+  const [copiedHandle, setCopiedHandle] = useState<boolean>(false);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
   const statusFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -371,21 +450,37 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
       setIsEditingName(false);
       setIsEditingCaption(false);
       setActivePhotoPicker('none');
+      setFriendRequestNotice(null);
       setNowMs(Date.now());
     }
   }, [targetUser, isOpen]);
 
   useEffect(() => {
+    if (controlledProfileIdentity) {
+      setLocalProfileIdentity(controlledProfileIdentity);
+    }
+  }, [controlledProfileIdentity]);
+
+  useEffect(() => {
     const syncIdentity = () => {
       setCustomStatusPhotoUrl(readStoredStatusCoverPhotoUrl());
-      setEmblemName(readStoredEmblemName(playerTeam));
-      setEmblemIconId(readStoredEmblemIcon());
+      setLocalProfileIdentity(readStoredProfileIdentity());
+    };
+    const syncPrivacy = () => {
+      setLocalPrivacySettings(readStoredPrivacySettings());
+    };
+    const syncSocial = () => {
+      setLocalSocialGraph(readStoredSocialGraph());
     };
     window.addEventListener(PROFILE_IDENTITY_UPDATED_EVENT, syncIdentity);
+    window.addEventListener(PRIVACY_SETTINGS_UPDATED_EVENT, syncPrivacy);
+    window.addEventListener(SOCIAL_GRAPH_UPDATED_EVENT, syncSocial);
     return () => {
       window.removeEventListener(PROFILE_IDENTITY_UPDATED_EVENT, syncIdentity);
+      window.removeEventListener(PRIVACY_SETTINGS_UPDATED_EVENT, syncPrivacy);
+      window.removeEventListener(SOCIAL_GRAPH_UPDATED_EVENT, syncSocial);
     };
-  }, [playerTeam]);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -410,26 +505,32 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
     }
   };
 
+  const commitProfileIdentity = (next: PlayerProfileIdentity) => {
+    const clean: PlayerProfileIdentity = {
+      roleBadge: next.roleBadge,
+      buildingProject: sanitizeProjectName(next.buildingProject),
+      links: {
+        x: sanitizeLinkInput(next.links.x),
+        github: sanitizeLinkInput(next.links.github),
+        website: sanitizeLinkInput(next.links.website),
+      },
+    };
+    setLocalProfileIdentity(clean);
+    if (onChangeProfileIdentity) {
+      onChangeProfileIdentity(clean);
+    } else {
+      writeStoredProfileIdentity(clean);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(PROFILE_IDENTITY_UPDATED_EVENT));
+      }
+    }
+  };
+
   const persistStatusCaption = (nextCaption: string) => {
     setStatusCaption(nextCaption);
     if (typeof window !== 'undefined') {
       try {
         window.localStorage.setItem(STATUS_CAPTION_STORAGE_KEY, nextCaption);
-      } catch {
-        // ignore
-      }
-    }
-  };
-
-  const persistEmblem = (nextName: string, nextIcon: ProfileEmblemIconId) => {
-    const cleanEmblem =
-      nextName.trim().slice(0, 24) || (playerTeam === 'red' ? 'Red Squad' : 'Blue Squad');
-    setEmblemName(cleanEmblem);
-    setEmblemIconId(nextIcon);
-    if (typeof window !== 'undefined') {
-      try {
-        window.localStorage.setItem(EMBLEM_NAME_STORAGE_KEY, cleanEmblem);
-        window.localStorage.setItem(EMBLEM_ICON_STORAGE_KEY, nextIcon);
       } catch {
         // ignore
       }
@@ -477,13 +578,133 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
       ? 'FEMALE'
       : 'MALE';
 
-  const effectiveEmblemName = isSelfProfile
-    ? emblemName || (effectiveTeam === 'red' ? 'Red Squad' : 'Blue Squad')
+  const effectiveRoleBadgeId = isNpcProfile
+    ? isMerchantNpc
+      ? 'merchant'
+      : DEFAULT_PLAYER_ROLE_BADGE
+    : isSelfProfile
+      ? activeProfileIdentity.roleBadge
+      : targetUser?.roleBadge ?? DEFAULT_PLAYER_ROLE_BADGE;
+
+  const effectiveRoleSpec = getAnyRoleBadgeSpec(effectiveRoleBadgeId, isMerchantNpc);
+
+  const effectiveBuildingProject = isSelfProfile
+    ? activeProfileIdentity.buildingProject
     : isNpcProfile
-      ? isMerchantNpc
-        ? 'Merchant'
-        : 'Citizen'
-      : `${effectiveTeam === 'red' ? 'Red' : 'Blue'} Squad`;
+      ? ''
+      : sanitizeProjectName(targetUser?.buildingProject);
+
+  const effectiveShowWalletAddress = isSelfProfile
+    ? activePrivacySettings.showWalletAddressOnProfile
+    : isNpcProfile
+      ? false
+      : targetUser?.showWalletAddressOnProfile !== false;
+
+  const effectiveShowThingsOnProfile = isSelfProfile
+    ? activePrivacySettings.showThingsOnProfile
+    : isNpcProfile
+      ? false
+      : targetUser?.showThingsOnProfile !== false;
+
+  const isTargetBlocked = Boolean(
+    !isSelfProfile &&
+      !isNpcProfile &&
+      targetUser &&
+      isPlayerBlocked(
+        activePrivacySettings.blockedPlayers,
+        targetUser.nearAccountId || targetUser.id,
+        cleanTargetName,
+      ),
+  );
+
+  const targetLookupId = targetUser?.nearAccountId || targetUser?.id;
+
+  const isTargetFriend = Boolean(
+    !isSelfProfile &&
+      !isNpcProfile &&
+      targetUser &&
+      isFriendWith(activeSocialGraph, targetLookupId, cleanTargetName),
+  );
+
+  const isTargetFollowing = Boolean(
+    !isSelfProfile &&
+      !isNpcProfile &&
+      targetUser &&
+      isFollowingPlayer(activeSocialGraph, targetLookupId, cleanTargetName),
+  );
+
+  const isTargetFriendRequestPending = Boolean(
+    !isSelfProfile &&
+      !isNpcProfile &&
+      targetUser &&
+      hasPendingOutgoingFriendRequest(activeSocialGraph, targetLookupId, cleanTargetName),
+  );
+
+  const showAddFriendButton = canShowAddFriendAction({
+    isSelf: isSelfProfile,
+    isNpc: isNpcProfile,
+    isBlocked: isTargetBlocked,
+    isFriend: isTargetFriend,
+    allowFriendRequests: targetUser?.allowFriendRequests,
+  });
+
+  const pmPermissionCheck = targetUser
+    ? canSendPrivateMessageTo({
+        localSettings: activePrivacySettings,
+        recipientId: targetLookupId,
+        recipientName: cleanTargetName,
+        recipientPrivateMessages: targetUser.privateMessages,
+        isFriend: isTargetFriend,
+      })
+    : { allowed: false as const, reason: 'recipient_disabled' as const };
+
+  const isTargetAcceptingPrivateMessages = Boolean(
+    !isSelfProfile && !isNpcProfile && targetUser && pmPermissionCheck.allowed,
+  );
+
+  const effectiveNearHandle = !effectiveShowWalletAddress
+    ? ''
+    : isSelfProfile
+      ? (playerUid || '').trim()
+      : isNpcProfile
+        ? ''
+        : (targetUser?.nearAccountId || '').trim();
+
+  const effectiveSocialLinks = isSelfProfile
+    ? activeProfileIdentity.links
+    : isNpcProfile
+      ? { x: '', github: '', website: '' }
+      : {
+          x: sanitizeLinkInput(targetUser?.socialX),
+          github: sanitizeLinkInput(targetUser?.socialGithub),
+          website: sanitizeLinkInput(targetUser?.socialWebsite),
+        };
+
+  const resolvedProfileLinks = (
+    [
+      {
+        kind: 'x' as const,
+        label: 'X',
+        raw: effectiveSocialLinks.x,
+        href: normalizeProfileLinkHref('x', effectiveSocialLinks.x),
+        display: formatProfileLinkDisplay('x', effectiveSocialLinks.x),
+      },
+      {
+        kind: 'github' as const,
+        label: 'GitHub',
+        raw: effectiveSocialLinks.github,
+        href: normalizeProfileLinkHref('github', effectiveSocialLinks.github),
+        display: formatProfileLinkDisplay('github', effectiveSocialLinks.github),
+      },
+      {
+        kind: 'website' as const,
+        label: 'Website',
+        raw: effectiveSocialLinks.website,
+        href: normalizeProfileLinkHref('website', effectiveSocialLinks.website),
+        display: formatProfileLinkDisplay('website', effectiveSocialLinks.website),
+      },
+    ] as const
+  ).filter((item) => Boolean(item.raw));
 
   const resolvedStatusPhotoUrl = targetUser
     ? resolveSharedEntityPortraitUrl(
@@ -558,7 +779,15 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
     const cleaned = draftCaption.trim().slice(0, 80);
     const prevCaption = statusCaption;
     persistStatusCaption(cleaned);
-    persistEmblem(draftEmblemName, draftEmblemIconId);
+    commitProfileIdentity({
+      roleBadge: draftRoleBadge,
+      buildingProject: draftBuildingProject,
+      links: {
+        x: draftLinkX,
+        github: draftLinkGithub,
+        website: draftLinkWebsite,
+      },
+    });
     if (cleaned && cleaned !== prevCaption) {
       const now = Date.now();
       const postId = `status-${now}`;
@@ -662,12 +891,55 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
     window.setTimeout(() => setCopiedUid(false), 1800);
   };
 
-  const plotSummaryLabel =
-    claimedPlotIndex !== null && claimedPlotIndex !== undefined
-      ? `PLOT #${claimedPlotIndex} (${effectiveTeam.toUpperCase()})`
-      : hasHouseOwnership
-        ? 'PRIVATE HOUSE OWNED'
-        : 'NO PLOT CLAIMED';
+  const handleCopyNearHandle = () => {
+    if (!effectiveNearHandle) return;
+    soundEngine.playUiClick();
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      void navigator.clipboard.writeText(effectiveNearHandle);
+    }
+    setCopiedHandle(true);
+    window.setTimeout(() => setCopiedHandle(false), 1800);
+  };
+
+  const openProfileEditor = () => {
+    soundEngine.playUiClick();
+    setDraftCaption(statusCaption);
+    setDraftRoleBadge(activeProfileIdentity.roleBadge);
+    setDraftBuildingProject(activeProfileIdentity.buildingProject);
+    setDraftLinkX(activeProfileIdentity.links.x);
+    setDraftLinkGithub(activeProfileIdentity.links.github);
+    setDraftLinkWebsite(activeProfileIdentity.links.website);
+    setIsEditingCaption(true);
+  };
+
+  const profileAssetTiles = useMemo(
+    () =>
+      buildProfileAssetTiles({
+        ownedMerchantItemIds,
+        ownedApparelIds,
+        ownedScooterIds,
+        hasHouseOwnership,
+        caughtFishCount,
+        listedFishCount,
+        characterGender,
+        earnedBadgeIds,
+      }),
+    [
+      ownedMerchantItemIds,
+      ownedApparelIds,
+      ownedScooterIds,
+      hasHouseOwnership,
+      caughtFishCount,
+      listedFishCount,
+      characterGender,
+      earnedBadgeIds,
+    ],
+  );
+
+  const showProfileAssetTiles = shouldShowProfileAssetTiles({
+    isSelfProfile,
+    showThingsOnProfile: effectiveShowThingsOnProfile,
+  });
 
   if (embeddedInPhone && (!isOpen || !targetUser)) {
     return null;
@@ -709,32 +981,17 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
             <span>{isSelfProfile ? 'Citizen Profile' : 'Player Profile'}</span>
           </div>
 
-          {/* Emblem Badge (synced with top-left emblem emot on bottom dock & editable emblem name) */}
+          {/* Role Badge Pill in header */}
           <div
             data-profile-emblem-badge="true"
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10.5px] font-semibold ${
-              isNpcProfile
-                ? 'bg-amber-500/20 text-amber-200 border-amber-400/35'
-                : effectiveTeam === 'red'
-                  ? 'bg-rose-500/20 text-rose-200 border-rose-400/35'
-                  : 'bg-sky-500/20 text-sky-200 border-sky-400/35'
-            }`}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10.5px] font-semibold bg-white/10 text-white/95 border-white/20"
           >
-            <span className="w-4 h-4 rounded-full bg-emerald-400 text-slate-950 flex items-center justify-center shrink-0">
-              {isNpcProfile ? (
-                isMerchantNpc ? (
-                  <Sparkles className="w-2.5 h-2.5 stroke-[2.4]" aria-hidden="true" />
-                ) : (
-                  <User className="w-2.5 h-2.5 stroke-[2.4]" aria-hidden="true" />
-                )
-              ) : (
-                renderProfileEmblemIcon(
-                  isSelfProfile ? emblemIconId : 'smile',
-                  'w-2.5 h-2.5 stroke-[2.4]',
-                )
-              )}
-            </span>
-            <span className="truncate max-w-[110px]">{effectiveEmblemName}</span>
+            <RoleBadgeCircle
+              roleId={effectiveRoleBadgeId}
+              isNpcMerchant={isMerchantNpc}
+              size="xs"
+            />
+            <span className="truncate max-w-[110px]">{effectiveRoleSpec.label}</span>
           </div>
 
           {/* Level Badge (Lv X for Players, NPC for NPCs) */}
@@ -811,48 +1068,72 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
 
           {/* Overlapping Avatar + Display Name + Live Status Caption */}
           <div className="px-3.5 pb-3.5 -mt-8 relative z-10 space-y-2.5">
-            <div className="flex items-end justify-between gap-2.5">
-              {/* Overlapping Circular Avatar */}
-              <div className="relative shrink-0">
-                <div
-                  data-profile-circular-avatar="true"
-                  className={`rounded-full p-[2.5px] shadow-[0_8px_18px_rgba(15,23,42,0.22)] ${
-                    embeddedInPhone ? 'w-16 h-16' : 'w-[70px] h-[70px]'
-                  } ${
-                    isNpcProfile
-                      ? 'bg-gradient-to-tr from-amber-400 to-yellow-400'
-                      : effectiveTeam === 'red'
-                        ? 'bg-gradient-to-tr from-rose-500 to-pink-400'
-                        : 'bg-gradient-to-tr from-sky-500 to-teal-400'
-                  }`}
-                >
-                  <div className="w-full h-full rounded-full overflow-hidden bg-slate-200 ring-2 ring-[#eef0f4]">
-                    <img
-                      src={resolvedAvatarPhotoUrl}
-                      alt={`${cleanTargetName} Avatar`}
-                      draggable={false}
-                      className={`w-full h-full select-none ${getPhotoCropClassName(resolvedAvatarPhotoUrl)}`}
-                    />
-                  </div>
-                </div>
-                {isSelfProfile && (
-                  <button
-                    type="button"
-                    data-edit-avatar-photo-btn="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      setActivePhotoPicker((prev) => (prev === 'avatar' ? 'none' : 'avatar'));
-                    }}
-                    title="Change Circular Profile Avatar"
-                    className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-slate-900 hover:bg-slate-800 text-white border-2 border-[#eef0f4] shadow-sm flex items-center justify-center cursor-pointer transition-colors"
+            <div className="flex items-start justify-between gap-2.5">
+              {/* Overlapping Circular Avatar + Top-Left Role Badge + Role Name Under Avatar */}
+              <div className="flex flex-col items-center shrink-0">
+                <div className="relative">
+                  <div
+                    data-profile-circular-avatar="true"
+                    className={`rounded-full p-[2.5px] shadow-[0_8px_18px_rgba(15,23,42,0.22)] ${
+                      embeddedInPhone ? 'w-16 h-16' : 'w-[70px] h-[70px]'
+                    } ${
+                      isNpcProfile
+                        ? 'bg-gradient-to-tr from-amber-400 to-yellow-400'
+                        : effectiveTeam === 'red'
+                          ? 'bg-gradient-to-tr from-rose-500 to-pink-400'
+                          : 'bg-gradient-to-tr from-sky-500 to-teal-400'
+                    }`}
                   >
-                    <Camera className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
-                  </button>
+                    <div className="w-full h-full rounded-full overflow-hidden bg-slate-200 ring-2 ring-[#eef0f4]">
+                      <img
+                        src={resolvedAvatarPhotoUrl}
+                        alt={`${cleanTargetName} Avatar`}
+                        draggable={false}
+                        className={`w-full h-full select-none ${getPhotoCropClassName(resolvedAvatarPhotoUrl)}`}
+                      />
+                    </div>
+                  </div>
+                  {/* Top-left Role Badge Circle */}
+                  {(!isNpcProfile || isMerchantNpc) && (
+                    <div
+                      data-profile-avatar-role-badge={effectiveRoleSpec.id}
+                      className="absolute -top-1 -left-1 z-10"
+                    >
+                      <RoleBadgeCircle
+                        roleId={effectiveRoleBadgeId}
+                        isNpcMerchant={isMerchantNpc}
+                        size="md"
+                      />
+                    </div>
+                  )}
+                  {isSelfProfile && (
+                    <button
+                      type="button"
+                      data-edit-avatar-photo-btn="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setActivePhotoPicker((prev) => (prev === 'avatar' ? 'none' : 'avatar'));
+                      }}
+                      title="Change Circular Profile Avatar"
+                      className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-slate-900 hover:bg-slate-800 text-white border-2 border-[#eef0f4] shadow-sm flex items-center justify-center cursor-pointer transition-colors"
+                    >
+                      <Camera className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
+                {/* Role Name Under Avatar */}
+                {(!isNpcProfile || isMerchantNpc) && (
+                  <span
+                    data-profile-avatar-role-label="true"
+                    className="mt-1 text-[10.5px] font-semibold text-slate-700 leading-none"
+                  >
+                    {effectiveRoleSpec.label}
+                  </span>
                 )}
               </div>
 
-              {/* Right Header Quick Actions (Rename only, LUL badge removed) */}
-              <div className="flex items-center gap-1.5 pb-0.5 flex-wrap justify-end">
+              {/* Right Header Quick Actions (Rename & Edit Profile) */}
+              <div className="flex items-center gap-1.5 pt-9 pb-0.5 flex-wrap justify-end">
                 {isSelfProfile && onChangePlayerName && !isEditingName && (
                   <button
                     type="button"
@@ -873,7 +1154,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
               </div>
             </div>
 
-            {/* Name + Online Indicator + Attribute Chips */}
+            {/* Name + Online Indicator + Project Line + Handle + Links */}
             <div className="space-y-1.5">
               {isSelfProfile && onChangePlayerName && isEditingName ? (
                 <div className="flex items-center gap-1.5">
@@ -918,16 +1199,129 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
                 </div>
               )}
 
-              {/* Live Status Headline & Emblem Editor Row */}
-              <div className="rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 px-2.5 py-1.5">
+              {/* Project Line: "Building — [project name]" */}
+              {effectiveBuildingProject && (
+                <div
+                  data-profile-building-project="true"
+                  className="text-[12px] font-medium text-slate-700 leading-snug"
+                >
+                  Building — <span className="font-semibold text-slate-900">{effectiveBuildingProject}</span>
+                </div>
+              )}
+
+              {/* NEAR Account Handle (Copyable) */}
+              {effectiveNearHandle && (
+                <div
+                  data-profile-near-handle="true"
+                  className="inline-flex items-center gap-1.5 max-w-full px-2 py-0.5 rounded-lg bg-white/80 border border-slate-200/90 text-[11px] text-slate-700"
+                >
+                  <span className="font-mono font-medium truncate">
+                    {effectiveNearHandle}
+                  </span>
+                  <button
+                    type="button"
+                    data-profile-copy-handle-btn="true"
+                    onClick={handleCopyNearHandle}
+                    aria-label="Copy handle"
+                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-semibold cursor-pointer transition-colors shrink-0"
+                  >
+                    {copiedHandle ? (
+                      <>
+                        <Check className="w-2.5 h-2.5 text-emerald-600 stroke-[2.4]" aria-hidden="true" />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-2.5 h-2.5 stroke-[2.2]" aria-hidden="true" />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {/* Optional Links Row (X, GitHub, Website — shown only when filled) */}
+              {resolvedProfileLinks.length > 0 && (
+                <div
+                  data-profile-links-row="true"
+                  className="flex items-center gap-1.5 flex-wrap pt-0.5"
+                >
+                  {resolvedProfileLinks.map((link) =>
+                    link.href ? (
+                      <a
+                        key={link.kind}
+                        href={link.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        data-profile-link={link.kind}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-950 border border-slate-200/90 text-[10.5px] font-medium transition-colors max-w-[165px]"
+                      >
+                        <Globe className="w-2.5 h-2.5 text-slate-500 shrink-0" aria-hidden="true" />
+                        <span className="font-semibold text-slate-500 shrink-0">{link.label}</span>
+                        <span className="truncate">{link.display}</span>
+                        <ExternalLink className="w-2.5 h-2.5 text-slate-400 shrink-0" aria-hidden="true" />
+                      </a>
+                    ) : (
+                      <span
+                        key={link.kind}
+                        data-profile-link={link.kind}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/80 text-slate-700 border border-slate-200/90 text-[10.5px] font-medium max-w-[165px]"
+                      >
+                        <span className="font-semibold text-slate-500 shrink-0">{link.label}</span>
+                        <span className="truncate">{link.display}</span>
+                      </span>
+                    ),
+                  )}
+                </div>
+              )}
+
+              {/* Live Status Headline & Profile Identity Editor Row */}
+              <div className="rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 px-2.5 py-2">
                 {isSelfProfile && isEditingCaption ? (
-                  <div className="space-y-2 py-0.5">
-                    <div className="flex items-center gap-1.5 w-full">
+                  <div className="space-y-2.5 py-0.5">
+                    {/* Role Badge Picker (5 Player Roles Only — No Merchant) */}
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-semibold text-slate-600">Role</div>
+                      <div
+                        data-profile-role-picker="true"
+                        className="flex items-center gap-1.5 flex-wrap"
+                      >
+                        {PLAYER_ROLE_BADGES.map((roleOpt) => {
+                          const isSelected = draftRoleBadge === roleOpt.id;
+                          return (
+                            <button
+                              key={roleOpt.id}
+                              type="button"
+                              data-profile-role-option={roleOpt.id}
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                setDraftRoleBadge(roleOpt.id);
+                              }}
+                              className={`inline-flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full text-[10.5px] font-semibold border transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                                  : 'bg-white/90 text-slate-700 border-slate-300/80 hover:bg-white'
+                              }`}
+                            >
+                              <RoleBadgeCircle roleId={roleOpt.id} size="xs" />
+                              <span>{roleOpt.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Project Line Input */}
+                    <div className="space-y-1">
+                      <label className="block text-[10px] font-semibold text-slate-600">
+                        Building
+                      </label>
                       <input
                         type="text"
-                        value={draftCaption}
-                        maxLength={80}
-                        onChange={(e) => setDraftCaption(e.target.value)}
+                        data-profile-building-input="true"
+                        value={draftBuildingProject}
+                        maxLength={60}
+                        onChange={(e) => setDraftBuildingProject(e.target.value)}
                         onKeyDown={(e) => {
                           e.stopPropagation();
                           if (e.key === 'Enter') {
@@ -935,64 +1329,119 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
                             handleSaveCaption();
                           }
                         }}
-                        placeholder="Update headline status..."
-                        className="flex-1 min-w-0 rounded-lg bg-white text-slate-900 px-2.5 py-1 text-[11px] font-medium border border-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                        placeholder="What are you building?"
+                        className="w-full rounded-lg bg-white text-slate-900 px-2.5 py-1 text-[11px] font-medium border border-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
                       />
                     </div>
 
-                    {/* Emblem Name & Emblem Emot/Icon Selector */}
-                    <div className="flex items-center gap-1.5 w-full">
-                      <span className="text-[10px] font-semibold text-slate-600 shrink-0">
-                        Emblem:
-                      </span>
-                      <input
-                        type="text"
-                        data-profile-emblem-name-input="true"
-                        value={draftEmblemName}
-                        maxLength={24}
-                        onChange={(e) => setDraftEmblemName(e.target.value)}
-                        onKeyDown={(e) => {
-                          e.stopPropagation();
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleSaveCaption();
-                          }
-                        }}
-                        placeholder="Emblem name (e.g. Blue Squad)"
-                        className="flex-1 min-w-0 rounded-lg bg-white text-slate-900 px-2.5 py-1 text-[11px] font-semibold border border-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
-                      />
+                    {/* Optional Links Inputs: X, GitHub, Website */}
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-semibold text-slate-600">
+                        Links (optional)
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                        <input
+                          type="text"
+                          data-profile-link-input="x"
+                          value={draftLinkX}
+                          maxLength={120}
+                          onChange={(e) => setDraftLinkX(e.target.value)}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          placeholder="X (@handle or URL)"
+                          className="min-w-0 rounded-lg bg-white text-slate-900 px-2 py-1 text-[10.5px] font-medium border border-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                        />
+                        <input
+                          type="text"
+                          data-profile-link-input="github"
+                          value={draftLinkGithub}
+                          maxLength={120}
+                          onChange={(e) => setDraftLinkGithub(e.target.value)}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          placeholder="GitHub (user or URL)"
+                          className="min-w-0 rounded-lg bg-white text-slate-900 px-2 py-1 text-[10.5px] font-medium border border-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                        />
+                        <input
+                          type="text"
+                          data-profile-link-input="website"
+                          value={draftLinkWebsite}
+                          maxLength={120}
+                          onChange={(e) => setDraftLinkWebsite(e.target.value)}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          placeholder="Website URL"
+                          className="min-w-0 rounded-lg bg-white text-slate-900 px-2 py-1 text-[10.5px] font-medium border border-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Status Presets + Free-Text Status Input */}
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-semibold text-slate-600">Status</div>
+                      <div
+                        data-profile-status-presets="true"
+                        className="flex items-center gap-1 flex-wrap"
+                      >
+                        {STATUS_PRESET_OPTIONS.map((preset) => {
+                          const isPresetActive = draftCaption.trim() === preset;
+                          return (
+                            <button
+                              key={preset}
+                              type="button"
+                              data-profile-status-preset={preset}
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                setDraftCaption(preset);
+                              }}
+                              className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold border transition-colors cursor-pointer ${
+                                isPresetActive
+                                  ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                                  : 'bg-white/85 text-slate-700 border-slate-300/80 hover:bg-white'
+                              }`}
+                            >
+                              {preset}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="flex items-center gap-1.5 w-full">
+                        <input
+                          type="text"
+                          data-profile-status-input="true"
+                          value={draftCaption}
+                          maxLength={80}
+                          onChange={(e) => setDraftCaption(e.target.value)}
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleSaveCaption();
+                            }
+                          }}
+                          placeholder="Write your own status..."
+                          className="flex-1 min-w-0 rounded-lg bg-white text-slate-900 px-2.5 py-1 text-[11px] font-medium border border-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Save / Cancel Row */}
+                    <div className="flex items-center justify-end gap-1.5 pt-0.5">
                       <button
                         type="button"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setIsEditingCaption(false);
+                        }}
+                        className="px-2.5 py-1 rounded-full bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-[10px] font-semibold cursor-pointer transition-colors"
+                      >
+                        <span>Cancel</span>
+                      </button>
+                      <button
+                        type="button"
+                        data-profile-save-identity-btn="true"
                         onClick={handleSaveCaption}
-                        className="px-2.5 py-1 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-semibold cursor-pointer transition-colors shrink-0"
+                        className="px-3 py-1 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-semibold cursor-pointer transition-colors"
                       >
                         <span>Save</span>
                       </button>
-                    </div>
-
-                    <div className="flex items-center gap-1 flex-wrap pt-0.5">
-                      {PROFILE_EMBLEM_ICONS.map((iconOpt) => {
-                        const activeIcon = draftEmblemIconId === iconOpt.id;
-                        return (
-                          <button
-                            key={iconOpt.id}
-                            type="button"
-                            data-profile-emblem-icon-btn={iconOpt.id}
-                            onClick={() => {
-                              soundEngine.playUiClick();
-                              setDraftEmblemIconId(iconOpt.id);
-                            }}
-                            title={`Emblem icon: ${iconOpt.label}`}
-                            className={`w-6 h-6 rounded-full flex items-center justify-center border transition-all cursor-pointer ${
-                              activeIcon
-                                ? 'bg-emerald-400 text-slate-950 border-slate-900 ring-1 ring-slate-900/30 shadow-xs'
-                                : 'bg-white/85 text-slate-700 border-slate-300/80 hover:bg-white'
-                            }`}
-                          >
-                            {renderProfileEmblemIcon(iconOpt.id, 'w-3 h-3 stroke-[2.3]')}
-                          </button>
-                        );
-                      })}
                     </div>
                   </div>
                 ) : (
@@ -1002,22 +1451,16 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
                       className="text-[11.5px] font-medium text-slate-700 truncate"
                     >
                       {isSelfProfile
-                        ? statusCaption || 'Online in Buddies Blitz'
+                        ? statusCaption || 'Just visiting'
                         : isNpcProfile
-                          ? 'Official Exchange & Supply Merchant in The City'
-                          : targetUser?.status || 'Online in Buddies Blitz'}
+                          ? 'Official shopkeeper in The City'
+                          : targetUser?.status || 'Just visiting'}
                     </div>
                     {isSelfProfile && (
                       <button
                         type="button"
                         data-edit-status-caption-btn="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          setDraftCaption(statusCaption);
-                          setDraftEmblemName(emblemName);
-                          setDraftEmblemIconId(emblemIconId);
-                          setIsEditingCaption(true);
-                        }}
+                        onClick={openProfileEditor}
                         className="px-2 py-0.5 rounded-full bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-950 border border-slate-200/90 shadow-xs text-[10px] font-semibold shrink-0 flex items-center gap-1 cursor-pointer transition-colors"
                       >
                         <Edit3 className="w-2.5 h-2.5 stroke-[2.2]" aria-hidden="true" />
@@ -1030,17 +1473,6 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
 
               <div className="flex items-center gap-1.5 text-[10.5px] font-medium text-slate-500 pt-0.5">
                 <span>{effectiveGenderLabel === 'FEMALE' ? 'Female' : 'Male'}</span>
-                <span aria-hidden="true">·</span>
-                <span
-                  data-profile-emblem-label="true"
-                  className="inline-flex items-center gap-1 font-semibold text-slate-700"
-                >
-                  {renderProfileEmblemIcon(
-                    isSelfProfile ? emblemIconId : 'smile',
-                    'w-3 h-3 stroke-[2.2] text-emerald-600',
-                  )}
-                  <span>{effectiveEmblemName}</span>
-                </span>
                 {isSelfProfile && (
                   <>
                     <span aria-hidden="true">·</span>
@@ -1363,59 +1795,39 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
           )}
         </div>
 
-        {/* 3. REAL IN-GAME ASSET SUMMARY (FOR SELF PROFILE) */}
-        {isSelfProfile && (
+        {/* 3. OWNED THINGS SUMMARY TILES (FOR SELF PROFILE, RESPECTING PRIVACY) */}
+        {showProfileAssetTiles && (
           <div
+            data-profile-asset-strip="true"
             className={`rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 space-y-2 ${
               embeddedInPhone ? 'p-3' : 'p-3.5'
             }`}
           >
             <div className="text-[11px] font-semibold text-slate-700">
-              In-game citizen assets
+              My things
             </div>
 
-            <div className={`grid grid-cols-3 ${embeddedInPhone ? 'gap-1.5' : 'gap-2'}`}>
-              {/* Command Plot / House Ownership */}
-              <div
-                data-profile-asset-plot="true"
-                className="min-w-0 p-2 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 flex flex-col justify-between gap-1.5"
-              >
-                <div className="flex items-center gap-1 text-[10px] font-medium text-slate-500 min-w-0">
-                  <Home className="w-3 h-3 text-sky-600 stroke-[2.2] shrink-0" aria-hidden="true" />
-                  <span className="truncate">Estate / Plot</span>
+            <div
+              data-profile-asset-tiles="true"
+              className={`grid gap-1.5 ${
+                embeddedInPhone ? 'grid-cols-3' : 'grid-cols-3 sm:grid-cols-6'
+              }`}
+            >
+              {profileAssetTiles.map((tile) => (
+                <div
+                  key={tile.id}
+                  data-profile-asset-tile={tile.id}
+                  className="min-w-0 px-1.5 py-2 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 flex flex-col items-center justify-center gap-0.5 text-center"
+                >
+                  {renderProfileAssetTileIcon(tile.id)}
+                  <div className="text-[13px] font-bold text-slate-900 leading-tight tabular-nums">
+                    {tile.count}
+                  </div>
+                  <div className="text-[9.5px] font-medium text-slate-600 leading-none truncate max-w-full">
+                    {tile.label}
+                  </div>
                 </div>
-                <div className="text-[10.5px] font-semibold text-slate-900 leading-tight break-words">
-                  {plotSummaryLabel}
-                </div>
-              </div>
-
-              {/* Caught Fish & Minted Fish NFTs */}
-              <div
-                data-profile-asset-fish="true"
-                className="min-w-0 p-2 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 flex flex-col justify-between gap-1.5"
-              >
-                <div className="flex items-center gap-1 text-[10px] font-medium text-slate-500 min-w-0">
-                  <Fish className="w-3 h-3 text-teal-600 stroke-[2.2] shrink-0" aria-hidden="true" />
-                  <span className="truncate">Fish &amp; NFTs</span>
-                </div>
-                <div className="text-[10.5px] font-semibold text-slate-900 leading-tight break-words">
-                  {caughtFishCount} Caught · {mintedFishNftCount} NFT
-                </div>
-              </div>
-
-              {/* Recruited Family & Active Harvesters */}
-              <div
-                data-profile-asset-units="true"
-                className="min-w-0 p-2 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 flex flex-col justify-between gap-1.5"
-              >
-                <div className="flex items-center gap-1 text-[10px] font-medium text-slate-500 min-w-0">
-                  <Users className="w-3 h-3 text-indigo-600 stroke-[2.2] shrink-0" aria-hidden="true" />
-                  <span className="truncate">Active units</span>
-                </div>
-                <div className="text-[10.5px] font-semibold text-slate-900 leading-tight break-words">
-                  {recruitedFamilyCount} Family · {activeHarvesterCount} Harvester
-                </div>
-              </div>
+              ))}
             </div>
           </div>
         )}
@@ -1450,18 +1862,18 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
             </span>
           </div>
 
-          {isSelfProfile && (
+          {isSelfProfile && effectiveShowWalletAddress && (
             <div className="p-2.5 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <div className="flex items-center gap-1 text-[10px] font-semibold text-emerald-700">
                   <Wallet className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
-                  <span>NEAR wallet ID</span>
+                  <span>Wallet address</span>
                 </div>
                 <div
                   data-profile-wallet-id="true"
                   className="text-[11px] font-mono font-medium text-slate-700 break-all mt-0.5"
                 >
-                  {playerUid || 'Not registered yet (Guest Session)'}
+                  {playerUid || 'Not connected yet (Guest Session)'}
                 </div>
               </div>
               {playerUid && (
@@ -1489,20 +1901,171 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
           )}
         </div>
 
-        {/* 5. REMOTE REAL PLAYER WHISPER ACTION (Hidden for Self and NPCs) */}
-        {!isSelfProfile && !isNpcProfile && targetUser && onStartWhisper && (
-          <button
-            type="button"
-            data-profile-whisper-btn="true"
-            onClick={() => {
-              soundEngine.playUiClick();
-              onStartWhisper(targetUser);
-            }}
-            className="w-full py-2.5 px-4 rounded-full bg-white hover:bg-slate-50 text-slate-900 border border-white/90 shadow-[0_6px_18px_rgba(15,23,42,0.18)] font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] transition-all"
-          >
-            <MessageCircle className="w-4 h-4 text-sky-600 stroke-[2.2]" aria-hidden="true" />
-            <span>Send whisper message</span>
-          </button>
+        {/* 5. REMOTE REAL PLAYER ACTIONS: FRIEND, FOLLOW, PRIVATE MESSAGE, GIFT, BLOCK/UNBLOCK */}
+        {!isSelfProfile && !isNpcProfile && targetUser && (
+          <div className="space-y-2">
+            {/* Friends & Follow row */}
+            {!isTargetBlocked && (
+              <div className="flex items-center gap-2">
+                {isTargetFriend ? (
+                  <div
+                    data-profile-friends-badge="true"
+                    className="flex-1 py-2 px-3 rounded-full bg-emerald-500/20 border border-emerald-300/40 text-emerald-100 font-semibold text-xs flex items-center justify-between gap-2"
+                  >
+                    <span className="inline-flex items-center gap-1.5 truncate">
+                      <UserCheck className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      <span>Friends</span>
+                    </span>
+                    {onRemoveFriend && (
+                      <button
+                        type="button"
+                        data-profile-remove-friend-btn="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          onRemoveFriend(String(targetLookupId || cleanTargetName));
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/15 hover:bg-rose-500/70 text-white text-[10px] font-semibold cursor-pointer transition-colors shrink-0"
+                        title="Remove friend"
+                      >
+                        <UserMinus className="w-3 h-3" aria-hidden="true" />
+                        <span>Remove</span>
+                      </button>
+                    )}
+                  </div>
+                ) : showAddFriendButton && onSendFriendRequest ? (
+                  <button
+                    type="button"
+                    data-profile-add-friend-btn="true"
+                    disabled={isTargetFriendRequestPending || friendRequestBusy}
+                    onClick={async () => {
+                      if (isTargetFriendRequestPending || friendRequestBusy) return;
+                      soundEngine.playUiClick();
+                      setFriendRequestBusy(true);
+                      setFriendRequestNotice(null);
+                      try {
+                        const res = await onSendFriendRequest(targetUser);
+                        if (!res.ok && res.reason) {
+                          setFriendRequestNotice(res.reason);
+                        }
+                      } finally {
+                        setFriendRequestBusy(false);
+                      }
+                    }}
+                    className="flex-1 py-2.5 px-3.5 rounded-full bg-indigo-500 hover:bg-indigo-400 disabled:bg-white/20 disabled:text-white/80 text-white font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-default active:scale-[0.99] transition-all shadow-sm"
+                  >
+                    {isTargetFriendRequestPending ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 stroke-[2.3]" aria-hidden="true" />
+                        <span>Request sent</span>
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
+                        <span>{friendRequestBusy ? 'Sending...' : 'Add Friend'}</span>
+                      </>
+                    )}
+                  </button>
+                ) : null}
+
+                {onToggleFollowPlayer && (
+                  <button
+                    type="button"
+                    data-profile-follow-btn="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      onToggleFollowPlayer(targetUser);
+                    }}
+                    className={`flex-1 py-2.5 px-3.5 rounded-full border font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.99] transition-all ${
+                      isTargetFollowing
+                        ? 'bg-white/18 hover:bg-white/26 text-white border-white/30'
+                        : 'bg-white hover:bg-slate-50 text-slate-900 border-white/90 shadow-xs'
+                    }`}
+                  >
+                    {isTargetFollowing ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 stroke-[2.3]" aria-hidden="true" />
+                        <span>Following</span>
+                      </>
+                    ) : (
+                      <span>Follow</span>
+                    )}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {friendRequestNotice && (
+              <div className="px-3 py-1.5 rounded-xl bg-amber-500/20 border border-amber-300/40 text-amber-100 text-[11px] font-medium text-center">
+                {friendRequestNotice}
+              </div>
+            )}
+
+            {onStartWhisper && (
+              <button
+                type="button"
+                data-profile-whisper-btn="true"
+                disabled={!isTargetAcceptingPrivateMessages}
+                onClick={() => {
+                  if (!isTargetAcceptingPrivateMessages) return;
+                  soundEngine.playUiClick();
+                  onStartWhisper(targetUser);
+                }}
+                className="w-full py-2.5 px-4 rounded-full bg-white hover:bg-slate-50 disabled:bg-white/40 disabled:text-slate-500 text-slate-900 border border-white/90 shadow-[0_6px_18px_rgba(15,23,42,0.18)] font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed active:scale-[0.99] transition-all"
+              >
+                <MessageCircle className="w-4 h-4 text-sky-600 stroke-[2.2]" aria-hidden="true" />
+                <span>
+                  {pmPermissionCheck.reason === 'blocked'
+                    ? 'Player blocked'
+                    : pmPermissionCheck.reason === 'recipient_disabled'
+                      ? 'Private messages off'
+                      : pmPermissionCheck.reason === 'recipient_friends_only'
+                        ? 'Friends only'
+                        : 'Send private message'}
+                </span>
+              </button>
+            )}
+
+            {onSendGift && effectiveShowWalletAddress && !isTargetBlocked && (
+              <button
+                type="button"
+                data-profile-gift-btn="true"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  onSendGift(targetUser);
+                }}
+                className="w-full py-2.5 px-4 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] transition-all"
+              >
+                <Gift className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+                <span>Send gift</span>
+              </button>
+            )}
+
+            {(onBlockPlayer || onUnblockPlayer) && (
+              <button
+                type="button"
+                data-profile-block-btn="true"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  if (isTargetBlocked) {
+                    onUnblockPlayer?.(String(targetUser.nearAccountId || targetUser.id || cleanTargetName));
+                  } else {
+                    onBlockPlayer?.({
+                      id: targetUser.nearAccountId || targetUser.id,
+                      name: cleanTargetName,
+                    });
+                  }
+                }}
+                className={`w-full py-2 px-4 rounded-full border font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] transition-all ${
+                  isTargetBlocked
+                    ? 'bg-white/15 hover:bg-white/25 text-white border-white/25'
+                    : 'bg-rose-500/18 hover:bg-rose-500/30 text-rose-100 border-rose-300/35'
+                }`}
+              >
+                <Ban className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
+                <span>{isTargetBlocked ? 'Unblock player' : 'Block player'}</span>
+              </button>
+            )}
+          </div>
         )}
 
         {/* 6. NPC MERCHANT NOTICE (When inspecting an NPC) */}
@@ -1540,7 +2103,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
       inert={(!isOpen || !targetUser) || undefined}
       aria-label="Character Profile"
       data-character-profile-modal="true"
-      className={`fixed left-4 top-16 bottom-20 z-40 w-full max-w-lg flex flex-col select-none transition-all duration-300 ease-out transform ${
+      className={`fixed inset-x-2.5 sm:inset-x-auto sm:left-4 top-[max(0.5rem,var(--safe-top))] sm:top-16 bottom-[max(0.5rem,var(--safe-bottom))] sm:bottom-20 z-40 sm:w-[min(32rem,calc(100vw-2rem))] max-w-lg mx-auto sm:mx-0 flex flex-col select-none transition-all duration-300 ease-out transform ${
         isOpen && targetUser
           ? 'translate-x-0 opacity-100 visible pointer-events-auto'
           : '-translate-x-[120%] opacity-0 invisible pointer-events-none'

@@ -46,7 +46,7 @@ export const TabletDeviceMockupShell: React.FC<TabletDeviceMockupShellProps> = (
   closeAriaLabel = 'Close',
   closeButtonProps,
   maxWidthClass = 'max-w-5xl',
-  heightClass = 'max-h-[90vh]',
+  heightClass = 'max-h-[92dvh] sm:max-h-[90dvh]',
   children,
 }) => {
   const now = new Date();
@@ -55,10 +55,10 @@ export const TabletDeviceMockupShell: React.FC<TabletDeviceMockupShellProps> = (
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className={`relative w-full ${maxWidthClass} ${heightClass} rounded-[32px] overflow-hidden flex flex-col bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] text-white select-none`}
+      className={`relative w-full ${maxWidthClass} ${heightClass} rounded-[20px] sm:rounded-[32px] overflow-hidden flex flex-col bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] text-white select-none`}
     >
       {/* Persistent Tablet OS Status Bar (matching SmartphoneOsModal BLITZ OS) */}
-      <div className="shrink-0 flex items-center justify-between gap-3 px-5 pt-3 pb-2 border-b border-white/[0.12] text-[10.5px] font-medium text-white/90">
+      <div className="shrink-0 flex items-center justify-between gap-2 sm:gap-3 px-3.5 sm:px-5 pt-2 sm:pt-3 pb-1.5 sm:pb-2 border-b border-white/[0.12] text-[10px] sm:text-[10.5px] font-medium text-white/90">
         <div className="flex items-center gap-1.5 min-w-0">
           <Wifi className="w-3 h-3 text-white/85 shrink-0" aria-hidden="true" />
           <span className="tracking-wider font-semibold text-white">BLITZ PAD</span>
@@ -80,7 +80,7 @@ export const TabletDeviceMockupShell: React.FC<TabletDeviceMockupShellProps> = (
       </div>
 
       {/* Tablet App Navigation Toolbar */}
-      <header className="shrink-0 flex flex-wrap items-center justify-between gap-3 px-4 sm:px-5 py-3 bg-white/[0.03] border-b border-white/[0.12]">
+      <header className="shrink-0 flex flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-5 py-2 sm:py-3 bg-white/[0.03] border-b border-white/[0.12]">
         <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
           {backButton}
           {headerIcon && (
@@ -127,9 +127,9 @@ export const TabletDeviceMockupShell: React.FC<TabletDeviceMockupShellProps> = (
       {/* Tablet Home Indicator Bar */}
       <div
         aria-hidden="true"
-        className="shrink-0 h-5 flex items-center justify-center border-t border-white/10"
+        className="shrink-0 h-3.5 sm:h-5 flex items-center justify-center border-t border-white/10"
       >
-        <span className="w-28 sm:w-36 h-1 rounded-full bg-white/30" />
+        <span className="w-24 sm:w-36 h-1 rounded-full bg-white/30" />
       </div>
     </div>
   );

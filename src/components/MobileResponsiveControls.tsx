@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  RotateCcw,
-  Smartphone,
   ArrowUp,
   ArrowDown,
   ArrowLeft,
@@ -10,6 +8,7 @@ import {
 } from 'lucide-react';
 import { soundEngine } from '../game/audio';
 import type { FishingPhaseState } from '../game/buddiesFishingMarket';
+import { useAdaptiveViewport } from '../lib/useAdaptiveViewport';
 
 export type DeviceFormFactor = 'mobile' | 'tablet' | 'desktop';
 
@@ -60,49 +59,9 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
   onFishingTriggerAction,
   onFishingCancel,
 }) => {
-  const [viewport, setViewport] = useState<{
-    width: number;
-    height: number;
-    isPortrait: boolean;
-    hasTouch: boolean;
-    formFactor: DeviceFormFactor;
-  }>(() => {
-    if (typeof window === 'undefined') {
-      return {
-        width: 1280,
-        height: 720,
-        isPortrait: false,
-        hasTouch: false,
-        formFactor: 'desktop',
-      };
-    }
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    const coarse =
-      typeof window.matchMedia === 'function' &&
-      (window.matchMedia('(pointer: coarse)').matches ||
-        window.matchMedia('(hover: none)').matches);
-    const touchPoints =
-      typeof navigator !== 'undefined' && (navigator.maxTouchPoints ?? 0) > 0;
-    const hasTouch = Boolean(coarse || touchPoints || 'ontouchstart' in window);
-    const minDim = Math.min(w, h);
-    const maxDim = Math.max(w, h);
-    const formFactor: DeviceFormFactor =
-      minDim < 600 || (hasTouch && maxDim <= 932)
-        ? 'mobile'
-        : maxDim <= 1180 && (hasTouch || w <= 1024)
-          ? 'tablet'
-          : 'desktop';
-    return {
-      width: w,
-      height: h,
-      isPortrait: h > w && w < 1024,
-      hasTouch,
-      formFactor,
-    };
-  });
-
-  const [dismissedPortraitOverlay, setDismissedPortraitOverlay] = useState(false);
+  const adaptive = useAdaptiveViewport();
+  const formFactor: DeviceFormFactor =
+    adaptive.device === 'phone' ? 'mobile' : adaptive.device;
 
   // Virtual Joystick State
   const joystickBaseRef = useRef<HTMLDivElement | null>(null);
@@ -132,63 +91,12 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
     emitJoystickVector(0, 0, false);
   }, [emitJoystickVector]);
 
+  // Reset joystick whenever gameplay pauses or a blocking modal opens
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const updateViewport = () => {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      const coarse =
-        typeof window.matchMedia === 'function' &&
-        (window.matchMedia('(pointer: coarse)').matches ||
-          window.matchMedia('(hover: none)').matches);
-      const touchPoints =
-        typeof navigator !== 'undefined' && (navigator.maxTouchPoints ?? 0) > 0;
-      const hasTouch = Boolean(coarse || touchPoints || 'ontouchstart' in window);
-      const minDim = Math.min(w, h);
-      const maxDim = Math.max(w, h);
-      const formFactor: DeviceFormFactor =
-        minDim < 600 || (hasTouch && maxDim <= 932)
-          ? 'mobile'
-          : maxDim <= 1180 && (hasTouch || w <= 1024)
-            ? 'tablet'
-            : 'desktop';
-      const nextIsPortrait = h > w && w < 1024;
-
-      setViewport((prev) => {
-        if (!prev.isPortrait && nextIsPortrait) {
-          setDismissedPortraitOverlay(false);
-        }
-        return {
-          width: w,
-          height: h,
-          isPortrait: nextIsPortrait,
-          hasTouch: prev.hasTouch || hasTouch,
-          formFactor,
-        };
-      });
-    };
-
-    const onFirstTouch = () => {
-      setViewport((prev) => (prev.hasTouch ? prev : { ...prev, hasTouch: true }));
-    };
-
-    window.addEventListener('resize', updateViewport);
-    window.addEventListener('orientationchange', updateViewport);
-    window.addEventListener('touchstart', onFirstTouch, { passive: true });
-    return () => {
-      window.removeEventListener('resize', updateViewport);
-      window.removeEventListener('orientationchange', updateViewport);
-      window.removeEventListener('touchstart', onFirstTouch);
-    };
-  }, []);
-
-  // Reset joystick whenever gameplay pauses, a modal opens, or portrait overlay triggers
-  useEffect(() => {
-    if (!isGameplayActive || isModalBlocking || (viewport.isPortrait && !dismissedPortraitOverlay)) {
+    if (!isGameplayActive || isModalBlocking) {
       resetJoystick();
     }
-  }, [isGameplayActive, isModalBlocking, viewport.isPortrait, dismissedPortraitOverlay, resetJoystick]);
+  }, [isGameplayActive, isModalBlocking, resetJoystick]);
 
   const updateJoystickFromClientPoint = useCallback(
     (clientX: number, clientY: number) => {
@@ -263,92 +171,46 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
   const showMobileJoystick =
     isGameplayActive &&
     !isModalBlocking &&
-    (viewport.hasTouch || viewport.formFactor !== 'desktop' || viewport.width <= 1024 || Boolean(forceShowJoystick));
+    (adaptive.showTouchControls || Boolean(forceShowJoystick));
 
   // Render touch controls during active gameplay whenever the joystick pad or shoreline fishing Cast button is active.
   const showControlsLayer =
     isGameplayActive && !isModalBlocking && (showMobileJoystick || canFish);
 
-  const isCompactLandscape = viewport.height <= 460;
+  const isCompactLandscape = adaptive.isCompactHeight;
+  const isPhonePortrait = adaptive.isPhonePortrait;
+  const isTablet = adaptive.isTablet;
 
   return (
     <>
       {/* =====================================================================
-          1. PORTRAIT ORIENTATION WARNING OVERLAY (ENGLISH)
-             Forces/guides mobile & tablet players in Portrait mode to rotate
-             their screen to Horizontal (Landscape) orientation.
-         ===================================================================== */}
-      {viewport.isPortrait && !dismissedPortraitOverlay && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Rotate Device to Landscape"
-          data-portrait-rotate-overlay="true"
-          className="fixed inset-0 z-[100000] bg-[#0b0e16]/95 text-white flex flex-col items-center justify-center p-6 pointer-events-auto select-none text-center"
-        >
-          <div className="w-full max-w-[260px] bg-[#14161d] border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] px-6 py-7 flex flex-col items-center gap-4">
-            {/* Rotating Device Graphic */}
-            <div className="relative w-24 h-24 flex items-center justify-center">
-              <div
-                className="absolute inset-0 rounded-full border-2 border-dashed border-[#38bdf8]/45 animate-spin"
-                style={{ animationDuration: '10s' }}
-              />
-              <div className="relative flex items-center justify-center w-18 h-18 bg-[#1e293b] border-3 border-black ring-2 ring-[#b8ff3c] shadow-[4px_4px_0_#000] rounded-2xl">
-                <Smartphone
-                  className="w-10 h-10 text-[#b8ff3c] stroke-[2.2] transition-transform duration-700 -rotate-90"
-                  aria-hidden="true"
-                />
-                <RotateCcw
-                  className="w-5 h-5 text-[#facc15] stroke-[2.8] absolute -top-2 -right-2 bg-black rounded-full p-0.5 border border-white"
-                  aria-hidden="true"
-                />
-              </div>
-            </div>
-
-            {/* Minimal Heading */}
-            <div className="space-y-1">
-              <h2 className="text-lg font-black uppercase tracking-wider text-white leading-tight">
-                ROTATE YOUR SCREEN
-              </h2>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-[#b8ff3c]">
-                Landscape Mode
-              </p>
-            </div>
-
-            {/* Compact Dismiss Button */}
-            <button
-              type="button"
-              data-dismiss-portrait-overlay-btn="true"
-              onClick={() => {
-                soundEngine.playUiClick();
-                setDismissedPortraitOverlay(true);
-              }}
-              className="-skew-x-6 w-full py-2 px-4 bg-[#1e293b] hover:bg-[#334155] text-white/90 font-black text-[11px] uppercase tracking-wider border-2 border-black shadow-[3px_3px_0_#000] cursor-pointer active:scale-95 transition-all"
-            >
-              <span className="skew-x-6 inline-block">SKIP</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* =====================================================================
-          2. MOBILE & TABLET VIRTUAL MOVEMENT JOYSTICK (BOTTOM-LEFT, RAISED ABOVE CHAT BAR)
-             + SEMI-TRANSPARENT TOUCH QUICK-ACTION BUTTONS (BOTTOM-RIGHT)
+          MOBILE & TABLET VIRTUAL MOVEMENT JOYSTICK (BOTTOM-LEFT, RAISED ABOVE CHAT BAR)
+          + SEMI-TRANSPARENT TOUCH QUICK-ACTION BUTTONS (BOTTOM-RIGHT)
+          Works natively in both Portrait and Landscape with safe-area insets.
          ===================================================================== */}
       {showControlsLayer && (
         <div
           aria-label="Mobile & Tablet Touch Controls"
           data-mobile-controls-layer="true"
-          data-device-form-factor={viewport.formFactor}
+          data-device-form-factor={formFactor}
+          data-device-orientation={adaptive.orientation}
           className="fixed inset-0 pointer-events-none z-[25] select-none overflow-hidden"
         >
           {showMobileJoystick && (
             <div
-              className={`pointer-events-auto fixed ${
-                isCompactLandscape
-                  ? 'bottom-[104px] left-3.5'
-                  : 'bottom-[112px] left-4 sm:bottom-[116px] sm:left-5'
-              } flex flex-col items-start gap-2.5 touch-none`}
+              style={{
+                left: isTablet
+                  ? 'max(1.25rem, var(--safe-left))'
+                  : 'max(0.75rem, var(--safe-left))',
+                bottom: isCompactLandscape
+                  ? 'calc(58px + var(--safe-bottom))'
+                  : isPhonePortrait
+                    ? 'calc(68px + var(--safe-bottom))'
+                    : isTablet
+                      ? 'calc(92px + var(--safe-bottom))'
+                      : 'calc(104px + var(--safe-bottom))',
+              }}
+              className="pointer-events-auto fixed flex flex-col items-start gap-2.5 touch-none"
             >
               <div className="flex flex-col items-center gap-2">
                 {showMobileJoystick && (
@@ -369,7 +231,11 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                       onPointerCancel={handleJoystickPointerUpOrCancel}
                       style={{ touchAction: 'none' }}
                       className={`relative ${
-                        isCompactLandscape ? 'w-24 h-24' : 'w-28 h-28 sm:w-30 sm:h-30'
+                        isCompactLandscape
+                          ? 'w-24 h-24'
+                          : isPhonePortrait
+                            ? 'w-[104px] h-[104px]'
+                            : 'w-28 h-28 sm:w-30 sm:h-30'
                       } rounded-full border-2 ${
                         isSprinting
                           ? 'bg-[#14161d]/75 border-[#facc15] shadow-[0_0_12px_rgba(250,204,21,0.35)]'
@@ -425,15 +291,23 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
           {/* BOTTOM-RIGHT: Mobile Touch Action Buttons (and Cast button when near water on any device) */}
           {(showMobileJoystick || canFish) && (
             <div
-              className={`pointer-events-auto fixed ${
-                !showMobileJoystick
+              style={{
+                right: isTablet
+                  ? 'max(1.25rem, var(--safe-right))'
+                  : 'max(0.75rem, var(--safe-right))',
+                bottom: !showMobileJoystick
                   ? isWarzoneActive
-                    ? 'bottom-[96px] right-4'
-                    : 'bottom-[68px] right-4'
+                    ? '96px'
+                    : '68px'
                   : isCompactLandscape
-                    ? 'bottom-[64px] right-3.5'
-                    : 'bottom-[74px] right-4 sm:bottom-20 sm:right-6'
-              } flex flex-col items-end gap-2 touch-none`}
+                    ? 'calc(18px + var(--safe-bottom))'
+                    : isPhonePortrait
+                      ? 'calc(72px + var(--safe-bottom))'
+                      : isTablet
+                        ? 'calc(126px + var(--safe-bottom))'
+                        : 'calc(76px + var(--safe-bottom))',
+              }}
+              className="pointer-events-auto fixed flex flex-col items-end gap-2 touch-none"
             >
               {primaryContextualAction && showMobileJoystick && (
                 <button

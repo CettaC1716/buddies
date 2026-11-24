@@ -3080,21 +3080,7 @@ class SoundEngine {
    * Buddies Blitz Character Jump Whoosh / Spring Hop SFX
    */
   public playJump(): void {
-    this.playSample('release', 0.36, 1.18 + Math.random() * 0.08, 60);
-    const ctx = this.ensureCtx();
-    if (!ctx) return;
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(190, now);
-    osc.frequency.exponentialRampToValueAtTime(460, now + 0.13);
-    gain.gain.setValueAtTime(0.15, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
-    osc.connect(gain);
-    gain.connect(this.getOutputNode(ctx));
-    osc.start(now);
-    osc.stop(now + 0.15);
+    // Jump takeoff sound disabled per user request
   }
 
   /**
@@ -3887,7 +3873,7 @@ class SoundEngine {
     if (this.isThrottled('ambient-surface-footstep', 145)) return;
     const ctx = this.ensureCtx();
     if (!ctx || ctx.state !== 'running') return;
-    if (!this.ensureAmbientGraph(ctx) || !this.ambientBusGain) return;
+    const outNode = this.getMasterBusNode(ctx);
 
     const spec = computeFootstepSynthSpec(surface, speedNorm, stepParity);
     const now = ctx.currentTime;
@@ -3897,9 +3883,9 @@ class SoundEngine {
     const panner = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
     if (panner) {
       panner.pan.setValueAtTime(spec.panOffset, now);
-      panner.connect(this.ambientBusGain);
+      panner.connect(outNode);
     }
-    const dest: AudioNode = panner || this.ambientBusGain;
+    const dest: AudioNode = panner || outNode;
 
     // 1. Primary surface texture grain / brush from Pink Noise
     const noiseSrc = ctx.createBufferSource();

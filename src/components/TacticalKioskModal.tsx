@@ -662,7 +662,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
       inert={!isOpen || undefined}
       aria-label="Self-Service Tactical Kiosk"
       data-kiosk-drawer="true"
-      className={`fixed left-4 top-16 bottom-20 z-40 w-full max-w-lg flex flex-col transition-transform duration-200 ease-out transform ${
+      className={`fixed inset-x-2.5 sm:inset-x-auto sm:left-4 top-[max(0.5rem,var(--safe-top))] sm:top-16 bottom-[max(0.5rem,var(--safe-bottom))] sm:bottom-20 z-40 sm:w-[min(32rem,calc(100vw-2rem))] max-w-lg mx-auto sm:mx-0 flex flex-col transition-transform duration-200 ease-out transform ${
         isOpen
           ? 'translate-x-0 visible pointer-events-auto'
           : '-translate-x-[120%] invisible pointer-events-none'

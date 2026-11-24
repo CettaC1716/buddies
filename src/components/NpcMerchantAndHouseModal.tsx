@@ -1977,7 +1977,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         data-npc-merchant-modal="true"
         data-lobby-gold-exchange-modal="true"
         data-chat-glass-modal="true"
-        className={`fixed left-3 sm:left-4 top-14 bottom-[76px] my-auto z-40 w-[min(340px,calc(100vw-1.5rem))] sm:w-[356px] max-h-[620px] flex flex-col select-none transition-transform duration-200 ease-out transform ${
+        className={`fixed inset-x-2.5 sm:inset-x-auto sm:left-4 top-[max(0.5rem,var(--safe-top))] sm:top-14 bottom-[calc(64px+var(--safe-bottom))] sm:bottom-[76px] my-auto z-40 sm:w-[356px] max-w-[400px] mx-auto sm:mx-0 max-h-[min(620px,calc(100dvh-4.75rem))] flex flex-col select-none transition-transform duration-200 ease-out transform ${
           isNpcOpen
             ? 'translate-x-0 visible pointer-events-auto'
             : '-translate-x-[120%] invisible pointer-events-none'
@@ -2768,7 +2768,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     </div>
                     <div className="text-xs font-medium text-slate-600 mt-0.5 truncate">
                       {walletConnected
-                        ? `${playerNearAccount} · ${nearTestnetBalance.toFixed(2)} NEAR · ${respiteBalance.toLocaleString()} RESPITE`
+                        ? `${playerNearAccount} · ${respiteBalance.toLocaleString()} RESPITE · ${nearTestnetBalance.toFixed(2)} NEAR`
                         : 'Sign in to exchange currencies.'}
                     </div>
                   </div>

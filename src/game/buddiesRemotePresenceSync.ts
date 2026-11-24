@@ -1017,6 +1017,18 @@ export interface ReconcilablePeerPacket {
   chatBubbleSeq?: number;
   chatBubbleBgColor?: string | null;
   chatBubbleTextColor?: string | null;
+  roleBadge?: string;
+  buildingProject?: string;
+  socialX?: string;
+  socialGithub?: string;
+  socialWebsite?: string;
+  statusCaption?: string;
+  appearOnline?: boolean;
+  allowFriendRequests?: boolean;
+  privateMessages?: string;
+  apartmentVisits?: string;
+  showWalletAddressOnProfile?: boolean;
+  showThingsOnProfile?: boolean;
 }
 
 /**
@@ -1101,6 +1113,19 @@ export function reconcileWorldPeerPacket<T extends ReconcilablePeerPacket>(
     hasClaimedBase: incoming.hasClaimedBase,
     isCafeWorker: incoming.isCafeWorker,
     level: incoming.level,
+    roleBadge: incoming.roleBadge ?? existing.roleBadge,
+    buildingProject: incoming.buildingProject ?? existing.buildingProject,
+    socialX: incoming.socialX ?? existing.socialX,
+    socialGithub: incoming.socialGithub ?? existing.socialGithub,
+    socialWebsite: incoming.socialWebsite ?? existing.socialWebsite,
+    statusCaption: incoming.statusCaption ?? existing.statusCaption,
+    appearOnline: incoming.appearOnline ?? existing.appearOnline,
+    allowFriendRequests: incoming.allowFriendRequests ?? existing.allowFriendRequests,
+    privateMessages: incoming.privateMessages ?? existing.privateMessages,
+    apartmentVisits: incoming.apartmentVisits ?? existing.apartmentVisits,
+    showWalletAddressOnProfile:
+      incoming.showWalletAddressOnProfile ?? existing.showWalletAddressOnProfile,
+    showThingsOnProfile: incoming.showThingsOnProfile ?? existing.showThingsOnProfile,
   };
 }
 

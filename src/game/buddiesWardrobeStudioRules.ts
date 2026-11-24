@@ -25,6 +25,9 @@ export type WardrobeStudioCategoryId =
   | 'face_blush'
   | 'face_facepaint'
   | 'face_beard'
+  | 'face_nose'
+  | 'face_tuning'
+  | 'face_head'
   | 'style_anim'
   | 'style_dance'
   | 'style_pose'
@@ -37,7 +40,10 @@ export type WardrobeFaceCategoryId =
   | 'face_eyeshadow'
   | 'face_blush'
   | 'face_facepaint'
-  | 'face_beard';
+  | 'face_beard'
+  | 'face_nose'
+  | 'face_tuning'
+  | 'face_head';
 export type WardrobeStyleCategoryId =
   | 'style_anim'
   | 'style_dance'
@@ -64,6 +70,8 @@ export interface WardrobeBodyShapeProfile {
   heightScale: number;
   /** Horizontal shoulder/frame multiplier (1.0 = default BaseDoll width). */
   widthScale: number;
+  /** Uniform Head bone proportion multiplier (0.78..1.06, 1.0 = default BaseDoll head size). */
+  headScale?: number;
   /**
    * Optional future-proof override URL when a Body Shape swaps to a radically
    * different topology/skeleton BaseDoll GLB (e.g. Chibi or Stylized Hero).
@@ -77,6 +85,7 @@ export const DEFAULT_NEUTRAL_BODY_SHAPE: WardrobeBodyShapeProfile = {
   morphWeights: {},
   heightScale: 1.0,
   widthScale: 1.0,
+  headScale: 1.0,
   baseDollGlbUrl: null,
   silhouetteTag: 'Balanced',
 };
@@ -173,6 +182,15 @@ export interface WardrobeOutfitDraft {
   styleActionId?: string | null;
   stylePairedId?: string | null;
   clothingTintHex: string | null;
+  noseStyleId?: string | null;
+  lipScale?: number;
+  lipOffsetY?: number;
+  eyeSpacing?: number;
+  eyeTiltDeg?: number;
+  eyeScale?: number;
+  browOffsetY?: number;
+  browTiltDeg?: number;
+  headScale?: number;
 }
 
 export interface WardrobeSavedPreset {
@@ -227,6 +245,15 @@ export const EMPTY_WARDROBE_DRAFT: WardrobeOutfitDraft = {
   styleActionId: null,
   stylePairedId: null,
   clothingTintHex: null,
+  noseStyleId: 'face_nose_default',
+  lipScale: 1.0,
+  lipOffsetY: 0,
+  eyeSpacing: 0,
+  eyeTiltDeg: 0,
+  eyeScale: 1.0,
+  browOffsetY: 0,
+  browTiltDeg: 0,
+  headScale: 1.0,
 };
 
 export const WARDROBE_STUDIO_POSES: readonly WardrobePoseSpec[] = [
@@ -1161,6 +1188,86 @@ export const WARDROBE_STUDIO_ITEMS: readonly WardrobeCatalogItem[] = [
     },
     swatchGradient: ['#fda4af', '#ea580c'],
     accentHex: '#fb7185',
+  },
+
+  // ── Face: Nose (Pilihan Hidung) ──────────────────────────────────────────
+  {
+    id: 'face_nose_default',
+    slot: 'face_nose',
+    gender: 'unisex',
+    name: 'Natural Base',
+    subtitle: 'Classic Smooth Shading',
+    collection: 'Face Essentials',
+    priceLul: 0,
+    isStarterDefault: true,
+    glbPath: null,
+    swatchGradient: ['#f5d0b5', '#b48366'],
+    accentHex: '#d89b7b',
+  },
+  {
+    id: 'face_nose_button',
+    slot: 'face_nose',
+    gender: 'unisex',
+    name: 'Petite Button',
+    subtitle: 'Imut Kancing Ala Anime',
+    collection: 'Face Essentials',
+    priceLul: 0,
+    isStarterDefault: false,
+    glbPath: null,
+    swatchGradient: ['#fbcfe8', '#db2777'],
+    accentHex: '#ec4899',
+  },
+  {
+    id: 'face_nose_anime_sculpted',
+    slot: 'face_nose',
+    gender: 'unisex',
+    name: 'Anime Sculpted',
+    subtitle: 'Mancung Runcing Tajam',
+    collection: 'Face Essentials',
+    priceLul: 0,
+    isStarterDefault: false,
+    glbPath: null,
+    swatchGradient: ['#fed7aa', '#c2410c'],
+    accentHex: '#ea580c',
+  },
+  {
+    id: 'face_nose_korean_petite',
+    slot: 'face_nose',
+    gender: 'unisex',
+    name: 'Korean Petite',
+    subtitle: 'Mungil Halus K-Idol',
+    collection: 'Face Essentials',
+    priceLul: 0,
+    isStarterDefault: false,
+    glbPath: null,
+    swatchGradient: ['#fef08a', '#ca8a04'],
+    accentHex: '#eab308',
+  },
+  {
+    id: 'face_nose_straight_elegant',
+    slot: 'face_nose',
+    gender: 'unisex',
+    name: 'Straight Elegant',
+    subtitle: 'Lurus Elegan Klasik',
+    collection: 'Face Essentials',
+    priceLul: 0,
+    isStarterDefault: false,
+    glbPath: null,
+    swatchGradient: ['#e9d5ff', '#7e22ce'],
+    accentHex: '#a855f7',
+  },
+  {
+    id: 'face_nose_defined_bridge',
+    slot: 'face_nose',
+    gender: 'unisex',
+    name: 'Defined Bridge',
+    subtitle: 'Batang Hidung Tegas',
+    collection: 'Face Essentials',
+    priceLul: 0,
+    isStarterDefault: false,
+    glbPath: null,
+    swatchGradient: ['#cbd5e1', '#334155'],
+    accentHex: '#64748b',
   },
 
   // ── Style: Animation Sets (Set Animasi Idle/Walk/Run) ─────────────────────
@@ -2106,7 +2213,16 @@ export function areWardrobeDraftsEqual(a: WardrobeOutfitDraft, b: WardrobeOutfit
     (a.stylePoseId ?? null) === (b.stylePoseId ?? null) &&
     (a.styleActionId ?? null) === (b.styleActionId ?? null) &&
     (a.stylePairedId ?? null) === (b.stylePairedId ?? null) &&
-    a.clothingTintHex === b.clothingTintHex
+    a.clothingTintHex === b.clothingTintHex &&
+    (a.noseStyleId ?? 'face_nose_default') === (b.noseStyleId ?? 'face_nose_default') &&
+    (a.lipScale ?? 1.0) === (b.lipScale ?? 1.0) &&
+    (a.lipOffsetY ?? 0) === (b.lipOffsetY ?? 0) &&
+    (a.eyeSpacing ?? 0) === (b.eyeSpacing ?? 0) &&
+    (a.eyeTiltDeg ?? 0) === (b.eyeTiltDeg ?? 0) &&
+    (a.eyeScale ?? 1.0) === (b.eyeScale ?? 1.0) &&
+    (a.browOffsetY ?? 0) === (b.browOffsetY ?? 0) &&
+    (a.browTiltDeg ?? 0) === (b.browTiltDeg ?? 0) &&
+    (a.headScale ?? 1.0) === (b.headScale ?? 1.0)
   );
 }
 
@@ -2192,6 +2308,10 @@ export function applyItemSelectionToDraft(
   }
   if (item.slot === 'face_beard') {
     next.beardId = (next.beardId ?? null) === resolvedId ? null : resolvedId;
+    return next;
+  }
+  if (item.slot === 'face_nose') {
+    next.noseStyleId = next.noseStyleId === resolvedId ? 'face_nose_default' : resolvedId;
     return next;
   }
   if (item.slot === 'style_anim') {
@@ -2354,6 +2474,15 @@ export function sanitizeDraftToOwnedOnly(
     styleActionId: keepIfOwned(draft.styleActionId),
     stylePairedId: keepIfOwned(draft.stylePairedId),
     clothingTintHex: draft.clothingTintHex,
+    noseStyleId: keepIfOwned(draft.noseStyleId) ?? 'face_nose_default',
+    lipScale: draft.lipScale ?? 1.0,
+    lipOffsetY: draft.lipOffsetY ?? 0,
+    eyeSpacing: draft.eyeSpacing ?? 0,
+    eyeTiltDeg: draft.eyeTiltDeg ?? 0,
+    eyeScale: draft.eyeScale ?? 1.0,
+    browOffsetY: draft.browOffsetY ?? 0,
+    browTiltDeg: draft.browTiltDeg ?? 0,
+    headScale: draft.headScale ?? 1.0,
   };
 }
 
@@ -2477,10 +2606,18 @@ export function resolveWardrobeDraftBodyShape(
   draft: WardrobeOutfitDraft,
 ): WardrobeBodyShapeProfile {
   const item = getWardrobeCatalogItemById(draft.bodyShapeId);
-  if (item && item.slot === 'body_shape' && item.bodyShape) {
-    return item.bodyShape;
-  }
-  return DEFAULT_NEUTRAL_BODY_SHAPE;
+  const base =
+    item && item.slot === 'body_shape' && item.bodyShape
+      ? item.bodyShape
+      : DEFAULT_NEUTRAL_BODY_SHAPE;
+  const headScale =
+    typeof draft.headScale === 'number' && Number.isFinite(draft.headScale)
+      ? Math.max(0.78, Math.min(1.06, draft.headScale))
+      : 1.0;
+  return {
+    ...base,
+    headScale,
+  };
 }
 
 /**
@@ -2538,6 +2675,41 @@ export function resolveWardrobeDraftFaceCustomization(
       underwearItem?.slot === 'underwear' ? pickGenderedOverlay(underwearItem) : null,
     corewearOverlay:
       corewearItem?.slot === 'underwear' ? pickGenderedOverlay(corewearItem) : null,
+    tuning: {
+      lipScale:
+        typeof draft.lipScale === 'number' && Number.isFinite(draft.lipScale)
+          ? Math.max(0.72, Math.min(1.18, draft.lipScale))
+          : 1.0,
+      lipOffsetY:
+        typeof draft.lipOffsetY === 'number' && Number.isFinite(draft.lipOffsetY)
+          ? Math.max(-6, Math.min(6, draft.lipOffsetY))
+          : 0,
+      eyeSpacing:
+        typeof draft.eyeSpacing === 'number' && Number.isFinite(draft.eyeSpacing)
+          ? Math.max(-5, Math.min(10, draft.eyeSpacing))
+          : 0,
+      eyeTiltDeg:
+        typeof draft.eyeTiltDeg === 'number' && Number.isFinite(draft.eyeTiltDeg)
+          ? Math.max(-8, Math.min(10, draft.eyeTiltDeg))
+          : 0,
+      eyeScale:
+        typeof draft.eyeScale === 'number' && Number.isFinite(draft.eyeScale)
+          ? Math.max(0.82, Math.min(1.22, draft.eyeScale))
+          : 1.0,
+      browOffsetY:
+        typeof draft.browOffsetY === 'number' && Number.isFinite(draft.browOffsetY)
+          ? Math.max(-7, Math.min(6, draft.browOffsetY))
+          : 0,
+      browTiltDeg:
+        typeof draft.browTiltDeg === 'number' && Number.isFinite(draft.browTiltDeg)
+          ? Math.max(-10, Math.min(12, draft.browTiltDeg))
+          : 0,
+      noseStyleId: draft.noseStyleId ?? 'face_nose_default',
+      headScale:
+        typeof draft.headScale === 'number' && Number.isFinite(draft.headScale)
+          ? Math.max(0.78, Math.min(1.06, draft.headScale))
+          : 1.0,
+    },
   };
 }
 

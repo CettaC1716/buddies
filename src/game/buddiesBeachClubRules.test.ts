@@ -9,8 +9,10 @@ import {
   evaluateBeachClubElevation,
   evaluateBeachClubPoolWaterSdf,
   getBeachClubObstacles,
+  getBeachClubStairCorridors,
   isPointInBeachClubPoolWater,
 } from './buddiesBeachClubRules';
+import { evaluateHarborSeabedDrop, getTerrainElevation } from './buddiesPlanetCurvature';
 import { buildCoastalBeachClub3D } from './buddiesBeachClubBuilder';
 import {
   bakeStaticGroupMeshes,
@@ -80,7 +82,7 @@ test('BEACH_CLUB_MASTERPLAN seamlessly joins Kai Beach (+46.2) and East Outer Si
   assert.ok(Math.abs(evaluateBeachClubElevation(80.0, 29.5) - 0.02) < 1e-6);
   assert.equal(classifyBeachClubSurface(80.0, 29.5), 'stone_road');
 
-  assert.equal(BEACH_CLUB_MASTERPLAN.cabanas.length, 9);
+  assert.equal(BEACH_CLUB_MASTERPLAN.cabanas.length, 5);
   assert.equal(BEACH_CLUB_MASTERPLAN.sunkenPods.length, 6);
   assert.equal(BEACH_CLUB_MASTERPLAN.pools.southSeaPool.rotY, 0);
 });
@@ -116,7 +118,7 @@ test('evaluateBeachClubPoolWaterSdf and evaluateBeachClubElevation enforce multi
   // Ground-level Promenade (+0.02m flush with roadside ground) steps up to VIP Mezzanine (+0.64m), then down to Sunbed Peninsula (-0.54m) > Ocean Terrace (-1.00m) > Beach Sand (-2.0m)
   const eProm = evaluateBeachClubElevation(87.5, 25.0);
   const eVip = evaluateBeachClubElevation(95.0, -30.0);
-  const ePen = evaluateBeachClubElevation(108.5, -35.0);
+  const ePen = evaluateBeachClubElevation(106.0, -35.0);
   const eOceanEdge = evaluateBeachClubElevation(108.5, 43.8);
   const eSand = evaluateBeachClubElevation(126.0, 25.0);
   assert.ok(Math.abs(eProm - 0.02) < 1e-6, 'Promenade (+0.02m) must sit flush at roadside ground level');
@@ -152,7 +154,7 @@ test('evaluateBeachClubPoolWaterSdf and evaluateBeachClubElevation enforce multi
   const bar = BEACH_CLUB_MASTERPLAN.cocktailBar;
   assert.ok(Math.abs(evaluateBeachClubElevation(bar.cx, bar.cz) - 0.68) < 1e-6);
   const cab0 = BEACH_CLUB_MASTERPLAN.cabanas[0];
-  assert.ok(Math.abs(evaluateBeachClubElevation(cab0.cx, cab0.cz) - 0.76) < 1e-6);
+  assert.ok(Math.abs(evaluateBeachClubElevation(cab0.cx, cab0.cz) - cab0.plinthTopY) < 1e-6);
 
   // 7. Promenade & widened beach sand classifications
   assert.equal(classifyBeachClubSurface(87.5, -20.0), 'stone_road');
@@ -183,6 +185,169 @@ test('getBeachClubObstacles registers DJ Pavilion, Cocktail Bar, Cabana daybeds,
   for (const palm of BEACH_CLUB_MASTERPLAN.palms) {
     assert.ok(byId.has(`${palm.id}_trunk`), `Missing palm collider for ${palm.id}`);
   }
+  for (const planter of BEACH_CLUB_MASTERPLAN.planters) {
+    assert.ok(byId.has(planter.id), `Missing planter collider for ${planter.id}`);
+  }
+  for (const wallId of [
+    'beach_club_retaining_vip_south_mid',
+    'beach_club_retaining_weir_n1',
+    'beach_club_retaining_weir_n2',
+    'beach_club_retaining_weir_s',
+  ]) {
+    const wall = byId.get(wallId);
+    assert.ok(wall, `Missing height-aware retaining wall ${wallId}`);
+    assert.equal(wall.isRetainingWall, true);
+  }
+});
+
+test('every Beach Club staircase has >= 1.8m width, smooth monotonic elevation with zero cliffs, and zero pool water overlap', () => {
+  const corridors = getBeachClubStairCorridors();
+  assert.equal(corridors.length, BEACH_CLUB_MASTERPLAN.stairFlights.length);
+
+  for (const sf of BEACH_CLUB_MASTERPLAN.stairFlights) {
+    const width = sf.axis === 'x' ? sf.maxZ - sf.minZ : sf.maxX - sf.minX;
+    assert.ok(width >= 1.8, `Stair ${sf.id} clear width ${width.toFixed(2)}m must be >= 1.8m`);
+
+    const dir = Math.sign(sf.toElevY - sf.fromElevY);
+    const steps = 24;
+    for (let w = 0; w <= 6; w++) {
+      const wf = w / 6;
+      let prevE: number | null = null;
+      for (let s = -1; s <= steps + 1; s++) {
+        const f = s / steps;
+        const x =
+          sf.axis === 'x'
+            ? sf.minX + (sf.maxX - sf.minX) * f
+            : sf.minX + 0.1 + (sf.maxX - sf.minX - 0.2) * wf;
+        const z =
+          sf.axis === 'z'
+            ? sf.minZ + (sf.maxZ - sf.minZ) * f
+            : sf.minZ + 0.1 + (sf.maxZ - sf.minZ - 0.2) * wf;
+        const e = getTerrainElevation(x, z);
+        if (prevE !== null) {
+          const delta = e - prevE;
+          assert.ok(
+            Math.abs(delta) <= 0.1,
+            `Elevation cliff on ${sf.id} at (${x.toFixed(2)}, ${z.toFixed(2)}): ${prevE.toFixed(3)} -> ${e.toFixed(3)}`,
+          );
+          if (s >= 1 && s <= steps) {
+            assert.ok(
+              delta * dir >= -1e-6,
+              `Non-monotonic step on ${sf.id} at (${x.toFixed(2)}, ${z.toFixed(2)}): ${prevE.toFixed(3)} -> ${e.toFixed(3)}`,
+            );
+          }
+        }
+        prevE = e;
+
+        // Zero pool water overlap across the stair body and immediate entry/exit landings
+        const waterSdf = evaluateBeachClubPoolWaterSdf(x, z);
+        assert.ok(
+          waterSdf >= -1e-6,
+          `Stair ${sf.id} overlaps pool water (sdf=${waterSdf.toFixed(3)}) at (${x.toFixed(2)}, ${z.toFixed(2)})`,
+        );
+      }
+    }
+  }
+
+  // DJ stage rear steps transition smoothly to both -0.56m west and -0.96m east decks
+  const dj = BEACH_CLUB_MASTERPLAN.djStage;
+  const cR = Math.cos(dj.rotY);
+  const sR = Math.sin(dj.rotY);
+  for (const lx of [-2.0, 1.5, 5.0]) {
+    let prev = evaluateBeachClubElevation(dj.cx + lx * cR + 4.0 * sR, dj.cz - lx * sR + 4.0 * cR);
+    for (let lz = 4.25; lz <= 5.75; lz += 0.25) {
+      const wx = dj.cx + lx * cR + lz * sR;
+      const wz = dj.cz - lx * sR + lz * cR;
+      const cur = evaluateBeachClubElevation(wx, wz);
+      assert.ok(cur <= prev + 1e-6, `DJ step must descend monotonically at lx=${lx}, lz=${lz}`);
+      assert.ok(prev - cur <= 0.28, `DJ step cliff too steep at lx=${lx}, lz=${lz}: ${prev} -> ${cur}`);
+      prev = cur;
+    }
+  }
+});
+
+test('zero Beach Club colliders overlap staircase footprints or block main staircase landings, and retaining walls stay below upper terraces', () => {
+  const obstacles = getBeachClubObstacles();
+
+  const obbOverlapsAabb = (
+    o: (typeof obstacles)[number],
+    minX: number,
+    maxX: number,
+    minZ: number,
+    maxZ: number,
+  ): boolean => {
+    const c = Math.abs(Math.cos(o.rotY));
+    const s = Math.abs(Math.sin(o.rotY));
+    const ex = o.halfX * c + o.halfZ * s;
+    const ez = o.halfX * s + o.halfZ * c;
+    return !(o.x + ex <= minX || o.x - ex >= maxX || o.z + ez <= minZ || o.z - ez >= maxZ);
+  };
+
+  for (const sf of BEACH_CLUB_MASTERPLAN.stairFlights) {
+    const padX = sf.axis === 'x' ? 1.0 : 0.2;
+    const padZ = sf.axis === 'z' ? 1.0 : 0.2;
+    for (const obs of obstacles) {
+      assert.equal(
+        obbOverlapsAabb(obs, sf.minX - padX, sf.maxX + padX, sf.minZ - padZ, sf.maxZ + padZ),
+        false,
+        `Collider ${obs.id} blocks stair/landing ${sf.id}`,
+      );
+    }
+  }
+
+  // Height-aware retaining walls & lower planters sit strictly below upper terrace elevY
+  const byId = new Map(obstacles.map((o) => [o.id, o]));
+  const vipWall = byId.get('beach_club_retaining_vip_south_mid')!;
+  assert.ok(vipWall.heightY < 0.64 && vipWall.heightY > -0.56);
+  const midPlanter = byId.get('bc_planter_mid_w')!;
+  assert.ok(midPlanter.heightY < 0.64 && midPlanter.heightY > -0.56);
+  for (const weirId of [
+    'beach_club_retaining_weir_n1',
+    'beach_club_retaining_weir_n2',
+    'beach_club_retaining_weir_s',
+  ]) {
+    const weir = byId.get(weirId)!;
+    assert.ok(weir.heightY < -1.0 && weir.heightY > -2.0, `Weir ${weirId} heightY=${weir.heightY}`);
+  }
+
+  // All festoon pole anchors sit on dry ground clear of pools, cabanas, and Cocktail Bar
+  for (const span of BEACH_CLUB_MASTERPLAN.festoonSpans) {
+    for (const [px, pz] of [
+      [span.ax, span.az],
+      [span.bx, span.bz],
+    ]) {
+      assert.ok(
+        evaluateBeachClubPoolWaterSdf(px, pz) >= 0.2,
+        `Festoon ${span.id} pole (${px}, ${pz}) must stay clear of pool water`,
+      );
+      for (const cab of BEACH_CLUB_MASTERPLAN.cabanas) {
+        const insideCab =
+          Math.abs(px - cab.cx) <= cab.plinthHalfX && Math.abs(pz - cab.cz) <= cab.plinthHalfZ;
+        assert.equal(insideCab, false, `Festoon ${span.id} pole (${px}, ${pz}) overlaps ${cab.id}`);
+      }
+      const dBar = Math.hypot(
+        px - BEACH_CLUB_MASTERPLAN.cocktailBar.cx,
+        pz - BEACH_CLUB_MASTERPLAN.cocktailBar.cz,
+      );
+      assert.ok(
+        dBar > BEACH_CLUB_MASTERPLAN.cocktailBar.padRadiusM,
+        `Festoon ${span.id} pole (${px}, ${pz}) overlaps Cocktail Bar podium`,
+      );
+    }
+  }
+});
+
+test('underlying coastal seabed terrain never pokes through any Beach Club terrace deck, staircase, or pool basin', () => {
+  for (let x = 78.5; x <= 121.4; x += 0.5) {
+    for (let z = -96.2; z <= 45.2; z += 1.0) {
+      const bed = evaluateHarborSeabedDrop(x, z);
+      const deck = evaluateBeachClubElevation(x, z);
+      assert.ok(
+        bed <= deck - 0.01,
+        `Terrain poke-through at (${x}, ${z}): bed=${bed.toFixed(3)} > deck=${deck.toFixed(3)}`,
+      );
+    }
+  }
 });
 
 test('buildCoastalBeachClub3D builds batched scene with ZERO PointLights, ZERO wood on Cocktail Bar, animated DJ stage & twilight/night emissives', () => {
@@ -209,7 +374,7 @@ test('buildCoastalBeachClub3D builds batched scene with ZERO PointLights, ZERO w
       bakeStaticGroupMeshes: spyingBake,
     });
 
-    assert.equal(handle.stats.cabanaCount, 9);
+    assert.equal(handle.stats.cabanaCount, 5);
     assert.equal(handle.stats.sunkenPodCount, 6);
     assert.ok(handle.stats.palmCount >= 26);
     assert.ok(handle.stats.festoonBulbCount >= 100);

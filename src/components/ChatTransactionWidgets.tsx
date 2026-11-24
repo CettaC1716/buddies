@@ -314,7 +314,7 @@ export function InlineSwapNearPanel({
           Rate: <strong className="text-violet-600">1 NEAR = {ratePerNear} RESPITE</strong>
         </span>
         <span>
-          {nearTestnetBalance.toFixed(2)} NEAR · {respiteBalance.toLocaleString()} R
+          {respiteBalance.toLocaleString()} RESPITE · {nearTestnetBalance.toFixed(2)} NEAR
         </span>
       </div>
 

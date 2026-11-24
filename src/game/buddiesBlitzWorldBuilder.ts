@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import {
+  getAnyRoleBadgeSpec,
+  type AnyRoleBadgeId,
+} from './buddiesProfileIdentity';
+import {
   CENTRAL_PARK_TRANSIT_KIOSK_SPEC,
   CENTRAL_PLAZA_INFO_CENTER_KIOSK_SPEC,
   CITY_TRAFFIC_SIGNAL_POLE_SPECS,
@@ -418,6 +422,7 @@ export function createGlassmorphicNameplate(
   defaultName = 'CITIZEN',
   _defaultSub = '',
   isNpc = false,
+  defaultRoleBadge?: AnyRoleBadgeId,
 ) {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
@@ -442,8 +447,116 @@ export function createGlassmorphicNameplate(
   sprite.receiveShadow = false;
   sprite.raycast = () => {};
 
-  const updatePlate = (name: string, _sub = '', emblemType: 'npc' | 'player_rookie' | 'player_veteran' = isNpc ? 'npc' : 'player_rookie') => {
+  const drawWhiteRoleIcon = (
+    icon: 'gear' | 'crown' | 'paintbrush' | 'smiley' | 'shield' | 'merchant',
+    cx: number,
+    cy: number,
+    badgeColor: string,
+  ) => {
+    ctx.save();
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    if (icon === 'gear') {
+      const teeth = 8;
+      const outerR = 16;
+      const innerR = 11.5;
+      ctx.beginPath();
+      for (let i = 0; i < teeth * 2; i++) {
+        const angle = (i * Math.PI) / teeth;
+        const r = i % 2 === 0 ? outerR : innerR;
+        const px = cx + Math.cos(angle) * r;
+        const py = cy + Math.sin(angle) * r;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = badgeColor;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (icon === 'crown') {
+      ctx.beginPath();
+      ctx.moveTo(cx - 14, cy + 10);
+      ctx.lineTo(cx - 15, cy - 6);
+      ctx.lineTo(cx - 6, cy + 1);
+      ctx.lineTo(cx, cy - 12);
+      ctx.lineTo(cx + 6, cy + 1);
+      ctx.lineTo(cx + 15, cy - 6);
+      ctx.lineTo(cx + 14, cy + 10);
+      ctx.closePath();
+      ctx.fill();
+    } else if (icon === 'paintbrush') {
+      ctx.translate(cx, cy);
+      ctx.rotate(-Math.PI / 4);
+      // Brush handle
+      ctx.beginPath();
+      ctx.roundRect(-14, -3, 18, 6, 3);
+      ctx.fill();
+      // Bristle tip
+      ctx.beginPath();
+      ctx.moveTo(5, -5);
+      ctx.quadraticCurveTo(15, -5, 16, 0);
+      ctx.quadraticCurveTo(15, 5, 5, 5);
+      ctx.closePath();
+      ctx.fill();
+    } else if (icon === 'smiley') {
+      ctx.lineWidth = 3.2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 13.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx - 4.8, cy - 3, 2.1, 0, Math.PI * 2);
+      ctx.arc(cx + 4.8, cy - 3, 2.1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 2.8;
+      ctx.beginPath();
+      ctx.arc(cx, cy + 1.5, 6.2, 0.2 * Math.PI, 0.8 * Math.PI);
+      ctx.stroke();
+    } else if (icon === 'shield') {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 14);
+      ctx.lineTo(cx + 13, cy - 8);
+      ctx.lineTo(cx + 12, cy + 2);
+      ctx.quadraticCurveTo(cx + 10, cy + 11, cx, cy + 16);
+      ctx.quadraticCurveTo(cx - 10, cy + 11, cx - 12, cy + 2);
+      ctx.lineTo(cx - 13, cy - 8);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // NPC Merchant storefront icon
+      ctx.beginPath();
+      ctx.roundRect(cx - 12, cy - 2, 24, 13, 2.5);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(cx - 15, cy - 2);
+      ctx.lineTo(cx - 11, cy - 12);
+      ctx.lineTo(cx + 11, cy - 12);
+      ctx.lineTo(cx + 15, cy - 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = badgeColor;
+      ctx.fillRect(cx - 3.5, cy + 3, 7, 8);
+    }
+
+    ctx.restore();
+  };
+
+  const updatePlate = (
+    name: string,
+    _sub = '',
+    emblemType: 'npc' | 'player_rookie' | 'player_veteran' = isNpc ? 'npc' : 'player_rookie',
+    roleBadge?: AnyRoleBadgeId,
+  ) => {
     ctx.clearRect(0, 0, 512, 116);
+
+    const badgeSpec = getAnyRoleBadgeSpec(
+      roleBadge ?? defaultRoleBadge,
+      emblemType === 'npc',
+    );
 
     // 1. Crisp High-Contrast Frosted Dark Slate Backing matching UI Prompts
     const bgGrad = ctx.createLinearGradient(0, 8, 0, 108);
@@ -478,82 +591,18 @@ export function createGlassmorphicNameplate(
     ctx.roundRect(10, 10, 492, 96, 20);
     ctx.stroke();
 
-    // 4. Render Emblem (Left badge circle/shield)
+    // 4. Render Role Badge Circle (filled circle, white icon, thin dark ring)
     ctx.save();
     const cx = 60;
     const cy = 58;
-
-    if (emblemType === 'npc') {
-      // NPC Emblem: Royal Golden Crown & Star Crest
-      ctx.fillStyle = '#0f172a';
-      ctx.beginPath();
-      ctx.arc(cx, cy, 29, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.lineWidth = 3.0;
-      ctx.strokeStyle = '#facc15';
-      ctx.stroke();
-
-      // Golden Crown polygon
-      ctx.fillStyle = '#facc15';
-      ctx.beginPath();
-      ctx.moveTo(cx - 15, cy + 11);
-      ctx.lineTo(cx - 16, cy - 6);
-      ctx.lineTo(cx - 6, cy + 1);
-      ctx.lineTo(cx, cy - 13);
-      ctx.lineTo(cx + 6, cy + 1);
-      ctx.lineTo(cx + 16, cy - 6);
-      ctx.lineTo(cx + 15, cy + 11);
-      ctx.closePath();
-      ctx.fill();
-      ctx.lineWidth = 1.2;
-      ctx.strokeStyle = '#78350f';
-      ctx.stroke();
-
-      // Center ruby gem
-      ctx.fillStyle = '#ef4444';
-      ctx.beginPath();
-      ctx.arc(cx, cy + 3, 3, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
-      // Player Default Rookie Emblem: Blue Tactical Shield with Wing/Chevron
-      ctx.fillStyle = '#0284c7';
-      ctx.beginPath();
-      ctx.arc(cx, cy, 29, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.lineWidth = 3.0;
-      ctx.strokeStyle = '#38bdf8';
-      ctx.stroke();
-
-      // Shield Chevron / Wings (Rookie military badge)
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - 14);
-      ctx.lineTo(cx + 14, cy - 3);
-      ctx.lineTo(cx + 11, cy + 11);
-      ctx.lineTo(cx, cy + 17);
-      ctx.lineTo(cx - 11, cy + 11);
-      ctx.lineTo(cx - 14, cy - 3);
-      ctx.closePath();
-      ctx.fill();
-
-      // Inner tactical star / chevron
-      ctx.fillStyle = '#0284c7';
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - 8);
-      ctx.lineTo(cx + 8, cy - 1);
-      ctx.lineTo(cx + 5, cy + 8);
-      ctx.lineTo(cx, cy + 12);
-      ctx.lineTo(cx - 5, cy + 8);
-      ctx.lineTo(cx - 8, cy - 1);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '900 14px "Barlow", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('1', cx, cy + 2);
-    }
+    ctx.fillStyle = badgeSpec.color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 29, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 4.0;
+    ctx.strokeStyle = '#0f172a';
+    ctx.stroke();
+    drawWhiteRoleIcon(badgeSpec.icon, cx, cy, badgeSpec.color);
     ctx.restore();
 
     // 5. Player / NPC Name Text (Bold, legible at compact 146x33px constant screen size)
@@ -572,7 +621,7 @@ export function createGlassmorphicNameplate(
     tex.needsUpdate = true;
   };
 
-  updatePlate(defaultName, '', isNpc ? 'npc' : 'player_rookie');
+  updatePlate(defaultName, '', isNpc ? 'npc' : 'player_rookie', defaultRoleBadge);
 
   return { sprite, updatePlate };
 }
@@ -826,7 +875,7 @@ export function buildStaticWorldStructuresList(params: {
     },
 
     // Nautical Rope Railings & Staircase Side Handrails
-    { id: 'beach_railing_north', x: 85.2, z: 46.3, halfX: 6.8, halfZ: 0.28, rotY: 0, heightY: 2.4, mat: 'wood' },
+    // (North edge z = 46.3 opens directly onto Beach Club's stair_prom_kai_boardwalk!)
     { id: 'beach_railing_sea_n', x: 91.9, z: 55.5, halfX: 0.28, halfZ: 9.25, rotY: 0, heightY: 2.4, mat: 'wood' },
     { id: 'beach_railing_sea_mid', x: 91.9, z: 85.4, halfX: 0.28, halfZ: 8.65, rotY: 0, heightY: 2.4, mat: 'wood' },
     { id: 'beach_railing_sea_s', x: 91.9, z: 100.7, halfX: 0.28, halfZ: 1.55, rotY: 0, heightY: 2.4, mat: 'wood' },

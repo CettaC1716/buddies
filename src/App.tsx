@@ -4,19 +4,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Wallet,
-  History,
   ArrowLeft,
-  Backpack,
-  Package,
   Play,
   LogIn,
   X,
-  Shirt,
   Navigation,
   MapPin,
   Send,
   PersonStanding,
-  Coins,
   ClipboardList,
   Gift,
   HeartHandshake,
@@ -24,6 +19,7 @@ import {
   MessageSquare,
   User,
   UserCheck,
+  UserPlus,
   Users,
   Zap,
 } from 'lucide-react';
@@ -109,7 +105,59 @@ import {
   resolveBubbleStyle,
   sanitizeHexColor,
 } from './game/buddiesRemotePresenceSync';
-import { CharacterProfileModal } from './components/CharacterProfileModal';
+import {
+  CharacterProfileModal,
+  PROFILE_IDENTITY_UPDATED_EVENT,
+} from './components/CharacterProfileModal';
+import {
+  encodeProfileIdentityToSkinsTags,
+  parseProfileIdentityFromSkinsTags,
+  readStoredProfileIdentity,
+  writeStoredProfileIdentity,
+  type PlayerProfileIdentity,
+} from './game/buddiesProfileIdentity';
+import {
+  GRAPHICS_QUALITY_CHANGED_EVENT,
+  readStoredGraphicsQuality,
+  writeStoredGraphicsQuality,
+  type GraphicsQualityPreset,
+} from './game/buddiesGraphicsSettings';
+import {
+  addBlockedPlayer,
+  canReceivePrivateMessageFrom,
+  canSendPrivateMessageTo,
+  encodePrivacySettingsToSkinsTags,
+  isPlayerBlocked,
+  mapApartmentVisitPermissionToSafezoneMode,
+  parsePrivacySettingsFromSkinsTags,
+  PRIVACY_SETTINGS_UPDATED_EVENT,
+  readStoredPrivacySettings,
+  removeBlockedPlayer,
+  sanitizePlayerPrivacySettings,
+  writeStoredPrivacySettings,
+  type PlayerPrivacySettings,
+  type PrivateMessagePermission,
+} from './game/buddiesPrivacySettings';
+import {
+  addFollowingEntry,
+  addFriendEntry,
+  addPendingOutgoingFriendRequest,
+  canShowAddFriendAction,
+  encodeSocialGraphToSkinsTags,
+  hasPendingOutgoingFriendRequest,
+  isFollowingPlayer,
+  isFriendWith,
+  parseSocialGraphFromSkinsTags,
+  readStoredSocialGraph,
+  reconcileAcceptedFriendLetters,
+  removeFollowingEntry,
+  removeFriendEntry,
+  removePendingOutgoingFriendRequest,
+  sanitizePlayerSocialGraph,
+  SOCIAL_GRAPH_UPDATED_EVENT,
+  writeStoredSocialGraph,
+  type PlayerSocialGraph,
+} from './game/buddiesSocialGraph';
 import { MobileResponsiveControls } from './components/MobileResponsiveControls';
 import { QuickPoseStyleModal } from './components/QuickPoseStyleModal';
 import {
@@ -117,7 +165,7 @@ import {
   type PairedInteractionStatusState,
 } from './components/PairedInteractionOverlay';
 import { NearWalletSelectorModal } from './components/NearWalletSelectorModal';
-import { InGameWalletConfirmModal } from './components/InGameWalletConfirmModal';
+import { PersonalWalletPanel } from './components/PersonalWalletPanel';
 import {
   NpcMerchantAndHouseModal,
   HouseInteriorPlacementState,
@@ -126,18 +174,15 @@ import { DexMarketplaceModal } from './components/DexMarketplaceModal';
 import { ShorelineFishingHudAndShowcase } from './components/ShorelineCatchShowcaseModal';
 import {
   Fish3dPreviewModal,
-  Fish3dThumbnail,
   type Fish3dPreviewSpec,
 } from './components/Fish3dPreviewModal';
-import { Furniture3dThumbnail } from './components/Furniture3dThumbnail';
-import { WalletAssetPortraitCard } from './components/WalletAssetPortraitCard';
+import { MyThingsPanel } from './components/MyThingsPanel';
+import type { MyThingsSectionId, PersonalWalletTabId } from './components/myThingsRules';
 import {
   createInitialMerchantMarketState,
   executeLulToCyonExchange,
   executeLulToCyonExchangePackets,
   evaluateLulToCyonExchangeQuote,
-  evaluateMerchantItemQuote,
-  formatHouseDeedBadgeLabel,
   formatWalletHistoryActionLabel,
   formatWalletHistoryAmountDisplay,
   getHouseStyleDisplaySpec,
@@ -253,7 +298,6 @@ import {
   resolvePostClaimNearBalance,
   setLocalTxConfirmHandler,
   shouldAttemptAttestedHanaClaim,
-  type LocalTxConfirmRequest,
 } from './lib/nearClient';
 import {
   mirrorRecipientOnChainRespiteCacheInSupabase,
@@ -289,7 +333,21 @@ import {
   type DbPropertyListingRow,
   type FishNftMarketSalesStats,
   type WorldMultiplayerPairedPoseEvent,
+  type BuddiesLetter,
 } from './lib/supabaseClient';
+import {
+  CITY_FEED_UPDATED_EVENT,
+  fetchCityFeedPosts,
+  readCachedCityFeedPosts,
+  type CityFeedPost,
+} from './lib/cityFeedService';
+import {
+  canConfirmPendingTx,
+  createPendingWalletTxItem,
+  isPendingTxExpired,
+  type PendingWalletTxItem,
+} from './lib/pendingWalletTxQueue';
+import { buildCityNewsCardSummary } from './lib/phoneHomeCityNews';
 import {
   FISH_SPECIES_CATALOG,
   computeLengthCmFromWeightKg,
@@ -316,8 +374,6 @@ import {
   getEquippedTorsoStorageKey,
   getOwnedApparelStorageKey,
   purchaseFashionApparelToBag,
-  resolveEquippedTorsoGlbForGender,
-  toggleEquipFashionApparel,
 } from './game/buddiesFashionKioskRules';
 import {
   EMPTY_WARDROBE_DRAFT,
@@ -349,6 +405,7 @@ import {
 import { HudAudioVolumeControl } from './components/HudAudioVolumeControl';
 import { HudBottomAvatarDock } from './components/HudBottomAvatarDock';
 import { HudWeatherAndTimeControl } from './components/HudWeatherAndTimeControl';
+import { useAdaptiveViewport } from './lib/useAdaptiveViewport';
 import {
   HudSmartphoneIcon,
   SmartphoneOsModal,
@@ -514,6 +571,10 @@ const QA_ALL_UNLOCKED_MERCHANT_IDS: readonly string[] = MERCHANT_CATALOG_ITEMS.m
 );
 
 export default function App() {
+  const adaptiveViewport = useAdaptiveViewport();
+  const isCompactHudLayout =
+    !adaptiveViewport.isDesktop || adaptiveViewport.isCompactHeight;
+
   const [gameState, setGameState] = useState<GameState>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -705,7 +766,6 @@ export default function App() {
     }
     return '';
   });
-  const [walletAddressCopiedToast, setWalletAddressCopiedToast] = useState<boolean>(false);
   const [walletNetworkChoice] = useState<NearNetworkId>('testnet');
   const [isVerifyingNearWallet, setIsVerifyingNearWallet] = useState<boolean>(false);
   const [walletConnectError, setWalletConnectError] = useState<string | null>(null);
@@ -1130,6 +1190,16 @@ export default function App() {
           stylePairedId: typeof parsed.stylePairedId === 'string' ? parsed.stylePairedId : null,
           clothingTintHex:
             typeof parsed.clothingTintHex === 'string' ? parsed.clothingTintHex : null,
+          noseStyleId:
+            typeof parsed.noseStyleId === 'string' ? parsed.noseStyleId : 'face_nose_default',
+          lipScale: typeof parsed.lipScale === 'number' && Number.isFinite(parsed.lipScale) ? parsed.lipScale : 1.0,
+          lipOffsetY: typeof parsed.lipOffsetY === 'number' && Number.isFinite(parsed.lipOffsetY) ? parsed.lipOffsetY : 0,
+          eyeSpacing: typeof parsed.eyeSpacing === 'number' && Number.isFinite(parsed.eyeSpacing) ? parsed.eyeSpacing : 0,
+          eyeTiltDeg: typeof parsed.eyeTiltDeg === 'number' && Number.isFinite(parsed.eyeTiltDeg) ? parsed.eyeTiltDeg : 0,
+          eyeScale: typeof parsed.eyeScale === 'number' && Number.isFinite(parsed.eyeScale) ? parsed.eyeScale : 1.0,
+          browOffsetY: typeof parsed.browOffsetY === 'number' && Number.isFinite(parsed.browOffsetY) ? parsed.browOffsetY : 0,
+          browTiltDeg: typeof parsed.browTiltDeg === 'number' && Number.isFinite(parsed.browTiltDeg) ? parsed.browTiltDeg : 0,
+          headScale: typeof parsed.headScale === 'number' && Number.isFinite(parsed.headScale) ? parsed.headScale : 1.0,
         };
       } catch {
         return { ...EMPTY_WARDROBE_DRAFT, topId: fallbackTorsoId };
@@ -1255,7 +1325,7 @@ export default function App() {
     expectedMinNear: number;
     expiresAtMs: number;
   } | null>(null);
-  const [personalWalletTab, setPersonalWalletTab] = useState<'wallet' | 'assets' | 'history'>('wallet');
+  const [personalWalletTab, setPersonalWalletTab] = useState<PersonalWalletTabId>('wallet');
   const [isSampleHouseView, setIsSampleHouseView] = useState<boolean>(false);
   const persistHouseStyleLocally = useCallback(
     (accountId: string, style: HouseArchitectureStyle) => {
@@ -1284,11 +1354,36 @@ export default function App() {
     }
   }, []);
 
+  const [playerProfileIdentity, setPlayerProfileIdentity] = useState<PlayerProfileIdentity>(() =>
+    readStoredProfileIdentity(),
+  );
+  const playerProfileIdentityRef = useRef<PlayerProfileIdentity>(playerProfileIdentity);
+  playerProfileIdentityRef.current = playerProfileIdentity;
+
+  const [graphicsQuality, setGraphicsQuality] = useState<GraphicsQualityPreset>(() =>
+    readStoredGraphicsQuality(),
+  );
+
+  const [playerPrivacySettings, setPlayerPrivacySettings] = useState<PlayerPrivacySettings>(() =>
+    readStoredPrivacySettings(),
+  );
+  const playerPrivacySettingsRef = useRef<PlayerPrivacySettings>(playerPrivacySettings);
+  playerPrivacySettingsRef.current = playerPrivacySettings;
+
+  const [playerSocialGraph, setPlayerSocialGraph] = useState<PlayerSocialGraph>(() =>
+    readStoredSocialGraph(),
+  );
+  const playerSocialGraphRef = useRef<PlayerSocialGraph>(playerSocialGraph);
+  playerSocialGraphRef.current = playerSocialGraph;
+
   const buildProfileUnlockedSkins = useCallback(
     (
       gender: 'male' | 'female',
       ownedStyle: HouseArchitectureStyle | null,
       existingSkins?: ReadonlyArray<string> | null,
+      identityOverride?: PlayerProfileIdentity,
+      privacyOverride?: PlayerPrivacySettings,
+      socialGraphOverride?: PlayerSocialGraph,
     ): string[] => {
       const skins = ['default', `gender:${gender}`];
       const existingTag = existingSkins?.find(
@@ -1302,6 +1397,35 @@ export default function App() {
       if (resolvedStyle) {
         skins.push(`house_style:${resolvedStyle}`);
       }
+      const existingIdentity = parseProfileIdentityFromSkinsTags(existingSkins);
+      const activeIdentity = identityOverride ?? playerProfileIdentityRef.current;
+      const mergedIdentity: PlayerProfileIdentity = {
+        roleBadge: activeIdentity.roleBadge || existingIdentity.roleBadge || 'builder',
+        buildingProject:
+          activeIdentity.buildingProject !== undefined
+            ? activeIdentity.buildingProject
+            : existingIdentity.buildingProject || '',
+        links: {
+          x: activeIdentity.links?.x ?? existingIdentity.links?.x ?? '',
+          github: activeIdentity.links?.github ?? existingIdentity.links?.github ?? '',
+          website: activeIdentity.links?.website ?? existingIdentity.links?.website ?? '',
+        },
+      };
+      skins.push(...encodeProfileIdentityToSkinsTags(mergedIdentity));
+      const existingPrivacy = parsePrivacySettingsFromSkinsTags(existingSkins);
+      const activePrivacy = privacyOverride ?? playerPrivacySettingsRef.current;
+      const mergedPrivacy = sanitizePlayerPrivacySettings({
+        ...existingPrivacy,
+        ...activePrivacy,
+      });
+      skins.push(...encodePrivacySettingsToSkinsTags(mergedPrivacy));
+      const existingSocial = parseSocialGraphFromSkinsTags(existingSkins);
+      const activeSocial = socialGraphOverride ?? playerSocialGraphRef.current;
+      const mergedSocial = sanitizePlayerSocialGraph({
+        ...existingSocial,
+        ...activeSocial,
+      });
+      skins.push(...encodeSocialGraphToSkinsTags(mergedSocial));
       return skins;
     },
     [],
@@ -1335,20 +1459,74 @@ export default function App() {
     txHash?: string;
   } | null>(null);
   const [isNearWalletSelectorOpen, setIsNearWalletSelectorOpen] = useState<boolean>(false);
-  const [localTxConfirmState, setLocalTxConfirmState] = useState<{
-    request: LocalTxConfirmRequest;
-    resolve: (approved: boolean) => void;
-  } | null>(null);
+  const [isWalletPinUnlocked, setIsWalletPinUnlocked] = useState<boolean>(false);
+  const [pendingWalletTxs, setPendingWalletTxs] = useState<PendingWalletTxItem[]>([]);
+  const pendingWalletTxsRef = useRef<PendingWalletTxItem[]>([]);
+  pendingWalletTxsRef.current = pendingWalletTxs;
+  const [pendingTxNowMs, setPendingTxNowMs] = useState<number>(() => Date.now());
+  const pendingTxSeqRef = useRef<number>(0);
 
   useEffect(() => {
     setLocalTxConfirmHandler(
       (request) =>
         new Promise<boolean>((resolve) => {
-          setLocalTxConfirmState({ request, resolve });
+          pendingTxSeqRef.current += 1;
+          const now = Date.now();
+          const item = createPendingWalletTxItem({
+            id: `wtx-${now}-${pendingTxSeqRef.current}`,
+            request,
+            resolve,
+            nowMs: now,
+          });
+          setPendingTxNowMs(now);
+          setPendingWalletTxs((prev) => [...prev, item]);
         }),
     );
-    return () => setLocalTxConfirmHandler(null);
+    return () => {
+      setLocalTxConfirmHandler(null);
+      for (const tx of pendingWalletTxsRef.current) {
+        if (!tx.resolved) {
+          tx.resolved = true;
+          tx.resolve(false);
+        }
+      }
+    };
   }, []);
+
+  const handleConfirmPendingWalletTx = useCallback((txId: string) => {
+    const now = Date.now();
+    setPendingTxNowMs(now);
+    setPendingWalletTxs((prev) => {
+      const target = prev.find((item) => item.id === txId);
+      if (!target) return prev;
+      if (!canConfirmPendingTx(target, now)) {
+        if (!target.resolved) {
+          target.resolved = true;
+          target.resolve(false);
+        }
+        return prev;
+      }
+      target.resolved = true;
+      target.resolve(true);
+      return prev.filter((item) => item.id !== txId);
+    });
+  }, []);
+
+  const handleRejectPendingWalletTx = useCallback((txId: string) => {
+    setPendingWalletTxs((prev) => {
+      const target = prev.find((item) => item.id === txId);
+      if (target && !target.resolved) {
+        target.resolved = true;
+        target.resolve(false);
+      }
+      return prev.filter((item) => item.id !== txId);
+    });
+  }, []);
+
+  const activePendingWalletTxCount = useMemo(
+    () => pendingWalletTxs.filter((tx) => canConfirmPendingTx(tx, pendingTxNowMs)).length,
+    [pendingWalletTxs, pendingTxNowMs],
+  );
   const [hasHouseOwnership, setHasHouseOwnership] = useState<boolean>(false);
   hasHouseOwnershipRef.current = hasHouseOwnership;
   const [houseEntryScanState, setHouseEntryScanState] = useState<'idle' | 'scanning' | 'verified'>(
@@ -1603,15 +1781,83 @@ export default function App() {
   const [isPersonalBagModalOpen, setIsPersonalBagModalOpen] = useState<boolean>(false);
   const [isGearModalOpen, setIsGearModalOpen] = useState<boolean>(false);
   const isWalletModalVisible = isPersonalWalletModalOpen || isPhoneAppActive('wallet');
-  const isBagModalVisible = isPersonalBagModalOpen || isPhoneAppActive('bag');
+  const isBagModalVisible =
+    isPersonalBagModalOpen || isGearModalOpen || isPhoneAppActive('my_things');
   const isMissionsModalVisible = isDailyMissionsModalOpen || isPhoneAppActive('missions');
   const isSocialChatVisible =
     isSocialChatModalOpen || isPhoneAppActive('messages') || isPhoneAppActive('contacts');
   const [equippedScooterKind, setEquippedScooterKind] = useState<UrbanScooterKind | null>(null);
-  const [personalBagTab, setPersonalBagTab] = useState<'equipment' | 'fish' | 'items'>('equipment');
+  const [myThingsTab, setMyThingsTab] = useState<MyThingsSectionId>('items');
   const [selectedPrivateUser, setSelectedPrivateUser] = useState<NearbyEntityUser | null>(null);
   const [unreadPrivateCount, setUnreadPrivateCount] = useState<number>(0);
   const [unreadLetterCount, setUnreadLetterCount] = useState<number>(0);
+  const [latestUnreadLetter, setLatestUnreadLetter] = useState<BuddiesLetter | null>(null);
+  const [latestCityFeedPost, setLatestCityFeedPost] = useState<CityFeedPost | null>(
+    () => readCachedCityFeedPosts()[0] ?? null,
+  );
+
+  // Wallet locks again whenever the phone (or standalone wallet) closes.
+  useEffect(() => {
+    if (!isSmartphoneOsOpen && !isPersonalWalletModalOpen) {
+      setIsWalletPinUnlocked(false);
+    }
+  }, [isSmartphoneOsOpen, isPersonalWalletModalOpen]);
+
+  // Tick pending transaction expiry countdown and auto-reject expired requests.
+  useEffect(() => {
+    if (pendingWalletTxs.length === 0) return;
+    const tick = () => {
+      const now = Date.now();
+      setPendingTxNowMs(now);
+      setPendingWalletTxs((prev) => {
+        let changed = false;
+        const next: PendingWalletTxItem[] = [];
+        for (const tx of prev) {
+          if (isPendingTxExpired(tx, now)) {
+            if (!tx.resolved) {
+              tx.resolved = true;
+              tx.resolve(false);
+              changed = true;
+            }
+            // Keep expired card visible only if player is currently viewing Wallet
+            if (isWalletModalVisible) {
+              next.push(tx);
+            } else {
+              changed = true;
+            }
+          } else {
+            next.push(tx);
+          }
+        }
+        return changed ? next : prev;
+      });
+    };
+    tick();
+    const intervalId = window.setInterval(tick, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [pendingWalletTxs.length, isWalletModalVisible]);
+
+  // Keep Home "City News" card fresh with City Feed updates.
+  useEffect(() => {
+    const onFeedUpdated = () => {
+      setLatestCityFeedPost(readCachedCityFeedPosts()[0] ?? null);
+    };
+    window.addEventListener(CITY_FEED_UPDATED_EVENT, onFeedUpdated);
+    return () => window.removeEventListener(CITY_FEED_UPDATED_EVENT, onFeedUpdated);
+  }, []);
+
+  useEffect(() => {
+    if (!isSmartphoneOsOpen) return;
+    let cancelled = false;
+    void fetchCityFeedPosts().then((posts) => {
+      if (!cancelled) {
+        setLatestCityFeedPost(posts[0] ?? null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSmartphoneOsOpen]);
   // New-asset notification: counts owned items (merchant NFT copies, scooters,
   // the house deed) that arrived since the player last opened their wallet.
   const [newAssetCount, setNewAssetCount] = useState<number>(0);
@@ -2027,6 +2273,24 @@ export default function App() {
 
     const handleIncomingSocialRow = (incomingMsg: ChatMessage) => {
       const st = socialChatStateRef.current;
+      if (
+        incomingMsg.type === 'private' &&
+        !isOwnChatMessage(incomingMsg, st.playerDisplayName, st.playerUid)
+      ) {
+        const permission = canReceivePrivateMessageFrom({
+          localSettings: playerPrivacySettingsRef.current,
+          senderId: incomingMsg.senderId,
+          senderName: incomingMsg.senderName,
+          isFriend: isFriendWith(
+            playerSocialGraphRef.current,
+            incomingMsg.senderId,
+            incomingMsg.senderName,
+          ),
+        });
+        if (!permission.allowed) {
+          return;
+        }
+      }
       const preview = mergeRealtimeSocialChatMessage(chatMessagesRef.current, incomingMsg, {
         localPlayerName: st.playerDisplayName,
         localPlayerUid: st.playerUid,
@@ -2686,11 +2950,32 @@ export default function App() {
   const publishPlayerSocialMessage = useCallback(
     (params: {
       text: string;
-      recipient?: { id?: string | number; name: string } | null;
+      recipient?: {
+        id?: string | number;
+        name: string;
+        privateMessages?: PrivateMessagePermission;
+      } | null;
       roomId?: string;
     }) => {
       const cleanText = params.text.trim();
       if (!cleanText) return;
+      const isPrivate = Boolean(params.recipient && params.recipient.name);
+      if (isPrivate && params.recipient) {
+        const sendCheck = canSendPrivateMessageTo({
+          localSettings: playerPrivacySettingsRef.current,
+          recipientId: params.recipient.id,
+          recipientName: params.recipient.name,
+          recipientPrivateMessages: params.recipient.privateMessages,
+          isFriend: isFriendWith(
+            playerSocialGraphRef.current,
+            params.recipient.id,
+            params.recipient.name,
+          ),
+        });
+        if (!sendCheck.allowed) {
+          return;
+        }
+      }
       const nowMs = Date.now();
       const nowStr = new Date(nowMs).toLocaleTimeString([], {
         hour: '2-digit',
@@ -2698,7 +2983,6 @@ export default function App() {
       });
       const senderLabel = playerDisplayName || 'YOU';
       const senderAccount = hudRef.current.nearWalletId || playerUid || undefined;
-      const isPrivate = Boolean(params.recipient && params.recipient.name);
       const clientMsgId = `${isPrivate ? 'priv' : 'pub'}-${nowMs}-${Math.random().toString(36).slice(2, 7)}`;
 
       const newMsg: ChatMessage = {
@@ -2889,46 +3173,6 @@ export default function App() {
       setIsWardrobeStudioOpen(false);
     },
     [ownedApparelIds, dailyMissionsAccountKey],
-  );
-
-  const handleToggleEquipApparel = useCallback(
-    (itemId: string | null) => {
-      const toggled = toggleEquipFashionApparel(ownedApparelIds, equippedTorsoItemId, itemId);
-      if (!toggled.ok) return;
-      soundEngine.playUiConfirm();
-      setEquippedTorsoItemId(toggled.nextEquippedId);
-      setEquippedWardrobeDraft((prev) => {
-        const nextDraft: WardrobeOutfitDraft = {
-          ...prev,
-          setId: null,
-          topId: toggled.nextEquippedId,
-        };
-        try {
-          window.localStorage.setItem(
-            getWardrobeDraftStorageKey(dailyMissionsAccountKey),
-            JSON.stringify(nextDraft),
-          );
-        } catch {
-          // ignore storage errors
-        }
-        return nextDraft;
-      });
-      try {
-        if (toggled.nextEquippedId) {
-          window.localStorage.setItem(
-            getEquippedTorsoStorageKey(dailyMissionsAccountKey),
-            toggled.nextEquippedId,
-          );
-        } else {
-          window.localStorage.removeItem(getEquippedTorsoStorageKey(dailyMissionsAccountKey));
-        }
-      } catch {
-        // ignore storage errors
-      }
-      const nextGlb = resolveEquippedTorsoGlbForGender(toggled.nextEquippedId, characterGender);
-      dispatchBuddyAction(`setEquippedTorso:${nextGlb ?? ''}`);
-    },
-    [ownedApparelIds, equippedTorsoItemId, dailyMissionsAccountKey, characterGender, dispatchBuddyAction],
   );
 
   const setAndPersistHouseArchitectureStyle = useCallback(
@@ -3966,13 +4210,31 @@ export default function App() {
   useEffect(() => {
     if (!letterAccount) {
       setUnreadLetterCount(0);
+      setLatestUnreadLetter(null);
       return;
     }
     let cancelled = false;
     const loadUnreadLetters = async () => {
       const rows = await fetchLettersForAccount(letterAccount, 50);
       if (!cancelled) {
-        setUnreadLetterCount(rows.filter((row) => !row.isRead).length);
+        const unread = rows.filter((row) => !row.isRead);
+        setUnreadLetterCount(unread.length);
+        setLatestUnreadLetter(unread[0] ?? null);
+        const { nextGraph, newlyAddedFriends } = reconcileAcceptedFriendLetters(
+          playerSocialGraphRef.current,
+          rows,
+        );
+        if (newlyAddedFriends.length > 0) {
+          const persisted = writeStoredSocialGraph(nextGraph);
+          playerSocialGraphRef.current = persisted;
+          setPlayerSocialGraph(persisted);
+          for (const f of newlyAddedFriends) {
+            dispatchBuddyAction(`addSafezoneFriend:${f.id}`);
+          }
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent(SOCIAL_GRAPH_UPDATED_EVENT));
+          }
+        }
       }
     };
     void loadUnreadLetters();
@@ -3981,7 +4243,7 @@ export default function App() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [letterAccount, isSocialChatVisible]);
+  }, [letterAccount, isSocialChatVisible, isSmartphoneOsOpen]);
 
   useEffect(() => {
     if (
@@ -4936,12 +5198,21 @@ export default function App() {
     }
     dispatchBuddyAction(`setCharacterGender:${characterGender}`);
     dispatchBuddyAction(`setPlayerDisplayName:${cleanName}`);
+    dispatchBuddyAction(`setPlayerRoleBadge:${playerProfileIdentity.roleBadge}`);
     const t1 = window.setTimeout(() => {
       dispatchBuddyAction(`setCharacterGender:${characterGender}`);
       dispatchBuddyAction(`setPlayerDisplayName:${cleanName}`);
+      dispatchBuddyAction(`setPlayerRoleBadge:${playerProfileIdentity.roleBadge}`);
     }, 320);
     return () => window.clearTimeout(t1);
-  }, [characterGender, playerDisplayName, worldMode, worldTransitionCount, dispatchBuddyAction]);
+  }, [
+    characterGender,
+    playerDisplayName,
+    playerProfileIdentity.roleBadge,
+    worldMode,
+    worldTransitionCount,
+    dispatchBuddyAction,
+  ]);
 
   const persistWalletProfileLocally = useCallback(
     (
@@ -5142,9 +5413,16 @@ export default function App() {
     refreshOnChainDeedLedger,
   ]);
 
+  useEffect(() => {
+    if (isBagModalVisible && hasHouseOwnership) {
+      void refreshOnChainDeedLedger();
+    }
+  }, [isBagModalVisible, hasHouseOwnership, refreshOnChainDeedLedger]);
+
   const closeSmartphone = useCallback(() => {
     setIsSmartphoneOsOpen(false);
     setSmartphoneNavStack(['home']);
+    setIsWalletPinUnlocked(false);
   }, []);
 
   const handleSmartphoneHome = useCallback(() => {
@@ -5533,6 +5811,100 @@ export default function App() {
       );
       if (remoteProfile) {
         setSupabaseConnected(true);
+        const restoredIdentity = parseProfileIdentityFromSkinsTags(remoteProfile.unlocked_skins);
+        if (
+          restoredIdentity.roleBadge ||
+          restoredIdentity.buildingProject !== undefined ||
+          restoredIdentity.links
+        ) {
+          const nextIdentity = writeStoredProfileIdentity({
+            roleBadge: restoredIdentity.roleBadge ?? playerProfileIdentityRef.current.roleBadge,
+            buildingProject:
+              restoredIdentity.buildingProject ?? playerProfileIdentityRef.current.buildingProject,
+            links: restoredIdentity.links ?? playerProfileIdentityRef.current.links,
+          });
+          playerProfileIdentityRef.current = nextIdentity;
+          setPlayerProfileIdentity(nextIdentity);
+          dispatchBuddyAction(`setPlayerRoleBadge:${nextIdentity.roleBadge}`);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent(PROFILE_IDENTITY_UPDATED_EVENT));
+          }
+        }
+        const restoredPrivacy = parsePrivacySettingsFromSkinsTags(remoteProfile.unlocked_skins);
+        if (Object.keys(restoredPrivacy).length > 0) {
+          const nextPrivacy = writeStoredPrivacySettings({
+            ...playerPrivacySettingsRef.current,
+            ...restoredPrivacy,
+          });
+          playerPrivacySettingsRef.current = nextPrivacy;
+          setPlayerPrivacySettings(nextPrivacy);
+          dispatchBuddyAction(
+            `setSafezoneAccessMode:${mapApartmentVisitPermissionToSafezoneMode(nextPrivacy.apartmentVisits)}`,
+          );
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent(PRIVACY_SETTINGS_UPDATED_EVENT));
+          }
+        }
+        const restoredSocial = parseSocialGraphFromSkinsTags(remoteProfile.unlocked_skins);
+        if (Object.keys(restoredSocial).length > 0) {
+          const mergedSocial = writeStoredSocialGraph({
+            friends: [
+              ...(restoredSocial.friends ?? []),
+              ...playerSocialGraphRef.current.friends,
+            ],
+            following: [
+              ...(restoredSocial.following ?? []),
+              ...playerSocialGraphRef.current.following,
+            ],
+            pendingOutgoingFriendRequests: [
+              ...(restoredSocial.pendingOutgoingFriendRequests ?? []),
+              ...playerSocialGraphRef.current.pendingOutgoingFriendRequests,
+            ],
+          });
+          playerSocialGraphRef.current = mergedSocial;
+          setPlayerSocialGraph(mergedSocial);
+          for (const friend of mergedSocial.friends) {
+            dispatchBuddyAction(`addSafezoneFriend:${friend.id}`);
+          }
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent(SOCIAL_GRAPH_UPDATED_EVENT));
+          }
+        }
+        // Reconcile any friend request acceptance letters delivered while offline
+        void fetchLettersForAccount(normalizedWallet).then((inboxLetters) => {
+          if (!inboxLetters || inboxLetters.length === 0) return;
+          const { nextGraph, newlyAddedFriends } = reconcileAcceptedFriendLetters(
+            playerSocialGraphRef.current,
+            inboxLetters,
+          );
+          if (newlyAddedFriends.length > 0) {
+            const persisted = writeStoredSocialGraph(nextGraph);
+            playerSocialGraphRef.current = persisted;
+            setPlayerSocialGraph(persisted);
+            for (const f of newlyAddedFriends) {
+              dispatchBuddyAction(`addSafezoneFriend:${f.id}`);
+            }
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent(SOCIAL_GRAPH_UPDATED_EVENT));
+            }
+            void syncPlayerBalancesToSupabase({
+              nearAccountId: normalizedWallet,
+              lulBalance: remoteProfile.lul_balance,
+              cyonBalance: remoteProfile.cyon_balance,
+              respiteBalance: hasAuthoritativeOnChainBalance
+                ? onChainRespite
+                : remoteProfile.respite_balance,
+              unlockedSkins: buildProfileUnlockedSkins(
+                finalGender,
+                restoredHouseStyle,
+                remoteProfile.unlocked_skins,
+                undefined,
+                undefined,
+                persisted,
+              ),
+            });
+          }
+        });
         setCyonBalance(remoteProfile.cyon_balance);
         restoreLulFromProfile(remoteProfile.lul_balance);
         const expectedHouseSkinTag = ownsHouseVerified ? `house_style:${restoredHouseStyle}` : null;
@@ -5952,6 +6324,348 @@ export default function App() {
       playerUid,
       respiteBalance,
     ],
+  );
+
+  const handleUpdatePlayerProfileIdentity = useCallback(
+    (nextIdentity: PlayerProfileIdentity) => {
+      const cleaned = writeStoredProfileIdentity(nextIdentity);
+      playerProfileIdentityRef.current = cleaned;
+      setPlayerProfileIdentity(cleaned);
+      dispatchBuddyAction(`setPlayerRoleBadge:${cleaned.roleBadge}`);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(PROFILE_IDENTITY_UPDATED_EVENT));
+      }
+      const activeUid =
+        hudRef.current.nearWalletId || playerUid || nep171Ledger.ownerNearAccount;
+      if (activeUid) {
+        void syncPlayerBalancesToSupabase({
+          nearAccountId: activeUid,
+          displayName: playerDisplayName || 'CITIZEN',
+          lulBalance: hudRef.current.gold,
+          cyonBalance,
+          respiteBalance,
+          unlockedSkins: buildProfileUnlockedSkins(
+            characterGender,
+            ownedHouseStyleRef.current,
+            null,
+            cleaned,
+          ),
+        });
+      }
+    },
+    [
+      buildProfileUnlockedSkins,
+      characterGender,
+      cyonBalance,
+      dispatchBuddyAction,
+      nep171Ledger.ownerNearAccount,
+      playerDisplayName,
+      playerUid,
+      respiteBalance,
+    ],
+  );
+
+  const handleChangeGraphicsQuality = useCallback((nextPreset: GraphicsQualityPreset) => {
+    const clean = writeStoredGraphicsQuality(nextPreset);
+    setGraphicsQuality(clean);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent(GRAPHICS_QUALITY_CHANGED_EVENT, { detail: { preset: clean } }),
+      );
+    }
+  }, []);
+
+  const handleUpdatePlayerPrivacySettings = useCallback(
+    (patch: Partial<PlayerPrivacySettings>) => {
+      const prev = playerPrivacySettingsRef.current;
+      const cleaned = writeStoredPrivacySettings({
+        ...prev,
+        ...patch,
+      });
+      playerPrivacySettingsRef.current = cleaned;
+      setPlayerPrivacySettings(cleaned);
+      if (cleaned.apartmentVisits !== prev.apartmentVisits) {
+        dispatchBuddyAction(
+          `setSafezoneAccessMode:${mapApartmentVisitPermissionToSafezoneMode(cleaned.apartmentVisits)}`,
+        );
+        if (cleaned.apartmentVisits === 'friends') {
+          for (const friend of playerSocialGraphRef.current.friends) {
+            dispatchBuddyAction(`addSafezoneFriend:${friend.id}`);
+          }
+        }
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(PRIVACY_SETTINGS_UPDATED_EVENT));
+      }
+      const activeUid =
+        hudRef.current.nearWalletId || playerUid || nep171Ledger.ownerNearAccount;
+      if (activeUid) {
+        void syncPlayerBalancesToSupabase({
+          nearAccountId: activeUid,
+          displayName: playerDisplayName || 'CITIZEN',
+          lulBalance: hudRef.current.gold,
+          cyonBalance,
+          respiteBalance,
+          unlockedSkins: buildProfileUnlockedSkins(
+            characterGender,
+            ownedHouseStyleRef.current,
+            null,
+            undefined,
+            cleaned,
+          ),
+        });
+      }
+    },
+    [
+      buildProfileUnlockedSkins,
+      characterGender,
+      cyonBalance,
+      dispatchBuddyAction,
+      nep171Ledger.ownerNearAccount,
+      playerDisplayName,
+      playerUid,
+      respiteBalance,
+    ],
+  );
+
+  const commitPlayerSocialGraph = useCallback(
+    (nextGraph: PlayerSocialGraph) => {
+      const cleaned = writeStoredSocialGraph(nextGraph);
+      playerSocialGraphRef.current = cleaned;
+      setPlayerSocialGraph(cleaned);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(SOCIAL_GRAPH_UPDATED_EVENT));
+      }
+      const activeUid =
+        hudRef.current.nearWalletId || playerUid || nep171Ledger.ownerNearAccount;
+      if (activeUid) {
+        void syncPlayerBalancesToSupabase({
+          nearAccountId: activeUid,
+          displayName: playerDisplayName || 'CITIZEN',
+          lulBalance: hudRef.current.gold,
+          cyonBalance,
+          respiteBalance,
+          unlockedSkins: buildProfileUnlockedSkins(
+            characterGender,
+            ownedHouseStyleRef.current,
+            null,
+            undefined,
+            undefined,
+            cleaned,
+          ),
+        });
+      }
+    },
+    [
+      buildProfileUnlockedSkins,
+      characterGender,
+      cyonBalance,
+      nep171Ledger.ownerNearAccount,
+      playerDisplayName,
+      playerUid,
+      respiteBalance,
+    ],
+  );
+
+  const handleSendFriendRequest = useCallback(
+    async (target: {
+      id?: string | number | null;
+      nearAccountId?: string | null;
+      name: string;
+      allowFriendRequests?: boolean;
+      roleBadge?: PlayerProfileIdentity['roleBadge'];
+      buildingProject?: string;
+    }): Promise<{ ok: boolean; reason?: string }> => {
+      if (target.allowFriendRequests === false) {
+        return { ok: false, reason: 'This player is not accepting friend requests.' };
+      }
+      const targetAccount = String(target.nearAccountId || target.id || '')
+        .trim()
+        .toLowerCase();
+      if (targetAccount.length < 2) {
+        return { ok: false, reason: 'This player needs a connected account to receive a friend request.' };
+      }
+      if (isPlayerBlocked(playerPrivacySettingsRef.current.blockedPlayers, targetAccount, target.name)) {
+        return { ok: false, reason: 'Unblock this player before sending a friend request.' };
+      }
+      if (isFriendWith(playerSocialGraphRef.current, targetAccount, target.name)) {
+        return { ok: true };
+      }
+      if (hasPendingOutgoingFriendRequest(playerSocialGraphRef.current, targetAccount, target.name)) {
+        return { ok: true };
+      }
+      const senderAccount = (
+        hudRef.current.nearWalletId ||
+        playerUid ||
+        nep171Ledger.ownerNearAccount ||
+        ''
+      )
+        .trim()
+        .toLowerCase();
+      if (senderAccount.length < 2) {
+        return { ok: false, reason: 'Sign in first so your friend request can be delivered.' };
+      }
+      if (senderAccount === targetAccount) {
+        return { ok: false, reason: 'You cannot send a friend request to yourself.' };
+      }
+      const senderName = simplifyDisplayName(playerDisplayName || 'Buddy') || 'Buddy';
+      const delivered = await createLetterForAccount({
+        recipientAccount: targetAccount,
+        kind: 'friend_request',
+        title: `${senderName} wants to be friends`,
+        payload: {
+          senderName,
+          senderAccount,
+          body: `${senderName} would like to add you as a friend in Buddies City. Accept to become friends and unlock private messages and apartment visits.`,
+        },
+      });
+      if (!delivered) {
+        return { ok: false, reason: 'Could not send the friend request right now. Please try again.' };
+      }
+      commitPlayerSocialGraph(
+        addPendingOutgoingFriendRequest(playerSocialGraphRef.current, {
+          id: targetAccount,
+          name: target.name,
+          roleBadge: target.roleBadge,
+          buildingProject: target.buildingProject,
+        }),
+      );
+      return { ok: true };
+    },
+    [commitPlayerSocialGraph, nep171Ledger.ownerNearAccount, playerDisplayName, playerUid],
+  );
+
+  const handleAcceptFriendRequestLetter = useCallback(
+    async (letter: BuddiesLetter): Promise<boolean> => {
+      const senderAccount = (letter.payload.senderAccount || '').trim().toLowerCase();
+      if (senderAccount.length < 2) return false;
+      const senderName = (letter.payload.senderName || senderAccount).trim();
+      const nextGraph = addFriendEntry(playerSocialGraphRef.current, {
+        id: senderAccount,
+        name: senderName,
+      });
+      commitPlayerSocialGraph(nextGraph);
+      dispatchBuddyAction(`addSafezoneFriend:${senderAccount}`);
+
+      const localAccount = (
+        hudRef.current.nearWalletId ||
+        playerUid ||
+        nep171Ledger.ownerNearAccount ||
+        ''
+      )
+        .trim()
+        .toLowerCase();
+      const localName = simplifyDisplayName(playerDisplayName || 'Buddy') || 'Buddy';
+      if (localAccount.length >= 2 && localAccount !== senderAccount) {
+        await createLetterForAccount({
+          recipientAccount: senderAccount,
+          kind: 'message',
+          title: `${localName} accepted your friend request`,
+          payload: {
+            senderName: localName,
+            senderAccount: localAccount,
+            friendAcceptedByAccount: localAccount,
+            friendAcceptedByName: localName,
+            body: `${localName} accepted your friend request. You are now friends!`,
+          },
+        });
+      }
+      return true;
+    },
+    [
+      commitPlayerSocialGraph,
+      dispatchBuddyAction,
+      nep171Ledger.ownerNearAccount,
+      playerDisplayName,
+      playerUid,
+    ],
+  );
+
+  const handleRemoveFriend = useCallback(
+    (targetIdOrName: string) => {
+      const cleanKey = String(targetIdOrName || '').trim().toLowerCase();
+      if (!cleanKey) return;
+      commitPlayerSocialGraph(removeFriendEntry(playerSocialGraphRef.current, cleanKey));
+      dispatchBuddyAction(`removeSafezoneFriend:${cleanKey}`);
+    },
+    [commitPlayerSocialGraph, dispatchBuddyAction],
+  );
+
+  const handleToggleFollowPlayer = useCallback(
+    (target: {
+      id?: string | number | null;
+      nearAccountId?: string | null;
+      name: string;
+      roleBadge?: PlayerProfileIdentity['roleBadge'];
+      buildingProject?: string;
+    }) => {
+      const targetId = String(target.nearAccountId || target.id || target.name || '')
+        .trim()
+        .toLowerCase();
+      if (!targetId) return;
+      if (isFollowingPlayer(playerSocialGraphRef.current, targetId, target.name)) {
+        commitPlayerSocialGraph(removeFollowingEntry(playerSocialGraphRef.current, targetId));
+      } else {
+        commitPlayerSocialGraph(
+          addFollowingEntry(playerSocialGraphRef.current, {
+            id: targetId,
+            name: target.name,
+            roleBadge: target.roleBadge,
+            buildingProject: target.buildingProject,
+          }),
+        );
+      }
+    },
+    [commitPlayerSocialGraph],
+  );
+
+  const handleReconcileLettersForFriends = useCallback(
+    (inboxLetters: ReadonlyArray<BuddiesLetter>) => {
+      if (!Array.isArray(inboxLetters) || inboxLetters.length === 0) return;
+      const { nextGraph, newlyAddedFriends } = reconcileAcceptedFriendLetters(
+        playerSocialGraphRef.current,
+        inboxLetters,
+      );
+      if (newlyAddedFriends.length > 0) {
+        commitPlayerSocialGraph(nextGraph);
+        for (const f of newlyAddedFriends) {
+          dispatchBuddyAction(`addSafezoneFriend:${f.id}`);
+        }
+      }
+    },
+    [commitPlayerSocialGraph, dispatchBuddyAction],
+  );
+
+  const handleBlockPlayer = useCallback(
+    (target: { id?: string | number | null; name: string }) => {
+      const next = addBlockedPlayer(playerPrivacySettingsRef.current, target);
+      if (next === playerPrivacySettingsRef.current) return;
+      handleUpdatePlayerPrivacySettings({ blockedPlayers: next.blockedPlayers });
+      const cleanId = String(target.id || target.name || '').trim().toLowerCase();
+      if (cleanId) {
+        dispatchBuddyAction(`removeSafezoneFriend:${cleanId}`);
+        const cleanedSocial = removePendingOutgoingFriendRequest(
+          removeFollowingEntry(removeFriendEntry(playerSocialGraphRef.current, cleanId), cleanId),
+          cleanId,
+        );
+        commitPlayerSocialGraph(cleanedSocial);
+      }
+      setSelectedPrivateUser((prevSelected) => {
+        if (!prevSelected) return prevSelected;
+        return isPlayerBlocked(next.blockedPlayers, prevSelected.id, prevSelected.name)
+          ? null
+          : prevSelected;
+      });
+    },
+    [commitPlayerSocialGraph, dispatchBuddyAction, handleUpdatePlayerPrivacySettings],
+  );
+
+  const handleUnblockPlayer = useCallback(
+    (targetIdOrName: string) => {
+      const next = removeBlockedPlayer(playerPrivacySettingsRef.current, targetIdOrName);
+      handleUpdatePlayerPrivacySettings({ blockedPlayers: next.blockedPlayers });
+    },
+    [handleUpdatePlayerPrivacySettings],
   );
 
   const handleProvisionSubWalletAndShowWelcome = useCallback(
@@ -7620,7 +8334,7 @@ export default function App() {
         title:
           listing.asset_kind === 'house'
             ? 'Real Estate Sales Contract — House Deed'
-            : 'Certificate of Ownership — Furniture NFT',
+            : 'Certificate of Ownership — Furniture',
         payload: {
           buyerAccount: buyer,
           sellerAccount: listing.seller_account,
@@ -8056,1907 +8770,409 @@ export default function App() {
     return true;
   };
 
+  const handleLogOutAccount = (shouldCloseSmartphone: boolean) => {
+    void disconnectNearWallet();
+    void signOutSupabaseAuth();
+    if (privyAuthenticated) {
+      void privyLogout();
+    }
+    setConnectedGoogleEmail("");
+    setNearTestnetBalance(0);
+    setRespiteBalance(0);
+    setHasHouseOwnership(false);
+    setOwnedHouseStyle(null);
+    setIsOnChainHouseStyleLocked(false);
+    setHud((prev) => ({
+      ...prev,
+      nearWalletConnected: false,
+      nearWalletId: "",
+      nearHasGamepassNft: false,
+      nearGamepassTokenId: null,
+    }));
+    setPlayerUid("");
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem("bb_explicit_logged_out_v1", "1");
+        window.localStorage.removeItem("bb_connected_google_email_v2");
+        window.localStorage.removeItem("bb_last_connected_wallet_id_v2");
+      } catch {
+        // ignore
+      }
+    }
+    dispatchBuddyAction("nearDisconnectSession");
+    setTutorialStage("none");
+    setIsWalletPinUnlocked(false);
+    setIsPersonalWalletModalOpen(false);
+    if (shouldCloseSmartphone) closeSmartphone();
+    setOnboardingStep("auth_choice");
+  };
+
   const renderPersonalWalletApp = (embeddedInPhone: boolean) => (
-        <div
-        data-personal-wallet-modal={embeddedInPhone ? "true" : undefined}
-        className={
-          embeddedInPhone
-            ? "relative w-full h-full flex-1 flex flex-col bg-transparent text-white overflow-hidden min-h-0"
-            : "relative flex-1 flex flex-col rounded-[28px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_64px_rgba(0,0,0,0.58)] text-white overflow-hidden min-h-0"
+    <PersonalWalletPanel
+      embeddedInPhone={embeddedInPhone}
+      onClose={() => {
+        setIsPersonalWalletModalOpen(false);
+        setIsWalletPinUnlocked(false);
+      }}
+      isUnlocked={isWalletPinUnlocked}
+      onUnlock={() => setIsWalletPinUnlocked(true)}
+      onLock={() => setIsWalletPinUnlocked(false)}
+      activeTab={personalWalletTab}
+      onSelectTab={(tab) => setPersonalWalletTab(tab)}
+      connectedGoogleEmail={connectedGoogleEmail}
+      walletId={hud.nearWalletId || ""}
+      playerUid={playerUid}
+      walletConnected={Boolean(hud.nearWalletConnected)}
+      isReadOnlyWallet={isActiveWalletReadOnlyObserver()}
+      hideBalancesDefault={playerPrivacySettings.hideBalances}
+      respiteBalance={respiteBalance}
+      nearBalance={nearTestnetBalance}
+      lulBalance={hud.gold}
+      cyonBalance={cyonBalance}
+      onLogOut={() => handleLogOutAccount(embeddedInPhone)}
+      onOpenWalletSelector={() => {
+        setIsPersonalWalletModalOpen(false);
+        if (embeddedInPhone) closeSmartphone();
+        setIsNearWalletSelectorOpen(true);
+      }}
+      respiteTransferRecipient={respiteTransferRecipient}
+      onChangeRespiteTransferRecipient={(val) => {
+        setRespiteTransferRecipient(val);
+        setRespiteTransferStatus(null);
+      }}
+      respiteTransferAmount={respiteTransferAmount}
+      onChangeRespiteTransferAmount={(val) => {
+        setRespiteTransferAmount(val);
+        setRespiteTransferStatus(null);
+      }}
+      respiteTransferStatus={respiteTransferStatus}
+      onSendRespite={async () => {
+        const senderId = hud.nearWalletId || playerUid;
+        if (!senderId) {
+          setRespiteTransferStatus({
+            type: "error",
+            text: "Connect a wallet before sending RESPITE.",
+          });
+          return;
         }
-      >
-          <div className={`flex items-center justify-between gap-2 bg-transparent border-b border-white/15 shrink-0 ${embeddedInPhone ? 'px-3.5 py-2.5' : 'px-5 py-3.5'}`}>
-            <div
-              role="tablist"
-              aria-label="Wallet Sections"
-              className="flex-1 grid grid-cols-3 gap-1 p-1 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_6px_16px_rgba(15,23,42,0.14)]"
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={personalWalletTab === 'wallet'}
-                data-wallet-tab="wallet"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  setPersonalWalletTab('wallet');
-                }}
-                className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap ${
-                  personalWalletTab === 'wallet'
-                    ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.1)]'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/55'
-                }`}
-              >
-                <Wallet className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
-                <span>Wallet</span>
-              </button>
-
-              <button
-                type="button"
-                role="tab"
-                aria-selected={personalWalletTab === 'assets'}
-                data-wallet-tab="assets"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  setPersonalWalletTab('assets');
-                }}
-                className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap ${
-                  personalWalletTab === 'assets'
-                    ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.1)]'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/55'
-                }`}
-              >
-                <Package className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
-                <span>Assets</span>
-              </button>
-
-              <button
-                type="button"
-                role="tab"
-                aria-selected={personalWalletTab === 'history'}
-                data-wallet-tab="history"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  setPersonalWalletTab('history');
-                }}
-                className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap ${
-                  personalWalletTab === 'history'
-                    ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.1)]'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/55'
-                }`}
-              >
-                <History className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
-                <span>History</span>
-              </button>
-            </div>
-            {!embeddedInPhone && (
-              <button
-                type="button"
-                onClick={() => {
-                  soundEngine.playUiCancel();
-                  setIsPersonalWalletModalOpen(false);
-                }}
-                className="w-8 h-8 rounded-full bg-[#eef0f4]/90 hover:bg-white border border-white/80 text-slate-700 hover:text-rose-600 shadow-sm flex items-center justify-center transition-colors cursor-pointer active:scale-95 shrink-0"
-                aria-label="Close Personal Wallet"
-              >
-                <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
-              </button>
-            )}
-          </div>
-
-          <div className={`flex-1 overflow-y-auto no-scrollbar space-y-3 min-h-0 ${embeddedInPhone ? 'p-3.5' : 'p-4 sm:p-5'}`}>
-            {personalWalletTab === 'wallet' ? (
-              <>
-                {/* ACCOUNT, WALLET ADDRESS & USERNAME CARD */}
-                <div
-                  data-wallet-uid-and-username-card="true"
-                  className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 p-4 space-y-3.5"
-                >
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-[11px] font-medium text-slate-500">
-                    Login Account
-                  </div>
-                  <div className="text-sm font-semibold text-slate-900 truncate">
-                    {connectedGoogleEmail || 'Guest Session'}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  data-switch-or-disconnect-wallet-btn="true"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    void disconnectNearWallet();
-                    void signOutSupabaseAuth();
-                    if (privyAuthenticated) {
-                      void privyLogout();
-                    }
-                    setConnectedGoogleEmail('');
-                    setNearTestnetBalance(0);
-                    setRespiteBalance(0);
-                    setHasHouseOwnership(false);
-                    setOwnedHouseStyle(null);
-                    setIsOnChainHouseStyleLocked(false);
-                    setHud((prev) => ({
-                      ...prev,
-                      nearWalletConnected: false,
-                      nearWalletId: '',
-                      nearHasGamepassNft: false,
-                      nearGamepassTokenId: null,
-                    }));
-                    setPlayerUid('');
-                    if (typeof window !== 'undefined') {
-                      try {
-                        window.localStorage.setItem('bb_explicit_logged_out_v1', '1');
-                        window.localStorage.removeItem('bb_connected_google_email_v2');
-                        window.localStorage.removeItem('bb_last_connected_wallet_id_v2');
-                      } catch {
-                        // ignore
-                      }
-                    }
-                    dispatchBuddyAction('nearDisconnectSession');
-                    setTutorialStage('none');
-                    setIsPersonalWalletModalOpen(false); if (embeddedInPhone) closeSmartphone();
-                    setOnboardingStep('auth_choice');
-                  }}
-                  className="px-3 py-1.5 rounded-full bg-white hover:bg-rose-500 text-slate-700 hover:text-white border border-slate-200/90 shadow-xs font-semibold text-[11px] transition-colors cursor-pointer shrink-0"
-                >
-                  Log Out
-                </button>
-              </div>
-
-              {/* WALLET ADDRESS OR SIGN IN PROMPT */}
-              <div className="p-3 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 space-y-2.5">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div className="text-[11px] font-medium text-slate-600">
-                    Your Wallet
-                  </div>
-                  {hud.nearWalletConnected && hud.nearWalletId && (
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                        isActiveWalletReadOnlyObserver()
-                          ? 'bg-amber-100 text-amber-800 border-amber-300/60'
-                          : 'bg-emerald-100 text-emerald-800 border-emerald-300/60'
-                      }`}
-                    >
-                      {isActiveWalletReadOnlyObserver() ? 'View Only' : 'Connected'}
-                    </span>
-                  )}
-                </div>
-                {hud.nearWalletConnected && hud.nearWalletId ? (
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <div
-                        data-wallet-active-uid="true"
-                        className="text-xs font-mono font-medium text-sky-700 break-all"
-                      >
-                        {hud.nearWalletId}
-                      </div>
-                      <button
-                        type="button"
-                        data-copy-wallet-address-btn="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          const addr = hud.nearWalletId || playerUid;
-                          if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                            void navigator.clipboard.writeText(addr);
-                          }
-                          setWalletAddressCopiedToast(true);
-                          window.setTimeout(() => setWalletAddressCopiedToast(false), 1800);
-                        }}
-                        className="px-3 py-1 rounded-full bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 shadow-xs font-semibold text-[11px] transition-colors cursor-pointer shrink-0"
-                      >
-                        {walletAddressCopiedToast ? 'Copied' : 'Copy'}
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      data-personal-wallet-switch-signer-btn="true"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setIsPersonalWalletModalOpen(false); if (embeddedInPhone) closeSmartphone();
-                        setIsNearWalletSelectorOpen(true);
-                      }}
-                      className="w-full py-2 px-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
-                    >
-                      {isActiveWalletReadOnlyObserver() ? 'Connect Wallet' : 'Manage Wallet'}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between gap-3">
-                    <div
-                      data-wallet-active-uid="true"
-                      className="text-xs text-slate-600 leading-snug"
-                    >
-                      Connect or create a wallet to unlock trading.
-                    </div>
-                    <button
-                      type="button"
-                      data-personal-wallet-open-selector-btn="true"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setIsPersonalWalletModalOpen(false); if (embeddedInPhone) closeSmartphone();
-                        setIsNearWalletSelectorOpen(true);
-                      }}
-                      className="px-3.5 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer shrink-0"
-                    >
-                      Connect Wallet
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* BALANCES */}
-            <div className="space-y-2.5">
-              <div className="text-xs font-semibold text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)] px-0.5">
-                Balances
-              </div>
-
-              <div className="grid grid-cols-2 gap-2.5">
-                <div className="col-span-2 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] px-4 py-3.5 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-400 to-purple-600 text-white shadow-md flex items-center justify-center font-bold text-xs shrink-0">
-                      RS
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-slate-900">RESPITE</div>
-                      <div className="text-xs text-slate-500 truncate">
-                        House, companions, and Fish Market
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-xl font-bold font-mono tabular-nums text-slate-900 leading-none">
-                      {respiteBalance}
-                    </div>
-                    <div className="text-[10px] font-semibold text-violet-700 mt-1">RESPITE</div>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] p-3.5 space-y-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-md flex items-center justify-center shrink-0">
-                      <Coins className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
-                    </div>
-                    <div className="text-sm font-semibold text-slate-900">LUL</div>
-                  </div>
-                  <div>
-                    <div className="text-lg font-bold font-mono tabular-nums text-slate-900 leading-none">
-                      {hud.gold} <span className="text-[10px] font-semibold text-amber-700">LUL</span>
-                    </div>
-                    <div className="text-[11px] text-slate-500 mt-1.5 leading-snug">
-                      Fishing and Warzone rewards
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] p-3.5 space-y-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-400 to-blue-600 text-white shadow-md flex items-center justify-center font-bold text-xs shrink-0">
-                      CY
-                    </div>
-                    <div className="text-sm font-semibold text-slate-900">CYON</div>
-                  </div>
-                  <div>
-                    <div className="text-lg font-bold font-mono tabular-nums text-slate-900 leading-none">
-                      {cyonBalance} <span className="text-[10px] font-semibold text-sky-700">CYON</span>
-                    </div>
-                    <div className="text-[11px] text-slate-500 mt-1.5 leading-snug">
-                      Shop items and outfits
-                    </div>
-                  </div>
-                </div>
-
-                <div className="col-span-2 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] px-4 py-3.5 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 text-white shadow-md flex items-center justify-center font-bold text-xs shrink-0">
-                      N
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-slate-900">NEAR</div>
-                      <div className="text-xs text-slate-500 truncate">
-                        Wallet balance
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-xl font-bold font-mono tabular-nums text-slate-900 leading-none">
-                      {nearTestnetBalance.toFixed(2)}
-                    </div>
-                    <div className="text-[10px] font-semibold text-emerald-700 mt-1">NEAR</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-
-            {/* P2P SEND RESPITE TO ANOTHER WALLET */}
-            <div
-              data-wallet-send-respite-card="true"
-              className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 p-4 space-y-2.5"
-            >
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900">
-                <Send className="w-3.5 h-3.5 text-violet-600" aria-hidden="true" />
-                <span>Send RESPITE</span>
-              </div>
-              <input
-                type="text"
-                value={respiteTransferRecipient}
-                onChange={(e) => {
-                  setRespiteTransferRecipient(e.target.value);
-                  setRespiteTransferStatus(null);
-                }}
-                placeholder="Recipient username or wallet"
-                className="w-full px-3 py-2 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/70 text-slate-900 placeholder:text-slate-500 font-mono text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-400/40 focus:border-violet-400"
-              />
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  min={1}
-                  max={Math.max(1, respiteBalance)}
-                  value={respiteTransferAmount}
-                  onChange={(e) => {
-                    setRespiteTransferAmount(e.target.value);
-                    setRespiteTransferStatus(null);
-                  }}
-                  placeholder="Amount"
-                  className="w-28 px-3 py-2 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/70 text-slate-900 placeholder:text-slate-500 font-mono tabular-nums font-semibold text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-400/40 focus:border-violet-400"
-                />
-                <button
-                  type="button"
-                  onClick={async () => {
-                    soundEngine.playUiClick();
-                    const senderId = hud.nearWalletId || playerUid;
-                    if (!senderId) {
-                      setRespiteTransferStatus({
-                        type: 'error',
-                        text: 'Connect a wallet before sending RESPITE.',
-                      });
-                      return;
-                    }
-                    const rawTarget = respiteTransferRecipient.trim().toLowerCase();
-                    if (!rawTarget) {
-                      setRespiteTransferStatus({
-                        type: 'error',
-                        text: 'Enter a valid recipient wallet.',
-                      });
-                      return;
-                    }
-                    const targetWallet =
-                      rawTarget.includes('.') ? rawTarget : `${rawTarget}.buddiesblitz.testnet`;
-                    const amt = Math.floor(Number(respiteTransferAmount));
-                    if (!Number.isFinite(amt) || amt <= 0) {
-                      setRespiteTransferStatus({
-                        type: 'error',
-                        text: 'Enter a positive RESPITE amount.',
-                      });
-                      return;
-                    }
-                    if (respiteBalance < amt) {
-                      setRespiteTransferStatus({
-                        type: 'error',
-                        text: `Not enough RESPITE (${respiteBalance} available).`,
-                      });
-                      return;
-                    }
-                    const res = await executeMarketContractCallOnChain({
-                      signerAccountId: senderId,
-                      methodName: 'ft_transfer',
-                      args: {
-                        receiver_id: targetWallet,
-                        amount: String(amt),
-                        memo: 'Buddies Blitz P2P RESPITE Transfer',
-                      },
-                    });
-                    if (!res.ok || !res.txHash) {
-                      setRespiteTransferStatus({
-                        type: 'error',
-                        text: res.error || 'Connect your wallet to send RESPITE.',
-                      });
-                      return;
-                    }
-                    const liveSenderBal = await fetchNep141Balance(
-                      NEAR_CONFIG.nep141RespiteContractId,
-                      senderId,
-                    );
-                    const nextRespite =
-                      liveSenderBal !== null
-                        ? Math.max(0, Number(liveSenderBal) || 0)
-                        : Math.max(0, respiteBalance - amt);
-                    setRespiteBalance(nextRespite);
-                    void fetchNep141Balance(
-                      NEAR_CONFIG.nep141RespiteContractId,
-                      targetWallet,
-                    ).then((recipientChainBal) => {
-                      if (recipientChainBal !== null) {
-                        void mirrorRecipientOnChainRespiteCacheInSupabase(
-                          targetWallet,
-                          Math.max(0, Number(recipientChainBal) || 0),
-                        );
-                      }
-                    });
-                    void syncPlayerBalancesToSupabase({
-                      nearAccountId: senderId,
-                      lulBalance: hud.gold,
-                      cyonBalance,
-                      respiteBalance: nextRespite,
-                    });
-                    void logMarketTransactionToSupabase({
-                      actorNearAccount: senderId,
-                      actionType: 'SEND_RESPITE',
-                      itemId: targetWallet,
-                      currency: 'RESPITE',
-                      amount: amt,
-                      unitPrice: 1,
-                      reasoningSummary: `Sent ${amt} RESPITE to ${targetWallet}`,
-                      nearTxHash: res.txHash,
-                    });
-                    setRespiteTransferStatus({
-                      type: 'success',
-                      text: `Sent ${amt} RESPITE to ${targetWallet}`,
-                      txHash: res.txHash,
-                    });
-                    setRespiteTransferRecipient('');
-                  }}
-                  className="flex-1 px-4 py-2 rounded-full bg-violet-600 hover:bg-violet-700 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
-                >
-                  Send
-                </button>
-              </div>
-              {respiteTransferStatus && (
-                <div
-                  className={`px-3 py-2 rounded-xl border text-xs font-medium ${
-                    respiteTransferStatus.type === 'success'
-                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                      : 'bg-rose-50 border-rose-200 text-rose-700'
-                  }`}
-                >
-                  <div>{respiteTransferStatus.text}</div>
-                  {respiteTransferStatus.txHash && (
-                    <a
-                      href={`https://testnet.nearblocks.io/txns/${respiteTransferStatus.txHash}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline text-sky-700 break-all"
-                    >
-                      Receipt
-                    </a>
-                  )}
-                </div>
-              )}
-            </div>
-              </>
-            ) : personalWalletTab === 'assets' ? (() => {
-              const ownedWalletHouseStyle = ownedHouseStyle ?? houseArchitectureStyle;
-              const houseDisplay = getHouseStyleDisplaySpec(ownedWalletHouseStyle);
-              const deedBadgeLabel = formatHouseDeedBadgeLabel(hud.nearGamepassTokenId);
-              const walletCatalogCounts = countOwnedMerchantItems(ownedMerchantItemIds);
-              const walletCatalogItems = MERCHANT_CATALOG_ITEMS.filter(
-                (item) => (walletCatalogCounts[item.id] ?? 0) > 0,
-              );
-              const walletCatalogTotalCount = walletCatalogItems.reduce(
-                (sum, item) => sum + (walletCatalogCounts[item.id] ?? 0),
-                0,
-              );
-              const walletMintedFish = caughtFishBucket.filter((f) => f.isMintedNft);
-              const walletListedFish = fishMarketListings.filter(
-                (l) =>
-                  Boolean(hud.nearWalletId) &&
-                  l.sellerNearAccount.toLowerCase() === (hud.nearWalletId || '').toLowerCase(),
-              );
-              const totalOwnedWalletItems =
-                (hasHouseOwnership ? 1 : 0) +
-                walletCatalogTotalCount +
-                walletMintedFish.length +
-                recruitedFamilyMembers.length +
-                walletListedFish.length;
-              return (
-              <div data-wallet-assets-panel="true" className="@container space-y-3">
-                <div className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 px-4 py-3 flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-semibold text-sky-700">
-                      My Items
-                    </div>
-                    <div className="text-xs font-medium text-slate-700 truncate">
-                      {hud.nearWalletId || playerUid || 'Guest'}
-                    </div>
-                  </div>
-                  <div className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-mono tabular-nums font-semibold shrink-0">
-                    {totalOwnedWalletItems} owned
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 @[460px]:grid-cols-3 gap-x-3 gap-y-4 pt-2.5">
-                  {/* 1. HOUSE DEED CARD */}
-                  {hasHouseOwnership && (
-                    <WalletAssetPortraitCard
-                      dataAttrs={{ 'data-wallet-house-card': ownedWalletHouseStyle }}
-                      brandLabel="House"
-                      badgeLabel={deedBadgeLabel}
-                      badgeTone="emerald"
-                      title={houseDisplay.title}
-                      description={houseDisplay.description}
-                      tokenId={hud.nearGamepassTokenId || undefined}
-                      statusLabel="Owned"
-                      statusTone="emerald"
-                      priceLabel={`${HOUSE_OWNERSHIP_PRICE_RESPITE} RESPITE`}
-                      visual={
-                        <img
-                          src={houseDisplay.imageSrc}
-                          alt={houseDisplay.title}
-                          className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-200"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      }
-                      extraFooter={
-                        /* Sub-Account Ledger, Ownership Provenance & Royalty Payouts (Contract v1.5.0) */
-                        <div
-                          data-wallet-deed-ledger="true"
-                          className="p-2.5 rounded-xl bg-neutral-900 text-white space-y-1.5"
-                        >
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-[9px] font-semibold text-sky-300 truncate">
-                              House Account
-                            </span>
-                            <span className="px-1.5 py-0.5 rounded-full bg-white/10 text-[8.5px] font-mono font-medium text-emerald-300 shrink-0">
-                              {(() => {
-                                const raw = onChainDeedLedger?.sub_account_id || nep171Ledger.subAccountId || '';
-                                const m = raw.match(/estate-0*(\d+)/i);
-                                return m ? `#${parseInt(m[1], 10)}` : 'Active';
-                              })()}
-                            </span>
-                          </div>
-
-                          {onChainDeedLedger ? (
-                            <>
-                              <div className="grid grid-cols-3 gap-1 text-[8.5px] font-mono tabular-nums">
-                                <div className="p-1 rounded-md bg-white/[0.07] min-w-0">
-                                  <div className="text-slate-400 truncate">Ready</div>
-                                  <div className="text-emerald-300 font-semibold truncate">
-                                    {onChainDeedLedger.pending_payout_respite}R
-                                  </div>
-                                </div>
-                                <div className="p-1 rounded-md bg-white/[0.07] min-w-0">
-                                  <div className="text-slate-400 truncate">Earned</div>
-                                  <div className="text-violet-300 font-semibold truncate">
-                                    {onChainDeedLedger.total_earned_respite}R
-                                  </div>
-                                </div>
-                                <div className="p-1 rounded-md bg-white/[0.07] min-w-0">
-                                  <div className="text-slate-400 truncate">Paid</div>
-                                  <div className="text-sky-300 font-semibold truncate">
-                                    {onChainDeedLedger.total_paid_out_respite}R
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="text-[8.5px] font-mono text-slate-300 space-y-0.5 max-h-12 overflow-y-auto">
-                                {onChainDeedLedger.ownership_history.length === 0 ? (
-                                  <div className="truncate">First owner</div>
-                                ) : (
-                                  onChainDeedLedger.ownership_history.slice(-2).map((rec, idx) => (
-                                    <div key={`${rec.new_key_epoch}-${idx}`} className="truncate">
-                                      #{rec.new_key_epoch} · {rec.transferred_treasury_respite}R
-                                    </div>
-                                  ))
-                                )}
-                              </div>
-
-                              <div className="flex items-center gap-1 pt-0.5">
-                                <button
-                                  type="button"
-                                  data-deed-fund-btn="true"
-                                  disabled={isDeedLedgerTxBusy || respiteBalance < 5}
-                                  onClick={async () => {
-                                    const signer = hud.nearWalletId || playerUid || '';
-                                    const deedTokenId =
-                                      hud.nearGamepassTokenId || onChainDeedLedger.token_id;
-                                    if (!signer || !deedTokenId) return;
-                                    soundEngine.playUiClick();
-                                    setIsDeedLedgerTxBusy(true);
-                                    setDeedLedgerActionFeedback(null);
-                                    try {
-                                      const tx = await executeMarketContractCallOnChain({
-                                        signerAccountId: signer,
-                                        methodName: 'fund_deed_royalty',
-                                        args: { token_id: deedTokenId, amount: '5' },
-                                      });
-                                      if (!tx.ok) {
-                                        setDeedLedgerActionFeedback({
-                                          type: 'error',
-                                          text: tx.error || 'Could not fund deed treasury.',
-                                        });
-                                        return;
-                                      }
-                                      void logMarketTransactionToSupabase({
-                                        merchant_id: 'lobby_cafe',
-                                        actor_near_account: signer,
-                                        action_type: 'FUND_DEED_ROYALTY',
-                                        item_id: deedTokenId,
-                                        currency: 'RESPITE',
-                                        amount: 5,
-                                        unit_price: 1,
-                                        reasoning_summary: `Added 5 RESPITE to your house account`,
-                                        near_tx_hash: tx.txHash,
-                                      });
-                                      setDeedLedgerActionFeedback({
-                                        type: 'success',
-                                        text: '+5 R funded to deed treasury',
-                                        txHash: tx.txHash,
-                                      });
-                                      await Promise.all([
-                                        refreshOnChainBalances(signer),
-                                        refreshOnChainDeedLedger(deedTokenId),
-                                      ]);
-                                    } finally {
-                                      setIsDeedLedgerTxBusy(false);
-                                    }
-                                  }}
-                                  className={`flex-1 py-1 rounded-full text-[9px] font-semibold transition-colors ${
-                                    !isDeedLedgerTxBusy && respiteBalance >= 5
-                                      ? 'bg-violet-500 hover:bg-violet-400 text-white cursor-pointer'
-                                      : 'bg-white/10 text-slate-400 cursor-not-allowed'
-                                  }`}
-                                >
-                                  {isDeedLedgerTxBusy ? 'Wait...' : 'Add 5 R'}
-                                </button>
-
-                                <button
-                                  type="button"
-                                  data-deed-claim-btn="true"
-                                  disabled={
-                                    isDeedLedgerTxBusy ||
-                                    Number(onChainDeedLedger.pending_payout_respite || '0') <= 0
-                                  }
-                                  onClick={async () => {
-                                    const signer = hud.nearWalletId || playerUid || '';
-                                    const deedTokenId =
-                                      hud.nearGamepassTokenId || onChainDeedLedger.token_id;
-                                    if (!signer || !deedTokenId) return;
-                                    soundEngine.playUiClick();
-                                    setIsDeedLedgerTxBusy(true);
-                                    setDeedLedgerActionFeedback(null);
-                                    try {
-                                      const tx = await executeMarketContractCallOnChain({
-                                        signerAccountId: signer,
-                                        methodName: 'claim_deed_payout',
-                                        args: {
-                                          token_id: deedTokenId,
-                                          expected_key_epoch: onChainDeedLedger.key_epoch,
-                                        },
-                                      });
-                                      if (!tx.ok) {
-                                        setDeedLedgerActionFeedback({
-                                          type: 'error',
-                                          text: tx.error || 'Could not claim deed payout.',
-                                        });
-                                        return;
-                                      }
-                                      const payoutAmt = Number(
-                                        onChainDeedLedger.pending_payout_respite || '0',
-                                      );
-                                      void logMarketTransactionToSupabase({
-                                        merchant_id: 'lobby_cafe',
-                                        actor_near_account: signer,
-                                        action_type: 'CLAIM_DEED_PAYOUT',
-                                        item_id: deedTokenId,
-                                        currency: 'RESPITE',
-                                        amount: payoutAmt,
-                                        unit_price: 1,
-                                        reasoning_summary: `Collected ${payoutAmt} RESPITE from your house`,
-                                        near_tx_hash: tx.txHash,
-                                      });
-                                      setDeedLedgerActionFeedback({
-                                        type: 'success',
-                                        text: `Claimed +${payoutAmt} R`,
-                                        txHash: tx.txHash,
-                                      });
-                                      await Promise.all([
-                                        refreshOnChainBalances(signer),
-                                        refreshOnChainDeedLedger(deedTokenId),
-                                      ]);
-                                    } finally {
-                                      setIsDeedLedgerTxBusy(false);
-                                    }
-                                  }}
-                                  className={`flex-1 py-1 rounded-full text-[9px] font-semibold transition-colors ${
-                                    !isDeedLedgerTxBusy &&
-                                    Number(onChainDeedLedger.pending_payout_respite || '0') > 0
-                                      ? 'bg-emerald-500 hover:bg-emerald-400 text-white cursor-pointer'
-                                      : 'bg-white/10 text-slate-400 cursor-not-allowed'
-                                  }`}
-                                >
-                                  Collect
-                                </button>
-                              </div>
-                            </>
-                          ) : (
-                            <div className="flex items-center justify-between gap-1.5 text-[9px] font-mono text-slate-300">
-                              <span className="truncate">
-                                {isLoadingDeedLedger ? 'Loading...' : 'Ledger ready'}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => void refreshOnChainDeedLedger()}
-                                className="px-2 py-0.5 rounded-full bg-sky-500 hover:bg-sky-400 text-white font-semibold cursor-pointer transition-colors shrink-0"
-                              >
-                                Sync
-                              </button>
-                            </div>
-                          )}
-
-                          {deedLedgerActionFeedback && (
-                            <div
-                              className={`text-[9px] font-medium leading-tight ${
-                                deedLedgerActionFeedback.type === 'success'
-                                  ? 'text-emerald-300'
-                                  : 'text-rose-300'
-                              }`}
-                            >
-                              <span>{deedLedgerActionFeedback.text}</span>
-                              {deedLedgerActionFeedback.txHash && (
-                                <>
-                                  {' '}
-                                  <a
-                                    href={getNearBlocksTxUrl(deedLedgerActionFeedback.txHash)}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="underline text-sky-300"
-                                  >
-                                    Receipt
-                                  </a>
-                                </>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      }
-                    />
-                  )}
-
-                  {/* 1B. OWNED FURNITURE, HOUSE THEMES & COLLECTOR GEAR */}
-                  {walletCatalogItems.map((item) => {
-                    const qty = walletCatalogCounts[item.id] ?? 1;
-                    const placedQty = placedFurnitureCounts[item.id] ?? 0;
-                    const quote = evaluateMerchantItemQuote(marketState, item);
-                    const categoryLabel =
-                      item.category === 'nft_collector_furniture'
-                        ? 'Furniture'
-                        : item.category === 'nft_house_theme'
-                          ? 'Theme'
-                          : 'Gear';
-                    return (
-                      <WalletAssetPortraitCard
-                        key={item.id}
-                        dataAttrs={{ 'data-wallet-catalog-item': item.id }}
-                        brandLabel={categoryLabel}
-                        badgeLabel={`${item.isNft ? 'NFT' : 'Item'}${qty > 1 ? ` ×${qty}` : ''}`}
-                        badgeTone="neutral"
-                        title={item.name}
-                        description={item.description}
-                        tokenId={item.tokenId}
-                        statusLabel={placedQty > 0 ? `In Room ×${placedQty}` : 'Owned'}
-                        statusTone="emerald"
-                        priceLabel={`${quote.buyPrice} ${item.currency}`}
-                        visual={
-                          <Furniture3dThumbnail
-                            catalogId={item.id}
-                            name={item.name}
-                            iconEmoji={item.iconEmoji}
-                            size="portrait"
-                            variant="studio"
-                          />
-                        }
-                      />
-                    );
-                  })}
-
-                  {/* 1C. OWNED VEHICLES (NFT SCOOTERS) */}
-                  {URBAN_SCOOTER_CATALOG_ITEMS.filter((v) =>
-                    ownedScooterIds.includes(v.id),
-                  ).map((v) => {
-                    const scooterPortrait = getOrRenderScooterPortraitUrl(v.kind);
-                    return (
-                      <WalletAssetPortraitCard
-                        key={v.id}
-                        dataAttrs={{ 'data-wallet-vehicle': v.id }}
-                        brandLabel="Vehicle"
-                        badgeLabel="NFT"
-                        badgeTone="emerald"
-                        title={v.name}
-                        description={v.description || v.subtitle}
-                        tokenId={v.tokenId}
-                        statusLabel="Owned"
-                        statusTone="emerald"
-                        priceLabel={`${v.priceRespite} RESPITE`}
-                        visual={
-                          scooterPortrait ? (
-                            <div className="relative w-full h-full flex items-center justify-center">
-                              <div
-                                aria-hidden="true"
-                                className="absolute bottom-3 left-1/2 -translate-x-1/2 w-[60%] h-2.5 rounded-full bg-black/[0.08] blur-[5px] pointer-events-none"
-                              />
-                              <img
-                                src={scooterPortrait}
-                                alt={v.name}
-                                className="relative z-10 w-full h-full object-contain p-2 drop-shadow-[0_6px_10px_rgba(15,23,42,0.14)] group-hover/card:scale-105 transition-transform duration-200 pointer-events-none"
-                                draggable={false}
-                              />
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-center justify-center text-center p-3">
-                              <div className="text-xs font-bold text-neutral-800 tracking-tight">
-                                Vehicle
-                              </div>
-                              <div className="text-[10px] text-neutral-500 mt-0.5 line-clamp-2">
-                                {v.subtitle}
-                              </div>
-                            </div>
-                          )
-                        }
-                      />
-                    );
-                  })}
-
-                  {/* 2. RECRUITED FAMILY MEMBERS */}
-                  {recruitedFamilyMembers.map((m) => (
-                    <WalletAssetPortraitCard
-                      key={m.agentId}
-                      brandLabel="Companion"
-                      badgeLabel={m.planLabel}
-                      badgeTone="amber"
-                      title={m.name}
-                      description={`Order: ${m.activeOrder.replace(/_/g, ' ').toUpperCase()}`}
-                      tokenId={m.contractAddress}
-                      statusLabel="Active"
-                      statusTone="emerald"
-                      priceLabel={`${m.pricePaidRespite} RESPITE`}
-                      visual={
-                        <div className="relative w-full h-full flex flex-col items-center justify-center text-center p-3">
-                          <div className="w-12 h-12 rounded-2xl bg-amber-500/12 border border-amber-500/20 flex items-center justify-center text-lg font-bold text-amber-700 shadow-xs">
-                            {m.name.slice(0, 1).toUpperCase()}
-                          </div>
-                          <div className="mt-2 text-[10px] font-semibold text-neutral-600">
-                            AI Companion
-                          </div>
-                        </div>
-                      }
-                    />
-                  ))}
-
-                  {/* 3. MINTED FISH NFTS (IN BAG + LISTED BY PLAYER) */}
-                  {caughtFishBucket
-                    .filter((f) => f.isMintedNft)
-                    .map((fish) => {
-                      const openWalletFish3d = () => {
-                        setPreview3dFish({
-                          speciesId: fish.speciesId,
-                          speciesName: fish.speciesName,
-                          rarity: fish.rarity,
-                          weightKg: fish.weightKg,
-                          lengthCm: fish.lengthCm,
-                          waterZoneLabel: fish.waterZoneLabel,
-                          colorHex: fish.colorHex,
-                          isTrophy: fish.isTrophy,
-                          isMintedNft: true,
-                          nftTokenId: fish.nftTokenId,
-                          valueLabel: `${fish.suggestedRespitePrice || 12} RESPITE`,
-                          ownerOrSellerLabel: hud.nearWalletId
-                            ? `Owner: ${hud.nearWalletId}`
-                            : undefined,
-                        });
-                      };
-
-                      return (
-                        <WalletAssetPortraitCard
-                          key={fish.id}
-                          dataAttrs={{ 'data-wallet-fish-nft': fish.speciesId }}
-                          brandLabel="Fish NFT"
-                          badgeLabel={fish.rarity}
-                          badgeTone="sky"
-                          title={fish.speciesName}
-                          description={`${fish.weightKg.toFixed(2)} kg · ${fish.waterZoneLabel}`}
-                          tokenId={fish.nftTokenId || undefined}
-                          statusLabel="Owned"
-                          statusTone="emerald"
-                          priceLabel={`${fish.suggestedRespitePrice || 12} RESPITE`}
-                          headerAction={
-                            <button
-                              type="button"
-                              data-wallet-fish-3d-btn={fish.id}
-                              onClick={() => {
-                                soundEngine.playUiClick();
-                                openWalletFish3d();
-                              }}
-                              className="px-2 py-0.5 rounded-full bg-neutral-900 hover:bg-neutral-700 text-white text-[9.5px] font-semibold transition-colors cursor-pointer"
-                            >
-                              3D
-                            </button>
-                          }
-                          visual={
-                            <Fish3dThumbnail
-                              speciesId={fish.speciesId}
-                              speciesName={fish.speciesName}
-                              colorHex={fish.colorHex}
-                              variant="studio"
-                              onInspect={openWalletFish3d}
-                            />
-                          }
-                        />
-                      );
-                    })}
-
-                  {fishMarketListings
-                    .filter(
-                      (l) =>
-                        Boolean(hud.nearWalletId) &&
-                        l.sellerNearAccount.toLowerCase() ===
-                          (hud.nearWalletId || '').toLowerCase(),
-                    )
-                    .map((listing) => {
-                      const openListedWalletFish3d = () => {
-                        setPreview3dFish({
-                          speciesId: listing.speciesId,
-                          speciesName: listing.speciesName,
-                          rarity: listing.rarity,
-                          weightKg: listing.weightKg,
-                          lengthCm: listing.lengthCm,
-                          waterZoneLabel: listing.waterZoneLabel,
-                          colorHex: listing.colorHex,
-                          isTrophy: listing.isTrophy,
-                          isMintedNft: true,
-                          nftTokenId: listing.nftTokenId,
-                          valueLabel: `Listed · ${listing.priceRespite} RESPITE`,
-                          ownerOrSellerLabel: `Seller: ${listing.sellerNearAccount}`,
-                        });
-                      };
-
-                      return (
-                        <WalletAssetPortraitCard
-                          key={listing.listingId}
-                          dataAttrs={{ 'data-wallet-listed-fish-nft': listing.speciesId }}
-                          brandLabel="Listed at Kai"
-                          badgeLabel={listing.rarity}
-                          badgeTone="amber"
-                          title={listing.speciesName}
-                          description={`${listing.weightKg.toFixed(2)} kg · ${listing.waterZoneLabel}`}
-                          tokenId={listing.nftTokenId || undefined}
-                          statusLabel="On Market"
-                          statusTone="amber"
-                          priceLabel={`${listing.priceRespite} RESPITE`}
-                          headerAction={
-                            <button
-                              type="button"
-                              data-wallet-listed-fish-3d-btn={listing.listingId}
-                              onClick={() => {
-                                soundEngine.playUiClick();
-                                openListedWalletFish3d();
-                              }}
-                              className="px-2 py-0.5 rounded-full bg-neutral-900 hover:bg-neutral-700 text-white text-[9.5px] font-semibold transition-colors cursor-pointer"
-                            >
-                              3D
-                            </button>
-                          }
-                          visual={
-                            <Fish3dThumbnail
-                              speciesId={listing.speciesId}
-                              speciesName={listing.speciesName}
-                              colorHex={listing.colorHex}
-                              variant="studio"
-                              onInspect={openListedWalletFish3d}
-                            />
-                          }
-                        />
-                      );
-                    })}
-
-                  {totalOwnedWalletItems === 0 && (
-                    <div className="col-span-full py-8 px-4 text-center rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-700 text-xs space-y-1">
-                      <div className="font-semibold text-slate-900">No items yet</div>
-                      <div className="text-[11px] text-slate-500">
-                        Buy a house, furniture, recruit a companion, or mint caught fish into NFTs.
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-              );
-            })() : (
-              <div data-wallet-history-panel="true" className="space-y-3">
-                {/* HEADER & CURRENCY FILTER PILLS */}
-                <div className="rounded-2xl bg-[#eef0f4]/92 text-slate-900 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] p-4 space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-[11px] font-semibold text-emerald-700">
-                        History
-                      </div>
-                      <div className="text-xs font-medium text-slate-700 truncate">
-                        {hud.nearWalletId || playerUid || connectedGoogleEmail || 'Guest'}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      data-wallet-refresh-history-btn="true"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        void refreshWalletTransactions();
-                      }}
-                      className="px-3 py-1.5 rounded-full bg-white hover:bg-slate-50 text-slate-800 border border-slate-200/90 shadow-xs font-semibold text-[11px] transition-colors cursor-pointer shrink-0"
-                    >
-                      {isLoadingWalletTransactions ? 'Loading...' : 'Refresh'}
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 flex-wrap pt-2.5 border-t border-slate-300/60">
-                    {(['ALL', 'LUL', 'CYON', 'RESPITE', 'NEAR'] as const).map((filterKey) => (
-                      <button
-                        key={filterKey}
-                        type="button"
-                        data-wallet-history-filter={filterKey.toLowerCase()}
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          setWalletHistoryFilter(filterKey);
-                        }}
-                        className={`px-3 py-1 rounded-full text-[11px] font-semibold cursor-pointer transition-colors ${
-                          walletHistoryFilter === filterKey
-                            ? 'bg-slate-900 text-white shadow-xs'
-                            : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90'
-                        }`}
-                      >
-                        {filterKey}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* TRANSACTION LIST */}
-                {(() => {
-                  const filteredTxs = walletTransactions.filter((tx) => {
-                    if (walletHistoryFilter === 'ALL') return true;
-                    const displayAmount = formatWalletHistoryAmountDisplay(tx);
-                    return displayAmount.badgeCurrency === walletHistoryFilter;
-                  });
-
-                  if (isLoadingWalletTransactions && filteredTxs.length === 0) {
-                    return (
-                      <div className="p-5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-center text-xs font-medium text-slate-600">
-                        Loading transaction history...
-                      </div>
-                    );
-                  }
-
-                  if (filteredTxs.length === 0) {
-                    return (
-                      <div
-                        data-wallet-history-empty="true"
-                        className="p-6 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-center space-y-1"
-                      >
-                        <div className="text-xs font-semibold text-slate-900">
-                          No transactions yet
-                        </div>
-                        <div className="text-[11px] text-slate-500">
-                          Currency exchanges, merchant purchases, fish NFT trades, and RESPITE transfers will appear here.
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div className="space-y-2.5">
-                      {filteredTxs.map((tx) => {
-                        const displayAmount = formatWalletHistoryAmountDisplay(tx);
-                        const actionLabel = formatWalletHistoryActionLabel(tx.action_type);
-                        const badgeTone =
-                          displayAmount.badgeCurrency === 'CYON'
-                            ? 'bg-sky-50 text-sky-900'
-                            : displayAmount.badgeCurrency === 'RESPITE'
-                              ? 'bg-violet-50 text-violet-900'
-                              : displayAmount.badgeCurrency === 'NEAR'
-                                ? 'bg-emerald-50 text-emerald-900'
-                                : 'bg-amber-50 text-amber-900';
-                        const formattedDate = (() => {
-                          try {
-                            const d = new Date(tx.created_at);
-                            return Number.isNaN(d.getTime())
-                              ? tx.created_at
-                              : d.toLocaleString([], {
-                                  month: 'short',
-                                  day: '2-digit',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                });
-                          } catch {
-                            return tx.created_at;
-                          }
-                        })();
-                        return (
-                          <div
-                            key={tx.id}
-                            data-wallet-tx-item="true"
-                            className="p-3.5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 space-y-2"
-                          >
-                            <div className="flex items-start justify-between gap-2.5">
-                              <div className="min-w-0 space-y-1">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="px-2 py-0.5 rounded-full bg-[#dfe4ec]/90 border border-slate-300/60 text-slate-700 text-[10px] font-semibold">
-                                    {actionLabel}
-                                  </span>
-                                  <span className="text-[11px] text-slate-500">
-                                    {formattedDate}
-                                  </span>
-                                </div>
-                                <div className="text-xs font-medium text-slate-900 break-words">
-                                  {tx.reasoning_summary || tx.item_id || tx.action_type}
-                                </div>
-                              </div>
-
-                              <div
-                                className={`px-2.5 py-1 rounded-full ${badgeTone} font-mono tabular-nums font-semibold text-xs shrink-0`}
-                              >
-                                {displayAmount.amountText}
-                              </div>
-                            </div>
-
-                            {tx.near_tx_hash && (
-                              <div className="pt-2 border-t border-slate-300/60 flex items-center justify-between gap-2 text-[10.5px] font-mono">
-                                <span className="text-slate-500 truncate">
-                                  Tx: {tx.near_tx_hash}
-                                </span>
-                                <a
-                                  href={`https://testnet.nearblocks.io/txns/${tx.near_tx_hash}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="font-sans font-semibold text-sky-700 hover:text-sky-800 hover:underline shrink-0"
-                                >
-                                  View on NearBlocks ↗
-                                </a>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-          </div>
-        </div>
-  );
-
-  const renderGearApp = (embeddedInPhone: boolean) => (
-    <div
-      data-gear-modal={embeddedInPhone ? 'true' : undefined}
-      className={
-        embeddedInPhone
-          ? 'relative w-full h-full flex-1 flex flex-col bg-transparent p-3 text-white overflow-hidden min-h-0'
-          : 'relative flex-1 flex flex-col rounded-[32px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] p-4 text-white overflow-hidden min-h-0'
-      }
-    >
-      {/* Header (matching City Feed) */}
-      <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-white/15 shrink-0">
-        <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold tracking-tight text-white truncate">
-            Scooters &amp; Gear
-          </h2>
-          <p className="text-[10.5px] text-white/70 truncate">
-            {ownedScooterIds.length}{' '}
-            {ownedScooterIds.length === 1 ? 'scooter' : 'scooters'} · Personal Equipment
-          </p>
-        </div>
-
-        {!embeddedInPhone && (
-          <button
-            type="button"
-            data-close-gear-btn="true"
-            onClick={() => {
-              soundEngine.playUiCancel();
-              setIsGearModalOpen(false);
-            }}
-            className="w-8 h-8 rounded-full bg-[#eef0f4]/90 hover:bg-white border border-white/80 text-slate-700 hover:text-rose-600 shadow-sm flex items-center justify-center transition-colors cursor-pointer active:scale-95 shrink-0"
-            aria-label="Close Gear"
-          >
-            <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
-          </button>
-        )}
-      </div>
-
-      <div className="flex-1 overflow-y-auto overflow-x-hidden pr-0.5 mt-2.5 space-y-2.5 min-h-0">
-        {(() => {
-          const isJoranEquipped = hud.equippedWeapon === 'Joran Fishing';
-          const ownedFishingGear = MERCHANT_CATALOG_ITEMS.filter(
-            (item) => item.category === 'fishing_gear' && ownedMerchantItemIds.includes(item.id),
-          );
-          return (
-            <>
-              {/* Personal Fishing Rod Card (Frosted Gray Card) */}
-              <div
-                data-gear-item-card="fishing_rod"
-                className={`rounded-2xl bg-[#eef0f4]/92 border shadow-[0_8px_22px_rgba(15,23,42,0.16)] p-3.5 text-slate-900 transition-all ${
-                  isJoranEquipped
-                    ? 'border-emerald-400/90 ring-2 ring-emerald-400/25'
-                    : 'border-white/80'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-11 h-11 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 text-sky-700 flex items-center justify-center font-bold text-xs tracking-wide shrink-0">
-                      ROD
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-slate-900">
-                          Fishing Rod
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            isJoranEquipped
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-[#dfe4ec]/90 text-slate-700'
-                          }`}
-                        >
-                          {isJoranEquipped ? 'Equipped' : 'In Gear'}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-600 mt-0.5 leading-snug">
-                        Carbon spin rod. Use along the beach or lake shore.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-3 pt-2.5 border-t border-slate-300/60 flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-slate-600">
-                    {isJoranEquipped ? 'Equipped' : 'Stored in Gear'}
-                  </span>
-
-                  <button
-                    type="button"
-                    data-gear-toggle-fishing-rod="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      if (isJoranEquipped) {
-                        setIsChargingCast(false);
-                        setIsHoldingReel(false);
-                        setFishingMinigame(null);
-                        setFishingHintMessage(null);
-                        setFishingPhase('idle');
-                        dispatchBuddyAction('qcEquipWeapon:unarmed');
-                      } else {
-                        dispatchBuddyAction('qcEquipWeapon:fishing_rod');
-                      }
-                    }}
-                    className={`px-4 py-1.5 rounded-xl font-semibold text-xs cursor-pointer active:scale-95 transition-colors ${
-                      isJoranEquipped
-                        ? 'bg-rose-100 hover:bg-rose-200 text-rose-700'
-                        : 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs'
-                    }`}
-                  >
-                    {isJoranEquipped ? 'Unequip' : 'Equip'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Owned Fishing Gear & Tackle Purchased from Merchant Kai */}
-              {ownedFishingGear.map((gear) => (
-                <div
-                  key={gear.id}
-                  data-gear-item-card={gear.id}
-                  className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] p-3.5 text-slate-900 flex items-center justify-between gap-3"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 text-slate-700 flex items-center justify-center font-bold text-[10px] shrink-0">
-                      GEAR
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-xs font-semibold text-slate-900">
-                          {gear.name}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            gear.isNft
-                              ? 'bg-violet-100 text-violet-800'
-                              : 'bg-sky-100 text-sky-800'
-                          }`}
-                        >
-                          {gear.isNft ? 'NFT' : 'Tackle'}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-slate-600 mt-0.5 truncate">
-                        {gear.description}
-                      </div>
-                    </div>
-                  </div>
-
-                  {gear.isEquippableRod && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        if (isJoranEquipped) {
-                          setIsChargingCast(false);
-                          setIsHoldingReel(false);
-                          setFishingMinigame(null);
-                          setFishingHintMessage(null);
-                          setFishingPhase('idle');
-                          dispatchBuddyAction('qcEquipWeapon:unarmed');
-                        } else {
-                          dispatchBuddyAction('qcEquipWeapon:fishing_rod');
-                        }
-                      }}
-                      className={`px-3.5 py-1.5 rounded-xl font-semibold text-[11px] transition-colors cursor-pointer shrink-0 ${
-                        isJoranEquipped
-                          ? 'bg-rose-100 hover:bg-rose-200 text-rose-700'
-                          : 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs'
-                      }`}
-                    >
-                      {isJoranEquipped ? 'Unequip' : 'Equip'}
-                    </button>
-                  )}
-                </div>
-              ))}
-            </>
-          );
-        })()}
-
-        {URBAN_SCOOTER_CATALOG_ITEMS.filter((v) => ownedScooterIds.includes(v.id)).map(
-          (v) => {
-            const isEquipped = equippedScooterKind === v.kind;
-            return (
-              <div
-                key={v.id}
-                data-gear-vehicle={v.id}
-                className={`rounded-2xl bg-[#eef0f4]/92 border shadow-[0_8px_22px_rgba(15,23,42,0.16)] p-3.5 text-slate-900 transition-all ${
-                  isEquipped
-                    ? 'border-emerald-400/90 ring-2 ring-emerald-400/25'
-                    : 'border-white/80'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-11 h-11 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 text-teal-800 flex items-center justify-center font-bold text-[10px] shrink-0">
-                      RIDE
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-sm font-semibold text-slate-900">
-                          {v.name}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-100 text-violet-800">
-                          NFT
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            isEquipped
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-[#dfe4ec]/90 text-slate-700'
-                          }`}
-                        >
-                          {isEquipped ? 'Riding' : 'Owned'}
-                        </span>
-                      </div>
-                      <div className="text-xs text-slate-600 mt-0.5">
-                        {v.subtitle}
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    data-gear-equip-btn={v.id}
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      if (isEquipped) {
-                        dispatchBuddyAction('unequipScooter');
-                      } else {
-                        dispatchBuddyAction(`equipScooter:${v.kind}`);
-                      }
-                      setIsGearModalOpen(false);
-                      if (embeddedInPhone) closeSmartphone();
-                    }}
-                    className={`px-4 py-1.5 rounded-xl font-semibold text-xs transition-colors cursor-pointer shrink-0 ${
-                      isEquipped
-                        ? 'bg-rose-100 hover:bg-rose-200 text-rose-700'
-                        : 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs'
-                    }`}
-                  >
-                    {isEquipped ? 'Get Off' : 'Ride'}
-                  </button>
-                </div>
-              </div>
-            );
+        const rawTarget = respiteTransferRecipient.trim().toLowerCase();
+        if (!rawTarget) {
+          setRespiteTransferStatus({
+            type: "error",
+            text: "Enter a valid recipient wallet.",
+          });
+          return;
+        }
+        const targetWallet = rawTarget.includes(".")
+          ? rawTarget
+          : `${rawTarget}.buddiesblitz.testnet`;
+        const amt = Math.floor(Number(respiteTransferAmount));
+        if (!Number.isFinite(amt) || amt <= 0) {
+          setRespiteTransferStatus({
+            type: "error",
+            text: "Enter a positive RESPITE amount.",
+          });
+          return;
+        }
+        if (respiteBalance < amt) {
+          setRespiteTransferStatus({
+            type: "error",
+            text: "Not enough RESPITE available.",
+          });
+          return;
+        }
+        const res = await executeMarketContractCallOnChain({
+          signerAccountId: senderId,
+          methodName: "ft_transfer",
+          args: {
+            receiver_id: targetWallet,
+            amount: String(amt),
+            memo: "Buddies Blitz P2P RESPITE Transfer",
           },
-        )}
-
-        {ownedScooterIds.length === 0 && (
-          <div className="p-5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-center text-slate-900">
-            <div className="text-xs font-semibold text-slate-900">
-              No rides yet
-            </div>
-            <div className="text-[11px] text-slate-600 mt-1">
-              Buy a scooter at the Scooter Showroom in the city, then ride it from here.
-            </div>
-          </div>
-        )}
-
-        <div className="p-3.5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900">
-          <div className="text-[11px] font-semibold text-slate-900">
-            How to Ride
-          </div>
-          <div className="text-xs text-slate-600 mt-1 leading-relaxed">
-            Move with WASD or the joystick — hold Shift to go faster. Your scooter
-            parks itself when you step indoors, board the tram, or enter the Warzone.
-          </div>
-        </div>
-      </div>
-    </div>
+        });
+        if (!res.ok || !res.txHash) {
+          setRespiteTransferStatus({
+            type: "error",
+            text: res.error || "Connect your wallet to send RESPITE.",
+          });
+          return;
+        }
+        const liveSenderBal = await fetchNep141Balance(
+          NEAR_CONFIG.nep141RespiteContractId,
+          senderId,
+        );
+        const nextRespite =
+          liveSenderBal !== null
+            ? Math.max(0, Number(liveSenderBal) || 0)
+            : Math.max(0, respiteBalance - amt);
+        setRespiteBalance(nextRespite);
+        void fetchNep141Balance(
+          NEAR_CONFIG.nep141RespiteContractId,
+          targetWallet,
+        ).then((recipientChainBal) => {
+          if (recipientChainBal !== null) {
+            void mirrorRecipientOnChainRespiteCacheInSupabase(
+              targetWallet,
+              Math.max(0, Number(recipientChainBal) || 0),
+            );
+          }
+        });
+        void syncPlayerBalancesToSupabase({
+          nearAccountId: senderId,
+          lulBalance: hud.gold,
+          cyonBalance,
+          respiteBalance: nextRespite,
+        });
+        void logMarketTransactionToSupabase({
+          actorNearAccount: senderId,
+          actionType: "SEND_RESPITE",
+          itemId: targetWallet,
+          currency: "RESPITE",
+          amount: amt,
+          unitPrice: 1,
+          reasoningSummary: `Sent ${amt} RESPITE to ${targetWallet}`,
+          nearTxHash: res.txHash,
+        });
+        setRespiteTransferStatus({
+          type: "success",
+          text: `Sent ${amt} RESPITE to ${targetWallet}`,
+          txHash: res.txHash,
+        });
+        setRespiteTransferRecipient("");
+      }}
+      historyFilter={walletHistoryFilter}
+      onChangeHistoryFilter={(f) => setWalletHistoryFilter(f)}
+      historyItems={walletTransactions.map((tx) => {
+        const displayAmount = formatWalletHistoryAmountDisplay(tx);
+        return {
+          id: tx.id,
+          action_type: tx.action_type,
+          item_id: tx.item_id,
+          reasoning_summary: tx.reasoning_summary,
+          created_at: tx.created_at,
+          near_tx_hash: tx.near_tx_hash,
+          amountText: displayAmount.amountText,
+          badgeCurrency: displayAmount.badgeCurrency,
+          actionLabel: formatWalletHistoryActionLabel(tx.action_type),
+        };
+      })}
+      isLoadingHistory={isLoadingWalletTransactions}
+      onRefreshHistory={() => {
+        void refreshWalletTransactions();
+      }}
+      pendingTxs={pendingWalletTxs}
+      nowMs={pendingTxNowMs}
+      onConfirmPendingTx={handleConfirmPendingWalletTx}
+      onRejectPendingTx={handleRejectPendingWalletTx}
+    />
   );
 
-  const renderPersonalBagApp = (embeddedInPhone: boolean) => (
-    <div
-      data-personal-bag-modal={embeddedInPhone ? 'true' : undefined}
-      className={
-        embeddedInPhone
-          ? 'relative w-full h-full flex-1 flex flex-col bg-transparent p-3 text-white overflow-hidden min-h-0'
-          : 'relative flex-1 flex flex-col rounded-[32px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] p-4 text-white overflow-hidden min-h-0'
-      }
-    >
-      {/* Header (matching City Feed) */}
-      <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-white/15 shrink-0">
-        <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold tracking-tight text-white truncate">
-            Personal Bag
-          </h2>
-          <p className="text-[10.5px] text-white/70 truncate">
-            {caughtFishBucket.length}/20 Fish ·{' '}
-            {ownedMerchantItemIds.length + ownedApparelIds.length} Items
-          </p>
-        </div>
+  const renderMyThingsApp = (embeddedInPhone: boolean) => {
+    const ownedWalletHouseStyle = ownedHouseStyle ?? houseArchitectureStyle;
+    const houseDisplay = getHouseStyleDisplaySpec(ownedWalletHouseStyle);
+    const houseAccountBadgeLabel = (() => {
+      const raw = onChainDeedLedger?.sub_account_id || nep171Ledger.subAccountId || "";
+      const m = raw.match(/estate-0*(\d+)/i);
+      return m ? `#${parseInt(m[1], 10)}` : "Active";
+    })();
+    const playerListedFish = fishMarketListings.filter(
+      (l) =>
+        Boolean(hud.nearWalletId) &&
+        l.sellerNearAccount.toLowerCase() === (hud.nearWalletId || "").toLowerCase(),
+    );
+    const isJoranEquipped = hud.equippedWeapon === "Joran Fishing";
 
-        {!embeddedInPhone && (
-          <button
-            type="button"
-            data-close-personal-bag-btn="true"
-            onClick={() => {
-              soundEngine.playUiCancel();
-              setIsPersonalBagModalOpen(false);
-            }}
-            className="w-8 h-8 rounded-full bg-[#eef0f4]/90 hover:bg-white border border-white/80 text-slate-700 hover:text-rose-600 shadow-sm flex items-center justify-center transition-colors cursor-pointer active:scale-95 shrink-0"
-            aria-label="Close Personal Bag"
-          >
-            <X className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
-          </button>
-        )}
-      </div>
-
-      {/* Segmented Filter Bar (inZOI Frosted Pearl Card matching City Feed) */}
-      <div
-        role="tablist"
-        aria-label="Bag Categories"
-        className="grid grid-cols-3 gap-1 p-1 mt-2.5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_6px_16px_rgba(15,23,42,0.14)] shrink-0"
-      >
-        <button
-          type="button"
-          role="tab"
-          aria-selected={personalBagTab === 'equipment'}
-          data-bag-tab="equipment"
-          onClick={() => {
-            soundEngine.playUiClick();
-            setPersonalBagTab('equipment');
-          }}
-          className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1 whitespace-nowrap truncate transition-colors cursor-pointer ${
-            personalBagTab === 'equipment'
-              ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.1)]'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/55'
-          }`}
-        >
-          <Backpack className="w-3 h-3 stroke-[2.2] shrink-0" aria-hidden="true" />
-          <span>Equipment</span>
-        </button>
-
-        <button
-          type="button"
-          role="tab"
-          aria-selected={personalBagTab === 'fish'}
-          data-bag-tab="fish"
-          onClick={() => {
-            soundEngine.playUiClick();
-            setPersonalBagTab('fish');
-          }}
-          className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold whitespace-nowrap truncate transition-colors cursor-pointer ${
-            personalBagTab === 'fish'
-              ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.1)]'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/55'
-          }`}
-        >
-          <span>Fish ({caughtFishBucket.length}/20)</span>
-        </button>
-
-        <button
-          type="button"
-          role="tab"
-          aria-selected={personalBagTab === 'items'}
-          data-bag-tab="items"
-          onClick={() => {
-            soundEngine.playUiClick();
-            setPersonalBagTab('items');
-          }}
-          className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold whitespace-nowrap truncate transition-colors cursor-pointer ${
-            personalBagTab === 'items'
-              ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.1)]'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/55'
-          }`}
-        >
-          <span>Items ({ownedMerchantItemIds.length + ownedApparelIds.length})</span>
-        </button>
-      </div>
-
-      {/* Bag Body */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden pr-0.5 mt-2.5 space-y-2.5 min-h-0">
-        {personalBagTab === 'equipment' && (() => {
-          const ownedWardrobeItems = FASHION_APPAREL_CATALOG_ITEMS.filter((apparel) =>
-            ownedApparelIds.includes(apparel.id),
-          );
-          const totalOwnedStudioCount = WARDROBE_STUDIO_ITEMS.filter(
-            (item) => item.isStarterDefault || ownedApparelIds.includes(item.id),
-          ).length;
-          return (
-            <div className="space-y-2.5">
-              {/* Wardrobe & Apparel Section inside Personal Bag */}
-              <div className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] p-3.5 space-y-3 text-slate-900">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-7 h-7 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 text-sky-700 flex items-center justify-center shrink-0">
-                      <Shirt className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
-                    </div>
-                    <span className="text-xs font-semibold text-slate-900 truncate">
-                      Wardrobe &amp; Apparel ({totalOwnedStudioCount})
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {equippedTorsoItemId && (
-                      <button
-                        type="button"
-                        onClick={() => handleToggleEquipApparel(null)}
-                        className="px-2.5 py-1 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/90 text-slate-700 text-[10.5px] font-semibold transition-colors cursor-pointer whitespace-nowrap"
-                      >
-                        Default Top
-                      </button>
-                    )}
-                    {hud.worldMode !== 'warzone' && (
-                      <button
-                        type="button"
-                        data-bag-open-wardrobe-studio-btn="true"
-                        onClick={() => {
-                          soundEngine.playUiConfirm();
-                          setIsPersonalBagModalOpen(false);
-                          if (embeddedInPhone) closeSmartphone();
-                          setIsWardrobeStudioOpen(true);
-                        }}
-                        className="px-3 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap shadow-xs"
-                      >
-                        3D Studio
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {ownedWardrobeItems.length === 0 ? (
-                  <div className="p-3.5 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 text-center space-y-1">
-                    <div className="text-xs font-semibold text-slate-800">
-                      Starter Wardrobe Ready
-                    </div>
-                    <p className="text-[11px] text-slate-600 leading-relaxed">
-                      Open the 3D Wardrobe Studio to customize Top, Bottoms, Hair, Shoes, Sets, and Dye Colors.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {ownedWardrobeItems.map((apparel) => {
-                      const isEquippedNow = equippedTorsoItemId === apparel.id;
-                      return (
-                        <div
-                          key={apparel.id}
-                          data-bag-apparel-row={apparel.id}
-                          className="p-3 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 flex items-center justify-between gap-2.5"
-                        >
-                          <div className="min-w-0">
-                            <div className="text-xs font-semibold text-slate-900 truncate">
-                              {apparel.name}
-                            </div>
-                            <div className="text-[11px] text-slate-600 mt-0.5">
-                              <span>Torso Slot</span>
-                              <span aria-hidden="true"> · </span>
-                              <span>{characterGender === 'female' ? 'Female Fit' : 'Male Fit'}</span>
-                              <span aria-hidden="true"> · </span>
-                              <span className={isEquippedNow ? 'text-emerald-700 font-semibold' : 'text-slate-600'}>
-                                {isEquippedNow ? 'Wearing Now' : 'In Bag'}
-                              </span>
-                            </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            data-bag-equip-apparel-btn={apparel.id}
-                            onClick={() => handleToggleEquipApparel(apparel.id)}
-                            className={`px-3.5 py-1.5 rounded-xl text-[11px] font-semibold cursor-pointer whitespace-nowrap shrink-0 transition-colors ${
-                              isEquippedNow
-                                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
-                                : 'bg-slate-900 hover:bg-slate-800 text-white'
-                            }`}
-                          >
-                            {isEquippedNow ? 'Take Off' : 'Wear'}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Quick Summary of Bag Capacity */}
-              <div className="p-3.5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-[11px] font-semibold text-slate-900">
-                    Fish Bucket
-                  </div>
-                  <div className="text-xs text-slate-600 font-mono tabular-nums mt-0.5">
-                    {caughtFishBucket.length} / 20 Fish Stored
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setPersonalBagTab('fish');
-                  }}
-                  className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition-colors cursor-pointer shrink-0 shadow-xs"
-                >
-                  View Fish
-                </button>
-              </div>
-            </div>
-          );
-        })()}
-
-        {personalBagTab === 'fish' && (
-          <div className="space-y-2.5">
-            {caughtFishBucket.length === 0 ? (
-              <div className="p-6 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-center space-y-1.5 text-slate-900">
-                <div className="text-xs font-semibold text-slate-900">
-                  No fish in bag yet
-                </div>
-                <p className="text-[11px] text-slate-600 leading-relaxed">
-                  Equip your Fishing Rod in the Gear tab and cast your line at the beach or lake.
-                </p>
-              </div>
-            ) : (
-              caughtFishBucket.map((fish) => {
-                const openBagFish3d = () => {
-                  setPreview3dFish({
-                    speciesId: fish.speciesId,
-                    speciesName: fish.speciesName,
-                    rarity: fish.rarity,
-                    weightKg: fish.weightKg,
-                    lengthCm: fish.lengthCm,
-                    waterZoneLabel: fish.waterZoneLabel,
-                    colorHex: fish.colorHex,
-                    isTrophy: fish.isTrophy,
-                    isMintedNft: fish.isMintedNft,
-                    nftTokenId: fish.nftTokenId,
-                    valueLabel: fish.isMintedNft
-                      ? `${fish.suggestedRespitePrice || 12} RESPITE`
-                      : `${fish.sellValueLul || fish.sellValueCyon || 15} LUL`,
-                    ownerOrSellerLabel: fish.caughtByAccount
-                      ? `Angler: ${fish.caughtByAccount}`
-                      : undefined,
-                  });
-                };
-
-                return (
-                  <div
-                    key={fish.id}
-                    data-bag-fish-row={fish.speciesId}
-                    className="p-3 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 flex items-center justify-between gap-2.5"
-                  >
-                    <Fish3dThumbnail
-                      speciesId={fish.speciesId}
-                      speciesName={fish.speciesName}
-                      colorHex={fish.colorHex}
-                      variant="compact"
-                      onInspect={openBagFish3d}
-                    />
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-xs font-semibold text-slate-900">
-                          {fish.speciesName}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 text-[10px] font-semibold">
-                          {fish.rarity}
-                        </span>
-                        {fish.isMintedNft && (
-                          <span className="px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 text-[10px] font-semibold">
-                            NFT
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-slate-600 mt-0.5 font-mono tabular-nums">
-                        {fish.weightKg.toFixed(2)} kg ·{' '}
-                        {fish.sellValueLul || fish.sellValueCyon || 15} LUL at Kai&apos;s Shop
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-                      <button
-                        type="button"
-                        data-bag-fish-3d-btn={fish.id}
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          openBagFish3d();
-                        }}
-                        className="px-2.5 py-1 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/90 text-slate-800 text-[10.5px] font-semibold transition-colors cursor-pointer"
-                      >
-                        View
-                      </button>
-
-                      {!fish.isMintedNft ? (
-                        hud.nearWalletConnected ? (
-                          <button
-                            type="button"
-                            data-bag-mint-fish-btn={fish.id}
-                            onClick={() => {
-                              void handleMintCaughtFishNft(fish);
-                            }}
-                            className="px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-[10.5px] font-semibold transition-colors cursor-pointer"
-                          >
-                            Mint NFT
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            data-bag-guest-register-btn={fish.id}
-                            onClick={() => {
-                              soundEngine.playUiClick();
-                              setIsPersonalBagModalOpen(false);
-                              if (embeddedInPhone) closeSmartphone();
-                              setOnboardingStep('auth_choice');
-                            }}
-                            className="px-2.5 py-1 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-[10.5px] font-semibold transition-colors cursor-pointer"
-                          >
-                            Sign In
-                          </button>
-                        )
-                      ) : (
-                        <span className="text-[10px] font-semibold text-violet-800 bg-violet-100 px-2.5 py-1 rounded-xl">
-                          Minted
-                        </span>
-                      )}
-
-                      {!fish.isMintedNft && (
-                        <button
-                          type="button"
-                          data-bag-release-fish-btn={fish.id}
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            setCaughtFishBucket((prev) =>
-                              prev.filter((f) => f.id !== fish.id),
-                            );
-                            setLastCaughtFishToast((prev) =>
-                              prev?.id === fish.id ? null : prev,
-                            );
-                          }}
-                          className="px-2.5 py-1 rounded-xl bg-[#dfe4ec]/90 hover:bg-white text-slate-700 text-[10.5px] font-semibold transition-colors cursor-pointer"
-                        >
-                          Release
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        )}
-
-        {personalBagTab === 'items' && (() => {
-          const ownedWardrobeItems = FASHION_APPAREL_CATALOG_ITEMS.filter((apparel) =>
-            ownedApparelIds.includes(apparel.id),
-          );
-          const ownedPersonalItems = MERCHANT_CATALOG_ITEMS.filter((item) =>
-            ownedMerchantItemIds.includes(item.id),
-          );
-          const bagOwnedCounts = countOwnedMerchantItems(ownedMerchantItemIds);
-          return (
-            <div className="space-y-2.5">
-              {ownedWardrobeItems.map((apparel) => {
-                const isEquippedNow = equippedTorsoItemId === apparel.id;
-                return (
-                  <div
-                    key={apparel.id}
-                    className="p-3.5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 flex items-center justify-between gap-2.5"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-xs font-semibold text-slate-900 truncate">
-                        {apparel.name}
-                      </div>
-                      <div className="text-[11px] text-slate-600 mt-0.5">
-                        <span>Apparel · Torso</span>
-                        <span aria-hidden="true"> · </span>
-                        <span className={isEquippedNow ? 'text-emerald-700 font-semibold' : ''}>
-                          {isEquippedNow ? 'Wearing Now' : 'Stored in Bag'}
-                        </span>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleToggleEquipApparel(apparel.id)}
-                      className={`px-3.5 py-1.5 rounded-xl text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                        isEquippedNow
-                          ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
-                          : 'bg-slate-900 hover:bg-slate-800 text-white'
-                      }`}
-                    >
-                      {isEquippedNow ? 'Take Off' : 'Wear'}
-                    </button>
-                  </div>
-                );
-              })}
-              {ownedPersonalItems.length === 0 && ownedWardrobeItems.length === 0 ? (
-                <div className="p-6 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-center space-y-1.5 text-slate-900">
-                  <div className="text-xs font-semibold text-slate-900">
-                    No collectible items yet
-                  </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Purchase outfits at the Fashion Boutique or furniture &amp; personal items from Merchant Hana (Plaza) or Kai (Beachfront).
-                  </p>
-                </div>
-              ) : (
-                ownedPersonalItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className="p-3.5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] text-slate-900 flex items-center justify-between gap-2"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-xs font-semibold text-slate-900">
-                          {item.name}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            item.isNft
-                              ? 'bg-violet-100 text-violet-800'
-                              : 'bg-sky-100 text-sky-800'
-                          }`}
-                        >
-                          {item.isNft ? 'NFT' : 'Item'}
-                        </span>
-                        {(bagOwnedCounts[item.id] ?? 1) > 1 && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 font-mono tabular-nums">
-                            ×{bagOwnedCounts[item.id]}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] text-slate-600 mt-0.5 truncate">
-                        {item.description}
-                      </div>
-                      {(placedFurnitureCounts[item.id] ?? 0) > 0 && (
-                        <div className="text-[10.5px] font-semibold text-emerald-700 mt-0.5">
-                          In room ×{placedFurnitureCounts[item.id]}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          );
-        })()}
-      </div>
-    </div>
-  );
+    return (
+      <MyThingsPanel
+        embeddedInPhone={embeddedInPhone}
+        onClose={() => {
+          setIsPersonalBagModalOpen(false);
+          setIsGearModalOpen(false);
+        }}
+        activeSection={myThingsTab}
+        onSelectSection={setMyThingsTab}
+        characterGender={characterGender}
+        isWarzone={hud.worldMode === "warzone"}
+        isFishingRodEquipped={isJoranEquipped}
+        onToggleFishingRod={() => {
+          if (isJoranEquipped) {
+            setIsChargingCast(false);
+            setIsHoldingReel(false);
+            setFishingMinigame(null);
+            setFishingHintMessage(null);
+            setFishingPhase("idle");
+            dispatchBuddyAction("qcEquipWeapon:unarmed");
+          } else {
+            dispatchBuddyAction("qcEquipWeapon:fishing_rod");
+          }
+        }}
+        ownedMerchantItemIds={ownedMerchantItemIds}
+        placedFurnitureCounts={placedFurnitureCounts}
+        ownedApparelIds={ownedApparelIds}
+        onOpenWardrobe={() => {
+          setIsPersonalBagModalOpen(false);
+          setIsGearModalOpen(false);
+          if (embeddedInPhone) closeSmartphone();
+          setIsWardrobeStudioOpen(true);
+        }}
+        ownedScooterIds={ownedScooterIds}
+        equippedScooterKind={equippedScooterKind}
+        onToggleScooter={(kind) => {
+          if (equippedScooterKind === kind) {
+            dispatchBuddyAction("unequipScooter");
+          } else {
+            dispatchBuddyAction(`equipScooter:${kind}`);
+          }
+          setIsGearModalOpen(false);
+          setIsPersonalBagModalOpen(false);
+          if (embeddedInPhone) closeSmartphone();
+        }}
+        getScooterPortraitUrl={getOrRenderScooterPortraitUrl}
+        hasHouseOwnership={hasHouseOwnership}
+        houseTitle={houseDisplay.title}
+        houseImageSrc={houseDisplay.imageSrc}
+        houseStyleKey={ownedWalletHouseStyle}
+        houseAccountBadgeLabel={houseAccountBadgeLabel}
+        houseAccountSummary={
+          onChainDeedLedger
+            ? {
+                ready: `${onChainDeedLedger.pending_payout_respite}R`,
+                earned: `${onChainDeedLedger.total_earned_respite}R`,
+                paid: `${onChainDeedLedger.total_paid_out_respite}R`,
+                history: onChainDeedLedger.ownership_history.slice(-2).map((rec) => ({
+                  epoch: rec.new_key_epoch,
+                  amount: `${rec.transferred_treasury_respite}R`,
+                })),
+              }
+            : null
+        }
+        isLoadingHouseAccount={isLoadingDeedLedger}
+        isHouseAccountBusy={isDeedLedgerTxBusy}
+        canAddToHouseAccount={respiteBalance >= 5}
+        canCollectHouseAccount={
+          Number(onChainDeedLedger?.pending_payout_respite || "0") > 0
+        }
+        houseAccountFeedback={
+          deedLedgerActionFeedback
+            ? {
+                type: deedLedgerActionFeedback.type,
+                text: deedLedgerActionFeedback.text,
+                receiptUrl: deedLedgerActionFeedback.txHash
+                  ? getNearBlocksTxUrl(deedLedgerActionFeedback.txHash)
+                  : undefined,
+              }
+            : null
+        }
+        onAddHouseAccountFunds={() => {
+          void (async () => {
+            if (!onChainDeedLedger) return;
+            const signer = hud.nearWalletId || playerUid || "";
+            const deedTokenId = hud.nearGamepassTokenId || onChainDeedLedger.token_id;
+            if (!signer || !deedTokenId) return;
+            setIsDeedLedgerTxBusy(true);
+            setDeedLedgerActionFeedback(null);
+            try {
+              const tx = await executeMarketContractCallOnChain({
+                signerAccountId: signer,
+                methodName: "fund_deed_royalty",
+                args: { token_id: deedTokenId, amount: "5" },
+              });
+              if (!tx.ok) {
+                setDeedLedgerActionFeedback({
+                  type: "error",
+                  text: tx.error || "Could not add funds to your house account.",
+                });
+                return;
+              }
+              void logMarketTransactionToSupabase({
+                merchant_id: "lobby_cafe",
+                actor_near_account: signer,
+                action_type: "FUND_DEED_ROYALTY",
+                item_id: deedTokenId,
+                currency: "RESPITE",
+                amount: 5,
+                unit_price: 1,
+                reasoning_summary: "Added 5 RESPITE to your house account",
+                near_tx_hash: tx.txHash,
+              });
+              setDeedLedgerActionFeedback({
+                type: "success",
+                text: "Added 5 R to your house account",
+                txHash: tx.txHash,
+              });
+              await Promise.all([
+                refreshOnChainBalances(signer),
+                refreshOnChainDeedLedger(deedTokenId),
+              ]);
+            } finally {
+              setIsDeedLedgerTxBusy(false);
+            }
+          })();
+        }}
+        onCollectHouseAccount={() => {
+          void (async () => {
+            if (!onChainDeedLedger) return;
+            const signer = hud.nearWalletId || playerUid || "";
+            const deedTokenId = hud.nearGamepassTokenId || onChainDeedLedger.token_id;
+            if (!signer || !deedTokenId) return;
+            setIsDeedLedgerTxBusy(true);
+            setDeedLedgerActionFeedback(null);
+            try {
+              const tx = await executeMarketContractCallOnChain({
+                signerAccountId: signer,
+                methodName: "claim_deed_payout",
+                args: {
+                  token_id: deedTokenId,
+                  expected_key_epoch: onChainDeedLedger.key_epoch,
+                },
+              });
+              if (!tx.ok) {
+                setDeedLedgerActionFeedback({
+                  type: "error",
+                  text: tx.error || "Could not collect from your house account.",
+                });
+                return;
+              }
+              const payoutAmt = Number(onChainDeedLedger.pending_payout_respite || "0");
+              void logMarketTransactionToSupabase({
+                merchant_id: "lobby_cafe",
+                actor_near_account: signer,
+                action_type: "CLAIM_DEED_PAYOUT",
+                item_id: deedTokenId,
+                currency: "RESPITE",
+                amount: payoutAmt,
+                unit_price: 1,
+                reasoning_summary: `Collected ${payoutAmt} RESPITE from your house`,
+                near_tx_hash: tx.txHash,
+              });
+              setDeedLedgerActionFeedback({
+                type: "success",
+                text: `Collected +${payoutAmt} R`,
+                txHash: tx.txHash,
+              });
+              await Promise.all([
+                refreshOnChainBalances(signer),
+                refreshOnChainDeedLedger(deedTokenId),
+              ]);
+            } finally {
+              setIsDeedLedgerTxBusy(false);
+            }
+          })();
+        }}
+        onSyncHouseAccount={() => {
+          void refreshOnChainDeedLedger();
+        }}
+        caughtFishBucket={caughtFishBucket}
+        playerListedFish={playerListedFish}
+        recruitedFamilyMembers={recruitedFamilyMembers}
+        onPreviewFish={setPreview3dFish}
+        onReleaseFish={(fishId) => {
+          setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fishId));
+          setLastCaughtFishToast((prev) => (prev?.id === fishId ? null : prev));
+        }}
+      />
+    );
+  };
 
   const handleDailyMissionShortcutTravel = (
     missionId: DailyMissionId,
@@ -10098,6 +9314,13 @@ export default function App() {
     onChangeVolumePct: handleChangeVolumePct,
     showJoystickOnDesktop,
     onToggleShowJoystickOnDesktop: handleToggleShowJoystickOnDesktop,
+    graphicsQuality,
+    onChangeGraphicsQuality: handleChangeGraphicsQuality,
+    privacySettings: playerPrivacySettings,
+    onUpdatePrivacySettings: handleUpdatePlayerPrivacySettings,
+    onUnblockPlayer: handleUnblockPlayer,
+    connectedAccountEmail: connectedGoogleEmail,
+    onLogOut: () => handleLogOutAccount(true),
     onOpenHouseDecoration: () => {
       soundEngine.playUiClick();
       setIsSocialChatModalOpen(false);
@@ -10129,7 +9352,34 @@ export default function App() {
       if (recipient.isNpc) return;
       publishPlayerSocialMessage({ text, recipient });
     },
+    onUnreadLettersCountChange: (count: number) => {
+      setUnreadLetterCount(count);
+    },
+    onAcceptTradeOfferLetter: async (letter: BuddiesLetter): Promise<boolean> => {
+      const listingId = letter.payload.tradeListingId?.trim();
+      if (!listingId) return false;
+      const listing = propertyListings.find(
+        (item) => item.id === listingId && item.status === 'active',
+      );
+      if (!listing) return false;
+      return handleBuyPropertyListing(listing);
+    },
+    onAcceptFriendRequestLetter: handleAcceptFriendRequestLetter,
+    onLettersLoaded: handleReconcileLettersForFriends,
+    socialGraph: playerSocialGraph,
+    onSendFriendRequest: handleSendFriendRequest,
+    onRemoveFriend: handleRemoveFriend,
+    onToggleFollowPlayer: handleToggleFollowPlayer,
+    onOpenPlayerProfile: (user: NearbyEntityUser) => {
+      openSmartphoneApp('profile', { profileTarget: user });
+    },
   };
+
+  const playerListedFishCount = fishMarketListings.filter(
+    (l) =>
+      Boolean(hud.nearWalletId) &&
+      l.sellerNearAccount.toLowerCase() === (hud.nearWalletId || '').toLowerCase(),
+  ).length;
 
   const characterProfileCommonProps = {
     targetUser: profileTargetUser,
@@ -10137,22 +9387,33 @@ export default function App() {
     connectedAccountEmail: connectedGoogleEmail,
     characterGender,
     playerTeam: hud.playerTeam ?? ('blue' as const),
-    claimedPlotIndex: hud.nearClaimedPlotIndex,
     hasHouseOwnership,
+    ownedMerchantItemIds,
+    ownedApparelIds,
+    ownedScooterIds,
     caughtFishCount: caughtFishBucket.length,
-    mintedFishNftCount: caughtFishBucket.filter((f) => f.isMintedNft).length,
-    recruitedFamilyCount: recruitedFamilyMembers.length,
-    activeHarvesterCount:
-      hud.nearActiveHarvesterSubAccounts?.length ||
-      (hud.harvesterContractStage === 'CONTRACT_ACTIVE' ? 2 : 0),
+    listedFishCount: playerListedFishCount,
     playerLevel: levelProgress.level,
     playerXpLabel: `${levelProgress.currentLevelXp}/${levelProgress.xpForNextLevel} XP`,
     lulBalance: hud.gold,
     onChangePlayerName: handleUpdatePlayerUsername,
+    profileIdentity: playerProfileIdentity,
+    onChangeProfileIdentity: handleUpdatePlayerProfileIdentity,
+    privacySettings: playerPrivacySettings,
+    onBlockPlayer: handleBlockPlayer,
+    onUnblockPlayer: handleUnblockPlayer,
+    socialGraph: playerSocialGraph,
+    onSendFriendRequest: handleSendFriendRequest,
+    onRemoveFriend: handleRemoveFriend,
+    onToggleFollowPlayer: handleToggleFollowPlayer,
   };
 
   return (
-    <main className="relative w-screen h-screen overflow-hidden select-none">
+    <main
+      data-adaptive-device={adaptiveViewport.device}
+      data-adaptive-orientation={adaptiveViewport.orientation}
+      className="relative w-full h-[100dvh] overflow-hidden select-none"
+    >
       {/* 1. 60FPS 3D Buddies Blitz Grassland Arena (Persistent Scene Across Transit & World Modes) */}
       <BuddiesBlitzArena
         key={`arena-${worldTransitionCount}`}
@@ -10304,9 +9565,12 @@ export default function App() {
           />
 
           {/* Compact Neo-Comic Top Navigation Bar */}
-          <header className="relative z-10 flex items-center justify-between px-4 sm:px-8 pt-4 sm:pt-6">
-            <div className="flex items-center gap-2.5 pointer-events-auto">
-              <div className="-skew-x-6 px-3.5 py-1.5 bg-[#b8ff3c] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-widest">
+          <header
+            className="relative z-10 flex items-center justify-between px-3 sm:px-8 pb-1"
+            style={{ paddingTop: 'max(0.75rem, var(--safe-top))' }}
+          >
+            <div className="flex items-center gap-2 sm:gap-2.5 pointer-events-auto">
+              <div className="-skew-x-6 px-3 sm:px-3.5 py-1.5 bg-[#b8ff3c] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-[11px] sm:text-xs uppercase tracking-widest">
                 <span className="skew-x-6 inline-block">BUDDIES BLITZ</span>
               </div>
               <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 bg-[#14161d]/90 text-white border-2 border-black shadow-[3px_3px_0_#000] text-[10px] font-black uppercase tracking-widest">
@@ -10315,7 +9579,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5 pointer-events-auto">
+            <div className="flex items-center gap-2 sm:gap-2.5 pointer-events-auto">
               <HudAudioVolumeControl
                 contextId="landing"
                 popoverPlacement="bottom"
@@ -10334,7 +9598,7 @@ export default function App() {
                 type="button"
                 data-landing-login-btn="true"
                 onClick={() => handleStartGame(false)}
-                className="-skew-x-6 px-4 py-2 bg-white hover:bg-slate-100 text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+                className="-skew-x-6 px-3 sm:px-4 py-1.5 sm:py-2 bg-white hover:bg-slate-100 text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-[11px] sm:text-xs uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
               >
                 <span className="skew-x-6 inline-flex items-center gap-1.5">
                   <LogIn className="w-3.5 h-3.5 stroke-[2.6]" aria-hidden="true" />
@@ -10345,12 +9609,20 @@ export default function App() {
           </header>
 
           {/* Center Hero: Brand-New Geometric Neo-Comic Logo + PLAY NOW CTA */}
-          <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 text-center">
-            <div className="pointer-events-auto flex flex-col items-center gap-6 max-w-xl w-full">
+          <div className="relative z-10 flex-1 min-h-0 flex flex-col items-center justify-center px-4 text-center">
+            <div
+              className={`pointer-events-auto flex flex-col items-center max-w-xl w-full ${
+                adaptiveViewport.isCompactHeight ? 'gap-3' : 'gap-5 sm:gap-6'
+              }`}
+            >
               {/* Brand-New Custom BUDDIES BLITZ Comic Vector Emblem */}
               <svg
                 viewBox="0 0 640 250"
-                className="w-full max-w-[540px] drop-shadow-[0_14px_24px_rgba(0,0,0,0.6)]"
+                className={`w-full drop-shadow-[0_14px_24px_rgba(0,0,0,0.6)] ${
+                  adaptiveViewport.isCompactHeight
+                    ? 'max-w-[340px] max-h-[42dvh]'
+                    : 'max-w-[340px] sm:max-w-[460px] lg:max-w-[540px]'
+                }`}
                 role="img"
                 aria-label="BUDDIES BLITZ"
               >
@@ -10475,10 +9747,14 @@ export default function App() {
                 data-start="true"
                 onClick={() => handleStartGame(false)}
                 aria-label="PLAY NOW"
-                className="-skew-x-6 px-10 sm:px-12 py-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] font-black text-xl sm:text-2xl uppercase tracking-widest cursor-pointer hover:-translate-y-0.5 active:translate-x-[3px] active:translate-y-[3px] active:shadow-none transition-all"
+                className={`-skew-x-6 ${
+                  adaptiveViewport.isCompactHeight
+                    ? 'px-8 py-2.5 text-lg'
+                    : 'px-8 sm:px-12 py-3 sm:py-4 text-lg sm:text-2xl'
+                } bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] font-black uppercase tracking-widest cursor-pointer hover:-translate-y-0.5 active:translate-x-[3px] active:translate-y-[3px] active:shadow-none transition-all`}
               >
-                <span className="skew-x-6 inline-flex items-center gap-3">
-                  <Play className="w-6 h-6 fill-black stroke-[2.5]" aria-hidden="true" />
+                <span className="skew-x-6 inline-flex items-center gap-2.5 sm:gap-3">
+                  <Play className="w-5 h-5 sm:w-6 sm:h-6 fill-black stroke-[2.5]" aria-hidden="true" />
                   <span>PLAY NOW</span>
                 </span>
               </button>
@@ -10486,8 +9762,11 @@ export default function App() {
           </div>
 
           {/* Ultra-Clean Minimal Footer */}
-          <footer className="relative z-10 pb-5 px-4 flex justify-center">
-            <div className="px-4 py-1 bg-[#14161d]/85 text-slate-300 border-2 border-black shadow-[3px_3px_0_#000] text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] text-center">
+          <footer
+            className="relative z-10 px-3 sm:px-4 flex justify-center"
+            style={{ paddingBottom: 'max(0.75rem, var(--safe-bottom))' }}
+          >
+            <div className="px-3 sm:px-4 py-1 bg-[#14161d]/85 text-slate-300 border-2 border-black shadow-[3px_3px_0_#000] text-[9px] sm:text-[11px] font-black uppercase tracking-[0.12em] sm:tracking-[0.2em] text-center max-w-full">
               EXPLORE THE CITY &nbsp;•&nbsp; OWN A HOME &nbsp;•&nbsp; MEET PEOPLE &nbsp;•&nbsp; TRADE &amp; GET RICH &nbsp;•&nbsp; NEAR TESTNET
             </div>
           </footer>
@@ -10507,7 +9786,7 @@ export default function App() {
           <div
             aria-label="Flying to Central Plaza"
             data-onboarding-step="fly_to_plaza"
-            className="fixed inset-x-0 bottom-7 z-40 flex justify-center pointer-events-none select-none"
+            className="fixed inset-x-0 bottom-7 z-40 flex justify-center pointer-events-none select-none px-3"
           >
             <div className="-skew-x-6 px-5 py-2 bg-[#14161d]/95 text-white border-3 border-black ring-2 ring-white shadow-[5px_5px_0_#000] text-xs font-black uppercase tracking-widest">
               <span className="skew-x-6 inline-flex items-center gap-2">
@@ -10528,13 +9807,13 @@ export default function App() {
             data-onboarding-step={onboardingStep}
             className={`fixed inset-0 z-50 flex flex-col ${
               onboardingStep === 'guest_character_select'
-                ? 'justify-end items-center py-6 px-4 pointer-events-none'
-                : 'items-center justify-center p-4 bg-black/70 pointer-events-auto'
+                ? 'justify-end items-center py-3 sm:py-6 px-3 sm:px-4 pointer-events-none'
+                : 'items-center justify-center p-3 sm:p-4 bg-black/70 pointer-events-auto'
             } select-none`}
           >
             <div
               data-start-game-card="true"
-              className="relative pointer-events-auto w-full max-w-sm bg-[#14161d] text-white border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] p-6 space-y-4"
+              className="relative pointer-events-auto w-full max-w-sm max-h-[calc(100dvh-1.5rem)] overflow-y-auto bg-[#14161d] text-white border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] p-4 sm:p-6 space-y-3.5 sm:space-y-4"
             >
               {onboardingStep === 'auth_choice' && (
                 <button
@@ -11141,7 +10420,13 @@ export default function App() {
           {/* =================================================================
               3B. TOP-LEFT: FRAMELESS LOCATION TAG + FROSTED MINIMAP (inZOI Style)
              ================================================================= */}
-          <div className="fixed top-3.5 left-4 z-30 flex flex-col items-start gap-2 pointer-events-none select-none">
+          <div
+            style={{
+              top: 'max(0.65rem, var(--safe-top))',
+              left: 'max(0.75rem, var(--safe-left))',
+            }}
+            className="fixed z-30 flex flex-col items-start gap-2 pointer-events-none select-none"
+          >
             {/* Frameless Location Readout (inZOI top-left editorial location pin) */}
             <div className="flex items-center gap-1.5 text-white/95 drop-shadow-[0_1px_5px_rgba(0,0,0,0.85)]">
               <MapPin className="w-3.5 h-3.5 stroke-[2] text-white/85 shrink-0" aria-hidden="true" />
@@ -11559,11 +10844,12 @@ export default function App() {
             <div
               aria-label="Open Warzone Online Population Bar"
               data-warzone-population-bar="true"
-              className="fixed top-3.5 left-1/2 -translate-x-1/2 z-30 pointer-events-auto flex items-center gap-2"
+              style={{ top: 'max(0.65rem, var(--safe-top))' }}
+              className="fixed left-1/2 -translate-x-1/2 z-30 pointer-events-auto flex items-center gap-1.5 sm:gap-2 max-w-[calc(100vw-1rem)]"
             >
               <div className="flex items-center p-1 rounded-full bg-[#0d1118]/72 backdrop-blur-xl border border-white/15 shadow-[0_8px_28px_rgba(0,0,0,0.42)]">
                 {/* Blue Team Online Population Bar */}
-                <div className="relative w-32 sm:w-40 h-6 rounded-l-full bg-white/[0.06] overflow-hidden flex items-center justify-start px-3">
+                <div className="relative w-24 sm:w-40 h-6 rounded-l-full bg-white/[0.06] overflow-hidden flex items-center justify-start px-2 sm:px-3">
                   <div
                     style={{
                       width: `${Math.max(
@@ -11578,19 +10864,19 @@ export default function App() {
                   />
                   <span
                     data-blue-online-label="true"
-                    className="relative z-10 font-semibold font-mono-tabular text-[11px] text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)] tracking-tight whitespace-nowrap"
+                    className="relative z-10 font-semibold font-mono-tabular text-[10px] sm:text-[11px] text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)] tracking-tight whitespace-nowrap truncate"
                   >
                     {hud.blueOnlineLabel ?? 'BLUE 1/10 ONLINE'}
                   </span>
                 </div>
 
                 {/* Center VS Pill */}
-                <div className="px-2 py-0.5 text-[10px] font-bold text-amber-200 tracking-wider">
+                <div className="px-1.5 sm:px-2 py-0.5 text-[9.5px] sm:text-[10px] font-bold text-amber-200 tracking-wider">
                   VS
                 </div>
 
                 {/* Red Team Online Population Bar */}
-                <div className="relative w-32 sm:w-40 h-6 rounded-r-full bg-white/[0.06] overflow-hidden flex items-center justify-end px-3">
+                <div className="relative w-24 sm:w-40 h-6 rounded-r-full bg-white/[0.06] overflow-hidden flex items-center justify-end px-2 sm:px-3">
                   <div
                     style={{
                       width: `${Math.max(
@@ -11699,9 +10985,10 @@ export default function App() {
           {isInsidePrivateHouse && activeSpecialModal === 'none' && (
             <div
               data-private-house-walkin-hud="true"
-              className="fixed top-3.5 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex flex-col items-center gap-2 select-none"
+              style={{ top: 'max(0.65rem, var(--safe-top))' }}
+              className="fixed left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex flex-col items-center gap-2 select-none max-w-[calc(100vw-1rem)]"
             >
-              <div className="flex items-center gap-1.5 rounded-full bg-[#0d1118]/72 backdrop-blur-sm text-white border border-white/15 shadow-[0_8px_28px_rgba(0,0,0,0.45)] px-2.5 py-1.5">
+              <div className="flex flex-wrap items-center justify-center gap-1 sm:gap-1.5 rounded-2xl sm:rounded-full bg-[#0d1118]/72 backdrop-blur-sm text-white border border-white/15 shadow-[0_8px_28px_rgba(0,0,0,0.45)] px-2 sm:px-2.5 py-1.5">
                 <span className="px-2.5 py-0.5 rounded-full bg-emerald-400/20 text-emerald-200 border border-emerald-300/35 text-[10px] font-semibold tracking-tight">
                   {isSampleHouseView ? 'Model House' : 'My Private House'}
                 </span>
@@ -11752,7 +11039,7 @@ export default function App() {
               {isHouseFriendInviteOpen && !isSampleHouseView && (
                 <div
                   data-house-friend-invite-popover="true"
-                  className="w-80 sm:w-96 bg-white text-black border-[3px] border-black shadow-[5px_5px_0_#000] p-3 space-y-2.5"
+                  className="w-[min(24rem,calc(100vw-1.5rem))] bg-white text-black border-[3px] border-black shadow-[5px_5px_0_#000] p-3 space-y-2.5"
                 >
                   <div className="flex items-center justify-between border-b-2 border-black pb-1.5">
                     <span className="text-[11px] font-black uppercase tracking-wider">
@@ -11781,6 +11068,23 @@ export default function App() {
                       onClick={() => {
                         const rawFriend = houseInviteFriendInput.trim().toLowerCase();
                         if (!rawFriend) return;
+                        if (isPlayerBlocked(playerPrivacySettingsRef.current.blockedPlayers, rawFriend, rawFriend)) {
+                          setHouseInviteFeedback('This player is blocked. Unblock them in Privacy settings first.');
+                          return;
+                        }
+                        if (playerPrivacySettingsRef.current.apartmentVisits === 'only_me') {
+                          setHouseInviteFeedback('Apartment visits are set to Only me in Privacy settings.');
+                          return;
+                        }
+                        if (
+                          playerPrivacySettingsRef.current.apartmentVisits === 'friends' &&
+                          !isFriendWith(playerSocialGraphRef.current, rawFriend, rawFriend)
+                        ) {
+                          setHouseInviteFeedback(
+                            'Apartment visits are set to Friends. Add them as a friend first.',
+                          );
+                          return;
+                        }
                         soundEngine.playPickup();
                         dispatchBuddyAction(`addSafezoneFriend:${rawFriend}`);
                         publishPlayerSocialMessage({
@@ -11851,10 +11155,50 @@ export default function App() {
           )}
 
           {/* =================================================================
-              3D. TOP-RIGHT: WARZONE HP/LIVES CAPSULE OR MINIMALIST ACCOUNT CIRCLE (inZOI Style)
+              3D. TOP-RIGHT: WARZONE HP/LIVES CAPSULE OR ADAPTIVE MOBILE/TABLET WEATHER & AUDIO PILL
              ================================================================= */}
-          <div className="fixed top-3.5 right-4 z-30 flex flex-col items-end gap-2 pointer-events-auto select-none">
+          <div
+            style={{
+              top: 'max(0.65rem, var(--safe-top))',
+              right: 'max(0.75rem, var(--safe-right))',
+            }}
+            className="fixed z-30 flex flex-col items-end gap-2 pointer-events-auto select-none"
+          >
             <div className="flex items-center gap-2">
+              {/* Compact Weather/Time/Audio Pill pinned Top-Right on Phone & Tablet so bottom-right stays 100% clear for Jump/Cast/Dock */}
+              {isCompactHudLayout &&
+                playMode !== 'editor' &&
+                !peacefulUiState.bottomRightWeaponAndHpHudVisible && (
+                  <HudWeatherAndTimeControl
+                    contextId="city"
+                    popoverPlacement="bottom"
+                    popoverAlign="right"
+                    compactPill={adaptiveViewport.isPhone}
+                    lightingPreset={lightingPreset}
+                    timeOfDayHours={timeOfDayHours}
+                    weatherCondition={weatherCondition}
+                    rainIntensityTier={rainIntensityTier}
+                    autoCycleEnabled={autoTimeCycle}
+                    cityLightsScale={cityLightsScale}
+                    onSelectTimePhase={handleSelectTimePhase}
+                    onCycleTimePhase={handleCycleLighting}
+                    onChangeTimeOfDayHours={handleChangeTimeOfDayHours}
+                    onSelectWeatherCondition={handleSelectWeatherCondition}
+                    onSelectRainIntensityTier={handleSelectRainIntensityTier}
+                    onToggleAutoCycle={handleToggleAutoTimeCycle}
+                    onChangeCityLightsScale={handleChangeCityLightsScale}
+                    audioControls={{
+                      isMusicMuted,
+                      isSfxMuted: isMuted,
+                      musicVolumePct,
+                      sfxVolumePct: audioVolumePct,
+                      onToggleMusicMute: handleToggleMusic,
+                      onToggleSfxMute: handleToggleAudio,
+                      onChangeMusicVolumePct: handleChangeMusicVolumePct,
+                      onChangeSfxVolumePct: handleChangeVolumePct,
+                    }}
+                  />
+                )}
               {/* Warzone Compact Unified Health & Lives Frosted Capsule */}
               {peacefulUiState.populationAndLivesBarVisible && (() => {
                 const currentHp = Math.max(0, Math.round(hud.hp));
@@ -12186,12 +11530,29 @@ export default function App() {
           )}
 
           {/* =================================================================
-              3F. BOTTOM-LEFT: WEATHER/TIME PILL + FROSTED SOCIAL CHAT BAR (inZOI Style)
+              3F. BOTTOM-LEFT: FROSTED SOCIAL CHAT BAR (Adaptive Desktop / Tablet / Phone)
              ================================================================= */}
           {playMode !== 'editor' && (
             <div
               data-buddies-chat-bar="true"
-              className="fixed bottom-3.5 left-4 z-30 pointer-events-auto flex flex-col items-start gap-2 w-[calc(100vw-2rem)] max-w-[310px] sm:max-w-[340px]"
+              style={{
+                bottom: adaptiveViewport.isCompactHeight
+                  ? 'max(0.45rem, var(--safe-bottom))'
+                  : 'max(0.65rem, var(--safe-bottom))',
+                left: 'max(0.75rem, var(--safe-left))',
+                right: adaptiveViewport.isPhonePortrait
+                  ? 'max(0.75rem, var(--safe-right))'
+                  : undefined,
+              }}
+              className={`fixed z-30 pointer-events-auto flex flex-col items-start gap-2 ${
+                adaptiveViewport.isPhonePortrait
+                  ? 'w-auto'
+                  : adaptiveViewport.isCompactHeight
+                    ? 'w-[min(280px,46vw)]'
+                    : adaptiveViewport.isTablet
+                      ? 'w-[min(290px,42vw)]'
+                      : 'w-[calc(100vw-2rem)] max-w-[340px]'
+              }`}
             >
               {/* Incoming Private Chat Notification Popup (Hidden during active NPC Dialogue) */}
               {!isAnyNpcChatBarMode && activePrivateNotificationToast && (
@@ -12418,12 +11779,16 @@ export default function App() {
                     ) : (
                       <>
                         <HudSmartphoneIcon className="w-5 h-5" />
-                        {unreadPrivateCount + unreadLetterCount > 0 && (
+                        {unreadPrivateCount + unreadLetterCount + activePendingWalletTxCount > 0 && (
                           <span
                             data-chat-unread-private-badge="true"
-                            className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-sky-400 text-slate-950 text-[9px] font-bold flex items-center justify-center border border-[#0d1118]"
+                            className={`absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center border border-[#0d1118] ${
+                              activePendingWalletTxCount > 0
+                                ? 'bg-rose-500 text-white'
+                                : 'bg-sky-400 text-slate-950'
+                            }`}
                           >
-                            {unreadPrivateCount + unreadLetterCount}
+                            {unreadPrivateCount + unreadLetterCount + activePendingWalletTxCount}
                           </span>
                         )}
                       </>
@@ -12673,10 +12038,12 @@ export default function App() {
                     openSmartphoneApp('profile', { toggleIfActive: true });
                   }}
                   onOpenBag={() => {
-                    openSmartphoneApp('bag', { toggleIfActive: true });
+                    setMyThingsTab('items');
+                    openSmartphoneApp('my_things', { toggleIfActive: true });
                   }}
                   onOpenScooterShowroom={() => {
-                    openSmartphoneApp('scooters', { toggleIfActive: true });
+                    setMyThingsTab('vehicles');
+                    openSmartphoneApp('my_things', { toggleIfActive: true });
                   }}
                   onToggleFishingRod={() => {
                     if (hud.equippedWeapon === 'Joran Fishing') {
@@ -12702,10 +12069,12 @@ export default function App() {
             })()}
 
           {/* =================================================================
-              3G. BOTTOM-RIGHT: UNIFIED TIME, WEATHER & AUDIO CONTROL PILL
+              3G. BOTTOM-RIGHT: UNIFIED TIME, WEATHER & AUDIO CONTROL PILL (Desktop only; Phone/Tablet mounts in Top-Right)
              ================================================================= */}
-          {playMode !== 'editor' && !peacefulUiState.bottomRightWeaponAndHpHudVisible && (
-            <div className="fixed bottom-16 sm:bottom-3.5 right-4 z-30 pointer-events-auto select-none flex flex-col items-end gap-2">
+          {playMode !== 'editor' &&
+            !isCompactHudLayout &&
+            !peacefulUiState.bottomRightWeaponAndHpHudVisible && (
+              <div className="fixed bottom-3.5 right-4 z-30 pointer-events-auto select-none flex flex-col items-end gap-2">
               <HudWeatherAndTimeControl
                 contextId="city"
                 popoverPlacement="top"
@@ -13491,32 +12860,17 @@ export default function App() {
       )}
 
       {/* =====================================================================
-          9B-3A. LEFT-SLIDE GEAR MODAL (Standalone fallback when not in Smartphone)
+          9B-3. LEFT-SLIDE MY THINGS MODAL (Standalone fallback when not in Smartphone)
          ===================================================================== */}
-      {isGearModalOpen && !isPhoneAppActive('scooters') && (
+      {(isPersonalBagModalOpen || isGearModalOpen) && !isPhoneAppActive('my_things') && (
         <aside
           role="dialog"
           aria-modal="false"
-          aria-label="Gear"
-          data-gear-modal="true"
+          aria-label="My Things"
+          data-my-things-modal="true"
           className="fixed left-4 top-16 bottom-20 z-40 w-full max-w-md flex flex-col select-none pointer-events-auto"
         >
-          {renderGearApp(false)}
-        </aside>
-      )}
-
-      {/* =====================================================================
-          9B-3. LEFT-SLIDE PERSONAL BAG / TAS MODAL (Standalone fallback when not in Smartphone)
-         ===================================================================== */}
-      {isPersonalBagModalOpen && !isPhoneAppActive('bag') && (
-        <aside
-          role="dialog"
-          aria-modal="false"
-          aria-label="Personal Bag"
-          data-personal-bag-modal="true"
-          className="fixed left-4 top-16 bottom-20 z-40 w-full max-w-md flex flex-col select-none pointer-events-auto"
-        >
-          {renderPersonalBagApp(false)}
+          {renderMyThingsApp(false)}
         </aside>
       )}
 
@@ -13558,8 +12912,7 @@ export default function App() {
         onGoHome={handleSmartphoneHome}
         renderAppContent={(app) => {
           if (app === 'wallet') return renderPersonalWalletApp(true);
-          if (app === 'bag') return renderPersonalBagApp(true);
-          if (app === 'scooters') return renderGearApp(true);
+          if (app === 'my_things') return renderMyThingsApp(true);
           if (app === 'missions') {
             return (
               <DailyMissionsModal
@@ -13618,6 +12971,8 @@ export default function App() {
                 playerTeam={hud.playerTeam ?? 'blue'}
                 currentDistrict={currentLocationLabel}
                 nearbyUsers={hud.nearbyRadiusUsers ?? []}
+                socialGraph={playerSocialGraph}
+                onToggleFollowPlayer={handleToggleFollowPlayer}
                 onOpenPlayerProfile={(user) => {
                   openSmartphoneApp('profile', { profileTarget: user });
                 }}
@@ -13653,8 +13008,16 @@ export default function App() {
         timeOfDayHours={timeOfDayHours}
         lightingPreset={lightingPreset}
         weatherCondition={weatherCondition}
-        lulBalance={hud.gold}
-        nearBalance={nearTestnetBalance}
+        cityNews={buildCityNewsCardSummary({
+          latestPost: latestCityFeedPost,
+          latestUnreadLetter,
+          onlinePeersCount: filterRealHumanOnlinePlayers(
+            hud.nearbyRadiusUsers ?? [],
+            playerDisplayName,
+            hud.nearWalletId || playerUid,
+          ).length,
+        })}
+        pendingWalletTxCount={activePendingWalletTxCount}
         completedMissionsCount={dailyMissionsSummary.completedCount}
         totalMissionsCount={dailyMissionsSummary.totalCount}
         actionableMissionsCount={dailyMissionsSummary.actionableCount}
@@ -13791,17 +13154,6 @@ export default function App() {
       {/* =====================================================================
           12. NEAR WALLET SELECTOR MODAL (@near-wallet-selector/modal-ui Adaptation)
          ===================================================================== */}
-      <InGameWalletConfirmModal
-        request={localTxConfirmState?.request ?? null}
-        onApprove={() => {
-          localTxConfirmState?.resolve(true);
-          setLocalTxConfirmState(null);
-        }}
-        onReject={() => {
-          localTxConfirmState?.resolve(false);
-          setLocalTxConfirmState(null);
-        }}
-      />
       <NearWalletSelectorModal
         isOpen={isNearWalletSelectorOpen}
         onClose={() => setIsNearWalletSelectorOpen(false)}
@@ -14208,6 +13560,52 @@ export default function App() {
                 setIsSocialChatModalOpen(true);
               },
             });
+
+            const entityTargetId = dockEntity.nearAccountId || dockEntity.id;
+            const isEntityBlocked = isPlayerBlocked(
+              playerPrivacySettingsRef.current.blockedPlayers,
+              entityTargetId,
+              cleanEntityName,
+            );
+            const isEntityFriend = isFriendWith(
+              playerSocialGraphRef.current,
+              entityTargetId,
+              cleanEntityName,
+            );
+            const isEntityRequestPending = hasPendingOutgoingFriendRequest(
+              playerSocialGraphRef.current,
+              entityTargetId,
+              cleanEntityName,
+            );
+            if (
+              canShowAddFriendAction({
+                isSelf: dockEntity.isSelf,
+                isNpc: dockEntity.isNpc,
+                isBlocked: isEntityBlocked,
+                isFriend: isEntityFriend,
+                allowFriendRequests: dockEntity.allowFriendRequests,
+              })
+            ) {
+              items.push({
+                id: 'add_friend_player',
+                label: isEntityRequestPending ? 'Friend Request Sent' : 'Add Friend',
+                icon: isEntityRequestPending ? (
+                  <UserCheck className="w-3.5 h-3.5" aria-hidden="true" />
+                ) : (
+                  <UserPlus className="w-3.5 h-3.5" aria-hidden="true" />
+                ),
+                iconWrapClassName: isEntityRequestPending
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-indigo-100 text-indigo-700',
+                dataAttr: { 'data-nearby-entity-add-friend-btn': 'true' },
+                onSelect: () => {
+                  setIsPinTargetPopupOpen(false);
+                  if (!isEntityRequestPending) {
+                    void handleSendFriendRequest(dockEntity);
+                  }
+                },
+              });
+            }
           }
 
           items.push({
@@ -14650,8 +14048,7 @@ export default function App() {
         equippedTorsoItemId={equippedTorsoItemId}
         onPurchaseApparelToBag={handlePurchaseFashionApparelToBag}
         onOpenPersonalBag={() => {
-          setPersonalBagTab('equipment');
-          setIsPersonalBagModalOpen(true);
+          setIsWardrobeStudioOpen(true);
         }}
       />
       <WardrobeStudioModal
@@ -14880,104 +14277,123 @@ export default function App() {
               </button>
             ))}
 
-            {/* Top-Left District & Kota Overview Pills */}
-            <div className="pointer-events-auto fixed top-3 left-3 sm:top-4 sm:left-4 max-w-[calc(100vw-11rem)] sm:max-w-[540px] flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-2xl bg-[#0f131c]/90 border border-white/15 shadow-[0_12px_32px_rgba(0,0,0,0.35)]">
-                <button
-                  type="button"
-                  data-city-view-pill="kota"
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    selectCityViewTarget('kota');
-                  }}
-                  className={`px-3 py-1 rounded-full text-[11px] font-bold tracking-wide cursor-pointer transition-all ${
-                    cityViewTarget === 'kota'
-                      ? 'bg-white text-[#0f131c] shadow-sm'
-                      : 'bg-white/10 text-white/85 hover:bg-white/20'
-                  }`}
-                >
-                  City
-                </button>
-                {CITY_VIEW_DISTRICTS.map((dist) => {
-                  const isActive = cityViewTarget === dist.id;
-                  return (
-                    <button
-                      key={dist.id}
-                      type="button"
-                      data-city-view-pill={dist.id}
-                      onClick={(e) => {
-                        e.currentTarget.blur();
-                        selectCityViewTarget(dist.id);
-                      }}
-                      className={`px-3 py-1 rounded-full text-[11px] font-bold tracking-wide cursor-pointer transition-all ${
-                        isActive
-                          ? 'bg-white text-[#0f131c] shadow-sm'
-                          : 'bg-white/10 text-white/85 hover:bg-white/20'
-                      }`}
-                    >
-                      {dist.label}
-                    </button>
-                  );
-                })}
+            {/* Adaptive Top Header Bar inside City View (Never collides on Phone / Tablet / Desktop) */}
+            <div
+              style={{ top: 'max(0.65rem, var(--safe-top))' }}
+              className="pointer-events-none fixed inset-x-2.5 sm:inset-x-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2"
+            >
+              {/* District & Kota Overview Pills (Horizontal scroll on Phone, Wrap on Tablet/Desktop) */}
+              <div className="pointer-events-auto order-2 sm:order-1 max-w-full sm:max-w-[540px]">
+                <div className="flex flex-nowrap sm:flex-wrap items-center gap-1.5 p-1.5 sm:p-2 rounded-2xl bg-[#0f131c]/90 border border-white/15 shadow-[0_12px_32px_rgba(0,0,0,0.35)] overflow-x-auto no-scrollbar">
+                  <button
+                    type="button"
+                    data-city-view-pill="kota"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      selectCityViewTarget('kota');
+                    }}
+                    className={`px-3 py-1 rounded-full text-[11px] font-bold tracking-wide whitespace-nowrap shrink-0 cursor-pointer transition-all ${
+                      cityViewTarget === 'kota'
+                        ? 'bg-white text-[#0f131c] shadow-sm'
+                        : 'bg-white/10 text-white/85 hover:bg-white/20'
+                    }`}
+                  >
+                    City
+                  </button>
+                  {CITY_VIEW_DISTRICTS.map((dist) => {
+                    const isActive = cityViewTarget === dist.id;
+                    return (
+                      <button
+                        key={dist.id}
+                        type="button"
+                        data-city-view-pill={dist.id}
+                        onClick={(e) => {
+                          e.currentTarget.blur();
+                          selectCityViewTarget(dist.id);
+                        }}
+                        className={`px-3 py-1 rounded-full text-[11px] font-bold tracking-wide whitespace-nowrap shrink-0 cursor-pointer transition-all ${
+                          isActive
+                            ? 'bg-white text-[#0f131c] shadow-sm'
+                            : 'bg-white/10 text-white/85 hover:bg-white/20'
+                        }`}
+                      >
+                        {dist.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
 
-            {/* Top-Right Prev / Index / Next + Exit Button */}
-            <div className="pointer-events-auto fixed top-3 right-3 sm:top-4 sm:right-4 flex items-center gap-2">
-              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-[#0f131c]/90 border border-white/15 shadow-[0_12px_32px_rgba(0,0,0,0.35)] text-white">
+              {/* Prev / Index / Next + Exit Button */}
+              <div className="pointer-events-auto order-1 sm:order-2 flex items-center justify-between sm:justify-end gap-2 shrink-0">
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-[#0f131c]/90 border border-white/15 shadow-[0_12px_32px_rgba(0,0,0,0.35)] text-white">
+                  <button
+                    type="button"
+                    data-city-view-prev="true"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      selectCityViewTarget(getAdjacentCityViewDistrictId(cityViewTarget, -1));
+                    }}
+                    className="px-2 py-0.5 rounded-full text-[11px] font-bold hover:bg-white/15 cursor-pointer"
+                  >
+                    &larr; Prev
+                  </button>
+                  <span className="px-1.5 text-[11px] font-mono font-bold text-white/80 whitespace-nowrap">
+                    {cityViewTarget === 'kota'
+                      ? 'City'
+                      : `${
+                          CITY_VIEW_DISTRICTS.findIndex((d) => d.id === cityViewTarget) + 1
+                        } / ${CITY_VIEW_DISTRICTS.length}`}
+                  </span>
+                  <button
+                    type="button"
+                    data-city-view-next="true"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      selectCityViewTarget(getAdjacentCityViewDistrictId(cityViewTarget, 1));
+                    }}
+                    className="px-2 py-0.5 rounded-full text-[11px] font-bold hover:bg-white/15 cursor-pointer"
+                  >
+                    Next &rarr;
+                  </button>
+                </div>
                 <button
                   type="button"
-                  data-city-view-prev="true"
+                  data-city-view-exit="true"
                   onClick={(e) => {
                     e.currentTarget.blur();
-                    selectCityViewTarget(getAdjacentCityViewDistrictId(cityViewTarget, -1));
+                    exitCityViewMode();
                   }}
-                  className="px-2 py-0.5 rounded-full text-[11px] font-bold hover:bg-white/15 cursor-pointer"
+                  className="px-3.5 py-2 rounded-full bg-white text-[#0f131c] hover:bg-slate-100 text-[11px] font-black tracking-wide shadow-[0_10px_28px_rgba(0,0,0,0.35)] cursor-pointer transition-transform active:scale-95 shrink-0"
                 >
-                  &larr; Prev
-                </button>
-                <span className="px-1.5 text-[11px] font-mono font-bold text-white/80">
-                  {cityViewTarget === 'kota'
-                    ? 'City'
-                    : `${
-                        CITY_VIEW_DISTRICTS.findIndex((d) => d.id === cityViewTarget) + 1
-                      } / ${CITY_VIEW_DISTRICTS.length}`}
-                </span>
-                <button
-                  type="button"
-                  data-city-view-next="true"
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    selectCityViewTarget(getAdjacentCityViewDistrictId(cityViewTarget, 1));
-                  }}
-                  className="px-2 py-0.5 rounded-full text-[11px] font-bold hover:bg-white/15 cursor-pointer"
-                >
-                  Next &rarr;
+                  &times; Back
                 </button>
               </div>
-              <button
-                type="button"
-                data-city-view-exit="true"
-                onClick={(e) => {
-                  e.currentTarget.blur();
-                  exitCityViewMode();
-                }}
-                className="px-3.5 py-2 rounded-full bg-white text-[#0f131c] hover:bg-slate-100 text-[11px] font-black tracking-wide shadow-[0_10px_28px_rgba(0,0,0,0.35)] cursor-pointer transition-transform active:scale-95"
-              >
-                &times; Back
-              </button>
             </div>
 
             {/* Bottom-Center Click-to-Walk Hint inside 3D Aerial City View */}
-            <div className="pointer-events-none fixed bottom-4 left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full bg-[#0f131c]/90 text-white/90 border border-white/20 shadow-[0_8px_22px_rgba(0,0,0,0.35)] text-[11px] font-semibold tracking-wide whitespace-nowrap">
-              Click anywhere on the 3D map to walk there · Drag to pan the camera
+            <div
+              style={{ bottom: 'max(0.75rem, var(--safe-bottom))' }}
+              className="pointer-events-none fixed left-3 sm:left-1/2 sm:-translate-x-1/2 max-w-[calc(100vw-11rem)] sm:max-w-[90vw] px-3 py-1.5 rounded-full bg-[#0f131c]/90 text-white/90 border border-white/20 shadow-[0_8px_22px_rgba(0,0,0,0.35)] text-[10.5px] sm:text-[11px] font-semibold tracking-wide truncate"
+            >
+              <span className="hidden sm:inline">
+                Click anywhere on the 3D map to walk there · Drag to pan the camera
+              </span>
+              <span className="sm:hidden">Tap map to walk · Drag to pan</span>
             </div>
 
             {/* Bottom-Right Weather & Time Pill inside City View */}
-            <div className="pointer-events-auto fixed bottom-3 right-3">
+            <div
+              style={{
+                bottom: 'max(0.75rem, var(--safe-bottom))',
+                right: 'max(0.75rem, var(--safe-right))',
+              }}
+              className="pointer-events-auto fixed"
+            >
               <HudWeatherAndTimeControl
                 contextId="city_view"
                 popoverPlacement="top"
+                compactPill={adaptiveViewport.isPhone}
                 lightingPreset={lightingPreset}
                 timeOfDayHours={timeOfDayHours}
                 weatherCondition={weatherCondition}

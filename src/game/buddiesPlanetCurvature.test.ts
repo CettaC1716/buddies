@@ -60,6 +60,7 @@ import {
 } from './buddiesUnderwaterEcology';
 import { buildSouthEastCoastalBeachfront3D } from './buddiesCoastalBeachBuilder';
 import { buildCoastalBeachClub3D } from './buddiesBeachClubBuilder';
+import { BEACH_CLUB_MASTERPLAN, evaluateBeachClubElevation } from './buddiesBeachClubRules';
 
 test('PLANET_CURVATURE_STRENGTH is 0.0 for 100% flat Buddies Blitz ground', () => {
   assert.equal(PLANET_CURVATURE_STRENGTH, 0.0);
@@ -988,6 +989,67 @@ test('all urban sidewalks (trotoar) have exact +0.09m terrain collision elevatio
   const rampEnd = getTerrainElevation(-58.9, 13.8);
   assert.ok(rampMid > 0.09 && rampMid < 0.26, `Halte ramp mid (${rampMid}) should bridge 0.09..0.26`);
   assert.ok(Math.abs(rampEnd - 0.09) < 1e-6, `Halte ramp bottom (${rampEnd}) should meet inner sidewalk at +0.09m`);
+});
+
+test('Beach Club coastal seabed depression stays strictly below all terrace decks & pool floors with seamless Kai Boardwalk perimeter blending', () => {
+  resetTerrainSculptGrid();
+  const mp = BEACH_CLUB_MASTERPLAN;
+
+  // 1. Subsurface terrain stays strictly below every built Beach Club pool floor (>= 0.40m clearance)
+  const poolBasins = [
+    mp.pools.cascadeTier1,
+    mp.pools.cascadeTier2,
+    mp.pools.cascadeTier3,
+    { ...mp.pools.westFlankNorth, floorY: 0.14 },
+    { ...mp.pools.westFlankSouth, floorY: 0.14 },
+    { ...mp.pools.lapChannels[0], floorY: -0.96 },
+    { ...mp.pools.lapChannels[1], floorY: -1.36 },
+    { ...mp.pools.lapChannels[2], floorY: -1.36 },
+    {
+      id: 'southSeaPool',
+      minX: mp.pools.southSeaPool.cx - mp.pools.southSeaPool.halfX,
+      maxX: mp.pools.southSeaPool.cx + mp.pools.southSeaPool.halfX,
+      minZ: mp.pools.southSeaPool.cz - mp.pools.southSeaPool.halfZ,
+      maxZ: mp.pools.southSeaPool.cz + mp.pools.southSeaPool.halfZ,
+      floorY: -1.4,
+    },
+  ];
+  for (const basin of poolBasins) {
+    for (let x = basin.minX; x <= basin.maxX; x += 1.0) {
+      for (let z = basin.minZ; z <= basin.maxZ; z += 2.0) {
+        const bed = evaluateHarborSeabedDrop(x, z);
+        assert.ok(
+          bed <= basin.floorY - 0.4,
+          `Coastal seabed (${bed.toFixed(3)}) must sit >= 0.40m below ${basin.id} floor (${basin.floorY}) at (${x}, ${z})`,
+        );
+      }
+    }
+  }
+
+  // 2. Zero trench along Promenade -> Kai Boardwalk seam (x = 78.33..91.2, z = 46.2)
+  for (const sx of [78.33, 78.35, 84.0, 91.1, 91.2]) {
+    assert.ok(
+      Math.abs(getTerrainElevation(sx, 46.2) - 0.82) < 1e-4,
+      `Expected flush +0.82m Kai Boardwalk seam at (${sx}, 46.2), got ${getTerrainElevation(sx, 46.2)}`,
+    );
+  }
+
+  // 3. Smooth ramp joining VIP Mezzanine (+0.64m at z=45.2) to Kai Boardwalk (+0.82m at z=46.2) for x in (91.2..92.2]
+  let prevZ = getTerrainElevation(91.7, 45.15);
+  assert.ok(Math.abs(prevZ - 0.64) < 1e-4);
+  for (let z = 45.25; z <= 46.25; z += 0.1) {
+    const cur = getTerrainElevation(91.7, z);
+    assert.ok(cur >= prevZ - 1e-6 && cur - prevZ <= 0.08, `Trench/cliff at (91.7, ${z}): ${prevZ} -> ${cur}`);
+    prevZ = cur;
+  }
+  assert.ok(Math.abs(getTerrainElevation(91.7, 46.2) - 0.82) < 1e-4);
+
+  // 4. Every Beach Club terrace tier center sits above evaluateHarborSeabedDrop
+  for (const tier of mp.terraceTiers) {
+    const cx = (tier.minX + tier.maxX) * 0.5;
+    const cz = (tier.minZ + tier.maxZ) * 0.5;
+    assert.ok(evaluateHarborSeabedDrop(cx, cz) < evaluateBeachClubElevation(cx, cz));
+  }
 });
 
 

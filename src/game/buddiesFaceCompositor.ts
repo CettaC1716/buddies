@@ -47,6 +47,18 @@ export interface BeautyUvLayerSpec {
   h: number;
 }
 
+export interface FaceTuningParams {
+  lipScale?: number;
+  lipOffsetY?: number;
+  eyeSpacing?: number;
+  eyeTiltDeg?: number;
+  eyeScale?: number;
+  browOffsetY?: number;
+  browTiltDeg?: number;
+  noseStyleId?: string | null;
+  headScale?: number;
+}
+
 export interface BuddyFaceCustomizationProfile {
   eyeStyle: WardrobeEyeStyleSpec | null;
   browStyle: WardrobeBrowStyleSpec | null;
@@ -61,6 +73,7 @@ export interface BuddyFaceCustomizationProfile {
   faceoverlayOverlay?: BeautyUvLayerSpec | null;
   underwearOverlay?: BeautyUvLayerSpec | null;
   corewearOverlay?: BeautyUvLayerSpec | null;
+  tuning?: FaceTuningParams | null;
 }
 
 export const DEFAULT_NEUTRAL_FACE_CUSTOMIZATION: BuddyFaceCustomizationProfile = {
@@ -77,96 +90,158 @@ export const DEFAULT_NEUTRAL_FACE_CUSTOMIZATION: BuddyFaceCustomizationProfile =
   faceoverlayOverlay: null,
   underwearOverlay: null,
   corewearOverlay: null,
+  tuning: null,
 };
+
+export const DEFAULT_NATURAL_LIP_STYLE: WardrobeLipStyleSpec = {
+  shape: 'natural',
+  baseHex: '#c98882',
+  innerHex: '#a96864',
+  lineHex: '#7d4644',
+  glossAlpha: 0.18,
+  fullness: 0.95,
+  widthScale: 0.96,
+};
+
+export const DEFAULT_NATURAL_EYE_STYLE: WardrobeEyeStyleSpec = {
+  shape: 'classic',
+  irisOuterHex: '#3a2b25',
+  irisInnerHex: '#8b6555',
+  pupilHex: '#140f0c',
+  linerHex: '#281c18',
+  linerThickness: 0.92,
+  wingLength: 0.22,
+  lashCount: 0,
+  irisScale: 0.95,
+};
+
+export const DEFAULT_NATURAL_BROW_STYLE: WardrobeBrowStyleSpec = {
+  shape: 'natural',
+  colorHex: '#3d2e26',
+  highlightHex: '#6b5449',
+  thickness: 0.88,
+  archLift: 0.72,
+  tailDrop: 0.44,
+  softness: 0.82,
+};
+
+export interface BlitzFaceUvRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 export interface BlitzFaceUvCalibration {
   centerX: number;
   lipCenterY: number;
   lipHalfW: number;
   lipHalfH: number;
-  lipClearRect: { x: number; y: number; w: number; h: number };
+  lipClearRect: BlitzFaceUvRect;
   eyeCenterY: number;
   eyeOffsetX: number;
   eyeHalfW: number;
   eyeHalfH: number;
-  eyeClearRect: { x: number; y: number; w: number; h: number };
+  eyeClearRect: BlitzFaceUvRect;
+  eyeLeftClearRect: BlitzFaceUvRect;
+  eyeRightClearRect: BlitzFaceUvRect;
   browCenterY: number;
   browOffsetX: number;
   browHalfW: number;
   browHalfH: number;
-  browClearRect: { x: number; y: number; w: number; h: number };
+  browClearRect: BlitzFaceUvRect;
+  browLeftClearRect: BlitzFaceUvRect;
+  browRightClearRect: BlitzFaceUvRect;
+  noseCenterY: number;
+  noseHalfW: number;
+  noseHalfH: number;
+  noseClearRect: BlitzFaceUvRect;
 }
 
 /**
  * Exact pixel-verified 1024x1024 UV coordinates measured directly from
- * `Blitz_Mask_Head` textures inside `blitz-male-player.glb` and `blitz-female-player.glb`.
+ * `Blitz_Mask_Head` textures inside `blitz-male-player.glb`, `blitz-female-03.glb`,
+ * and `blitz-female-player.glb`.
  * Note: glTF `flipY = false` maps the face upside-down in PNG space (lips at lower Y,
- * nose in middle, eyes below nose, eyebrows at highest Y).
+ * nose in middle, eyes below nose, eyebrows at highest Y — so +Y is UP toward forehead).
  */
 export function getBlitzFaceUvCalibration(gender: 'male' | 'female'): BlitzFaceUvCalibration {
   if (gender === 'female') {
     return {
-      centerX: 811,
-      lipCenterY: 78,
-      lipHalfW: 28,
-      lipHalfH: 11.5,
-      lipClearRect: { x: 774, y: 58, w: 76, h: 38 },
-      eyeCenterY: 180,
-      eyeOffsetX: 52.5,
-      eyeHalfW: 27,
-      eyeHalfH: 11.5,
-      eyeClearRect: { x: 718, y: 162, w: 188, h: 33 },
-      browCenterY: 211,
+      centerX: 812,
+      lipCenterY: 76,
+      lipHalfW: 29,
+      lipHalfH: 12.5,
+      lipClearRect: { x: 774, y: 55, w: 76, h: 42 },
+      eyeCenterY: 177,
+      eyeOffsetX: 51.5,
+      eyeHalfW: 28,
+      eyeHalfH: 12,
+      eyeClearRect: { x: 716, y: 156, w: 192, h: 40 },
+      eyeLeftClearRect: { x: 716, y: 156, w: 88, h: 40 },
+      eyeRightClearRect: { x: 820, y: 156, w: 88, h: 40 },
+      browCenterY: 210,
       browOffsetX: 57,
       browHalfW: 37,
       browHalfH: 7.5,
-      browClearRect: { x: 702, y: 195, w: 216, h: 35 },
+      browClearRect: { x: 704, y: 196, w: 216, h: 32 },
+      browLeftClearRect: { x: 704, y: 196, w: 94, h: 32 },
+      browRightClearRect: { x: 826, y: 196, w: 94, h: 32 },
+      noseCenterY: 136,
+      noseHalfW: 25,
+      noseHalfH: 27,
+      noseClearRect: { x: 778, y: 97, w: 68, h: 59 },
     };
   }
   return {
     centerX: 815,
     lipCenterY: 62,
     lipHalfW: 24,
-    lipHalfH: 7.8,
-    lipClearRect: { x: 782, y: 48, w: 66, h: 28 },
-    eyeCenterY: 158,
-    eyeOffsetX: 52,
-    eyeHalfW: 26.5,
+    lipHalfH: 8,
+    lipClearRect: { x: 780, y: 46, w: 70, h: 30 },
+    eyeCenterY: 156,
+    eyeOffsetX: 48,
+    eyeHalfW: 27,
     eyeHalfH: 10.5,
-    eyeClearRect: { x: 722, y: 140, w: 186, h: 30 },
-    browCenterY: 182,
-    browOffsetX: 56,
+    eyeClearRect: { x: 724, y: 141, w: 182, h: 26 },
+    eyeLeftClearRect: { x: 724, y: 141, w: 84, h: 26 },
+    eyeRightClearRect: { x: 822, y: 141, w: 84, h: 26 },
+    browCenterY: 181,
+    browOffsetX: 55,
     browHalfW: 39,
     browHalfH: 8.5,
-    browClearRect: { x: 706, y: 170, w: 218, h: 30 },
+    browClearRect: { x: 710, y: 167, w: 210, h: 31 },
+    browLeftClearRect: { x: 710, y: 167, w: 96, h: 31 },
+    browRightClearRect: { x: 824, y: 167, w: 96, h: 31 },
+    noseCenterY: 124,
+    noseHalfW: 24,
+    noseHalfH: 26,
+    noseClearRect: { x: 782, y: 84, w: 66, h: 56 },
   };
 }
 
 function clearFeatureRegionWithSkin(
   ctx: CanvasRenderingContext2D,
-  rect: { x: number; y: number; w: number; h: number },
+  rect: BlitzFaceUvRect,
   skinRgb: [number, number, number],
 ): void {
   const [r, g, b] = skinRgb;
   const cx = rect.x + rect.w * 0.5;
   const cy = rect.y + rect.h * 0.5;
+  const rx = rect.w * 0.52;
+  const ry = rect.h * 0.52;
   ctx.save();
-  ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-  ctx.fillRect(rect.x + 2, rect.y + 2, Math.max(1, rect.w - 4), Math.max(1, rect.h - 4));
-  // Soft feathered perimeter so erased zone blends invisibly into surrounding face texture
-  const grad = ctx.createRadialGradient(
-    cx,
-    cy,
-    Math.min(rect.w, rect.h) * 0.25,
-    cx,
-    cy,
-    Math.max(rect.w, rect.h) * 0.56,
-  );
-  grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.96)`);
-  grad.addColorStop(0.75, `rgba(${r}, ${g}, ${b}, 0.85)`);
+  // Elliptical soft-feathered skin clear so erased zone never shows boxy corners or cuts across adjacent features
+  ctx.translate(cx, cy);
+  ctx.scale(rx, ry);
+  const grad = ctx.createRadialGradient(0, 0, 0.58, 0, 0, 1.06);
+  grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 1)`);
+  grad.addColorStop(0.78, `rgba(${r}, ${g}, ${b}, 0.96)`);
   grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
   ctx.fillStyle = grad;
-  ctx.fillRect(rect.x - 4, rect.y - 4, rect.w + 8, rect.h + 8);
+  ctx.beginPath();
+  ctx.arc(0, 0, 1.06, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }
 
@@ -547,6 +622,204 @@ export function drawStylizedLipsOnCanvas(
   ctx.restore();
 }
 
+/**
+ * Draws airbrushed, anatomically calibrated nose contour & shade presets in UPRIGHT local space
+ * aligned strictly to the 3D `Blitz_BaseDoll` nose wireframe topology (without altering 3D mesh geometry):
+ * - `-1.0 * halfH` = glabella / bridge root between inner eyes
+ * - `-0.30 * halfH` = mid nasal bridge (sidewalls sit out at `±0.54..0.78 * halfW`, NOT on the front ridge!)
+ * - `+0.52 * halfH` = exact 3D nose tip apex
+ * - `+0.84 * halfH` = exact 3D nostril pockets (`±0.28..0.34 * halfW`) & under-tip columella shadow
+ * - `±0.78..0.92 * halfW` at `+0.50..0.76 * halfH` = outer alar wing creases
+ */
+export function drawStylizedNoseOnCanvas(
+  ctx: CanvasRenderingContext2D,
+  halfW: number,
+  halfH: number,
+  styleId: string,
+  skinRgb: [number, number, number],
+  isPreview = false,
+): void {
+  const key = styleId.replace(/^face_nose_/, '');
+  if ((!key || key === 'default') && !isPreview) return;
+
+  const [sr, sg, sb] = skinRgb;
+  // Warm realistic bronze/terracotta skin contour (never cold/muddy gray)
+  const cnR = Math.max(0, sr - 44);
+  const cnG = Math.max(0, sg - 66);
+  const cnB = Math.max(0, sb - 74);
+  // Warm umber shadow reserved strictly for tiny nostril pockets & underside columella occlusion
+  const dpR = Math.max(0, sr - 84);
+  const dpG = Math.max(0, sg - 100);
+  const dpB = Math.max(0, sb - 104);
+  // Healthy warm peach/rose tip tint
+  const blR = Math.min(255, sr + 14);
+  const blG = Math.max(0, sg - 34);
+  const blB = Math.max(0, sb - 38);
+  // Silky warm ivory skin highlight
+  const hiR = Math.min(255, sr + 24);
+  const hiG = Math.min(255, sg + 22);
+  const hiB = Math.min(255, sb + 18);
+
+  // Subtle boost in small 2D circular preview icons while staying ultra-natural on the 3D face
+  const boost = isPreview ? 1.45 : 1.0;
+
+  const airbrush = (
+    cx: number,
+    cy: number,
+    rx: number,
+    ry: number,
+    r: number,
+    g: number,
+    b: number,
+    peakAlpha: number,
+    rot = 0,
+  ) => {
+    if (rx <= 0.1 || ry <= 0.1 || peakAlpha <= 0.001) return;
+    const a = Math.min(0.85, peakAlpha * boost);
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (rot !== 0) ctx.rotate(rot);
+    ctx.scale(rx, ry);
+    // Gaussian-like multi-stop falloff so no contour edge ever reads as a stripe or smudge
+    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${a})`);
+    grad.addColorStop(0.32, `rgba(${r}, ${g}, ${b}, ${a * 0.72})`);
+    grad.addColorStop(0.66, `rgba(${r}, ${g}, ${b}, ${a * 0.22})`);
+    grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, 1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  };
+
+  const drawAnatomicalBase = (
+    nostrilX: number,
+    nostrilY: number,
+    nostrilRx: number,
+    nostrilRy: number,
+    nostrilAlpha: number,
+    undersideAlpha: number,
+    wingAlpha: number,
+  ) => {
+    // Soft ambient occlusion directly beneath the 3D nose tip / columella
+    airbrush(0, nostrilY + halfH * 0.04, halfW * 0.42, halfH * 0.14, cnR, cnG, cnB, undersideAlpha);
+    // Tiny feathered nostril pockets tucked cleanly under the 3D nose underside
+    for (const side of [-1, 1] as const) {
+      airbrush(
+        side * nostrilX,
+        nostrilY,
+        nostrilRx * 1.6,
+        nostrilRy * 1.5,
+        cnR,
+        cnG,
+        cnB,
+        nostrilAlpha * 0.48,
+        side * -0.22,
+      );
+      airbrush(
+        side * nostrilX,
+        nostrilY,
+        nostrilRx,
+        nostrilRy,
+        dpR,
+        dpG,
+        dpB,
+        nostrilAlpha,
+        side * -0.22,
+      );
+      if (wingAlpha > 0) {
+        // Gentle curved alar wing shadow hugging the outer 3D nostril flare (`±0.80 * halfW`)
+        airbrush(
+          side * halfW * 0.8,
+          halfH * 0.64,
+          halfW * 0.18,
+          halfH * 0.22,
+          cnR,
+          cnG,
+          cnB,
+          wingAlpha,
+          side * 0.28,
+        );
+      }
+    }
+  };
+
+  ctx.save();
+
+  if (!key || key === 'default') {
+    // Preview-only natural clean shading
+    drawAnatomicalBase(halfW * 0.28, halfH * 0.82, halfW * 0.12, halfH * 0.065, 0.28, 0.18, 0.08);
+    airbrush(0, halfH * 0.5, halfW * 0.2, halfH * 0.14, hiR, hiG, hiB, 0.24);
+  } else if (key === 'button') {
+    // 1. Petite Button — optical illusion of a shorter, rounded, upturned cute button nose
+    // Minimal bridge contour so the nose reads short & soft; gentle rosy tip + compact under-tip shadow
+    for (const side of [-1, 1] as const) {
+      airbrush(side * halfW * 0.58, halfH * 0.22, halfW * 0.24, halfH * 0.34, cnR, cnG, cnB, 0.11, side * 0.15);
+    }
+    // Soft warm rosy glow over the rounded 3D tip apex
+    airbrush(0, halfH * 0.54, halfW * 0.54, halfH * 0.28, blR, blG, blB, 0.22);
+    // Compact delicate nostrils & soft under-tip curve
+    drawAnatomicalBase(halfW * 0.26, halfH * 0.83, halfW * 0.11, halfH * 0.06, 0.32, 0.22, 0.1);
+    // Soft button highlight concentrated strictly on the rounded tip apex
+    airbrush(0, halfH * 0.48, halfW * 0.22, halfH * 0.14, hiR, hiG, hiB, 0.36);
+  } else if (key === 'anime_sculpted') {
+    // 2. Anime Sculpted — clean, slender, sharp anime nose with minimalist shadows & refined ridge glow
+    for (const side of [-1, 1] as const) {
+      // Soft tapered sidewall contour hugging the outer 3D slope (slightly softer on right for anime light direction)
+      const sideAlpha = side === -1 ? 0.16 : 0.11;
+      airbrush(side * halfW * 0.54, -halfH * 0.06, halfW * 0.22, halfH * 0.58, cnR, cnG, cnB, sideAlpha, side * 0.08);
+    }
+    // Delicate V-shaped anime underside shadow & subtle tucked nostrils
+    drawAnatomicalBase(halfW * 0.22, halfH * 0.84, halfW * 0.09, halfH * 0.05, 0.28, 0.24, 0.04);
+    // Slim clean highlight down the narrow dorsal ridge to a crisp soft tip point
+    airbrush(0, halfH * 0.04, halfW * 0.12, halfH * 0.44, hiR, hiG, hiB, 0.26);
+    airbrush(0, halfH * 0.52, halfW * 0.14, halfH * 0.1, hiR, hiG, hiB, 0.4);
+  } else if (key === 'korean_petite') {
+    // 3. Korean Petite — K-beauty hourglass contour (flares softly into inner brows, pinches mid-bridge, dainty tip)
+    for (const side of [-1, 1] as const) {
+      // Inner brow-to-bridge hollow (`glabella` triangle)
+      airbrush(side * halfW * 0.72, -halfH * 0.72, halfW * 0.28, halfH * 0.36, cnR, cnG, cnB, 0.16, side * -0.34);
+      // Soft hourglass sidewall tapering cleanly along the 3D slope
+      airbrush(side * halfW * 0.54, -halfH * 0.04, halfW * 0.22, halfH * 0.46, cnR, cnG, cnB, 0.14, side * 0.1);
+      // Subtle tip-narrowing contour just above the wings so the tip looks dainty
+      airbrush(side * halfW * 0.56, halfH * 0.56, halfW * 0.2, halfH * 0.2, cnR, cnG, cnB, 0.12, side * 0.28);
+    }
+    airbrush(0, halfH * 0.54, halfW * 0.44, halfH * 0.22, blR, blG, blB, 0.16);
+    drawAnatomicalBase(halfW * 0.26, halfH * 0.84, halfW * 0.11, halfH * 0.06, 0.34, 0.24, 0.12);
+    // Signature K-beauty two-point dewy highlight (mid-bridge + tip apex)
+    airbrush(0, -halfH * 0.16, halfW * 0.13, halfH * 0.24, hiR, hiG, hiB, 0.3);
+    airbrush(0, halfH * 0.52, halfW * 0.18, halfH * 0.12, hiR, hiG, hiB, 0.4);
+  } else if (key === 'straight_elegant') {
+    // 4. Straight Elegant — optical illusion of a tall, straight classical bridge running cleanly to the brow root
+    for (const side of [-1, 1] as const) {
+      // Smooth continuous sidewall shade from glabella down to the alar flare
+      airbrush(side * halfW * 0.64, -halfH * 0.62, halfW * 0.26, halfH * 0.42, cnR, cnG, cnB, 0.15, side * -0.18);
+      airbrush(side * halfW * 0.56, halfH * 0.08, halfW * 0.22, halfH * 0.56, cnR, cnG, cnB, 0.16, side * 0.04);
+    }
+    drawAnatomicalBase(halfW * 0.28, halfH * 0.84, halfW * 0.12, halfH * 0.06, 0.34, 0.24, 0.14);
+    // Smooth unbroken dorsal highlight along the entire straight bridge to the tip
+    airbrush(0, -halfH * 0.12, halfW * 0.13, halfH * 0.66, hiR, hiG, hiB, 0.3);
+    airbrush(0, halfH * 0.5, halfW * 0.15, halfH * 0.13, hiR, hiG, hiB, 0.34);
+  } else if (key === 'defined_bridge') {
+    // 5. Defined Bridge — sculpted editorial/masculine contour hugging the real 3D sidewalls & brow hollows (zero harsh lines!)
+    for (const side of [-1, 1] as const) {
+      // Brow-to-nose orbital hollow seamlessly blending toward inner brows
+      airbrush(side * halfW * 0.78, -halfH * 0.74, halfW * 0.32, halfH * 0.4, cnR, cnG, cnB, 0.22, side * -0.32);
+      // Natural 3D sidewall shadow positioned strictly on the sloped side planes (`±0.64 * halfW`), NOT on top of the ridge
+      airbrush(side * halfW * 0.64, -halfH * 0.04, halfW * 0.26, halfH * 0.6, cnR, cnG, cnB, 0.22, side * 0.08);
+      // Soft lower lateral contour blending into the cheeks
+      airbrush(side * halfW * 0.76, halfH * 0.48, halfW * 0.22, halfH * 0.26, cnR, cnG, cnB, 0.16, side * 0.22);
+    }
+    drawAnatomicalBase(halfW * 0.3, halfH * 0.84, halfW * 0.13, halfH * 0.068, 0.38, 0.26, 0.18);
+    // Clean diffused dorsal ridge highlight lifting the 3D nasal bone
+    airbrush(0, -halfH * 0.16, halfW * 0.15, halfH * 0.64, hiR, hiG, hiB, 0.32);
+    airbrush(0, halfH * 0.52, halfW * 0.18, halfH * 0.13, hiR, hiG, hiB, 0.34);
+  }
+
+  ctx.restore();
+}
+
 function findBaseSkinMaterials(glbRoot: THREE.Object3D): THREE.MeshStandardMaterial[] {
   const found: THREE.MeshStandardMaterial[] = [];
   const seen = new Set<THREE.Material>();
@@ -617,8 +890,198 @@ function drawUvOverlayLayer(
 }
 
 /**
- * Composites selected Eyes (Mata), Eyebrows (Alis), Lips (Bibir), and real UV-aligned
- * Makeup / Eyeshadow / Blush / Face Paint / Beard WebP overlays onto the
+ * Draws a centered single-feature WebP overlay (such as Lips) with smooth
+ * scale & vertical offset tuning around the overlay's own anatomical center.
+ */
+function drawTunedSingleOverlay(
+  ctx: CanvasRenderingContext2D,
+  layer: BeautyUvLayerSpec | null | undefined,
+  scale: number,
+  offsetY: number,
+): boolean {
+  if (!layer || !layer.url) return false;
+  const img = beautyOverlayImageCache.get(layer.url);
+  if (!img) return false;
+  if (Math.abs(scale - 1.0) < 0.001 && Math.abs(offsetY) < 0.01) {
+    ctx.drawImage(img, layer.x, layer.y, layer.w, layer.h);
+    return true;
+  }
+  const cx = layer.x + layer.w * 0.5;
+  const cy = layer.y + layer.h * 0.5;
+  ctx.save();
+  ctx.translate(cx, cy + offsetY);
+  ctx.scale(scale, scale);
+  ctx.drawImage(img, -layer.w * 0.5, -layer.h * 0.5, layer.w, layer.h);
+  ctx.restore();
+  return true;
+}
+
+/**
+ * Draws a symmetric left/right paired WebP overlay (Eyes, Eyeshadow, or Brows) by
+ * splitting cleanly along `centerX` and transforming each half independently around
+ * its anatomical pivot `(centerX ± pivotOffsetX, pivotY)`.
+ * Note: In glTF flipY=false space (+Y = UP toward forehead), `ctx.rotate(side * tiltRad)`
+ * lifts outer corners UP when `tiltRad > 0` and lowers them DOWN when `tiltRad < 0`.
+ */
+function drawTunedPairedOverlay(
+  ctx: CanvasRenderingContext2D,
+  layer: BeautyUvLayerSpec | null | undefined,
+  centerX: number,
+  pivotOffsetX: number,
+  pivotY: number,
+  spacing: number,
+  tiltRad: number,
+  scale: number,
+  offsetY: number,
+): boolean {
+  if (!layer || !layer.url) return false;
+  const img = beautyOverlayImageCache.get(layer.url);
+  if (!img) return false;
+  if (
+    Math.abs(spacing) < 0.01 &&
+    Math.abs(tiltRad) < 0.0005 &&
+    Math.abs(scale - 1.0) < 0.001 &&
+    Math.abs(offsetY) < 0.01
+  ) {
+    ctx.drawImage(img, layer.x, layer.y, layer.w, layer.h);
+    return true;
+  }
+
+  const imgW = img.naturalWidth || img.width;
+  const imgH = img.naturalHeight || img.height;
+  if (!imgW || !imgH || layer.w <= 2) {
+    ctx.drawImage(img, layer.x, layer.y, layer.w, layer.h);
+    return true;
+  }
+
+  const clampedCenter = Math.max(layer.x + 1, Math.min(layer.x + layer.w - 1, centerX));
+  const splitRatio = (clampedCenter - layer.x) / layer.w;
+  const splitPx = imgW * splitRatio;
+
+  // Left half (side = -1)
+  {
+    const pivotX = centerX - pivotOffsetX;
+    const destW = clampedCenter - layer.x;
+    ctx.save();
+    ctx.translate(pivotX - spacing, pivotY + offsetY);
+    if (tiltRad !== 0) ctx.rotate(-tiltRad);
+    if (scale !== 1.0) ctx.scale(scale, scale);
+    ctx.drawImage(img, 0, 0, splitPx, imgH, layer.x - pivotX, layer.y - pivotY, destW, layer.h);
+    ctx.restore();
+  }
+
+  // Right half (side = +1)
+  {
+    const pivotX = centerX + pivotOffsetX;
+    const destW = layer.x + layer.w - clampedCenter;
+    ctx.save();
+    ctx.translate(pivotX + spacing, pivotY + offsetY);
+    if (tiltRad !== 0) ctx.rotate(tiltRad);
+    if (scale !== 1.0) ctx.scale(scale, scale);
+    ctx.drawImage(
+      img,
+      splitPx,
+      0,
+      imgW - splitPx,
+      imgH,
+      clampedCenter - pivotX,
+      layer.y - pivotY,
+      destW,
+      layer.h,
+    );
+    ctx.restore();
+  }
+
+  return true;
+}
+
+interface DefaultFeaturePatchSet {
+  gender: 'male' | 'female';
+  eyeL: HTMLCanvasElement;
+  eyeR: HTMLCanvasElement;
+  browL: HTMLCanvasElement;
+  browR: HTMLCanvasElement;
+  lip: HTMLCanvasElement;
+}
+
+/**
+ * Extracts a transparent, chroma-skin-keyed crop of a baked facial feature from `srcCanvas`
+ * so tuning the default GLB face preserves 100% of the hand-painted GLB art and blends
+ * seamlessly over freckles, blush, and eyeshadow with zero rectangular seams.
+ */
+function extractSkinKeyedPatch(
+  srcCanvas: HTMLCanvasElement,
+  rect: BlitzFaceUvRect,
+  skinRgb: [number, number, number],
+  scaleX: number,
+  scaleY: number,
+): HTMLCanvasElement {
+  const sx = Math.max(0, Math.round(rect.x * scaleX));
+  const sy = Math.max(0, Math.round(rect.y * scaleY));
+  const sw = Math.max(2, Math.round(rect.w * scaleX));
+  const sh = Math.max(2, Math.round(rect.h * scaleY));
+  const patch = document.createElement('canvas');
+  patch.width = sw;
+  patch.height = sh;
+  const pctx = patch.getContext('2d', { willReadFrequently: true });
+  if (!pctx) return patch;
+
+  pctx.drawImage(srcCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+  const imgData = pctx.getImageData(0, 0, sw, sh);
+  const d = imgData.data;
+  const [sr, sg, sb] = skinRgb;
+  const feather = Math.max(2, Math.round(3 * Math.min(scaleX, scaleY)));
+
+  for (let py = 0; py < sh; py += 1) {
+    const edgeY = Math.min(py + 1, sh - py) / feather;
+    const wy = edgeY >= 1 ? 1 : edgeY * edgeY * (3 - 2 * edgeY);
+    for (let px = 0; px < sw; px += 1) {
+      const edgeX = Math.min(px + 1, sw - px) / feather;
+      const wx = edgeX >= 1 ? 1 : edgeX * edgeX * (3 - 2 * edgeX);
+      const idx = (py * sw + px) * 4;
+      const dr = d[idx] - sr;
+      const dg = d[idx + 1] - sg;
+      const db = d[idx + 2] - sb;
+      const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+      // Smoothstep away pure uniform skin (dist <= 9 -> alpha 0, dist >= 26 -> alpha 1)
+      const t = Math.max(0, Math.min(1, (dist - 9) / 17));
+      const skinAlpha = t * t * (3 - 2 * t);
+      d[idx + 3] = Math.round(255 * skinAlpha * wx * wy);
+    }
+  }
+  pctx.putImageData(imgData, 0, 0);
+  return patch;
+}
+
+function getOrBuildDefaultFeaturePatches(
+  glbRoot: THREE.Object3D,
+  srcCanvas: HTMLCanvasElement,
+  uv: BlitzFaceUvCalibration,
+  gender: 'male' | 'female',
+  skinRgb: [number, number, number],
+  scaleX: number,
+  scaleY: number,
+): DefaultFeaturePatchSet {
+  const existing = glbRoot.userData.__defaultFeaturePatches as DefaultFeaturePatchSet | undefined;
+  if (existing && existing.gender === gender) {
+    return existing;
+  }
+  const built: DefaultFeaturePatchSet = {
+    gender,
+    eyeL: extractSkinKeyedPatch(srcCanvas, uv.eyeLeftClearRect, skinRgb, scaleX, scaleY),
+    eyeR: extractSkinKeyedPatch(srcCanvas, uv.eyeRightClearRect, skinRgb, scaleX, scaleY),
+    browL: extractSkinKeyedPatch(srcCanvas, uv.browLeftClearRect, skinRgb, scaleX, scaleY),
+    browR: extractSkinKeyedPatch(srcCanvas, uv.browRightClearRect, skinRgb, scaleX, scaleY),
+    lip: extractSkinKeyedPatch(srcCanvas, uv.lipClearRect, skinRgb, scaleX, scaleY),
+  };
+  glbRoot.userData.__defaultFeaturePatches = built;
+  return built;
+}
+
+/**
+ * Composites selected Eyes (Mata), Eyebrows (Alis), Lips (Bibir), Sculpted Nose (Hidung),
+ * real-time precision face tuning (for BOTH WebP overlays and default GLB features),
+ * and Makeup / Eyeshadow / Blush / Face Paint / Beard WebP overlays onto the
  * `Blitz_Mask_Head` texture of a BuddyCharacterRig in real time (zero GLB reload,
  * non-destructive snapshot of the original texture, shared between Wardrobe Studio
  * and the live open-world city avatar).
@@ -643,6 +1106,7 @@ export function applyBuddyRigFaceCustomization(
         faceoverlayOverlay: profile.faceoverlayOverlay ?? null,
         underwearOverlay: profile.underwearOverlay ?? null,
         corewearOverlay: profile.corewearOverlay ?? null,
+        tuning: profile.tuning ?? null,
       }
     : DEFAULT_NEUTRAL_FACE_CUSTOMIZATION;
 
@@ -653,6 +1117,19 @@ export function applyBuddyRigFaceCustomization(
   const glbRoot = rig.customGlbController?.glbRoot;
   if (!glbRoot || typeof document === 'undefined') {
     return false;
+  }
+
+  const t = resolved.tuning;
+
+  // Always apply head bone scaling unconditionally so resetting back to 1.00x takes immediate effect
+  const headBone = rig.customGlbController?.bones.get('Head');
+  if (headBone) {
+    const rawHeadScale = t?.headScale;
+    const targetScale =
+      typeof rawHeadScale === 'number' && Number.isFinite(rawHeadScale)
+        ? Math.max(0.78, Math.min(1.06, rawHeadScale))
+        : 1.0;
+    headBone.scale.setScalar(targetScale);
   }
 
   const skinMaterials = findBaseSkinMaterials(glbRoot);
@@ -673,11 +1150,52 @@ export function applyBuddyRigFaceCustomization(
     resolved.beardOverlay,
   ].filter((l): l is BeautyUvLayerSpec => Boolean(l && l.url));
 
-  const isNeutral =
+  const eyeSpacing =
+    typeof t?.eyeSpacing === 'number' && Number.isFinite(t.eyeSpacing)
+      ? Math.max(-5, Math.min(10, t.eyeSpacing))
+      : 0;
+  const eyeTiltDeg =
+    typeof t?.eyeTiltDeg === 'number' && Number.isFinite(t.eyeTiltDeg)
+      ? Math.max(-8, Math.min(10, t.eyeTiltDeg))
+      : 0;
+  const eyeScale =
+    typeof t?.eyeScale === 'number' && Number.isFinite(t.eyeScale)
+      ? Math.max(0.82, Math.min(1.22, t.eyeScale))
+      : 1.0;
+  const browOffsetY =
+    typeof t?.browOffsetY === 'number' && Number.isFinite(t.browOffsetY)
+      ? Math.max(-7, Math.min(6, t.browOffsetY))
+      : 0;
+  const browTiltDeg =
+    typeof t?.browTiltDeg === 'number' && Number.isFinite(t.browTiltDeg)
+      ? Math.max(-10, Math.min(12, t.browTiltDeg))
+      : 0;
+  const lipScale =
+    typeof t?.lipScale === 'number' && Number.isFinite(t.lipScale)
+      ? Math.max(0.72, Math.min(1.18, t.lipScale))
+      : 1.0;
+  const lipOffsetY =
+    typeof t?.lipOffsetY === 'number' && Number.isFinite(t.lipOffsetY)
+      ? Math.max(-6, Math.min(6, t.lipOffsetY))
+      : 0;
+
+  const hasEyeTuning =
+    Math.abs(eyeSpacing) > 0.01 || Math.abs(eyeTiltDeg) > 0.01 || Math.abs(eyeScale - 1.0) > 0.005;
+  const browFollowSpacing = eyeSpacing * 0.4;
+  const hasBrowTuning =
+    Math.abs(browOffsetY) > 0.01 ||
+    Math.abs(browTiltDeg) > 0.01 ||
+    Math.abs(browFollowSpacing) > 0.01;
+  const hasLipTuning = Math.abs(lipScale - 1.0) > 0.005 || Math.abs(lipOffsetY) > 0.01;
+  const hasCustomNose = Boolean(t?.noseStyleId && t.noseStyleId !== 'face_nose_default');
+  const hasTextureTuning = hasEyeTuning || hasBrowTuning || hasLipTuning || hasCustomNose;
+
+  const isNeutralTexture =
     !resolved.eyeStyle &&
     !resolved.browStyle &&
     !resolved.lipStyle &&
-    overlayLayers.length === 0;
+    overlayLayers.length === 0 &&
+    !hasTextureTuning;
 
   // Trigger async load for any uncached overlay WebP and re-composite when ready
   const pendingUrls = overlayLayers
@@ -704,7 +1222,7 @@ export function applyBuddyRigFaceCustomization(
     }
   }
 
-  if (isNeutral) {
+  if (isNeutralTexture) {
     let restored = false;
     for (const mat of skinMaterials) {
       const origMap = mat.userData.__baseFaceOriginalMap as THREE.Texture | undefined;
@@ -766,19 +1284,19 @@ export function applyBuddyRigFaceCustomization(
   const scaleX = compCanvas.width / 1024;
   const scaleY = compCanvas.height / 1024;
 
-  // Start fresh from untouched base skin atlas (preserves nose, body shading, untouched features)
+  // Start fresh from untouched base skin atlas (preserves untouched features & body shading)
   ctx.clearRect(0, 0, compCanvas.width, compCanvas.height);
   ctx.drawImage(srcCanvas, 0, 0);
 
   ctx.save();
   ctx.scale(scaleX, scaleY);
 
-  // -1. Body 2D Underwear (Bra/Panties/Lingerie/Bikini/Swimsuit/Bodysuit/Boxer/Brief/Trunks) & Corewear (Singlet/Bustier)
+  // -1. Body 2D Underwear & Corewear
   drawUvOverlayLayer(ctx, resolved.underwearOverlay);
   drawUvOverlayLayer(ctx, resolved.corewearOverlay);
 
-  // 0. Clear baked base facial features FIRST (before any blush/eyeshadow/facepaint)
-  //    so skin-fill clear rects never slice a sharp edge across blush or eyeshadow!
+  // 0. Clear baked base facial features FIRST (before any nose/blush/eyeshadow/facepaint)
+  //    using split left/right eye & brow clear rects so the center nose bridge is NEVER wiped!
   const hasCustomEyeOverlay = Boolean(
     resolved.eyeOverlay && beautyOverlayImageCache.get(resolved.eyeOverlay.url),
   );
@@ -788,60 +1306,165 @@ export function applyBuddyRigFaceCustomization(
   const hasCustomLipOverlay = Boolean(
     resolved.lipOverlay && beautyOverlayImageCache.get(resolved.lipOverlay.url),
   );
-  if (hasCustomEyeOverlay || resolved.eyeStyle) {
-    clearFeatureRegionWithSkin(ctx, uv.eyeClearRect, skinRgb);
+
+  const needDefaultEyePatch = !hasCustomEyeOverlay && !resolved.eyeStyle && hasEyeTuning;
+  const needDefaultBrowPatch = !hasCustomBrowOverlay && !resolved.browStyle && hasBrowTuning;
+  const needDefaultLipPatch = !hasCustomLipOverlay && !resolved.lipStyle && hasLipTuning;
+
+  const defaultPatches =
+    needDefaultEyePatch || needDefaultBrowPatch || needDefaultLipPatch
+      ? getOrBuildDefaultFeaturePatches(glbRoot, srcCanvas, uv, gender, skinRgb, scaleX, scaleY)
+      : null;
+
+  if (hasCustomEyeOverlay || resolved.eyeStyle || needDefaultEyePatch) {
+    clearFeatureRegionWithSkin(ctx, uv.eyeLeftClearRect, skinRgb);
+    clearFeatureRegionWithSkin(ctx, uv.eyeRightClearRect, skinRgb);
   }
-  if (hasCustomBrowOverlay || resolved.browStyle) {
-    clearFeatureRegionWithSkin(ctx, uv.browClearRect, skinRgb);
+  if (hasCustomBrowOverlay || resolved.browStyle || needDefaultBrowPatch) {
+    clearFeatureRegionWithSkin(ctx, uv.browLeftClearRect, skinRgb);
+    clearFeatureRegionWithSkin(ctx, uv.browRightClearRect, skinRgb);
   }
-  if (hasCustomLipOverlay || resolved.lipStyle) {
+  if (hasCustomLipOverlay || resolved.lipStyle || needDefaultLipPatch) {
     clearFeatureRegionWithSkin(ctx, uv.lipClearRect, skinRgb);
   }
+  if (hasCustomNose) {
+    clearFeatureRegionWithSkin(ctx, uv.noseClearRect, skinRgb);
+  }
 
-  // 1. Skin-layer Makeup (Blush, Eyeshadow, Face Overlay, Face Paint) — unclipped & seamless
+  // 1. Sculpted Nose (Hidung) — rendered BEFORE blush/freckles so freckles sit naturally over the nose
+  if (hasCustomNose && t?.noseStyleId) {
+    ctx.save();
+    ctx.translate(uv.centerX, uv.noseCenterY);
+    ctx.scale(1, -1);
+    drawStylizedNoseOnCanvas(ctx, uv.noseHalfW, uv.noseHalfH, t.noseStyleId, skinRgb);
+    ctx.restore();
+  }
+
+  const eyeTiltRad = (eyeTiltDeg * Math.PI) / 180;
+  const browTiltRad = (browTiltDeg * Math.PI) / 180;
+
+  // 2. Skin-layer Makeup (Blush, Eye-tracked Eyeshadow, Face Overlay, Face Paint / Freckles)
   drawUvOverlayLayer(ctx, resolved.blushOverlay);
-  drawUvOverlayLayer(ctx, resolved.eyeshadowOverlay);
+  drawTunedPairedOverlay(
+    ctx,
+    resolved.eyeshadowOverlay,
+    uv.centerX,
+    uv.eyeOffsetX,
+    uv.eyeCenterY,
+    eyeSpacing,
+    eyeTiltRad,
+    eyeScale,
+    0,
+  );
   drawUvOverlayLayer(ctx, resolved.faceoverlayOverlay);
   drawUvOverlayLayer(ctx, resolved.facepaintOverlay);
 
-  // 2. Eyes (Mata) — real UV WebP overlay or procedural vector fallback
+  // 3. Eyes (Mata) — tuned WebP overlay, tuned procedural vector, or chroma-keyed default GLB eye patch
   if (hasCustomEyeOverlay) {
-    drawUvOverlayLayer(ctx, resolved.eyeOverlay);
+    drawTunedPairedOverlay(
+      ctx,
+      resolved.eyeOverlay,
+      uv.centerX,
+      uv.eyeOffsetX,
+      uv.eyeCenterY,
+      eyeSpacing,
+      eyeTiltRad,
+      eyeScale,
+      0,
+    );
   } else if (resolved.eyeStyle) {
     for (const side of [-1, 1] as const) {
       ctx.save();
-      ctx.translate(uv.centerX + side * uv.eyeOffsetX, uv.eyeCenterY);
+      ctx.translate(uv.centerX + side * (uv.eyeOffsetX + eyeSpacing), uv.eyeCenterY);
+      if (eyeTiltRad !== 0) {
+        ctx.rotate(side * eyeTiltRad);
+      }
       ctx.scale(side, -1);
-      drawStylizedEyeOnCanvas(ctx, uv.eyeHalfW, uv.eyeHalfH, resolved.eyeStyle);
+      drawStylizedEyeOnCanvas(ctx, uv.eyeHalfW * eyeScale, uv.eyeHalfH * eyeScale, resolved.eyeStyle);
+      ctx.restore();
+    }
+  } else if (needDefaultEyePatch && defaultPatches) {
+    const patches = [
+      { side: -1 as const, patch: defaultPatches.eyeL, rect: uv.eyeLeftClearRect },
+      { side: 1 as const, patch: defaultPatches.eyeR, rect: uv.eyeRightClearRect },
+    ];
+    for (const { side, patch, rect } of patches) {
+      const pivotX = uv.centerX + side * uv.eyeOffsetX;
+      const pivotY = uv.eyeCenterY;
+      ctx.save();
+      ctx.translate(pivotX + side * eyeSpacing, pivotY);
+      if (eyeTiltRad !== 0) ctx.rotate(side * eyeTiltRad);
+      if (eyeScale !== 1.0) ctx.scale(eyeScale, eyeScale);
+      ctx.drawImage(patch, rect.x - pivotX, rect.y - pivotY, rect.w, rect.h);
       ctx.restore();
     }
   }
 
-  // 3. Eyebrows (Alis) — real UV WebP overlay or procedural vector fallback
+  // 4. Eyebrows (Alis) — tuned WebP overlay, tuned procedural vector, or chroma-keyed default GLB brow patch
+  //    Subtly tracks eye spacing (`browFollowSpacing`) so brows remain harmoniously framed over wider/closer eyes
   if (hasCustomBrowOverlay) {
-    drawUvOverlayLayer(ctx, resolved.browOverlay);
+    drawTunedPairedOverlay(
+      ctx,
+      resolved.browOverlay,
+      uv.centerX,
+      uv.browOffsetX,
+      uv.browCenterY,
+      browFollowSpacing,
+      browTiltRad,
+      1.0,
+      browOffsetY,
+    );
   } else if (resolved.browStyle) {
     for (const side of [-1, 1] as const) {
       ctx.save();
-      ctx.translate(uv.centerX + side * uv.browOffsetX, uv.browCenterY);
+      ctx.translate(
+        uv.centerX + side * (uv.browOffsetX + browFollowSpacing),
+        uv.browCenterY + browOffsetY,
+      );
+      if (browTiltRad !== 0) {
+        ctx.rotate(side * browTiltRad);
+      }
       ctx.scale(side, -1);
       drawStylizedEyebrowOnCanvas(ctx, uv.browHalfW, uv.browHalfH, resolved.browStyle);
       ctx.restore();
     }
+  } else if (needDefaultBrowPatch && defaultPatches) {
+    const patches = [
+      { side: -1 as const, patch: defaultPatches.browL, rect: uv.browLeftClearRect },
+      { side: 1 as const, patch: defaultPatches.browR, rect: uv.browRightClearRect },
+    ];
+    for (const { side, patch, rect } of patches) {
+      const pivotX = uv.centerX + side * uv.browOffsetX;
+      const pivotY = uv.browCenterY;
+      ctx.save();
+      ctx.translate(pivotX + side * browFollowSpacing, pivotY + browOffsetY);
+      if (browTiltRad !== 0) ctx.rotate(side * browTiltRad);
+      ctx.drawImage(patch, rect.x - pivotX, rect.y - pivotY, rect.w, rect.h);
+      ctx.restore();
+    }
   }
 
-  // 4. Lips (Bibir) — real UV WebP overlay or procedural vector fallback
+  // 5. Lips (Bibir) — tuned WebP overlay, tuned procedural vector, or chroma-keyed default GLB lip patch
   if (hasCustomLipOverlay) {
-    drawUvOverlayLayer(ctx, resolved.lipOverlay);
+    drawTunedSingleOverlay(ctx, resolved.lipOverlay, lipScale, lipOffsetY);
   } else if (resolved.lipStyle) {
     ctx.save();
-    ctx.translate(uv.centerX, uv.lipCenterY);
+    ctx.translate(uv.centerX, uv.lipCenterY + lipOffsetY);
     ctx.scale(1, -1);
-    drawStylizedLipsOnCanvas(ctx, uv.lipHalfW, uv.lipHalfH, resolved.lipStyle);
+    drawStylizedLipsOnCanvas(ctx, uv.lipHalfW * lipScale, uv.lipHalfH * lipScale, resolved.lipStyle);
+    ctx.restore();
+  } else if (needDefaultLipPatch && defaultPatches) {
+    const rect = uv.lipClearRect;
+    const pivotX = uv.centerX;
+    const pivotY = uv.lipCenterY;
+    ctx.save();
+    ctx.translate(pivotX, pivotY + lipOffsetY);
+    if (lipScale !== 1.0) ctx.scale(lipScale, lipScale);
+    ctx.drawImage(defaultPatches.lip, rect.x - pivotX, rect.y - pivotY, rect.w, rect.h);
     ctx.restore();
   }
 
-  // 5. Beard (Male facial hair overlay)
+  // 6. Beard (Male facial hair overlay)
   drawUvOverlayLayer(ctx, resolved.beardOverlay);
 
   ctx.restore();

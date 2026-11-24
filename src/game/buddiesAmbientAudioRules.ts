@@ -119,6 +119,12 @@ export function classifyFootstepSurface(
   // 1. Finns-Style Tropical Beach Club (pools, timber DJ stage/bridge, marble/terrazzo decks, sand)
   const beachClubSurface = classifyBeachClubSurface(worldX, worldZ);
   if (beachClubSurface !== 'none') {
+    if (beachClubSurface === 'sand') {
+      const { waterSdf } = evaluateSeHarborSdf(worldX, worldZ);
+      if (waterSdf < -0.15) {
+        return 'water';
+      }
+    }
     return beachClubSurface;
   }
 
@@ -336,14 +342,14 @@ export function computeFootstepSynthSpec(
         noiseFilterType: 'bandpass',
         noiseFreqHz: 1120 + spd * 240,
         noiseQ: 1.35,
-        noiseGain: 0.042 * dynGain,
-        noiseDurationSec: 0.075,
+        noiseGain: 0.088 * dynGain,
+        noiseDurationSec: 0.078,
         bodyFreqStartHz: 115,
         bodyFreqEndHz: 58,
-        bodyGain: 0.012 * dynGain,
-        bodyDurationSec: 0.036,
+        bodyGain: 0.024 * dynGain,
+        bodyDurationSec: 0.038,
         airAccentHz: 2450,
-        airAccentGain: 0.016 * dynGain,
+        airAccentGain: 0.025 * dynGain,
         panOffset,
       };
     case 'grass':
@@ -352,14 +358,14 @@ export function computeFootstepSynthSpec(
         noiseFilterType: 'bandpass',
         noiseFreqHz: 2550 + spd * 420,
         noiseQ: 1.55,
-        noiseGain: 0.036 * dynGain,
-        noiseDurationSec: 0.068,
+        noiseGain: 0.076 * dynGain,
+        noiseDurationSec: 0.072,
         bodyFreqStartHz: 145,
         bodyFreqEndHz: 72,
-        bodyGain: 0.01 * dynGain,
-        bodyDurationSec: 0.03,
+        bodyGain: 0.022 * dynGain,
+        bodyDurationSec: 0.032,
         airAccentHz: 3900,
-        airAccentGain: 0.014 * dynGain,
+        airAccentGain: 0.024 * dynGain,
         panOffset,
       };
     case 'wood':
@@ -368,14 +374,14 @@ export function computeFootstepSynthSpec(
         noiseFilterType: 'bandpass',
         noiseFreqHz: 780 + spd * 140,
         noiseQ: 1.8,
-        noiseGain: 0.022 * dynGain,
-        noiseDurationSec: 0.048,
+        noiseGain: 0.052 * dynGain,
+        noiseDurationSec: 0.052,
         bodyFreqStartHz: 185,
         bodyFreqEndHz: 94,
-        bodyGain: 0.044 * dynGain,
-        bodyDurationSec: 0.048,
+        bodyGain: 0.095 * dynGain,
+        bodyDurationSec: 0.052,
         airAccentHz: 1450,
-        airAccentGain: 0.01 * dynGain,
+        airAccentGain: 0.02 * dynGain,
         panOffset,
       };
     case 'water':
@@ -384,14 +390,14 @@ export function computeFootstepSynthSpec(
         noiseFilterType: 'bandpass',
         noiseFreqHz: 1380 + spd * 320,
         noiseQ: 1.1,
-        noiseGain: 0.056 * dynGain,
-        noiseDurationSec: 0.125,
+        noiseGain: 0.12 * dynGain,
+        noiseDurationSec: 0.13,
         bodyFreqStartHz: 460,
         bodyFreqEndHz: 880,
-        bodyGain: 0.018 * dynGain,
-        bodyDurationSec: 0.085,
+        bodyGain: 0.048 * dynGain,
+        bodyDurationSec: 0.09,
         airAccentHz: 3100,
-        airAccentGain: 0.022 * dynGain,
+        airAccentGain: 0.038 * dynGain,
         panOffset,
       };
     case 'stone_road':
@@ -401,14 +407,14 @@ export function computeFootstepSynthSpec(
         noiseFilterType: 'bandpass',
         noiseFreqHz: 1080 + spd * 220,
         noiseQ: 1.65,
-        noiseGain: 0.028 * dynGain,
-        noiseDurationSec: 0.038,
+        noiseGain: 0.065 * dynGain,
+        noiseDurationSec: 0.044,
         bodyFreqStartHz: 158,
         bodyFreqEndHz: 74,
-        bodyGain: 0.03 * dynGain,
-        bodyDurationSec: 0.032,
+        bodyGain: 0.072 * dynGain,
+        bodyDurationSec: 0.036,
         airAccentHz: 2150,
-        airAccentGain: 0.008 * dynGain,
+        airAccentGain: 0.016 * dynGain,
         panOffset,
       };
   }

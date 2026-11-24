@@ -10,9 +10,14 @@ import {
 } from './buddiesCoastalBeachBuilder';
 import {
   BEACH_CLUB_MASTERPLAN,
+  evaluateBeachClubElevation,
   type BeachClubOrientedRect,
   type BeachClubRect,
 } from './buddiesBeachClubRules';
+import {
+  EAST_WATER_SURFACE_Y,
+  evaluateHarborSeabedDrop,
+} from './buddiesPlanetCurvature';
 
 export interface BuildCoastalBeachClubOptions {
   windUniforms: BlitzWindUniforms;
@@ -150,31 +155,37 @@ function createBeachClubWavePromenadeTexture(): THREE.Texture {
       const u = px / w;
       const idx = (py * w + px) * 4;
       const wavePhase =
-        v * 4.0 * Math.PI * 2.0 +
-        Math.sin(u * Math.PI * 2.0) * 1.18 +
-        Math.cos(u * Math.PI * 4.0) * 0.22;
+        v * 2.5 * Math.PI * 2.0 +
+        u * 1.35 * Math.PI +
+        Math.sin(u * Math.PI * 2.0) * 1.45 +
+        Math.cos(u * Math.PI * 4.0) * 0.25;
       const ribbon = Math.sin(wavePhase);
-      const isAqua = ribbon > 0.08;
-      const edgeGroove = Math.abs(ribbon - 0.08) < 0.045;
+      const isAqua = ribbon > 0.16;
+      const edgeGroove = Math.abs(ribbon - 0.16) < 0.05;
+      const paverJoint = !isAqua && ((py % 64 < 2) || (px % 96 < 2));
 
       const noise = ((Math.sin(px * 12.9898 + py * 78.233) * 43758.5453) % 1 + 1) % 1;
-      const grain = (noise - 0.5) * 12;
+      const grain = (noise - 0.5) * 10;
 
-      let r = isAqua ? 52 : 233;
-      let g = isAqua ? 186 : 221;
-      let b = isAqua ? 202 : 204;
+      let r = isAqua ? 84 : 241;
+      let g = isAqua ? 204 : 231;
+      let b = isAqua ? 216 : 215;
 
       if (isAqua) {
-        const shade = Math.sin(u * Math.PI) * 10;
-        r += shade * 0.4;
-        g += shade * 0.8;
+        const shade = Math.sin(u * Math.PI) * 14 + Math.cos(wavePhase) * 8;
+        r += shade * 0.45;
+        g += shade * 0.85;
         b += shade;
       }
 
       if (edgeGroove) {
-        r -= 24;
-        g -= 24;
-        b -= 22;
+        r -= 28;
+        g -= 26;
+        b -= 24;
+      } else if (paverJoint) {
+        r -= 14;
+        g -= 13;
+        b -= 12;
       }
 
       data[idx] = Math.max(0, Math.min(255, Math.round(r + grain)));
@@ -221,6 +232,8 @@ function createLimestoneDeckTexture(): THREE.Texture {
   return finalizeClubTexture(canvas, THREE.RepeatWrapping, THREE.RepeatWrapping);
 }
 
+
+
 /**
  * Dark Volcanic Sukabumi/Slate Pool Tile & Infinity Weir Wall Texture (`#1e3a42`)
  * so cascading infinity edges & wet retaining risers read like high-end Bali stone!
@@ -245,6 +258,8 @@ function createVolcanicSlatePoolTexture(): THREE.Texture {
   }
   return finalizeClubTexture(canvas, THREE.RepeatWrapping, THREE.RepeatWrapping);
 }
+
+
 
 /**
  * Honed White Calacatta Marble Texture (veined `#f8f6f2` with warm grey/gold veins).
@@ -283,6 +298,8 @@ function createCalacattaMarbleTexture(): THREE.Texture {
   }
   return finalizeClubTexture(canvas, THREE.RepeatWrapping, THREE.RepeatWrapping);
 }
+
+
 
 /**
  * Fluted White Architectural Stone with Vertical Brushed Brass Inlay Texture (Cocktail Bar — ZERO WOOD).
@@ -377,6 +394,8 @@ function createWovenParasolTexture(): THREE.Texture {
   }
   return finalizeClubTexture(canvas, THREE.RepeatWrapping, THREE.RepeatWrapping);
 }
+
+
 
 /**
  * Soft Radial Warm Amber Glow Texture (`128x128`) for festoon bulb & pod table lantern halos.
@@ -507,6 +526,579 @@ function createKaiPalmTrunkBarkTexture(): THREE.Texture {
     ctx.fillRect(x, 0, 2, 512);
   }
   return finalizeClubTexture(canvas, THREE.RepeatWrapping, THREE.RepeatWrapping);
+}
+
+/**
+ * 1:1 Grand Panoramic Iridescent Aurora LED Media Wall Texture (`1024x512`)
+ * matching the Grand Luxury DJ Performance Building model sheet:
+ * luminous cyan-turquoise, pastel sky-blue, soft violet & magenta gradient waves + subtle LED tile matrix.
+ */
+function createDjPanoramicLedWallTexture(): THREE.Texture {
+  const w = 1024;
+  const h = 512;
+  const { canvas, ctx } = makeCanvas2d(w, h);
+  if (!canvas || !ctx) return makeFallbackDataTex(140, 210, 245);
+
+  // Diagonal luminous aurora base gradient (lavender-violet corners -> bright aqua-cyan center -> pastel rose-violet)
+  const baseGrad = ctx.createLinearGradient(0, 0, w, h);
+  baseGrad.addColorStop(0.0, '#b58ef8');
+  baseGrad.addColorStop(0.28, '#8ad8f8');
+  baseGrad.addColorStop(0.55, '#a8f0f6');
+  baseGrad.addColorStop(0.78, '#c5a4f8');
+  baseGrad.addColorStop(1.0, '#e3a6f4');
+  ctx.fillStyle = baseGrad;
+  ctx.fillRect(0, 0, w, h);
+
+  // Soft swirling iridescent aurora clouds & light blooms
+  const blooms: readonly [number, number, number, string][] = [
+    [w * 0.22, h * 0.62, w * 0.34, 'rgba(110, 240, 245, 0.55)'],
+    [w * 0.52, h * 0.42, w * 0.38, 'rgba(255, 255, 255, 0.45)'],
+    [w * 0.78, h * 0.30, w * 0.32, 'rgba(218, 128, 255, 0.55)'],
+    [w * 0.16, h * 0.20, w * 0.26, 'rgba(155, 130, 255, 0.48)'],
+    [w * 0.68, h * 0.78, w * 0.30, 'rgba(120, 232, 248, 0.48)'],
+  ];
+  for (const [bx, by, br, col] of blooms) {
+    const rg = ctx.createRadialGradient(bx, by, 0, bx, by, br);
+    rg.addColorStop(0, col);
+    rg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  // Sweeping diagonal light ribbons
+  for (let i = 0; i < 6; i++) {
+    ctx.strokeStyle = i % 2 === 0 ? 'rgba(255,255,255,0.22)' : 'rgba(130,245,255,0.24)';
+    ctx.lineWidth = 18 + (i % 3) * 14;
+    ctx.beginPath();
+    ctx.moveTo(-40, h * (0.2 + i * 0.14));
+    ctx.bezierCurveTo(
+      w * 0.32,
+      h * (0.05 + ((i * 23) % 40) / 100),
+      w * 0.68,
+      h * (0.95 - ((i * 19) % 45) / 100),
+      w + 40,
+      h * (0.15 + ((i * 17) % 70) / 100),
+    );
+    ctx.stroke();
+  }
+
+  // Subtle architectural LED cabinet panel seams & fine horizontal scanlines
+  ctx.strokeStyle = 'rgba(20, 24, 38, 0.14)';
+  ctx.lineWidth = 2;
+  for (let x = 0; x <= w; x += 128) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= h; y += 128) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(16, 22, 36, 0.055)';
+  for (let y = 0; y < h; y += 4) {
+    ctx.fillRect(0, y, w, 1);
+  }
+
+  return finalizeClubTexture(canvas, THREE.ClampToEdgeWrapping, THREE.ClampToEdgeWrapping);
+}
+
+/**
+ * Perforated Dark Steel Concert Line-Array & Subwoofer Audio Tower Grille Texture (`256x512`).
+ */
+function createConcertSpeakerGrilleTexture(): THREE.Texture {
+  const w = 256;
+  const h = 512;
+  const { canvas, ctx } = makeCanvas2d(w, h);
+  if (!canvas || !ctx) return makeFallbackDataTex(34, 38, 44);
+
+  ctx.fillStyle = '#20242b';
+  ctx.fillRect(0, 0, w, h);
+
+  // Recessed metallic side rigging rails
+  ctx.fillStyle = '#383e48';
+  ctx.fillRect(0, 0, 18, h);
+  ctx.fillRect(w - 18, 0, 18, h);
+  ctx.fillStyle = '#14171c';
+  ctx.fillRect(18, 0, 4, h);
+  ctx.fillRect(w - 22, 0, 4, h);
+
+  // Stacked acoustic speaker module bays with recessed woofer silhouettes
+  const bays = 4;
+  const bayH = h / bays;
+  for (let b = 0; b < bays; b++) {
+    const y0 = b * bayH;
+    ctx.fillStyle = '#181c22';
+    ctx.fillRect(24, y0 + 8, w - 48, bayH - 16);
+
+    // Subtle circular woofer cones visible behind perforated acoustic steel mesh
+    for (const cx of [w * 0.35, w * 0.65]) {
+      const cy = y0 + bayH * 0.5;
+      const rg = ctx.createRadialGradient(cx, cy, 4, cx, cy, 34);
+      rg.addColorStop(0, '#0d1014');
+      rg.addColorStop(0.55, '#252a32');
+      rg.addColorStop(1, '#14181e');
+      ctx.fillStyle = rg;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 34, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Horizontal brushed steel bay divider + tiny green/cyan amp status LED
+    ctx.fillStyle = '#3f4652';
+    ctx.fillRect(18, y0, w - 36, 5);
+    ctx.fillStyle = b % 2 === 0 ? '#22d3ee' : '#4ade80';
+    ctx.fillRect(w - 32, y0 + 12, 6, 4);
+  }
+
+  // Fine perforated acoustic mesh dots across the front
+  ctx.fillStyle = 'rgba(8, 10, 14, 0.45)';
+  for (let y = 4; y < h; y += 6) {
+    for (let x = 24; x < w - 24; x += 6) {
+      ctx.fillRect(x, y, 2, 2);
+    }
+  }
+
+  return finalizeClubTexture(canvas, THREE.ClampToEdgeWrapping, THREE.ClampToEdgeWrapping);
+}
+
+/**
+ * Honed Warm Ivory Terrazzo Stage Floor with Rectangular Brass/Travertine Expansion Grid (`512x512`)
+ * matching the Grand DJ Performance Building Top Plan View.
+ */
+function createDjStageTerrazzoInlayTexture(): THREE.Texture {
+  const s = 512;
+  const { canvas, ctx } = makeCanvas2d(s, s);
+  if (!canvas || !ctx) return makeFallbackDataTex(238, 232, 220);
+
+  ctx.fillStyle = '#eee8dc';
+  ctx.fillRect(0, 0, s, s);
+
+  const chipColors = ['#d8cfbe', '#c7bca8', '#b8ad99', '#f7f3ea', '#c9a66b'];
+  for (let i = 0; i < 650; i++) {
+    const cx = ((i * 73 + 19) % s);
+    const cy = ((i * 139 + 41) % s);
+    const r = 1.4 + (i % 4) * 1.1;
+    ctx.fillStyle = chipColors[i % chipColors.length];
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Crisp architectural stone/brass bay grid matching Top Plan View
+  ctx.strokeStyle = 'rgba(176, 146, 94, 0.62)';
+  ctx.lineWidth = 4;
+  for (const pos of [4, s / 3, (s * 2) / 3, s - 4]) {
+    ctx.beginPath();
+    ctx.moveTo(pos, 0);
+    ctx.lineTo(pos, s);
+    ctx.stroke();
+  }
+  for (const pos of [4, s * 0.5, s - 4]) {
+    ctx.beginPath();
+    ctx.moveTo(0, pos);
+    ctx.lineTo(s, pos);
+    ctx.stroke();
+  }
+
+  return finalizeClubTexture(canvas, THREE.RepeatWrapping, THREE.RepeatWrapping);
+}
+
+/**
+ * Rich Matte Architectural Charcoal-Steel Panel Texture (`512x512`) for the DJ Monumental Canopy.
+ */
+function createArchitecturalCharcoalSteelTexture(): THREE.Texture {
+  const s = 512;
+  const { canvas, ctx } = makeCanvas2d(s, s);
+  if (!canvas || !ctx) return makeFallbackDataTex(52, 56, 62);
+
+  const g = ctx.createLinearGradient(0, 0, s, s);
+  g.addColorStop(0, '#555d68');
+  g.addColorStop(0.5, '#454c56');
+  g.addColorStop(1, '#5d6672');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+
+  // Subtle architectural brushed-metal grain & standing-seam architectural panel lines
+  for (let i = 0; i < 420; i++) {
+    const x = (i * 97) % s;
+    const y = (i * 53) % s;
+    const w = 18 + (i % 5) * 14;
+    ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.032)' : 'rgba(0,0,0,0.045)';
+    ctx.fillRect(x, y, w, 2);
+  }
+  ctx.strokeStyle = 'rgba(14, 16, 20, 0.35)';
+  ctx.lineWidth = 2;
+  for (let p = 64; p < s; p += 64) {
+    ctx.beginPath();
+    ctx.moveTo(p, 0);
+    ctx.lineTo(p, s);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+  ctx.lineWidth = 1;
+  for (let p = 66; p < s; p += 64) {
+    ctx.beginPath();
+    ctx.moveTo(p, 0);
+    ctx.lineTo(p, s);
+    ctx.stroke();
+  }
+  return finalizeClubTexture(canvas, THREE.RepeatWrapping, THREE.RepeatWrapping);
+}
+
+/**
+ * Painterly Water-Worn Coastal Granite Boulder Texture (`512x512`) matching reference shoreline rocks:
+ * pale sunlit sea-grey crown, mineral speckles, and soft darker wet water-line shading near the base.
+ */
+function createCoastalGraniteBoulderTexture(): THREE.Texture {
+  const s = 512;
+  const { canvas, ctx } = makeCanvas2d(s, s);
+  if (!canvas || !ctx) return makeFallbackDataTex(172, 184, 192);
+
+  // Vertical gradient: pale sunlit top (#cfd9df) -> mid cool sea-granite (#a5b2bc) -> darker wet base (#75848e)
+  const vg = ctx.createLinearGradient(0, 0, 0, s);
+  vg.addColorStop(0.0, '#d2dce2');
+  vg.addColorStop(0.45, '#b2bfc8');
+  vg.addColorStop(0.78, '#8d9ca6');
+  vg.addColorStop(1.0, '#6e7e88');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, s, s);
+
+  // Soft painterly mineral mottling & subtle granite veins
+  for (let i = 0; i < 320; i++) {
+    const cx = (i * 89 + 17) % s;
+    const cy = (i * 131 + 29) % s;
+    const rx = 6 + (i % 7) * 5;
+    const ry = 4 + (i % 5) * 4;
+    ctx.fillStyle =
+      i % 3 === 0
+        ? 'rgba(235, 242, 246, 0.14)'
+        : i % 3 === 1
+          ? 'rgba(92, 106, 118, 0.12)'
+          : 'rgba(130, 146, 132, 0.08)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, (i % 6) * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return finalizeClubTexture(canvas, THREE.RepeatWrapping, THREE.ClampToEdgeWrapping);
+}
+
+/**
+ * Safely merges multiple sub-geometries into a single non-indexed BufferGeometry with guaranteed position/normal/uv.
+ */
+function mergeOrganicParts(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const normalized: THREE.BufferGeometry[] = [];
+  for (const raw of parts) {
+    const g = raw.index ? raw.toNonIndexed() : raw.clone();
+    if (!g.getAttribute('normal')) g.computeVertexNormals();
+    if (!g.getAttribute('uv')) {
+      const count = g.getAttribute('position').count;
+      g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(count * 2), 2));
+    }
+    for (const key of Object.keys(g.attributes)) {
+      if (key !== 'position' && key !== 'normal' && key !== 'uv') {
+        g.deleteAttribute(key);
+      }
+    }
+    normalized.push(g);
+    raw.dispose();
+  }
+  const merged = mergeGeometries(normalized, false);
+  for (const g of normalized) g.dispose();
+  if (!merged) return new THREE.SphereGeometry(0.25, 8, 6);
+  merged.computeVertexNormals();
+  return merged;
+}
+
+/**
+ * Smooth Water-Worn Sculpted Coastal Granite Boulder (`20x14` organically deformed sphere — ZERO sharp low-poly facets).
+ */
+function createSculptedCoastalBoulderGeometry(variant: 0 | 1 | 2): THREE.BufferGeometry {
+  const geo = new THREE.SphereGeometry(1.0, 20, 14);
+  const pos = geo.getAttribute('position') as THREE.BufferAttribute;
+  const seed = variant * 2.17 + 0.65;
+  for (let i = 0; i < pos.count; i++) {
+    let x = pos.getX(i);
+    let y = pos.getY(i);
+    let z = pos.getZ(i);
+    const n1 = Math.sin(x * 2.3 + seed) * Math.cos(z * 2.1 - seed) * 0.14;
+    const n2 = Math.sin((x + z) * 3.7 + y * 2.4 + seed) * 0.065;
+    const n3 = Math.cos(x * 1.4 - z * 1.9 + seed * 1.3) * 0.09;
+    const radial = 1.0 + n1 + n2 + n3;
+    x *= radial * (variant === 1 ? 1.18 : 1.0);
+    z *= radial * (variant === 2 ? 1.22 : 0.96);
+    // Natural flat-seated base + gently domed water-worn boulder crown
+    y = y < 0 ? y * 0.42 : Math.pow(y, 0.88) * 0.78;
+    y += n1 * 0.12;
+    pos.setXYZ(i, x, y, z);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * Layered Horizontal Underwater Coral Reef Rock Shelf (2-tier water-eroded rounded reef pads matching reference).
+ */
+function createReefShelfGeometry(): THREE.BufferGeometry {
+  const basePad = createSculptedCoastalBoulderGeometry(1);
+  basePad.scale(1.65, 0.46, 0.95);
+  basePad.translate(0, 0.05, 0);
+
+  const upperLedge = createSculptedCoastalBoulderGeometry(2);
+  upperLedge.scale(1.12, 0.36, 0.68);
+  upperLedge.rotateY(0.32);
+  upperLedge.translate(0.18, 0.28, -0.06);
+
+  const sideStone = createSculptedCoastalBoulderGeometry(0);
+  sideStone.scale(0.62, 0.38, 0.56);
+  sideStone.translate(-0.92, 0.12, 0.28);
+
+  return mergeOrganicParts([basePad, upperLedge, sideStone]);
+}
+
+/**
+ * Multi-Branch Sculpted Staghorn Coral (organic tapered curved trunk + 8 radiating branches & secondary twigs).
+ */
+function createBranchingCoralGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const addBranch = (
+    x0: number,
+    y0: number,
+    z0: number,
+    len: number,
+    rBot: number,
+    rTop: number,
+    tiltX: number,
+    tiltZ: number,
+  ) => {
+    const seg = new THREE.CylinderGeometry(rTop, rBot, len, 7, 2);
+    seg.translate(0, len * 0.5, 0);
+    seg.rotateX(tiltX);
+    seg.rotateZ(tiltZ);
+    seg.translate(x0, y0, z0);
+    parts.push(seg);
+
+    // Rounded organic coral polyp tip
+    const tip = new THREE.SphereGeometry(rTop * 1.15, 7, 5);
+    const tipVec = new THREE.Vector3(0, len, 0)
+      .applyEuler(new THREE.Euler(tiltX, 0, tiltZ))
+      .add(new THREE.Vector3(x0, y0, z0));
+    tip.translate(tipVec.x, tipVec.y, tipVec.z);
+    parts.push(tip);
+    return tipVec;
+  };
+
+  // Rooted coral stem splitting into sweeping staghorn forks
+  addBranch(0, 0, 0, 0.22, 0.075, 0.055, 0.04, -0.05);
+  const dirs: readonly [number, number, number][] = [
+    [0.48, 0.32, 0.42],
+    [-0.44, 0.38, 0.38],
+    [0.26, -0.52, 0.40],
+    [-0.32, -0.46, 0.35],
+    [0.58, -0.18, 0.32],
+    [-0.55, 0.14, 0.34],
+  ];
+  for (let i = 0; i < dirs.length; i++) {
+    const [tx, tz, l] = dirs[i];
+    const mid = addBranch(0, 0.16, 0, l, 0.048, 0.032, tx, tz);
+    // Secondary upward-forking coral twig
+    addBranch(mid.x, mid.y - 0.04, mid.z, l * 0.62, 0.03, 0.02, tx * 0.45 + 0.14, tz * 0.45 - 0.12);
+  }
+  return mergeOrganicParts(parts);
+}
+
+/**
+ * Clustered Tubular Sea Anemone / Hollow Sponge Coral (`LatheGeometry` flared tubes matching reference bottom-left).
+ */
+function createTubeCoralClusterGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const profile = [
+    new THREE.Vector2(0.03, 0.0),
+    new THREE.Vector2(0.055, 0.08),
+    new THREE.Vector2(0.048, 0.24),
+    new THREE.Vector2(0.072, 0.36),
+    new THREE.Vector2(0.082, 0.42),
+    new THREE.Vector2(0.058, 0.43),
+    new THREE.Vector2(0.042, 0.32),
+  ];
+  const specs: readonly [number, number, number, number, number][] = [
+    [0.0, 0.0, 1.15, 0.06, -0.04],
+    [0.11, 0.06, 0.92, 0.26, -0.22],
+    [-0.10, 0.08, 0.84, 0.22, 0.28],
+    [0.05, -0.11, 0.78, -0.28, -0.12],
+    [-0.08, -0.09, 0.68, -0.24, 0.24],
+  ];
+  for (const [ox, oz, sc, rx, rz] of specs) {
+    const tube = new THREE.LatheGeometry(profile, 10);
+    tube.scale(sc, sc, sc);
+    tube.rotateX(rx);
+    tube.rotateZ(rz);
+    tube.translate(ox, 0, oz);
+    parts.push(tube);
+  }
+  return mergeOrganicParts(parts);
+}
+
+/**
+ * Lush Multi-Blade Arched Underwater Seagrass / Kelp Clump (9 gracefully bent tapered blades).
+ */
+function createSeagrassClumpGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const bladeCount = 9;
+  for (let b = 0; b < bladeCount; b++) {
+    const ang = (b / bladeCount) * Math.PI * 2 + (b % 2) * 0.25;
+    const h = 0.44 + (b % 3) * 0.14;
+    const w = 0.085 + (b % 2) * 0.025;
+    const blade = new THREE.PlaneGeometry(w, h, 1, 5);
+    const pos = blade.getAttribute('position') as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) {
+      const py = pos.getY(i) + h * 0.5; // 0..h
+      const t = Math.max(0, Math.min(1, py / h));
+      // Taper smoothly to a pointed leaf tip + graceful parabolic outward arch
+      const px = pos.getX(i) * (1.0 - Math.pow(t, 1.65) * 0.92);
+      const bendZ = Math.pow(t, 1.8) * (0.18 + (b % 3) * 0.06);
+      pos.setXYZ(i, px, py * (1.0 - t * 0.08), bendZ);
+    }
+    blade.rotateY(ang);
+    blade.translate(Math.cos(ang) * 0.04, 0, Math.sin(ang) * 0.04);
+    parts.push(blade);
+  }
+  return mergeOrganicParts(parts);
+}
+
+/**
+ * Organic 5-Arm Coastal Starfish resting naturally on sand & shallow reefs.
+ */
+function createStarfishGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const disc = new THREE.SphereGeometry(0.085, 10, 6);
+  disc.scale(1.0, 0.36, 1.0);
+  disc.translate(0, 0.028, 0);
+  parts.push(disc);
+
+  for (let a = 0; a < 5; a++) {
+    const ang = (a / 5) * Math.PI * 2;
+    const arm = new THREE.ConeGeometry(0.048, 0.22, 7);
+    arm.scale(1.0, 1.0, 0.45);
+    arm.rotateX(Math.PI * 0.5);
+    arm.translate(0, 0.024, 0.12);
+    arm.rotateY(ang);
+    parts.push(arm);
+  }
+  return mergeOrganicParts(parts);
+}
+
+/**
+ * Sculpted Coastal Red Crab (domed oval carapace + 2 curved front pincer claws + 6 splayed walking legs).
+ */
+function createCoastalCrabGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  // Sculpted domed oval crab shell
+  const body = new THREE.SphereGeometry(0.13, 12, 8);
+  body.scale(1.25, 0.52, 0.92);
+  body.translate(0, 0.075, 0);
+  parts.push(body);
+
+  // Twin curved front pincer arms & chelae
+  for (const sgn of [-1, 1]) {
+    const upperArm = new THREE.CylinderGeometry(0.022, 0.026, 0.12, 6);
+    upperArm.rotateZ(sgn * 1.15);
+    upperArm.rotateY(sgn * 0.45);
+    upperArm.translate(sgn * 0.15, 0.075, 0.09);
+    parts.push(upperArm);
+
+    const claw = new THREE.SphereGeometry(0.044, 8, 6);
+    claw.scale(1.2, 0.72, 0.85);
+    claw.rotateY(sgn * -0.4);
+    claw.translate(sgn * 0.17, 0.085, 0.16);
+    parts.push(claw);
+
+    // 3 splayed walking legs per side (6 total)
+    for (let leg = 0; leg < 3; leg++) {
+      const zOff = 0.03 - leg * 0.065;
+      const femur = new THREE.CylinderGeometry(0.013, 0.015, 0.13, 5);
+      femur.rotateZ(sgn * 1.25);
+      femur.translate(sgn * 0.17, 0.065, zOff);
+      parts.push(femur);
+
+      const tibia = new THREE.CylinderGeometry(0.008, 0.013, 0.11, 5);
+      tibia.rotateZ(sgn * 0.42);
+      tibia.translate(sgn * 0.24, 0.03, zOff);
+      parts.push(tibia);
+    }
+
+    // Tiny raised eyestalks
+    const eye = new THREE.CylinderGeometry(0.01, 0.012, 0.045, 5);
+    eye.translate(sgn * 0.045, 0.125, 0.09);
+    parts.push(eye);
+  }
+  return mergeOrganicParts(parts);
+}
+
+/**
+ * Streamlined Shallow-Water Tropical Fish (fusiform body + forked caudal tail fin + dorsal & pectoral fins).
+ */
+function createShallowFishGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  // Sleek streamlined body oriented along +Z
+  const body = new THREE.SphereGeometry(0.085, 10, 8);
+  body.scale(0.45, 0.78, 2.35);
+  parts.push(body);
+
+  // Forked V-shaped caudal tail fin at -Z
+  for (const sgn of [-1, 1]) {
+    const tailLobe = new THREE.ConeGeometry(0.042, 0.15, 4);
+    tailLobe.scale(0.28, 1.0, 1.0);
+    tailLobe.rotateX(-Math.PI * 0.5 + sgn * 0.36);
+    tailLobe.translate(0, sgn * 0.032, -0.22);
+    parts.push(tailLobe);
+  }
+
+  // Swept dorsal fin on top
+  const dorsal = new THREE.ConeGeometry(0.035, 0.12, 4);
+  dorsal.scale(0.24, 1.0, 1.6);
+  dorsal.rotateX(-0.42);
+  dorsal.translate(0, 0.075, -0.02);
+  parts.push(dorsal);
+
+  // Twin side pectoral fins
+  for (const sgn of [-1, 1]) {
+    const pec = new THREE.ConeGeometry(0.025, 0.09, 4);
+    pec.scale(0.25, 1.0, 1.0);
+    pec.rotateZ(sgn * 1.15);
+    pec.rotateY(sgn * -0.4);
+    pec.translate(sgn * 0.045, -0.018, 0.05);
+    parts.push(pec);
+  }
+  return mergeOrganicParts(parts);
+}
+
+/**
+ * Spiny Coastal Sea Urchin resting beside shallow reef boulders (matching reference bottom-left).
+ */
+function createSeaUrchinGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const core = new THREE.SphereGeometry(0.08, 8, 6);
+  core.scale(1.0, 0.65, 1.0);
+  core.translate(0, 0.045, 0);
+  parts.push(core);
+
+  for (let ring = 0; ring < 2; ring++) {
+    const count = ring === 0 ? 10 : 8;
+    const elev = ring === 0 ? 0.52 : 1.08;
+    for (let i = 0; i < count; i++) {
+      const ang = (i / count) * Math.PI * 2 + ring * 0.3;
+      const spine = new THREE.ConeGeometry(0.009, 0.17, 4);
+      spine.translate(0, 0.085, 0);
+      spine.rotateZ(Math.PI * 0.5 - elev);
+      spine.rotateY(ang);
+      spine.translate(0, 0.045, 0);
+      parts.push(spine);
+    }
+  }
+  return mergeOrganicParts(parts);
 }
 
 /**
@@ -1066,6 +1658,19 @@ export function buildCoastalBeachClub3D(
     return mesh;
   };
 
+  const makeWorldBlitzMat = (
+    colorHex: string,
+    tex?: THREE.Texture,
+    specularStrength = 0.22,
+  ): THREE.Material => {
+    const tmpMesh = new THREE.Mesh(
+      trackGeo(new THREE.BoxGeometry(0.1, 0.1, 0.1)),
+      trackMat(new THREE.MeshStandardMaterial({ color: colorHex, map: tex ?? null, roughness: 0.8 })),
+    );
+    upgradeMeshToBlitzWorldMaterial(tmpMesh, windUniforms, colorHex, specularStrength);
+    return tmpMesh.material as THREE.Material;
+  };
+
   // ============================================================================
   // 1. GROUND-LEVEL WAVE-STRIPED PALM PROMENADE (+0.02m flush with roadside ground 0.0m)
   // ============================================================================
@@ -1104,29 +1709,43 @@ export function buildCoastalBeachClub3D(
     },
   );
 
-  // Subtle flush cream sandstone border curbstones framing Ground-Level Promenade (+0.02m -> +0.05m)
+  // Subtle flush cream sandstone border curbstones framing Ground-Level Promenade (+0.02m -> +0.05m),
+  // cleanly broken at every staircase entrance so curbs never clip across steps!
+  const westCurbLen = 43.8 - prom.minZ;
   addWorldPart(
     staticClubGroup,
-    applyBoxMetricUvs(new THREE.BoxGeometry(0.28, 0.08, promL), 2.5, 2.5),
+    applyBoxMetricUvs(new THREE.BoxGeometry(0.28, 0.08, westCurbLen), 2.5, 2.5),
     '#efe7da',
-    [prom.minX + 0.14, prom.elevY - 0.01, promCz],
+    [prom.minX + 0.14, prom.elevY - 0.01, (prom.minZ + 43.8) * 0.5],
     [0, 0, 0],
     { tex: limestoneTex, strokeW: 0.01 },
   );
-  addWorldPart(
-    staticClubGroup,
-    applyBoxMetricUvs(new THREE.BoxGeometry(0.28, 0.08, promL), 2.5, 2.5),
-    '#efe7da',
-    [prom.maxX - 0.14, prom.elevY - 0.01, promCz],
-    [0, 0, 0],
-    { tex: limestoneTex, strokeW: 0.01 },
-  );
+  for (const [cz0, cz1] of [
+    [prom.minZ, -95.5],
+    [-92.6, -67.6],
+    [-63.8, -17.0],
+    [-12.0, 32.5],
+    [38.5, 43.8],
+  ] as const) {
+    const segLen = cz1 - cz0;
+    if (segLen > 0.2) {
+      addWorldPart(
+        staticClubGroup,
+        applyBoxMetricUvs(new THREE.BoxGeometry(0.28, 0.08, segLen), 2.5, 2.5),
+        '#efe7da',
+        [prom.maxX - 0.14, prom.elevY - 0.01, (cz0 + cz1) * 0.5],
+        [0, 0, 0],
+        { tex: limestoneTex, strokeW: 0.01 },
+      );
+    }
+  }
 
   // ============================================================================
-  // 2. SOLID STEPPED TERRACE PLINTHS & RETAINING RISERS (Eliminates "tambak udang" flat ground!)
-  //    Each tier is a complete solid architectural podium stepping down Land -> Sea & North -> South:
-  //    - North Crown (+1.36m) -> Terrace 2 (+1.06m) -> Terrace 3 (+0.78m)
-  //    - VIP Mezzanine (+0.64m) -> Mid Lagoon (+0.44m/+0.42m) -> Oceanfront Lagoon (+0.28m/+0.26m)
+  // 2. SOLID STEPPED TERRACE PLINTHS & RETAINING RISERS (1:1 with BEACH_CLUB_MASTERPLAN.terraceTiers)
+  //    Every dry terrace tier & sub-pool podium is solidly grounded down to -2.15m with zero holes,
+  //    zero buried stair steps, and zero Z-fighting overlaps:
+  //    - North Arrival (+0.82m / +0.64m) & Cascade Pergola Crown (+0.36m)
+  //    - VIP Cabana Mezzanine (+0.64m) -> Mid Lagoon & Lounge (-0.56m) -> Oceanfront Lagoon (-0.96m / -1.00m)
   // ============================================================================
   const buildSolidTerraceTierSlab = (
     minX: number,
@@ -1141,14 +1760,15 @@ export function buildCoastalBeachClub3D(
     const h = topY - baseY;
     const cx = (minX + maxX) * 0.5;
     const cz = (minZ + maxZ) * 0.5;
-    // Limestone terrace deck surface
+    // 2nd terrace (-0.56m) uses crisp white Calacatta marble; other terraces use warm Bali limestone
+    const isSecondTerrace = Math.abs(topY - -0.56) < 0.05;
     addWorldPart(
       staticClubGroup,
       applyBoxMetricUvs(new THREE.BoxGeometry(w, 0.14, d), 2.8, 2.8),
-      '#ebe2d3',
+      isSecondTerrace ? '#ffffff' : '#ebe2d3',
       [cx, topY - 0.07, cz],
       [0, 0, 0],
-      { tex: limestoneTex, receiveShadow: true, bounceStrength: 0.18 },
+      { tex: isSecondTerrace ? calacattaTex : limestoneTex, receiveShadow: true, bounceStrength: 0.18 },
     );
     // Warm sandstone retaining apron underneath so stepped edges never show dark cracks or floating lips!
     if (h > 0.14) {
@@ -1163,28 +1783,125 @@ export function buildCoastalBeachClub3D(
     }
   };
 
-  // Solid flank platforms framing the North Cascade Tiers (West upper walkway & East lowered planter wing)
-  buildSolidTerraceTierSlab(91.2, 99.6, -96.2, -89.0, 0.82, -1.65);
-  buildSolidTerraceTierSlab(91.2, 99.6, -89.0, -77.4, 0.64, -1.65);
-  buildSolidTerraceTierSlab(119.6, 121.0, -96.2, -77.4, -0.22);
+  // Helper for solid masonry foundations beneath elevated pool basins (zero floating moats/cascades!)
+  const buildSubBasinRetainingPodium = (
+    minX: number,
+    maxX: number,
+    minZ: number,
+    maxZ: number,
+    topY: number,
+    baseY = -2.15,
+  ) => {
+    const h = topY - baseY;
+    if (h <= 0.05) return;
+    addWorldPart(
+      staticClubGroup,
+      applyBoxMetricUvs(new THREE.BoxGeometry(maxX - minX, h, maxZ - minZ), 2.2, 1.4),
+      '#d5c8b4',
+      [(minX + maxX) * 0.5, baseY + h * 0.5, (minZ + maxZ) * 0.5],
+      [0, 0, 0],
+      { tex: limestoneTex, receiveShadow: true, bounceStrength: 0.12 },
+    );
+  };
 
-  // Solid VIP Cabana Mezzanine Deck (+0.64m continuous platform from Promenade to West Moat!)
-  buildSolidTerraceTierSlab(91.2, 96.4, -77.4, 45.2, 0.64, -1.65);
-  buildSolidTerraceTierSlab(96.4, 99.6, -77.4, -74.2, 0.64, -1.65); // North-West moat cap
-  buildSolidTerraceTierSlab(96.4, 99.6, -17.2, 7.4, 0.64, -1.65); // Center West VIP entrance mezzanine deck
+  // North Arrival Courtyard (+0.82m), North VIP Walk (+0.64m), Dry North Pergola Walkway (+0.36m) & East Catch Ledge (-0.96m)
+  buildSolidTerraceTierSlab(91.2, 99.6, -96.2, -89.0, 0.82, -2.15);
+  buildSolidTerraceTierSlab(91.2, 99.6, -89.0, -77.4, 0.64, -2.15);
+  buildSolidTerraceTierSlab(99.6, 120.6, -96.2, -94.0, 0.36, -2.15); // Dry pergola landing flush with cascadeTier1.minZ=-94.0
+  buildSolidTerraceTierSlab(119.6, 120.6, -94.0, -78.2, -0.96, -2.15); // Lowered East catch ledge below cascade weirs
 
-  // North-Central Crosswalk / Promenade Spine at z = -76.2 (transitioning Cascade 3 -> Lowered Mid Lagoon at -0.56m / -0.96m)
-  buildSolidTerraceTierSlab(99.6, 112.0, -78.2, -74.8, -0.56);
-  buildSolidTerraceTierSlab(112.0, 120.8, -78.2, -74.8, -0.96);
-  // Central Crosswalk Spine at z = -17.6 .. -11.2 (DJ Rear Terrace -0.56m stepping via stair_mid_ocean_n to -0.96m East Terrace)
-  buildSolidTerraceTierSlab(99.6, 110.8, -17.6, -11.2, -0.56);
-  buildSolidTerraceTierSlab(112.4, 120.8, -17.6, -11.2, -0.96);
-  // South Inner Lounge Terrace (-0.56m, x in [96.4..105.2]) stepping via stair_mid_ocean_s (x in [105.2..106.4]) to South Oceanfront Pool Deck (-1.00m)
-  buildSolidTerraceTierSlab(96.4, 105.2, 7.4, 45.2, -0.56);
-  buildSolidTerraceTierSlab(106.4, 121.4, 42.6, 45.2, -1.0); // South-end perimeter terrace joining Kai's -1.00m Upper Beach Terrace!
+  // Solid VIP Cabana Mezzanine Deck (+0.64m continuous platform from Promenade to West Moat & Cliff Edge)
+  buildSolidTerraceTierSlab(91.2, 96.4, -77.4, 45.2, 0.64, -2.15);
+  buildSolidTerraceTierSlab(96.4, 99.6, -77.4, -74.2, 0.64, -2.15); // North-West moat cap
+  buildSolidTerraceTierSlab(96.4, 99.6, -51.2, -49.4, 0.64, -2.15); // North flank beside stair_vip_mid_n
+  buildSolidTerraceTierSlab(96.4, 99.6, -45.6, -45.0, 0.64, -2.15); // South flank beside stair_vip_mid_n
+  buildSolidTerraceTierSlab(96.4, 99.6, -17.2, 7.4, 0.64, -2.15); // Center West VIP entrance mezzanine deck
+  // Smooth 2-step threshold joining VIP Mezzanine (+0.64m at z=45.2) to Kai's Boardwalk (+0.82m at z=46.2)
+  buildSolidTerraceTierSlab(91.2, 92.2, 45.2, 45.7, 0.7, -2.15);
+  buildSolidTerraceTierSlab(91.2, 92.2, 45.7, 46.2, 0.78, -2.15);
+  // Solid retaining foundations under West Reflection Moats (water +0.52m, floor +0.14m -> grounded to -2.15m)
+  buildSubBasinRetainingPodium(96.4, 99.5, -74.2, -51.2, 0.08, -2.15);
+  buildSubBasinRetainingPodium(96.4, 99.5, -45.0, -17.2, 0.08, -2.15);
+
+  // North Crosswalk Spine at z = -78.2..-74.8 (-0.56m West -> stair_mid_ocean_north -> -0.96m East, flush w/ stair_beach_n at 120.6)
+  buildSolidTerraceTierSlab(99.6, 112.0, -78.2, -74.8, -0.56, -2.15);
+  buildSolidTerraceTierSlab(112.0, 120.6, -78.2, -74.8, -0.96, -2.15);
+  // West dry walkway strip bordering pool_north_inner_lagoon (x: 99.6..100.4, seats bc_planter_mid_w)
+  buildSolidTerraceTierSlab(99.6, 100.4, -74.8, -17.6, -0.56, -2.15);
+  // Central Crosswalk Spine at z = -17.6..-11.2 (-0.56m West -> stair_mid_ocean_n -> -0.96m East, flush w/ stair_beach_c at 120.6)
+  buildSolidTerraceTierSlab(99.6, 110.8, -17.6, -11.2, -0.56, -2.15);
+  buildSolidTerraceTierSlab(110.8, 120.6, -17.6, -11.2, -0.96, -2.15);
+  // Central DJ & Skylight Dance Plaza at z = -11.2..7.4 (-0.56m Mid Plaza + -0.96m Oceanfront Terrace flush w/ stair_beach_cs at 120.8)
+  buildSolidTerraceTierSlab(99.6, 112.0, -11.2, 7.4, -0.56, -2.15);
+  buildSolidTerraceTierSlab(112.0, 120.8, -11.2, 7.4, -0.96, -2.15);
+  // South Inner Lounge Terrace (-0.56m) -> stair_mid_ocean_s -> 2.0m Dry Poolside Promenade (-1.00m) + North/South rims of southSeaPool
+  buildSolidTerraceTierSlab(96.4, 105.2, 7.4, 45.2, -0.56, -2.15);
+  buildSolidTerraceTierSlab(105.2, 108.4, 7.4, 42.6, -1.0, -2.15); // 2.0m poolside promenade west of southSeaPool (minX=108.4)
+  buildSolidTerraceTierSlab(108.4, 120.6, 7.4, 8.2, -1.0, -2.15); // North rim of southSeaPool
+  buildSolidTerraceTierSlab(105.2, 120.8, 42.6, 45.2, -1.0, -2.15); // South-end perimeter terrace flush w/ stair_beach_s at 120.8
+
+  // Sleek Coastal Brushed-Brass & Low-Iron Glass Balustrade along the +0.64m South VIP Cliff Edge
+  // (x=96.26, z in [14.2..29.8], aligned 1:1 with beach_club_retaining_vip_south_mid and clear of both south stairs!)
+  const vipRailMinZ = 14.2;
+  const vipRailMaxZ = 29.8;
+  const vipRailLen = vipRailMaxZ - vipRailMinZ;
+  const vipRailCz = (vipRailMinZ + vipRailMaxZ) * 0.5;
+  const vipRailX = 96.26;
+  const vipRailBaseY = 0.64;
+  // Low honed limestone curb plinth
+  addWorldPart(
+    staticClubGroup,
+    applyBoxMetricUvs(new THREE.BoxGeometry(0.18, 0.1, vipRailLen), 2.0, 1.0),
+    '#efe7da',
+    [vipRailX, vipRailBaseY + 0.05, vipRailCz],
+    [0, 0, 0],
+    { tex: limestoneTex, strokeW: 0.008, receiveShadow: true },
+  );
+  // Brushed-brass top handrail & bottom channel
+  addCustomMatPart(
+    staticClubGroup,
+    new THREE.BoxGeometry(0.06, 0.045, vipRailLen),
+    brushedBrassMat,
+    [vipRailX, vipRailBaseY + 0.92, vipRailCz],
+    [0, 0, 0],
+    { castShadow: true, receiveShadow: true },
+  );
+  addCustomMatPart(
+    staticClubGroup,
+    new THREE.BoxGeometry(0.05, 0.04, vipRailLen),
+    brushedBrassMat,
+    [vipRailX, vipRailBaseY + 0.12, vipRailCz],
+    [0, 0, 0],
+    { receiveShadow: true },
+  );
+  // Brushed-brass stanchion posts every ~2.6m + clear coastal glass panels between posts
+  const railBays = 6;
+  const railBayLen = vipRailLen / railBays;
+  for (let i = 0; i <= railBays; i++) {
+    const pz = vipRailMinZ + i * railBayLen;
+    addCustomMatPart(
+      staticClubGroup,
+      new THREE.BoxGeometry(0.055, 0.84, 0.055),
+      brushedBrassMat,
+      [vipRailX, vipRailBaseY + 0.5, pz],
+      [0, 0, 0],
+      { castShadow: true, receiveShadow: true },
+    );
+    if (i < railBays) {
+      addCustomMatPart(
+        staticClubGroup,
+        new THREE.BoxGeometry(0.025, 0.74, railBayLen - 0.08),
+        barTintedGlassMat,
+        [vipRailX, vipRailBaseY + 0.51, pz + railBayLen * 0.5],
+        [0, 0, 0],
+        { receiveShadow: false, renderOrder: 3 },
+      );
+    }
+  }
 
   // ============================================================================
   // 3. BROAD CASCADING LIMESTONE & TIMBER STAIRWAYS CONNECTING EVERY TIER ("Bertangga-tangga")
+  //    Exact flush non-overlapping treads (zero side Z-fighting) grounded solidly into lower tiers!
   // ============================================================================
   for (const sf of mp.stairFlights) {
     const w = sf.maxX - sf.minX;
@@ -1192,12 +1909,12 @@ export function buildCoastalBeachClub3D(
     const cx = (sf.minX + sf.maxX) * 0.5;
     const cz = (sf.minZ + sf.maxZ) * 0.5;
     const nSteps = Math.max(2, sf.steps);
+    const minElev = Math.max(-2.15, Math.min(sf.fromElevY, sf.toElevY) - 0.55);
 
     for (let s = 0; s < nSteps; s++) {
       const frac0 = s / nSteps;
       const frac1 = (s + 1) / nSteps;
       const topY = sf.fromElevY + (sf.toElevY - sf.fromElevY) * ((frac0 + frac1) * 0.5);
-      const minElev = Math.min(sf.fromElevY, sf.toElevY) - 0.12;
       const treadH = Math.max(0.14, topY - minElev);
       const stepCenterY = topY - treadH * 0.5;
 
@@ -1206,55 +1923,109 @@ export function buildCoastalBeachClub3D(
         const sx = sf.minX + (s + 0.5) * stepW;
         addWorldPart(
           staticClubGroup,
-          applyBoxMetricUvs(new THREE.BoxGeometry(stepW + 0.06, treadH, d), 2.0, 2.0),
+          applyBoxMetricUvs(new THREE.BoxGeometry(stepW, treadH, d), 2.0, 2.0),
           s % 2 === 0 ? '#efe7da' : '#e5dac7',
           [sx, stepCenterY, cz],
           [0, 0, 0],
-          { tex: limestoneTex, strokeW: 0.01, receiveShadow: true },
+          { tex: limestoneTex, strokeW: 0.01, castShadow: true, receiveShadow: true },
         );
       } else {
         const stepD = d / nSteps;
         const sz = sf.minZ + (s + 0.5) * stepD;
         addWorldPart(
           staticClubGroup,
-          applyBoxMetricUvs(new THREE.BoxGeometry(w, treadH, stepD + 0.06), 2.0, 2.0),
+          applyBoxMetricUvs(new THREE.BoxGeometry(w, treadH, stepD), 2.0, 2.0),
           s % 2 === 0 ? '#efe7da' : '#e5dac7',
           [cx, stepCenterY, sz],
           [0, 0, 0],
-          { tex: limestoneTex, strokeW: 0.01, receiveShadow: true },
+          { tex: limestoneTex, strokeW: 0.01, castShadow: true, receiveShadow: true },
         );
       }
     }
   }
 
-  // Lush Stepped Tropical Foliage Planter Borders separating Promenade -> VIP Mezzanine -> Pools
-  const foliageLeafMat = trackMat(
-    new THREE.MeshStandardMaterial({
-      color: '#348e3a',
-      roughness: 0.85,
-    }),
-  );
-  for (const [px, py, pz, pw, pd] of [
-    [91.4, 0.78, -81.0, 0.65, 22.0],
-    [91.4, 0.78, -39.0, 0.65, 36.0],
-    [91.4, 0.78, 8.5, 0.65, 35.0],
-    [99.8, -0.48, -32.0, 0.55, 22.0],
-  ] as const) {
+  // Lush Stepped Tropical Foliage Planter Borders (1:1 synced with BEACH_CLUB_MASTERPLAN.planters!)
+  // Layered dark-emerald base hedge + dense sculpted tropical bush mounds + warm coral/gold tropical blooms!
+  const foliageLeafMat = makeWorldBlitzMat('#2e7d36', undefined, 0.16);
+  const tropicalBushMidMat = makeWorldBlitzMat('#43a849', undefined, 0.14);
+  const tropicalBushSunMat = makeWorldBlitzMat('#6bc452', undefined, 0.12);
+  const tropicalBloomMat = makeWorldBlitzMat('#f97316', undefined, 0.1);
+  const bushMidMatrices: THREE.Matrix4[] = [];
+  const bushSunMatrices: THREE.Matrix4[] = [];
+  const bloomMatrices: THREE.Matrix4[] = [];
+  const planterDummy = new THREE.Object3D();
+
+  for (let pIdx = 0; pIdx < mp.planters.length; pIdx++) {
+    const pl = mp.planters[pIdx];
+    const stoneBaseY = pl.baseY - 0.08;
+    const stoneTopY = pl.baseY + 0.32;
+    const stoneH = stoneTopY - stoneBaseY;
+    const bushH = Math.max(0.26, pl.topY - stoneTopY + 0.08);
     addWorldPart(
       staticClubGroup,
-      applyBoxMetricUvs(new THREE.BoxGeometry(pw, 0.34, pd), 1.8, 1.8),
-      '#e2d8c7',
-      [px, py - 0.04, pz],
+      applyBoxMetricUvs(new THREE.BoxGeometry(pl.widthX, stoneH, pl.lengthZ), 1.8, 1.8),
+      '#e5dccb',
+      [pl.cx, stoneBaseY + stoneH * 0.5, pl.cz],
       [0, 0, 0],
-      { tex: limestoneTex, strokeW: 0.01 },
+      { tex: limestoneTex, strokeW: 0.01, castShadow: true, receiveShadow: true },
     );
     addCustomMatPart(
       staticClubGroup,
-      new RoundedBoxGeometry(pw * 0.86, 0.42, pd - 0.3, 2, 0.14),
+      new RoundedBoxGeometry(pl.widthX * 0.86, bushH, Math.max(0.4, pl.lengthZ - 0.25), 2, 0.14),
       foliageLeafMat,
-      [px, py + 0.24, pz],
+      [pl.cx, pl.topY - bushH * 0.48, pl.cz],
+      [0, 0, 0],
+      { castShadow: true, receiveShadow: true },
     );
+
+    // Populate dense sculpted tropical shrub mounds along the planter length
+    const countZ = Math.max(2, Math.round(pl.lengthZ / 1.05));
+    const zSpan = Math.max(0.2, pl.lengthZ - 0.6);
+    for (let k = 0; k < countZ; k++) {
+      const frac = countZ === 1 ? 0.5 : k / (countZ - 1);
+      const pz = pl.cz - zSpan * 0.5 + frac * zSpan;
+      const seed = pIdx * 31 + k * 17;
+      const jitterX = (Math.sin(seed * 1.7) * 0.5) * Math.max(0.1, pl.widthX * 0.32);
+      const sScale = 0.82 + ((Math.sin(seed * 2.3) + 1) * 0.5) * 0.42;
+
+      planterDummy.position.set(pl.cx + jitterX, pl.topY + 0.16 * sScale, pz);
+      planterDummy.rotation.set(0, seed * 0.9, 0);
+      planterDummy.scale.set(
+        Math.min(1.15, pl.widthX * 0.62 * sScale),
+        0.78 * sScale,
+        0.95 * sScale,
+      );
+      planterDummy.updateMatrix();
+      if (k % 2 === 0) {
+        bushMidMatrices.push(planterDummy.matrix.clone());
+      } else {
+        bushSunMatrices.push(planterDummy.matrix.clone());
+      }
+
+      if (k % 3 === 1) {
+        planterDummy.position.set(pl.cx - jitterX * 0.6, pl.topY + 0.34 * sScale, pz + 0.12);
+        planterDummy.rotation.set(0.2, seed * 1.3, 0.15);
+        planterDummy.scale.set(0.85, 0.9, 0.85);
+        planterDummy.updateMatrix();
+        bloomMatrices.push(planterDummy.matrix.clone());
+      }
+    }
   }
+  const addPlanterInstBatch = (geo: THREE.BufferGeometry, mat: THREE.Material, mats: THREE.Matrix4[]) => {
+    if (mats.length === 0) return;
+    trackGeo(geo);
+    const inst = new THREE.InstancedMesh(geo, mat, mats.length);
+    for (let i = 0; i < mats.length; i++) inst.setMatrixAt(i, mats[i]);
+    inst.instanceMatrix.needsUpdate = true;
+    inst.castShadow = !isSoftwareGl;
+    inst.receiveShadow = !isSoftwareGl;
+    computeInstancedBoundingVolumes(inst, { padding: 0.5, frustumCulled: true });
+    dynamicClubGroup.add(inst);
+    meshCount++;
+  };
+  addPlanterInstBatch(new THREE.IcosahedronGeometry(0.48, 1), tropicalBushMidMat, bushMidMatrices);
+  addPlanterInstBatch(new THREE.IcosahedronGeometry(0.44, 1), tropicalBushSunMat, bushSunMatrices);
+  addPlanterInstBatch(new THREE.DodecahedronGeometry(0.14, 0), tropicalBloomMat, bloomMatrices);
 
   // ============================================================================
   // 4. KNIFE-EDGE INFINITY BASINS, CASCADING WATERFALL WEIRS & GLOWING POOLS
@@ -1390,96 +2161,82 @@ export function buildCoastalBeachClub3D(
     });
   };
 
-  // A. North 3-Tier Grand Stepped Waterfall Cascade (`+0.32m -> +0.02m -> -0.26m`)
-  buildInfinityPoolBasin(mp.pools.cascadeTier1, 0.32, -0.04, {
-    southInfinityWeir: true,
-    eastInfinityWeir: true,
-    eastWeirBaseY: -1.02,
-    copingMarginY: 0.02,
-  });
-  buildInfinityPoolBasin(mp.pools.cascadeTier2, 0.02, -0.34, {
-    southInfinityWeir: true,
-    eastInfinityWeir: true,
-    eastWeirBaseY: -1.02,
-    copingMarginY: 0.02,
-  });
-  buildInfinityPoolBasin(mp.pools.cascadeTier3, -0.26, -0.62, {
-    southInfinityWeir: true,
-    eastInfinityWeir: true,
-    eastWeirBaseY: -1.02,
-    copingMarginY: 0.02,
-  });
+  // A. North White Calacatta Marble Plaza (-0.56m flat terrace replacing the old North cascade pools, North canal/sea pools, & North timber deck)
+  buildSolidTerraceTierSlab(99.6, 120.6, -94.0, -49.4, -0.56, -2.15);
 
-  // Glowing Cascading Spillway Curtains between North Cascade Tiers 1 -> 2 -> 3 -> Lowered Mid Deck (-0.56m)
-  for (const [zPos, yTop, yBot] of [
-    [-89.35, 0.33, 0.01],
-    [-83.75, 0.03, -0.27],
-    [-78.15, -0.25, -0.56],
-  ] as const) {
-    const spillH = yTop - yBot;
-    addCustomMatPart(
-      dynamicClubGroup,
-      new THREE.PlaneGeometry(19.6, spillH),
-      waterfallCurtainMat,
-      [109.6, yBot + spillH * 0.5, zPos],
-      [0.12, 0, 0],
-      { renderOrder: 3 },
-    );
-  }
-
-  // North Arrival Crown Open-Air Timber Pergola Pavilion (`z in [-96.2 .. -94.4]`)
-  for (const px of [100.5, 105.0, 109.5, 114.0, 118.5]) {
+  // North Arrival Crown Open-Air Timber Pergola Pavilion (`z in [-96.2 .. -94.0]`, clear of stair_cascade_e1 at x<=101.6!)
+  const cas1 = mp.pools.cascadeTier1;
+  const pergolaZ = -95.1;
+  const pergolaBaseY = cas1.deckY; // +0.36m solid dry terrace slab
+  for (const px of [102.2, 106.2, 110.2, 114.2, 118.2]) {
     addCustomMatPart(
       staticClubGroup,
       new THREE.BoxGeometry(0.22, 3.1, 0.22),
       getWoodMat('cedar', '#9f7046', 0.8),
-      [px, 0.36 + 1.55, -95.4],
+      [px, pergolaBaseY + 1.55, pergolaZ],
       [0, 0, 0],
-      { castShadow: true },
+      { castShadow: true, receiveShadow: true },
     );
   }
-  addCustomMatPart(
-    staticClubGroup,
-    applyBoxMetricUvs(new THREE.BoxGeometry(19.8, 0.16, 2.1), 2.2, 2.2),
-    getWoodMat('oak', '#b68658', 0.78),
-    [109.5, 0.36 + 3.14, -95.4],
-    [0, 0, 0],
-    { castShadow: true },
-  );
+  // Twin perimeter oak header beams + open slatted cedar rafters casting dappled pergola shadows
+  for (const bzOff of [-0.82, 0.82]) {
+    addCustomMatPart(
+      staticClubGroup,
+      applyBoxMetricUvs(new THREE.BoxGeometry(17.2, 0.18, 0.18), 2.2, 2.2),
+      getWoodMat('oak', '#b68658', 0.78),
+      [110.2, pergolaBaseY + 3.12, pergolaZ + bzOff],
+      [0, 0, 0],
+      { castShadow: true, receiveShadow: true },
+    );
+  }
+  for (let rx = 102.0; rx <= 118.5; rx += 0.92) {
+    addCustomMatPart(
+      staticClubGroup,
+      applyBoxMetricUvs(new THREE.BoxGeometry(0.11, 0.12, 2.05), 2.0, 2.0),
+      getWoodMat('cedar', '#a7764a', 0.8),
+      [rx, pergolaBaseY + 3.24, pergolaZ],
+      [0, 0, 0],
+      { castShadow: true, receiveShadow: true },
+    );
+  }
 
   // B. West Upper Reflection Moat beside VIP Cabanas (`waterY = +0.52m`) + Lowered Inner Cascade Lagoon (`waterY = -0.60m`)
   //    + Lowered Seaward Oceanfront Infinity Lagoons (`waterY = -0.98m`, 1.02m waterfall drop onto `-2.00m` beach sand)!
   buildInfinityPoolBasin(mp.pools.westFlankNorth, 0.52, 0.14, { copingMarginY: 0.04 });
   buildInfinityPoolBasin(mp.pools.westFlankSouth, 0.52, 0.14, { copingMarginY: 0.04 });
 
-  // Inner Reflection Lagoon (-0.60m) + Seaward North Oceanfront Infinity Lagoons (-0.98m)
+  // Inner Reflection Lagoon (-0.60m, flush coping beside Timber Sunbed Peninsula) + Seaward Oceanfront Lagoons (-0.98m)
   buildInfinityPoolBasin(mp.pools.lapChannels[0], -0.6, -0.96, {
-    eastInfinityWeir: true,
-    eastWeirBaseY: -1.0,
+    eastInfinityWeir: false,
     copingMarginY: 0.03,
   });
-  buildInfinityPoolBasin(mp.pools.lapChannels[1], -0.98, -1.36, {
-    eastInfinityWeir: true,
-    eastWeirBaseY: -2.04,
-    copingMarginY: 0.02,
-  });
-  buildInfinityPoolBasin(mp.pools.lapChannels[2], -0.98, -1.36, {
-    eastInfinityWeir: true,
-    eastWeirBaseY: -2.04,
-    copingMarginY: 0.02,
-  });
+  for (const seaChan of mp.pools.lapChannels.slice(1)) {
+    buildSubBasinRetainingPodium(seaChan.minX, seaChan.maxX, seaChan.minZ, seaChan.maxZ, -1.42, -2.15);
+    buildInfinityPoolBasin(seaChan, -0.98, -1.36, {
+      eastInfinityWeir: true,
+      eastWeirBaseY: -2.04,
+      copingMarginY: 0.02,
+    });
+  }
 
   // C. Raised Coastal-Oak Timber Sunbed Peninsula (`x in [105.0..112.2], z in [-75.0..-17.4], top = -0.54m`)
   //    & Full-Width Cross-Water Timber Jetty Bridge (`z in [-49.4..-45.6], top = -0.48m`)
   const pen = mp.sunbedPeninsula;
+  const penW = pen.maxX - pen.minX;
+  const penD = pen.maxZ - pen.minZ;
+  const penCx = (pen.minX + pen.maxX) * 0.5;
+  const penCz = (pen.minZ + pen.maxZ) * 0.5;
   addCustomMatPart(
     staticClubGroup,
-    applyBoxMetricUvs(new THREE.BoxGeometry(pen.maxX - pen.minX, 0.42, pen.maxZ - pen.minZ), 2.6, 2.6),
+    applyBoxMetricUvs(new THREE.BoxGeometry(penW, 0.22, penD), 2.6, 2.6),
     getWoodMat('oak', '#cfa678', 0.8),
-    [(pen.minX + pen.maxX) * 0.5, pen.elevY - 0.21, (pen.minZ + pen.maxZ) * 0.5],
+    [penCx, pen.elevY - 0.11, penCz],
     [0, 0, 0],
     { castShadow: false, receiveShadow: true },
   );
+  // Solid masonry foundation skirt beneath Timber Sunbed Peninsula so it anchors into the -1.36m pool bed!
+  buildSubBasinRetainingPodium(pen.minX + 0.04, pen.maxX - 0.04, pen.minZ + 0.04, pen.maxZ - 0.04, pen.elevY - 0.22, -1.55);
+
   const jetty = mp.northJettyBridge;
   addCustomMatPart(
     staticClubGroup,
@@ -1489,9 +2246,33 @@ export function buildCoastalBeachClub3D(
     [0, 0, 0],
     { castShadow: true, receiveShadow: true },
   );
+  // Cedar timber support pilings anchoring North Jetty Bridge cleanly into the lagoon floor (-1.48m)
+  const jettyPilingTopY = jetty.elevY - 0.18;
+  const jettyPilingH = jettyPilingTopY - -1.48;
+  for (const jpx of [102.6, 114.6, 118.8]) {
+    for (const jpz of [jetty.minZ + 0.32, jetty.maxZ - 0.32]) {
+      addCustomMatPart(
+        staticClubGroup,
+        new THREE.CylinderGeometry(0.11, 0.12, jettyPilingH, 8),
+        getWoodMat('cedar', '#996c44', 0.82),
+        [jpx, -1.48 + jettyPilingH * 0.5, jpz],
+        [0, 0, 0],
+        { castShadow: true, receiveShadow: true },
+      );
+    }
+  }
 
   // D. Straight Aligned South Beachfront Infinity Lagoon (`-1.02m` water -> `-2.00m` beach sand, rotY = 0!)
-  buildInfinityPoolBasin(mp.pools.southSeaPool, -1.02, -1.4, {
+  const southPool = mp.pools.southSeaPool;
+  buildSubBasinRetainingPodium(
+    southPool.cx - southPool.halfX,
+    southPool.cx + southPool.halfX,
+    southPool.cz - southPool.halfZ,
+    southPool.cz + southPool.halfZ,
+    -1.46,
+    -2.15,
+  );
+  buildInfinityPoolBasin(southPool, southPool.waterY ?? -1.02, -1.4, {
     isOriented: true,
     eastInfinityWeir: true,
     eastWeirBaseY: -2.04,
@@ -1517,24 +2298,18 @@ export function buildCoastalBeachClub3D(
   staticClubGroup.add(bridgeDeckMesh);
   meshCount++;
 
-  for (const sx of [bridge.minX + 0.35, bridge.maxX - 0.35]) {
-    addCustomMatPart(
-      staticClubGroup,
-      new THREE.BoxGeometry(0.45, 0.14, brD),
-      getWoodMat('cedar', '#b8895c', 0.8),
-      [sx, bridge.elevY - 0.15, brCz],
-    );
-  }
   for (const sgn of [-1, 1]) {
     addCustomMatPart(
       staticClubGroup,
       new THREE.BoxGeometry(brW - 0.2, 0.06, 0.08),
       brushedBrassMat,
       [brCx, bridge.elevY + 0.04, brCz + sgn * (brD * 0.5 - 0.06)],
+      [0, 0, 0],
+      { castShadow: true, receiveShadow: true },
     );
   }
 
-  // Translucent Glass Skylight Dance Deck behind DJ Stage (+0.52m)
+  // Translucent Glass Skylight Dance Deck behind DJ Stage (-0.48m on -0.56m plaza)
   const sky = mp.skylightDanceFloor;
   const skyW = sky.maxX - sky.minX;
   const skyD = sky.maxZ - sky.minZ;
@@ -1546,6 +2321,8 @@ export function buildCoastalBeachClub3D(
     new THREE.BoxGeometry(skyW + 0.25, 0.24, skyD + 0.25),
     blackSteelMat,
     [skyCx, sky.elevY - 0.12, skyCz],
+    [0, 0, 0],
+    { receiveShadow: true },
   );
   const cols = 4;
   const rows = 6;
@@ -1561,13 +2338,21 @@ export function buildCoastalBeachClub3D(
         skylightPanelMat,
         [px, sky.elevY - 0.015, pz],
         [0, 0, 0],
-        { renderOrder: 2 },
+        { receiveShadow: true, renderOrder: 2 },
       );
     }
   }
 
   // ============================================================================
-  // 6. ANGLED CENTRAL DJ PERFORMANCE STAGE PAVILION (+0.96m Elevated Stage Deck)
+  // 6. GRAND LUXURY DJ PERFORMANCE BUILDING (cx=104.2, cz=-3.2, rotY=+PI/2 facing East beach & dance floor)
+  //    1:1 High-Fidelity Geometry & Custom Procedural Textures matching the 4-View Architectural Model Sheet:
+  //    - Multi-tiered Travertine & Terrazzo Stage Terrace (3 chamfered wrap-around travertine steps, shadow-gap risers, warm LED step strips, 3-bay inlaid terrazzo floor)
+  //    - Monumental Tapered Cantilevered Dark Charcoal-Steel Canopy (ExtrudeGeometry wedge pitched upward 8.5 deg, recessed soffit tray, 4 recessed linear LED bars, 6 yoke spotlights)
+  //    - 4 Fluted Structural Steel Columns (central shaft + 8 vertical fluting ribs + bolted square steel base plates + angled steel canopy gussets)
+  //    - Grand Panoramic Iridescent Aurora LED Media Wall (custom 1024x512 aurora wave texture inside deep multi-stepped beveled dark steel bezel + side acoustic louvers)
+  //    - Calacatta Marble Master DJ Console (dark steel kick-plinth & C-frame, bookmatched marble slabs, Pioneer CDJ-3000 dual decks w/ OLED screens, 4-ch mixer, booth monitors)
+  //    - Concert Line-Array Audio Towers (multi-tier perforated-grille wing racks, angled floor subs, & suspended 4-element curved J-array line-array hangs)
+  //    - Enclosed 2-Level Backstage Sound Engineering Control Room & VIP Viewing Mezzanine + 7-Riser Steel Access Stairs with Clear Glass Balustrade
   // ============================================================================
   const dj = mp.djStage;
   const djStaticGrp = new THREE.Group();
@@ -1580,226 +2365,575 @@ export function buildCoastalBeachClub3D(
   djDynamicGrp.rotation.y = dj.rotY;
   dynamicClubGroup.add(djDynamicGrp);
 
-  const stageTopY = dj.stageDeckTopY; // -0.04
-  const baseY = dj.baseDeckY; // -0.56
-  const deckH = stageTopY - baseY; // 0.52m
-  const djDeckMesh = new THREE.Mesh(
-    trackGeo(applyBoxMetricUvs(new THREE.BoxGeometry(dj.widthM, deckH + 0.24, dj.depthM), 2.4, 2.4)),
-    getWoodMat('oak', '#c99e70', 0.8),
+  const stageTopY = dj.stageDeckTopY; // -0.04 (+0.52m above -0.56m white marble plaza)
+  const djDeckBottomY = -1.12;
+  const djDeckTotalH = stageTopY - djDeckBottomY;
+
+  // Dedicated high-resolution procedural textures & materials for the Grand DJ Building
+  const djLedWallTex = trackTex(createDjPanoramicLedWallTexture());
+  const djSpeakerGrilleTex = trackTex(createConcertSpeakerGrilleTexture());
+  const djTerrazzoGridTex = trackTex(createDjStageTerrazzoInlayTexture());
+  const djCharcoalSteelTex = trackTex(createArchitecturalCharcoalSteelTexture());
+
+  const djCanopySteelMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: '#ffffff',
+      map: djCharcoalSteelTex,
+      roughness: 0.5,
+      metalness: 0.32,
+    }),
   );
-  djDeckMesh.position.set(0, baseY + (deckH - 0.24) * 0.5, 0);
-  djDeckMesh.castShadow = !isSoftwareGl;
-  djDeckMesh.receiveShadow = !isSoftwareGl;
-  djStaticGrp.add(djDeckMesh);
-  meshCount++;
-
-  // 4 Broad Cascading Timber Stair Risers Down to South Pool Deck (-0.56m)
-  const stairFloorY = baseY - 0.16;
-  for (let st = 0; st < 4; st++) {
-    const stepTop = stageTopY - (st + 1) * 0.125;
-    const stepH = Math.max(0.14, stepTop - stairFloorY);
-    const stMesh = new THREE.Mesh(
-      trackGeo(applyBoxMetricUvs(new THREE.BoxGeometry(8.8, stepH, 0.42), 2.0, 2.0)),
-      getWoodMat('oak', '#c49668', 0.82),
-    );
-    stMesh.position.set(1.5, stairFloorY + stepH * 0.5, dj.depthM * 0.5 + 0.2 + st * 0.38);
-    stMesh.receiveShadow = !isSoftwareGl;
-    djStaticGrp.add(stMesh);
-    meshCount++;
-  }
-
-  // Flat Roof Slab: Brown PBR Timber Plank (2 deg slope) + 200mm Light Grey Fascia Roof Cap
-  const roofY = stageTopY + 3.45;
-  const roofPivot = new THREE.Group();
-  roofPivot.position.set(0, roofY, 0);
-  roofPivot.rotation.x = THREE.MathUtils.degToRad(2.0);
-  djStaticGrp.add(roofPivot);
-
-  const roofTimberMesh = new THREE.Mesh(
-    trackGeo(applyBoxMetricUvs(new THREE.BoxGeometry(dj.widthM + 0.4, 0.22, dj.depthM + 0.5), 2.2, 2.2)),
-    getWoodMat('cedar', '#a6764c', 0.78),
+  const djCanopySoffitMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: '#2e343d',
+      roughness: 0.58,
+      metalness: 0.28,
+    }),
   );
-  roofTimberMesh.castShadow = !isSoftwareGl;
-  roofTimberMesh.receiveShadow = !isSoftwareGl;
-  roofPivot.add(roofTimberMesh);
-  meshCount++;
+  const djLedWallMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: '#ffffff',
+      map: djLedWallTex,
+      emissive: '#ffffff',
+      emissiveMap: djLedWallTex,
+      emissiveIntensity: 0.72,
+      roughness: 0.22,
+      metalness: 0.08,
+    }),
+  );
+  const djSpeakerGrilleMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: '#ffffff',
+      map: djSpeakerGrilleTex,
+      roughness: 0.52,
+      metalness: 0.42,
+    }),
+  );
+  const djLinearLightMat = trackMat(
+    new THREE.MeshStandardMaterial({
+      color: '#fff8e7',
+      emissive: '#ffe9b8',
+      emissiveIntensity: 1.35,
+      roughness: 0.15,
+    }),
+  );
 
+  // 1. MULTI-TIERED TRAVERTINE & TERRAZZO STAGE TERRACE (matches Top Plan & 3/4 Isometric!)
   addWorldPart(
-    roofPivot,
-    new THREE.BoxGeometry(dj.widthM + 0.56, 0.2, dj.depthM + 0.66),
-    '#d8dee6',
-    [0, 0.19, 0],
+    djStaticGrp,
+    applyBoxMetricUvs(new THREE.BoxGeometry(dj.widthM, djDeckTotalH, dj.depthM), 3.5, 3.5),
+    '#ffffff',
+    [0, djDeckBottomY + djDeckTotalH * 0.5, 0],
     [0, 0, 0],
-    { strokeW: 0.018, castShadow: true },
+    { tex: djTerrazzoGridTex, strokeW: 0.014, castShadow: true, receiveShadow: true },
   );
-
-  for (const [cx, cz] of [
-    [-5.85, -3.85],
-    [-2.05, -3.85],
-    [5.85, -3.85],
-    [5.85, 2.25],
-    [-2.05, 1.45],
-  ] as const) {
+  // Raised travertine border curb framing the terrazzo stage bay (matches Top Plan border)
+  for (const bz of [-dj.depthM * 0.5 + 0.22, dj.depthM * 0.5 - 0.22]) {
+    addWorldPart(
+      djStaticGrp,
+      applyBoxMetricUvs(new THREE.BoxGeometry(dj.widthM, 0.05, 0.44), 2.4, 1.0),
+      '#e9e1d2',
+      [0, stageTopY + 0.025, bz],
+      [0, 0, 0],
+      { tex: limestoneTex, receiveShadow: true },
+    );
+  }
+  // 3 Broad Wrap-Around Chamfered Travertine Steps with Dark Recessed Shadow-Gap Risers & Warm LED Under-Step Strips
+  const stepDepth = 0.48;
+  for (let st = 0; st < 3; st++) {
+    const stepTop = stageTopY - (st + 1) * 0.172;
+    const stepH = Math.max(0.14, stepTop - djDeckBottomY);
+    const pad = (st + 1) * stepDepth;
+    const stepW = dj.widthM + pad * 2;
+    const stepD = dj.depthM + pad;
+    addWorldPart(
+      djStaticGrp,
+      applyBoxMetricUvs(new THREE.BoxGeometry(stepW, stepH, stepD), 2.6, 2.6),
+      '#e8e0d0',
+      [0, djDeckBottomY + stepH * 0.5, pad * 0.5],
+      [0, 0, 0],
+      { tex: limestoneTex, strokeW: 0.01, castShadow: true, receiveShadow: true },
+    );
+    // Crisp recessed dark shadow reveal + warm amber LED strip tucked under each front step nosing
     addCustomMatPart(
       djStaticGrp,
-      new THREE.BoxGeometry(0.16, 3.55, 0.16),
+      new THREE.BoxGeometry(stepW - 0.08, 0.028, 0.035),
+      warmAmberGlowMat,
+      [0, stepTop - 0.04, dj.depthM * 0.5 + pad + 0.012],
+    );
+  }
+
+  // 2. MONUMENTAL TAPERED CANTILEVERED DARK CHARCOAL-STEEL CANOPY (ExtrudeGeometry wedge matching Side Profile!)
+  const roofY = stageTopY + 5.72;
+  const djCanopyW = dj.widthM + 0.85; // 14.85m
+  const djCanopyD = dj.depthM + 1.35; // 9.95m
+  const roofPivot = new THREE.Group();
+  roofPivot.position.set(0, roofY, 0.45);
+  roofPivot.rotation.x = THREE.MathUtils.degToRad(-8.5); // dramatic upward architectural cantilever toward beach!
+  djStaticGrp.add(roofPivot);
+
+  // Sculpted tapered wedge cross-section in YZ extruded across X (thick 0.52m angled front brow -> slim 0.28m rear overhang!)
+  const canopyShape = new THREE.Shape();
+  const halfD = djCanopyD * 0.5;
+  canopyShape.moveTo(-halfD, -0.14); // rear bottom
+  canopyShape.lineTo(halfD - 0.22, -0.26); // front soffit chamfer
+  canopyShape.lineTo(halfD + 0.16, 0.24); // angled overhanging front brow lip!
+  canopyShape.lineTo(-halfD - 0.08, 0.14); // rear top lip
+  canopyShape.closePath();
+  const canopyExtrudeGeo = new THREE.ExtrudeGeometry(canopyShape, {
+    depth: djCanopyW,
+    bevelEnabled: true,
+    bevelThickness: 0.04,
+    bevelSize: 0.04,
+    bevelSegments: 2,
+  });
+  // Rotate so extrusion depth runs along X [-djCanopyW/2 .. +djCanopyW/2] and shape X runs along +Z
+  canopyExtrudeGeo.rotateY(-Math.PI / 2);
+  canopyExtrudeGeo.translate(djCanopyW * 0.5, 0, 0);
+  canopyExtrudeGeo.computeVertexNormals();
+  addCustomMatPart(roofPivot, canopyExtrudeGeo, djCanopySteelMat, [0, 0, 0], [0, 0, 0], {
+    castShadow: true,
+    receiveShadow: true,
+  });
+
+  // Recessed dark coffered soffit ceiling tray + perimeter metallic drip fascia
+  addCustomMatPart(
+    roofPivot,
+    new THREE.BoxGeometry(djCanopyW - 0.9, 0.06, djCanopyD - 1.1),
+    djCanopySoffitMat,
+    [0, -0.22, 0.05],
+  );
+  // 4 Recessed Linear Warm-White Architectural LED Light Bars running front-to-back in soffit channels (exact Front Elevation!)
+  for (const lx of [-3.6, -1.2, 1.2, 3.6]) {
+    addCustomMatPart(
+      roofPivot,
+      new THREE.BoxGeometry(0.28, 0.05, djCanopyD - 2.35),
       blackSteelMat,
-      [cx, stageTopY + 1.775, cz],
+      [lx, -0.24, 0.18],
+    );
+    addCustomMatPart(
+      roofPivot,
+      new THREE.BoxGeometry(0.14, 0.04, djCanopyD - 2.55),
+      djLinearLightMat,
+      [lx, -0.265, 0.18],
+    );
+  }
+  // Underside transverse structural steel ceiling beams tying into the columns
+  for (const bz of [-2.05, 1.35]) {
+    addCustomMatPart(
+      roofPivot,
+      new THREE.BoxGeometry(djCanopyW - 1.4, 0.16, 0.24),
+      blackSteelMat,
+      [0, -0.28, bz - 0.45],
       [0, 0, 0],
       { castShadow: true },
     );
   }
 
-  // Cantilevered Aqua Glass Box Lounge (`4.0m W x 3.5m D`, projecting +1.5m forward)
-  const gbCx = -4.0;
-  const gbCz = -2.85;
-  const gbBaseY = stageTopY + 1.15;
-  const gbH = 2.15;
-  addCustomMatPart(
-    djStaticGrp,
-    new THREE.BoxGeometry(4.0, 0.14, 3.5),
-    blackSteelMat,
-    [gbCx, gbBaseY, gbCz],
-  );
-  addCustomMatPart(
-    djStaticGrp,
-    new THREE.BoxGeometry(3.96, gbH, 3.46),
-    aquaBoxGlassMat,
-    [gbCx, gbBaseY + gbH * 0.5 + 0.07, gbCz],
-    [0, 0, 0],
-    { renderOrder: 3 },
-  );
-  addCustomMatPart(
-    djStaticGrp,
-    new THREE.BoxGeometry(4.04, 0.18, 3.54),
-    poolCyanLedMat,
-    [gbCx, gbBaseY + gbH + 0.12, gbCz],
-  );
-  addCustomMatPart(
-    djStaticGrp,
-    new THREE.BoxGeometry(4.04, 0.12, 3.54),
-    poolCyanLedMat,
-    [gbCx, gbBaseY + 0.02, gbCz],
-  );
-  addWorldPart(
-    djStaticGrp,
-    new THREE.BoxGeometry(3.1, 0.45, 0.85),
-    '#e2e8f0',
-    [gbCx, stageTopY + 0.225, gbCz + 0.8],
-    [0, 0, 0],
-    { strokeW: 0.01 },
-  );
-
-  // Open DJ Stage Bay: Purple Wash Backdrop + Booth + Speakers + 5 Moving Spotlights
-  addCustomMatPart(
-    djStaticGrp,
-    new THREE.BoxGeometry(7.7, 3.25, 0.14),
-    djPurpleWashMat,
-    [2.0, stageTopY + 1.72, -3.55],
-  );
-  addCustomMatPart(
-    djStaticGrp,
-    new THREE.BoxGeometry(7.9, 3.45, 0.18),
-    blackSteelMat,
-    [2.0, stageTopY + 1.72, -3.72],
-  );
-
-  addWorldPart(
-    djStaticGrp,
-    new THREE.BoxGeometry(2.0, 0.92, 1.0),
-    '#f1f5f9',
-    [1.8, stageTopY + 0.46, -0.35],
-    [0, 0, 0],
-    { strokeW: 0.016, castShadow: true },
-  );
-  addCustomMatPart(
-    djStaticGrp,
-    new THREE.BoxGeometry(1.82, 0.54, 0.06),
-    poolCyanLedMat,
-    [1.8, stageTopY + 0.46, 0.16],
-  );
-
-  const djPlatters: THREE.Mesh[] = [];
-  for (const px of [1.32, 2.28]) {
-    const platter = addCustomMatPart(
-      djDynamicGrp,
-      new THREE.CylinderGeometry(0.18, 0.18, 0.03, 14),
-      blackSteelMat,
-      [px, stageTopY + 0.94, -0.35],
-    );
-    djPlatters.push(platter);
-  }
-  addCustomMatPart(
-    djStaticGrp,
-    new THREE.BoxGeometry(0.46, 0.06, 0.42),
-    stainlessSteelMat,
-    [1.8, stageTopY + 0.94, -0.35],
-  );
-  const djEqBars: THREE.Mesh[] = [];
-  for (let b = 0; b < 6; b++) {
-    const barMesh = addCustomMatPart(
-      djDynamicGrp,
-      new THREE.BoxGeometry(0.05, 0.14, 0.04),
-      b % 2 === 0 ? poolCyanLedMat : djPurpleWashMat,
-      [1.64 + b * 0.065, stageTopY + 1.02, -0.52],
-    );
-    djEqBars.push(barMesh);
-  }
-
-  for (const sx of [-1.45, 4.75]) {
-    addWorldPart(
+  // 3. FOUR MONUMENTAL FLUTED STRUCTURAL STEEL COLUMNS (bolted base plates + 8 vertical fluting ribs + upper steel gussets)
+  for (const [cx, cz, colH] of [
+    [-5.15, 1.35, 5.88],
+    [5.15, 1.35, 5.88],
+    [-5.15, -2.05, 5.36],
+    [5.15, -2.05, 5.36],
+  ] as const) {
+    // Central cylindrical steel core
+    addCustomMatPart(
       djStaticGrp,
-      new THREE.BoxGeometry(0.72, 1.82, 0.72),
-      '#cbd5e1',
-      [sx, stageTopY + 0.91, 0.95],
+      new THREE.CylinderGeometry(0.24, 0.26, colH, 16),
+      djCanopySteelMat,
+      [cx, stageTopY + colH * 0.5, cz],
       [0, 0, 0],
-      { strokeW: 0.018, castShadow: true },
+      { castShadow: true, receiveShadow: true },
     );
-    for (const wy of [0.52, 1.15]) {
+    // 8 architectural vertical fluting ribs around column shaft (matches Front Elevation & 3/4 Isometric!)
+    for (let fl = 0; fl < 8; fl++) {
+      const ang = (fl / 8) * Math.PI * 2;
       addCustomMatPart(
         djStaticGrp,
-        new THREE.CylinderGeometry(0.24, 0.24, 0.06, 14),
+        new THREE.BoxGeometry(0.055, colH - 0.18, 0.055),
         blackSteelMat,
-        [sx, stageTopY + wy, 1.32],
-        [Math.PI / 2, 0, 0],
+        [cx + Math.cos(ang) * 0.25, stageTopY + colH * 0.5, cz + Math.sin(ang) * 0.25],
+        [0, ang, 0],
+      );
+    }
+    // Bolted square steel base mounting plate & collar on stage terrace
+    addCustomMatPart(
+      djStaticGrp,
+      new THREE.BoxGeometry(0.74, 0.14, 0.74),
+      blackSteelMat,
+      [cx, stageTopY + 0.07, cz],
+    );
+    addCustomMatPart(
+      djStaticGrp,
+      new THREE.CylinderGeometry(0.32, 0.34, 0.22, 16),
+      djCanopySteelMat,
+      [cx, stageTopY + 0.22, cz],
+    );
+    // Upper angled steel capital collar meeting the sloped canopy soffit
+    addCustomMatPart(
+      djStaticGrp,
+      new THREE.BoxGeometry(0.68, 0.24, 0.72),
+      blackSteelMat,
+      [cx, stageTopY + colH - 0.12, cz],
+    );
+  }
+
+  // 4. GRAND PANORAMIC IRIDESCENT AURORA LED MEDIA WALL (deep beveled proscenium frame + side acoustic louvers)
+  const ledWallY = stageTopY + 2.48;
+  const ledWallZ = -1.78;
+  // Outer deep proscenium steel surround
+  addCustomMatPart(
+    djStaticGrp,
+    new THREE.BoxGeometry(8.65, 4.35, 0.38),
+    djCanopySteelMat,
+    [0, ledWallY, ledWallZ - 0.12],
+    [0, 0, 0],
+    { castShadow: true, receiveShadow: true },
+  );
+  // Inner crisp matte-black bezel frame
+  addCustomMatPart(
+    djStaticGrp,
+    new THREE.BoxGeometry(8.25, 3.98, 0.28),
+    blackSteelMat,
+    [0, ledWallY, ledWallZ - 0.02],
+  );
+  // High-res iridescent aurora LED screen panel (`1024x512` custom gradient wave & LED tile texture!)
+  addCustomMatPart(
+    djStaticGrp,
+    new THREE.PlaneGeometry(7.92, 3.68),
+    djLedWallMat,
+    [0, ledWallY, ledWallZ + 0.135],
+  );
+  // Side angled vertical dark-steel acoustic louver fins bridging the LED wall cleanly to the speaker wings
+  for (const sgn of [-1, 1]) {
+    for (let lv = 0; lv < 4; lv++) {
+      addCustomMatPart(
+        djStaticGrp,
+        new THREE.BoxGeometry(0.08, 4.15, 0.32),
+        blackSteelMat,
+        [sgn * (4.42 + lv * 0.24), ledWallY, ledWallZ + lv * 0.12],
+        [0, sgn * -0.35, 0],
       );
     }
   }
 
+  // 5. CALACATTA MARBLE MASTER DJ CONSOLE (1:1 with Front Elevation, Top Plan & 3/4 Isometric!)
+  const consoleZ = 0.96;
+  // Recessed dark matte-steel kick-plinth base
   addCustomMatPart(
     djStaticGrp,
-    new THREE.BoxGeometry(7.2, 0.1, 0.14),
+    new THREE.BoxGeometry(2.96, 0.18, 1.06),
     blackSteelMat,
-    [1.8, roofY - 0.22, -1.35],
+    [0, stageTopY + 0.09, consoleZ],
   );
+  // Outer structural matte-black steel C-frame shell
+  addCustomMatPart(
+    djStaticGrp,
+    new THREE.BoxGeometry(3.16, 1.36, 1.24),
+    blackSteelMat,
+    [0, stageTopY + 0.84, consoleZ],
+    [0, 0, 0],
+    { castShadow: true, receiveShadow: true },
+  );
+  // Inset bookmatched White Calacatta Marble front facade, side panels & overhanging mitered marble top deck
+  addWorldPart(
+    djStaticGrp,
+    applyBoxMetricUvs(new THREE.BoxGeometry(2.94, 1.18, 0.08), 2.2, 1.6),
+    '#ffffff',
+    [0, stageTopY + 0.84, consoleZ + 0.61],
+    [0, 0, 0],
+    { tex: calacattaTex, strokeW: 0.01, castShadow: true },
+  );
+  for (const sgn of [-1, 1]) {
+    addWorldPart(
+      djStaticGrp,
+      applyBoxMetricUvs(new THREE.BoxGeometry(0.08, 1.18, 1.08), 1.4, 1.6),
+      '#ffffff',
+      [sgn * 1.56, stageTopY + 0.84, consoleZ],
+      [0, 0, 0],
+      { tex: calacattaTex },
+    );
+  }
+  addWorldPart(
+    djStaticGrp,
+    applyBoxMetricUvs(new THREE.BoxGeometry(3.24, 0.11, 1.32), 2.4, 1.4),
+    '#ffffff',
+    [0, stageTopY + 1.55, consoleZ],
+    [0, 0, 0],
+    { tex: calacattaTex, strokeW: 0.01, castShadow: true, receiveShadow: true },
+  );
+
+  // Detailed Pioneer CDJ-3000 Dual Decks + 4-Channel DJM Mixer + Twin Studio Booth Monitor Speakers
+  const djPlatters: THREE.Mesh[] = [];
+  const deckTopY = stageTopY + 1.62;
+  for (const px of [-0.74, 0.74]) {
+    // CDJ chassis body
+    addCustomMatPart(djStaticGrp, new THREE.BoxGeometry(0.62, 0.09, 0.66), blackSteelMat, [px, deckTopY + 0.045, consoleZ]);
+    // Glowing cyan jog-wheel perimeter ring
+    addCustomMatPart(
+      djStaticGrp,
+      new THREE.TorusGeometry(0.215, 0.014, 8, 22),
+      poolCyanLedMat,
+      [px, deckTopY + 0.1, consoleZ + 0.05],
+      [Math.PI / 2, 0, 0],
+    );
+    // Spinning dark metallic jog wheel platter
+    const platter = addCustomMatPart(
+      djDynamicGrp,
+      new THREE.CylinderGeometry(0.2, 0.21, 0.036, 18),
+      djCanopySteelMat,
+      [px, deckTopY + 0.105, consoleZ + 0.05],
+    );
+    djPlatters.push(platter);
+    // Angled full-color OLED waveform display screen on top rear of each CDJ
+    addCustomMatPart(
+      djStaticGrp,
+      new THREE.BoxGeometry(0.38, 0.03, 0.22),
+      djLedWallMat,
+      [px, deckTopY + 0.12, consoleZ - 0.19],
+      [0.24, 0, 0],
+    );
+  }
+  // Center 4-Channel DJ Mixer Chassis + Rotary EQ Strip + Animated Dual Stereo VU Bars
+  addCustomMatPart(djStaticGrp, new THREE.BoxGeometry(0.68, 0.09, 0.66), djCanopySteelMat, [0, deckTopY + 0.045, consoleZ]);
+  addCustomMatPart(djStaticGrp, new THREE.BoxGeometry(0.56, 0.02, 0.12), stainlessSteelMat, [0, deckTopY + 0.1, consoleZ + 0.22]);
+  const djEqBars: THREE.Mesh[] = [];
+  for (let b = 0; b < 8; b++) {
+    const barMesh = addCustomMatPart(
+      djDynamicGrp,
+      new THREE.BoxGeometry(0.042, 0.18, 0.036),
+      b % 2 === 0 ? poolCyanLedMat : djPurpleWashMat,
+      [-0.24 + b * 0.068, deckTopY + 0.16, consoleZ - 0.2],
+    );
+    djEqBars.push(barMesh);
+  }
+  // Twin angled compact DJ booth monitor speakers flanking the console ends
+  for (const sgn of [-1, 1]) {
+    addCustomMatPart(
+      djStaticGrp,
+      new THREE.BoxGeometry(0.34, 0.44, 0.3),
+      djSpeakerGrilleMat,
+      [sgn * 1.34, deckTopY + 0.22, consoleZ - 0.26],
+      [-0.18, sgn * -0.45, 0],
+      { castShadow: true },
+    );
+  }
+
+  // 6. CONCERT LINE-ARRAY AUDIO TOWERS (Left & Right Wings — 1:1 with Front Elevation, Top Plan & 3/4 Isometric!)
+  for (const sgn of [-1, 1]) {
+    // A. Tall Multi-Tier Perforated-Grille Concert Subwoofer & Amplifier Wing Rack Tower (x = ±6.15)
+    addCustomMatPart(
+      djStaticGrp,
+      new THREE.BoxGeometry(1.18, 2.75, 1.12),
+      djSpeakerGrilleMat,
+      [sgn * 6.15, stageTopY + 1.375, -0.35],
+      [0, 0, 0],
+      { castShadow: true, receiveShadow: true },
+    );
+    // Steel protective rack exoskeleton bars & top bumper cap around the wing tower
+    addCustomMatPart(djStaticGrp, new THREE.BoxGeometry(1.26, 0.1, 1.2), blackSteelMat, [sgn * 6.15, stageTopY + 2.78, -0.35]);
+    addCustomMatPart(djStaticGrp, new THREE.BoxGeometry(1.26, 0.1, 1.2), blackSteelMat, [sgn * 6.15, stageTopY + 1.38, -0.35]);
+
+    // B. Angled Floor Concert Subwoofer Cabinets flanking the LED Media Wall (angled ±26 deg inward like Top Plan!)
+    addCustomMatPart(
+      djStaticGrp,
+      new THREE.BoxGeometry(1.05, 1.18, 0.96),
+      djSpeakerGrilleMat,
+      [sgn * 3.85, stageTopY + 0.59, -0.52],
+      [0, sgn * -0.45, 0],
+      { castShadow: true, receiveShadow: true },
+    );
+
+    // C. Suspended 4-Element Curved J-Array Concert Line-Array Speaker Hang off Front Column!
+    // Steel rigging arm & flying bumper bar bolted to front fluted column
+    addCustomMatPart(
+      djStaticGrp,
+      new THREE.BoxGeometry(0.95, 0.1, 0.14),
+      blackSteelMat,
+      [sgn * 4.78, stageTopY + 4.42, 1.32],
+    );
+    addCustomMatPart(
+      djStaticGrp,
+      new THREE.BoxGeometry(0.88, 0.08, 0.68),
+      blackSteelMat,
+      [sgn * 4.55, stageTopY + 4.35, 1.32],
+      [0, sgn * -0.22, 0],
+    );
+    // 4 progressively curved individual concert line-array speaker enclosures forming an authentic J-array!
+    for (let elem = 0; elem < 4; elem++) {
+      const pitchDown = 0.06 + elem * 0.11;
+      const ey = stageTopY + 4.14 - elem * 0.36;
+      const ez = 1.32 - Math.pow(elem, 1.45) * 0.045;
+      addCustomMatPart(
+        djStaticGrp,
+        new THREE.BoxGeometry(0.84, 0.31, 0.62),
+        djSpeakerGrilleMat,
+        [sgn * 4.55, ey, ez],
+        [pitchDown, sgn * -0.22, 0],
+        { castShadow: true },
+      );
+      // Side brushed-steel rigging link straps on each line-array box
+      for (const sideX of [-0.43, 0.43]) {
+        addCustomMatPart(
+          djStaticGrp,
+          new THREE.BoxGeometry(0.035, 0.33, 0.12),
+          stainlessSteelMat,
+          [sgn * 4.55 + sideX, ey, ez + 0.14],
+          [pitchDown, sgn * -0.22, 0],
+        );
+      }
+    }
+  }
+
+  // 7. ENCLOSED 2-LEVEL BACKSTAGE SOUND ENGINEERING CONTROL ROOM & VIP VIEWING MEZZANINE (Side Profile & Top Plan!)
+  const backZ = -3.05;
+  // Lower enclosed backstage equipment & cable-channel room
+  addCustomMatPart(
+    djStaticGrp,
+    new THREE.BoxGeometry(10.2, 2.3, 2.15),
+    djCanopySteelMat,
+    [0, stageTopY + 1.15, backZ],
+    [0, 0, 0],
+    { castShadow: true, receiveShadow: true },
+  );
+  // Upper VIP Viewing Mezzanine / Sound Control Booth with recessed glazed observation windows & steel mullions
+  addCustomMatPart(
+    djStaticGrp,
+    new THREE.BoxGeometry(10.2, 2.35, 2.15),
+    djCanopySteelMat,
+    [0, stageTopY + 3.45, backZ],
+    [0, 0, 0],
+    { castShadow: true, receiveShadow: true },
+  );
+  // Panoramic tinted observation windows on rear & side facades of control room
+  addCustomMatPart(
+    djStaticGrp,
+    new THREE.BoxGeometry(6.8, 1.45, 0.08),
+    barTintedGlassMat,
+    [0, stageTopY + 3.48, backZ - 1.1],
+    [0, 0, 0],
+    { renderOrder: 3 },
+  );
+  for (const mx of [-3.4, -1.7, 0, 1.7, 3.4]) {
+    addCustomMatPart(djStaticGrp, new THREE.BoxGeometry(0.08, 1.52, 0.12), blackSteelMat, [mx, stageTopY + 3.48, backZ - 1.1]);
+  }
+  // 3 Detailed Backstage Equipment Rack Cabinets along the side-rear alcove (matches Side Profile & Top Plan!)
+  for (const rx of [-3.6, 0, 3.6]) {
+    addCustomMatPart(
+      djStaticGrp,
+      new THREE.BoxGeometry(1.15, 2.05, 0.62),
+      djSpeakerGrilleMat,
+      [rx, stageTopY + 1.05, backZ - 1.24],
+    );
+  }
+
+  // 8. REAL 7-RISER STEPPED STEEL BACKSTAGE ACCESS STAIRS WITH CLEAR GLASS BALUSTRADE (Right Wing — matches Side Profile & 3/4 Isometric!)
+  const stairX = 6.25;
+  const stairRisers = 7;
+  const stairTotalH = 2.15;
+  const stairTotalRun = 2.85;
+  // Upper landing deck connecting stairs to backstage control mezzanine
+  addCustomMatPart(
+    djStaticGrp,
+    new THREE.BoxGeometry(1.45, 0.14, 1.45),
+    djCanopySteelMat,
+    [stairX, stageTopY + stairTotalH, -3.45],
+    [0, 0, 0],
+    { castShadow: true, receiveShadow: true },
+  );
+  // 7 Individual stepped dark-steel stair treads climbing smoothly from stage deck to backstage landing
+  for (let r = 0; r < stairRisers; r++) {
+    const frac = (r + 1) / stairRisers;
+    const treadY = stageTopY + frac * stairTotalH;
+    const treadZ = -0.15 - frac * stairTotalRun;
+    addCustomMatPart(
+      djStaticGrp,
+      new THREE.BoxGeometry(1.36, 0.075, 0.44),
+      blackSteelMat,
+      [stairX, treadY, treadZ],
+      [0, 0, 0],
+      { castShadow: true, receiveShadow: true },
+    );
+  }
+  // Twin diagonal steel stair stringer beams + clear glass balustrade panels + steel stanchions & continuous top handrail
+  const stringerLen = Math.hypot(stairTotalRun, stairTotalH);
+  const stringerPitch = Math.atan2(stairTotalH, stairTotalRun);
+  for (const sideOff of [-0.68, 0.68]) {
+    addCustomMatPart(
+      djStaticGrp,
+      new THREE.BoxGeometry(0.08, 0.24, stringerLen),
+      blackSteelMat,
+      [stairX + sideOff, stageTopY + stairTotalH * 0.5, -0.15 - stairTotalRun * 0.5],
+      [stringerPitch, 0, 0],
+      { castShadow: true },
+    );
+    // Clear architectural glass balustrade panel following the stair slope
+    addCustomMatPart(
+      djStaticGrp,
+      new THREE.BoxGeometry(0.04, 1.02, stringerLen - 0.1),
+      barTintedGlassMat,
+      [stairX + sideOff, stageTopY + stairTotalH * 0.5 + 0.62, -0.15 - stairTotalRun * 0.5],
+      [stringerPitch, 0, 0],
+      { renderOrder: 3 },
+    );
+    // Continuous sloped matte-black steel top handrail
+    addCustomMatPart(
+      djStaticGrp,
+      new THREE.BoxGeometry(0.07, 0.06, stringerLen + 0.16),
+      blackSteelMat,
+      [stairX + sideOff, stageTopY + stairTotalH * 0.5 + 1.15, -0.15 - stairTotalRun * 0.5],
+      [stringerPitch, 0, 0],
+    );
+    // Vertical steel stanchion posts at bottom, middle, and top landing
+    for (const [py, pz] of [
+      [stageTopY + 0.6, -0.15],
+      [stageTopY + stairTotalH * 0.5 + 0.6, -0.15 - stairTotalRun * 0.5],
+      [stageTopY + stairTotalH + 0.6, -3.05],
+    ] as const) {
+      addCustomMatPart(djStaticGrp, new THREE.BoxGeometry(0.06, 1.18, 0.06), blackSteelMat, [stairX + sideOff, py, pz]);
+    }
+  }
+
+  // 9. SIX YOKE-MOUNTED CONCERT MOVING-HEAD SPOTLIGHTS under Front Canopy Truss (matches Front Elevation!)
   const djSpotPivots: THREE.Group[] = [];
-  for (let sp = 0; sp < 5; sp++) {
+  for (let sp = 0; sp < 6; sp++) {
+    const sx = -4.25 + sp * 1.7;
+    const sy = roofY + 0.08;
+    const sz = 2.05;
+    // Fixed yoke mounting bracket on canopy truss
+    addCustomMatPart(djStaticGrp, new THREE.BoxGeometry(0.32, 0.1, 0.22), blackSteelMat, [sx, sy + 0.05, sz]);
+
     const piv = new THREE.Group();
-    piv.position.set(-0.8 + sp * 1.3, roofY - 0.28, -1.35);
+    piv.position.set(sx, sy - 0.05, sz);
     djDynamicGrp.add(piv);
     djSpotPivots.push(piv);
 
-    addCustomMatPart(piv, new THREE.CylinderGeometry(0.11, 0.14, 0.28, 10), blackSteelMat, [0, -0.14, 0]);
+    // U-yoke side arms + cylindrical moving-head fixture barrel + glowing optic lens + volumetric wash cone
+    for (const armX of [-0.14, 0.14]) {
+      addCustomMatPart(piv, new THREE.BoxGeometry(0.035, 0.26, 0.05), blackSteelMat, [armX, -0.12, 0]);
+    }
+    addCustomMatPart(piv, new THREE.CylinderGeometry(0.13, 0.17, 0.36, 12), djCanopySteelMat, [0, -0.22, 0]);
     addCustomMatPart(
       piv,
-      new THREE.CylinderGeometry(0.11, 0.11, 0.04, 10),
+      new THREE.CylinderGeometry(0.13, 0.13, 0.04, 12),
       sp % 2 === 0 ? djPurpleWashMat : poolCyanLedMat,
-      [0, -0.29, 0],
+      [0, -0.41, 0],
     );
     addCustomMatPart(
       piv,
-      new THREE.ConeGeometry(0.95, 2.8, 12, 1, true),
+      new THREE.ConeGeometry(1.38, 5.15, 14, 1, true),
       purpleBeamMat,
-      [0, -1.68, 0],
+      [0, -2.95, 0],
       [0, 0, 0],
       { renderOrder: 4 },
     );
   }
 
   // ============================================================================
-  // 7. MODERN LUXURY COCKTAIL BAR (cx=95.6, cz=40.4, rotY=-0.52)
+  // 7. MODERN LUXURY COCKTAIL BAR (cx=95.6, cz=40.4, rotY=+PI/2 facing East beach)
   //    *** STRICTLY ZERO WOOD / TANPA KAYU! ***
-  //    Elevated on a 2-tier stepped circular Ivory Terrazzo & Brushed Brass Inlay Podium (+0.68m)
+  //    Scaled proportionally to 3.31m avatar height on a 2-tier circular Ivory Terrazzo & Brass Podium (+0.68m)
   // ============================================================================
   const bar = mp.cocktailBar;
   const barGrp = new THREE.Group();
@@ -1811,7 +2945,7 @@ export function buildCoastalBeachClub3D(
   // Lower stepped Terrazzo foundation (-0.65m .. +0.58m) + Upper Podium (+0.68m) matching evaluateBeachClubElevation radius
   addWorldPart(
     barGrp,
-    new THREE.CylinderGeometry(bar.padRadiusM + 0.14, bar.padRadiusM + 0.22, 1.23, 28),
+    new THREE.CylinderGeometry(bar.padRadiusM + 0.16, bar.padRadiusM + 0.26, 1.23, 32),
     '#ebe2d3',
     [0, -0.035, 0],
     [0, 0, 0],
@@ -1819,7 +2953,7 @@ export function buildCoastalBeachClub3D(
   );
   addWorldPart(
     barGrp,
-    new THREE.CylinderGeometry(bar.padRadiusM, bar.padRadiusM + 0.14, bar.padElevY + 0.65, 28),
+    new THREE.CylinderGeometry(bar.padRadiusM, bar.padRadiusM + 0.16, bar.padElevY + 0.65, 32),
     '#ffffff',
     [0, (bar.padElevY - 0.65) * 0.5, 0],
     [0, 0, 0],
@@ -1827,147 +2961,246 @@ export function buildCoastalBeachClub3D(
   );
   addCustomMatPart(
     barGrp,
-    new THREE.RingGeometry(bar.padRadiusM - 0.16, bar.padRadiusM - 0.06, 36),
+    new THREE.RingGeometry(bar.padRadiusM - 0.18, bar.padRadiusM - 0.06, 40),
     brushedBrassMat,
-    [0, bar.padElevY + 0.005, 0],
+    [0, bar.padElevY + 0.006, 0],
     [-Math.PI / 2, 0, 0],
   );
 
   const barBaseY = bar.padElevY;
 
-  const uCurveSegments = 11;
-  const uRadius = 2.05;
+  // Curved Horseshoe Fluted White Stone Bar Counter + Overhanging Calacatta Marble Slab (top at +1.76m)
+  const uCurveSegments = 13;
+  const uRadius = 2.65;
+  const uCenterZ = -0.18;
   for (let i = 0; i < uCurveSegments; i++) {
     const a0 = -Math.PI * 0.06 + (i / uCurveSegments) * (Math.PI * 1.12);
     const a1 = -Math.PI * 0.06 + ((i + 1) / uCurveSegments) * (Math.PI * 1.12);
     const aMid = (a0 + a1) * 0.5;
-    const segLen = uRadius * (a1 - a0) + 0.06;
+    const segLen = uRadius * (a1 - a0) + 0.08;
     const sx = Math.cos(aMid) * uRadius;
-    const sz = Math.sin(aMid) * uRadius - 0.15;
+    const sz = Math.sin(aMid) * uRadius + uCenterZ;
 
+    // Fluted white stone body with vertical brass inlay texture
     addWorldPart(
       barGrp,
-      applyBoxMetricUvs(new THREE.BoxGeometry(segLen, 1.04, 0.44), 0.75, 1.04),
+      applyBoxMetricUvs(new THREE.BoxGeometry(segLen, 1.64, 0.56), 0.78, 1.64),
       '#ffffff',
-      [sx, barBaseY + 0.52, sz],
+      [sx, barBaseY + 0.82, sz],
       [0, -aMid + Math.PI / 2, 0],
-      { tex: flutedStoneTex, strokeW: 0.01, castShadow: true },
+      { tex: flutedStoneTex, strokeW: 0.012, castShadow: true },
     );
+    // Overhanging Calacatta marble countertop slab
     addWorldPart(
       barGrp,
-      applyBoxMetricUvs(new THREE.BoxGeometry(segLen + 0.08, 0.08, 0.68), 1.6, 1.6),
+      applyBoxMetricUvs(new THREE.BoxGeometry(segLen + 0.1, 0.12, 0.92), 1.8, 1.8),
       '#ffffff',
-      [sx, barBaseY + 1.08, sz],
+      [sx, barBaseY + 1.7, sz],
       [0, -aMid + Math.PI / 2, 0],
-      { tex: calacattaTex, strokeW: 0.01 },
+      { tex: calacattaTex, strokeW: 0.012, castShadow: true },
     );
   }
 
+  // Concealed warm amber LED strips (under marble overhang + toe-kick) & brushed-brass wrap-around footrest
   addCustomMatPart(
     barGrp,
-    new THREE.TorusGeometry(uRadius + 0.24, 0.032, 8, 28, Math.PI * 1.12),
+    new THREE.TorusGeometry(uRadius + 0.34, 0.036, 8, 32, Math.PI * 1.12),
     warmAmberGlowMat,
-    [0, barBaseY + 0.07, -0.15],
+    [0, barBaseY + 1.61, uCenterZ],
     [Math.PI / 2, 0, -Math.PI * 0.06],
   );
   addCustomMatPart(
     barGrp,
-    new THREE.TorusGeometry(uRadius + 0.36, 0.025, 8, 28, Math.PI * 1.12),
+    new THREE.TorusGeometry(uRadius + 0.3, 0.035, 8, 32, Math.PI * 1.12),
+    warmAmberGlowMat,
+    [0, barBaseY + 0.09, uCenterZ],
+    [Math.PI / 2, 0, -Math.PI * 0.06],
+  );
+  addCustomMatPart(
+    barGrp,
+    new THREE.TorusGeometry(uRadius + 0.48, 0.034, 8, 32, Math.PI * 1.12),
     brushedBrassMat,
-    [0, barBaseY + 0.18, -0.15],
+    [0, barBaseY + 0.28, uCenterZ],
     [Math.PI / 2, 0, -Math.PI * 0.06],
   );
 
+  // Tall Calacatta Marble Back Wall (+4.15m) with Brushed Brass Perimeter Frame
   addWorldPart(
     barGrp,
-    applyBoxMetricUvs(new THREE.BoxGeometry(4.3, 2.55, 0.28), 2.4, 2.4),
+    applyBoxMetricUvs(new THREE.BoxGeometry(5.5, 4.15, 0.36), 2.8, 2.8),
     '#ffffff',
-    [0, barBaseY + 1.275, -1.62],
+    [0, barBaseY + 2.075, -2.14],
     [0, 0, 0],
     { tex: calacattaTex, strokeW: 0.015, castShadow: true },
   );
+  addCustomMatPart(barGrp, new THREE.BoxGeometry(5.62, 0.08, 0.42), brushedBrassMat, [0, barBaseY + 4.17, -2.14]);
+  for (const trimX of [-2.77, 2.77]) {
+    addCustomMatPart(barGrp, new THREE.BoxGeometry(0.08, 4.18, 0.42), brushedBrassMat, [trimX, barBaseY + 2.09, -2.14]);
+  }
+
+  // Stainless-Steel Bartender Back Counter, Center Prep Island & Sleek POS Terminal
   addCustomMatPart(
     barGrp,
-    new THREE.BoxGeometry(3.8, 0.92, 0.68),
+    new THREE.BoxGeometry(4.85, 1.38, 0.86),
     stainlessSteelMat,
-    [0, barBaseY + 0.46, -1.16],
+    [0, barBaseY + 0.69, -1.52],
   );
   addCustomMatPart(
     barGrp,
-    new THREE.BoxGeometry(1.35, 0.9, 0.72),
+    new THREE.BoxGeometry(1.75, 1.32, 0.9),
     stainlessSteelMat,
-    [0, barBaseY + 0.45, 0.15],
+    [0, barBaseY + 0.66, 0.22],
   );
-  for (const shelfY of [barBaseY + 1.38, barBaseY + 1.84]) {
-    addCustomMatPart(barGrp, new THREE.BoxGeometry(3.15, 0.04, 0.34), brushedBrassMat, [0, shelfY, -1.34]);
-    addCustomMatPart(barGrp, new THREE.BoxGeometry(3.05, 0.03, 0.04), warmAmberGlowMat, [0, shelfY + 0.03, -1.44]);
+  // POS terminal on the right-hand marble counter
+  addCustomMatPart(
+    barGrp,
+    new THREE.BoxGeometry(0.42, 0.32, 0.06),
+    stainlessSteelMat,
+    [1.65, barBaseY + 1.94, 1.25],
+    [-0.28, -0.35, 0],
+  );
+
+  // 2-Tier Illuminated Brushed-Brass Bottle Display Shelves stocked with colorful glass bottles
+  for (const shelfY of [barBaseY + 2.12, barBaseY + 2.86]) {
+    addCustomMatPart(barGrp, new THREE.BoxGeometry(4.15, 0.055, 0.42), brushedBrassMat, [0, shelfY, -1.76]);
+    addCustomMatPart(barGrp, new THREE.BoxGeometry(4.02, 0.04, 0.05), warmAmberGlowMat, [0, shelfY + 0.04, -1.92]);
     const bottlePalette = ['#10b981', '#f59e0b', '#e11d48', '#38bdf8', '#d97706', '#a855f7'];
-    for (let b = 0; b < 11; b++) {
-      const bx = -1.3 + b * 0.26;
+    for (let b = 0; b < 13; b++) {
+      const bx = -1.74 + b * 0.29;
       addWorldPart(
         barGrp,
-        new THREE.CylinderGeometry(0.042, 0.048, 0.24 + (b % 3) * 0.04, 8),
+        new THREE.CylinderGeometry(0.058, 0.068, 0.36 + (b % 3) * 0.06, 8),
         bottlePalette[b % bottlePalette.length],
-        [bx, shelfY + 0.15, -1.32],
+        [bx, shelfY + 0.22, -1.74],
         [0, 0, 0],
-        { strokeW: 0.004 },
+        { strokeW: 0.005 },
       );
     }
   }
 
+  // Curved Cantilevered Tinted Sea-Glass & Brushed-Brass Ribbed Canopy (+4.35m clearance above podium, ZERO WOOD)
   const canopyGroup = new THREE.Group();
-  canopyGroup.position.set(0, barBaseY + 2.75, 0.15);
-  canopyGroup.rotation.x = THREE.MathUtils.degToRad(-5.0);
+  canopyGroup.position.set(0, barBaseY + 4.38, 0.24);
+  canopyGroup.rotation.x = THREE.MathUtils.degToRad(-6.0);
   barGrp.add(canopyGroup);
 
-  for (const colX of [-1.72, 1.72]) {
+  // 2 Tall Brushed-Brass Structural Support Columns with base & top collars
+  for (const colX of [-2.32, 2.32]) {
     addCustomMatPart(
       barGrp,
-      new THREE.CylinderGeometry(0.065, 0.075, 2.75, 12),
+      new THREE.CylinderGeometry(0.095, 0.11, 4.3, 14),
       brushedBrassMat,
-      [colX, barBaseY + 1.375, -0.58],
+      [colX, barBaseY + 2.15, -0.78],
+      [0, 0, 0],
+      { castShadow: true, receiveShadow: true },
+    );
+    addCustomMatPart(
+      barGrp,
+      new THREE.CylinderGeometry(0.16, 0.18, 0.14, 14),
+      brushedBrassMat,
+      [colX, barBaseY + 0.07, -0.78],
     );
   }
-  addCustomMatPart(
-    canopyGroup,
-    new RoundedBoxGeometry(5.6, 0.12, 3.6, 2, 0.05),
-    brushedBrassMat,
-    [0, 0, 0],
-    [0, 0, 0],
-    { castShadow: true },
-  );
-  for (let rib = -3; rib <= 3; rib++) {
+
+  // Open curved elliptical/arched brushed-brass canopy perimeter fascia + arched ribs (NO solid opaque slab!)
+  const canopyWidth = 7.3;
+  const canopyDepth = 4.9;
+  const canopyArcSteps = 12;
+  const archRise = 0.36;
+  for (let i = 0; i < canopyArcSteps; i++) {
+    const t0 = -1 + (2 * i) / canopyArcSteps;
+    const t1 = -1 + (2 * (i + 1)) / canopyArcSteps;
+    const tm = (t0 + t1) * 0.5;
+    const x0 = t0 * (canopyWidth * 0.5);
+    const x1 = t1 * (canopyWidth * 0.5);
+    const xm = (x0 + x1) * 0.5;
+    const y0 = Math.cos(t0 * Math.PI * 0.5) * archRise;
+    const y1 = Math.cos(t1 * Math.PI * 0.5) * archRise;
+    const ym = (y0 + y1) * 0.5;
+    const segW = Math.hypot(x1 - x0, y1 - y0) + 0.05;
+    const tiltZ = Math.atan2(y1 - y0, x1 - x0);
+    // Gently bow the front edge outward (+Z) like the 4-view model sheet
+    const frontBowZ = Math.cos(tm * Math.PI * 0.5) * 0.42;
+    const localDepth = canopyDepth + frontBowZ;
+    const localCenterZ = frontBowZ * 0.5;
+
+    // Translucent tinted sea-glass canopy panel
     addCustomMatPart(
       canopyGroup,
-      new THREE.BoxGeometry(0.05, 0.07, 3.35),
+      new THREE.BoxGeometry(segW, 0.055, localDepth),
+      barTintedGlassMat,
+      [xm, ym + 0.07, localCenterZ],
+      [0, 0, tiltZ],
+      { renderOrder: 3 },
+    );
+    // Front & rear brushed-brass curved fascia beams
+    addCustomMatPart(
+      canopyGroup,
+      new THREE.BoxGeometry(segW + 0.02, 0.14, 0.12),
       brushedBrassMat,
-      [rib * 0.78, -0.02, 0],
+      [xm, ym, localCenterZ + localDepth * 0.5],
+      [0, 0, tiltZ],
+      { castShadow: true, receiveShadow: true },
+    );
+    addCustomMatPart(
+      canopyGroup,
+      new THREE.BoxGeometry(segW + 0.02, 0.14, 0.12),
+      brushedBrassMat,
+      [xm, ym, localCenterZ - localDepth * 0.5],
+      [0, 0, tiltZ],
+      { castShadow: true, receiveShadow: true },
     );
   }
+  // Longitudinal brushed-brass structural ribs under the curved glass canopy
+  for (let rib = -4; rib <= 4; rib++) {
+    const t = rib / 4.2;
+    const rx = t * (canopyWidth * 0.5);
+    const ry = Math.cos(t * Math.PI * 0.5) * archRise - 0.03;
+    const frontBowZ = Math.cos(t * Math.PI * 0.5) * 0.42;
+    const ribDepth = canopyDepth + frontBowZ - 0.08;
+    addCustomMatPart(
+      canopyGroup,
+      new THREE.BoxGeometry(0.075, 0.095, ribDepth),
+      brushedBrassMat,
+      [rx, ry, frontBowZ * 0.5],
+      [0, 0, 0],
+      { castShadow: true },
+    );
+  }
+  // Curved brushed-brass inner shade-slat header over the rear bartender aisle (NO WOOD)
   addCustomMatPart(
     canopyGroup,
-    new RoundedBoxGeometry(5.42, 0.05, 3.42, 2, 0.025),
-    barTintedGlassMat,
-    [0, 0.08, 0],
+    new RoundedBoxGeometry(5.6, 0.09, 1.45, 2, 0.04),
+    brushedBrassMat,
+    [0, archRise + 0.14, -1.35],
     [0, 0, 0],
-    { renderOrder: 3 },
+    { castShadow: true, receiveShadow: true },
   );
 
-  const stoolCount = 7;
+  // 8 Luxury Brass & Tan-Leather Barstools scaled for the 3.31m avatar & 1.76m bar counter
+  const stoolCount = 8;
   for (let s = 0; s < stoolCount; s++) {
-    const a = 0.12 + (s / (stoolCount - 1)) * (Math.PI - 0.24);
-    const r = uRadius + 0.78;
+    const a = 0.1 + (s / (stoolCount - 1)) * (Math.PI - 0.2);
+    const r = uRadius + 1.02;
     const sx = Math.cos(a) * r;
-    const sz = Math.sin(a) * r - 0.15;
+    const sz = Math.sin(a) * r + uCenterZ;
     const stool = new THREE.Group();
     stool.position.set(sx, barBaseY, sz);
     stool.rotation.y = -a + Math.PI / 2;
     barGrp.add(stool);
 
-    addCustomMatPart(stool, new THREE.CylinderGeometry(0.22, 0.24, 0.035, 12), brushedBrassMat, [0, 0.018, 0]);
-    addCustomMatPart(stool, new THREE.CylinderGeometry(0.032, 0.038, 0.72, 8), brushedBrassMat, [0, 0.38, 0]);
-    addWorldPart(stool, new RoundedBoxGeometry(0.42, 0.08, 0.38, 2, 0.03), '#c2936b', [0, 0.76, 0], [0, 0, 0], { strokeW: 0.006 });
-    addWorldPart(stool, new RoundedBoxGeometry(0.42, 0.28, 0.07, 2, 0.025), '#c2936b', [0, 0.92, -0.16], [0, 0, 0], { strokeW: 0.006 });
+    addCustomMatPart(stool, new THREE.CylinderGeometry(0.3, 0.33, 0.05, 14), brushedBrassMat, [0, 0.025, 0]);
+    addCustomMatPart(stool, new THREE.CylinderGeometry(0.046, 0.054, 1.12, 10), brushedBrassMat, [0, 0.58, 0]);
+    addCustomMatPart(stool, new THREE.TorusGeometry(0.22, 0.022, 8, 16), brushedBrassMat, [0, 0.44, 0], [Math.PI / 2, 0, 0]);
+    addWorldPart(stool, new RoundedBoxGeometry(0.58, 0.12, 0.52, 2, 0.04), '#c2936b', [0, 1.18, 0], [0, 0, 0], {
+      strokeW: 0.008,
+      castShadow: true,
+    });
+    // Backrest sits on outer (+Z) edge of stool so guests sit facing inward toward the bar counter!
+    addWorldPart(stool, new RoundedBoxGeometry(0.58, 0.4, 0.1, 2, 0.035), '#c2936b', [0, 1.42, 0.22], [0, 0, 0], {
+      strokeW: 0.008,
+      castShadow: true,
+    });
   }
 
   // ============================================================================
@@ -1998,19 +3231,6 @@ export function buildCoastalBeachClub3D(
     return inst;
   };
 
-  const makeWorldBlitzMat = (
-    colorHex: string,
-    tex?: THREE.Texture,
-    specularStrength = 0.22,
-  ): THREE.Material => {
-    const tmpMesh = new THREE.Mesh(
-      trackGeo(new THREE.BoxGeometry(0.1, 0.1, 0.1)),
-      trackMat(new THREE.MeshStandardMaterial({ color: colorHex, map: tex ?? null, roughness: 0.8 })),
-    );
-    upgradeMeshToBlitzWorldMaterial(tmpMesh, windUniforms, colorHex, specularStrength);
-    return tmpMesh.material as THREE.Material;
-  };
-
   const calacattaMat = makeWorldBlitzMat('#ffffff', calacattaTex);
   const ivoryFabricMat = makeWorldBlitzMat('#f5f1ea');
   const shearCurtainMat = trackMat(
@@ -2031,9 +3251,12 @@ export function buildCoastalBeachClub3D(
   const curtainMatrices: THREE.Matrix4[] = [];
   const daybedBaseMatrices: THREE.Matrix4[] = [];
   const daybedMattressMatrices: THREE.Matrix4[] = [];
+  const daybedPillowMatrices: THREE.Matrix4[] = [];
   const brassSideTableMatrices: THREE.Matrix4[] = [];
   const cabLampMatrices: THREE.Matrix4[] = [];
 
+  // Avatar-proportioned VIP Cabana Suite height (4.15m pergola clearance for 3.31m avatar!)
+  const cabPergolaH = 4.15;
   for (const cab of mp.cabanas) {
     const yBase = cab.plinthTopY;
     // Honed Calacatta Marble Plinth (`0.64m -> 0.76m`)
@@ -2044,19 +3267,19 @@ export function buildCoastalBeachClub3D(
     plinthMatrices.push(dummy.matrix.clone());
 
     for (const [px, pz] of [
-      [-1.42, -1.46],
-      [-1.42, 1.46],
-      [1.42, -1.46],
-      [1.42, 1.46],
+      [-1.46, -1.46],
+      [-1.46, 1.46],
+      [1.46, -1.46],
+      [1.46, 1.46],
     ] as const) {
-      dummy.position.set(cab.cx + px, yBase + 1.225, cab.cz + pz);
+      dummy.position.set(cab.cx + px, yBase + cabPergolaH * 0.5, cab.cz + pz);
       dummy.rotation.set(0, 0, 0);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       steelPostMatrices.push(dummy.matrix.clone());
     }
     for (let lv = 0; lv < 10; lv++) {
-      dummy.position.set(cab.cx, yBase + 2.46, cab.cz - 1.25 + lv * 0.275);
+      dummy.position.set(cab.cx, yBase + cabPergolaH + 0.02, cab.cz - 1.25 + lv * 0.275);
       dummy.rotation.set(0.35, 0, 0);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
@@ -2068,32 +3291,42 @@ export function buildCoastalBeachClub3D(
       [1.36, -1.38],
       [1.36, 1.38],
     ] as const) {
-      dummy.position.set(cab.cx + cxOff, yBase + 1.2, cab.cz + czOff);
+      dummy.position.set(cab.cx + cxOff, yBase + cabPergolaH * 0.49, cab.cz + czOff);
       dummy.rotation.set(0, 0, 0);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       curtainMatrices.push(dummy.matrix.clone());
     }
-    dummy.position.set(cab.cx - 0.38, yBase + 0.16, cab.cz);
+    // King-size plush double daybed + twin backrest pillows
+    dummy.position.set(cab.cx - 0.38, yBase + 0.21, cab.cz);
     dummy.rotation.set(0, 0, 0);
     dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
     daybedBaseMatrices.push(dummy.matrix.clone());
 
-    dummy.position.set(cab.cx - 0.34, yBase + 0.39, cab.cz);
+    dummy.position.set(cab.cx - 0.34, yBase + 0.52, cab.cz);
     dummy.rotation.set(0, 0, 0);
     dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
     daybedMattressMatrices.push(dummy.matrix.clone());
 
+    for (const pzOff of [-0.46, 0.46]) {
+      dummy.position.set(cab.cx - 0.96, yBase + 0.8, cab.cz + pzOff);
+      dummy.rotation.set(0, 0, -0.25);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      daybedPillowMatrices.push(dummy.matrix.clone());
+    }
+
+    // Geometric brushed-brass side tables + warm amber lanterns
     for (const tz of [-1.08, 1.08]) {
-      dummy.position.set(cab.cx - 0.85, yBase + 0.23, cab.cz + tz);
+      dummy.position.set(cab.cx - 0.85, yBase + 0.31, cab.cz + tz);
       dummy.rotation.set(0, 0, 0);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       brassSideTableMatrices.push(dummy.matrix.clone());
 
-      dummy.position.set(cab.cx - 0.85, yBase + 0.56, cab.cz + tz);
+      dummy.position.set(cab.cx - 0.85, yBase + 0.76, cab.cz + tz);
       dummy.rotation.set(0, 0, 0);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
@@ -2103,23 +3336,49 @@ export function buildCoastalBeachClub3D(
 
   let instancedBatchCount = 0;
   buildInstancedBatch(applyBoxMetricUvs(new THREE.BoxGeometry(3.1, 0.24, 3.2), 2.0, 2.0), calacattaMat, plinthMatrices, true);
-  buildInstancedBatch(new THREE.BoxGeometry(0.11, 2.48, 0.11), blackSteelMat, steelPostMatrices, true);
-  buildInstancedBatch(new THREE.BoxGeometry(2.96, 0.05, 0.18), blackSteelMat, louverMatrices, true);
-  buildInstancedBatch(new THREE.CylinderGeometry(0.16, 0.24, 2.38, 8), shearCurtainMat, curtainMatrices, false);
-  buildInstancedBatch(new RoundedBoxGeometry(1.78, 0.3, 2.02, 2, 0.04), calacattaMat, daybedBaseMatrices, true);
-  buildInstancedBatch(new RoundedBoxGeometry(1.72, 0.22, 1.94, 2, 0.06), ivoryFabricMat, daybedMattressMatrices, false);
-  buildInstancedBatch(new THREE.BoxGeometry(0.42, 0.44, 0.42), brushedBrassMat, brassSideTableMatrices, false);
-  buildInstancedBatch(new THREE.CylinderGeometry(0.08, 0.1, 0.22, 8), warmAmberGlowMat, cabLampMatrices, false, false);
-  instancedBatchCount += 8;
+  buildInstancedBatch(new THREE.BoxGeometry(0.14, cabPergolaH, 0.14), blackSteelMat, steelPostMatrices, true);
+  buildInstancedBatch(new THREE.BoxGeometry(2.96, 0.06, 0.2), blackSteelMat, louverMatrices, true);
+  buildInstancedBatch(new THREE.CylinderGeometry(0.18, 0.28, cabPergolaH - 0.14, 8), shearCurtainMat, curtainMatrices, false);
+  buildInstancedBatch(new RoundedBoxGeometry(1.78, 0.42, 2.02, 2, 0.04), calacattaMat, daybedBaseMatrices, true);
+  buildInstancedBatch(new RoundedBoxGeometry(1.72, 0.28, 1.94, 2, 0.06), ivoryFabricMat, daybedMattressMatrices, false);
+  buildInstancedBatch(new RoundedBoxGeometry(0.32, 0.44, 0.76, 2, 0.06), whiteFrameMat, daybedPillowMatrices, false);
+  buildInstancedBatch(new THREE.BoxGeometry(0.46, 0.62, 0.46), brushedBrassMat, brassSideTableMatrices, false);
+  buildInstancedBatch(new THREE.CylinderGeometry(0.1, 0.12, 0.28, 8), warmAmberGlowMat, cabLampMatrices, false, false);
+  instancedBatchCount += 9;
 
+  // Matte-black steel post-and-beam pergola headers with subtle architectural beam overhangs (matches 4-view model sheet!)
   for (const cab of mp.cabanas) {
-    const headerY = cab.plinthTopY + 2.48;
-    addCustomMatPart(staticClubGroup, new THREE.BoxGeometry(3.04, 0.13, 0.12), blackSteelMat, [cab.cx, headerY, cab.cz - 1.46]);
-    addCustomMatPart(staticClubGroup, new THREE.BoxGeometry(3.04, 0.13, 0.12), blackSteelMat, [cab.cx, headerY, cab.cz + 1.46]);
-    addCustomMatPart(staticClubGroup, new THREE.BoxGeometry(0.12, 0.13, 3.04), blackSteelMat, [cab.cx - 1.46, headerY, cab.cz]);
-    addCustomMatPart(staticClubGroup, new THREE.BoxGeometry(0.12, 0.13, 3.04), blackSteelMat, [cab.cx + 1.46, headerY, cab.cz]);
+    const headerY = cab.plinthTopY + cabPergolaH + 0.02;
+    addCustomMatPart(staticClubGroup, new THREE.BoxGeometry(3.48, 0.16, 0.15), blackSteelMat, [cab.cx, headerY, cab.cz - 1.46], [0, 0, 0], { castShadow: true });
+    addCustomMatPart(staticClubGroup, new THREE.BoxGeometry(3.48, 0.16, 0.15), blackSteelMat, [cab.cx, headerY, cab.cz + 1.46], [0, 0, 0], { castShadow: true });
+    addCustomMatPart(staticClubGroup, new THREE.BoxGeometry(0.15, 0.16, 3.48), blackSteelMat, [cab.cx - 1.46, headerY, cab.cz], [0, 0, 0], { castShadow: true });
+    addCustomMatPart(staticClubGroup, new THREE.BoxGeometry(0.15, 0.16, 3.48), blackSteelMat, [cab.cx + 1.46, headerY, cab.cz], [0, 0, 0], { castShadow: true });
   }
 
+  // Solid Honed White Calacatta Marble Coping & Ledge along East edge of South Sunken Pod Pool
+  // (matches the East pool boundary collider 1:1 so there is zero invisible ghost collide along the pool!)
+  {
+    const sp = mp.pools.southSeaPool;
+    const ledgeW = 1.25;
+    const ledgeD = sp.halfZ * 2;
+    const ledgeTopY = (sp.waterY ?? -1.02) + 0.04;
+    const ledgeBaseY = -2.15;
+    const ledgeH = ledgeTopY - ledgeBaseY;
+    const localX = sp.halfX + ledgeW * 0.5;
+    const cosR = Math.cos(sp.rotY);
+    const sinR = Math.sin(sp.rotY);
+    addWorldPart(
+      staticClubGroup,
+      applyBoxMetricUvs(new THREE.BoxGeometry(ledgeW, ledgeH, ledgeD), 2.2, 2.2),
+      '#ffffff',
+      [sp.cx + localX * cosR, ledgeBaseY + ledgeH * 0.5, sp.cz - localX * sinR],
+      [0, sp.rotY, 0],
+      { tex: calacattaTex, strokeW: 0.012, castShadow: true, receiveShadow: true },
+    );
+  }
+
+  // Cabana Lounger Pairs & Minimalist White Canvas Parasols placed on the spacious open 2nd terrace (-0.56m white marble)
+  // so the +0.64m VIP Cabana mezzanine walkway stays 100% unobstructed for avatars!
   if (lougerSetCabanas.length > 0) {
     const cLoungerMatrices: THREE.Matrix4[] = [];
     const cParasolPoleMatrices: THREE.Matrix4[] = [];
@@ -2127,52 +3386,56 @@ export function buildCoastalBeachClub3D(
     const cParasolBaseMatrices: THREE.Matrix4[] = [];
 
     for (const cab of lougerSetCabanas) {
-      const lx = cab.cx + 2.05;
-      const deckY = 0.64;
+      const lx = 101.2; // centered on the wide open -0.56m South 2nd terrace (x=96.4..105.2), leaving >3m clear walkways on both sides!
+      const deckY = -0.56;
       for (const lzOff of [-0.62, 0.62]) {
-        dummy.position.set(lx, deckY + 0.14, cab.cz + lzOff);
+        dummy.position.set(lx, deckY + 0.16, cab.cz + lzOff);
         dummy.rotation.set(0, 0, 0);
         dummy.scale.set(1, 1, 1);
         dummy.updateMatrix();
         cLoungerMatrices.push(dummy.matrix.clone());
       }
-      dummy.position.set(lx - 0.1, deckY + 0.12, cab.cz + 1.35);
+      // Marble parasol base & tall vertical mast squarely centered between the twin loungers
+      dummy.position.set(lx, deckY + 0.11, cab.cz);
       dummy.rotation.set(0, 0, 0);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       cParasolBaseMatrices.push(dummy.matrix.clone());
 
-      dummy.position.set(lx - 0.1, deckY + 1.24, cab.cz + 1.15);
-      dummy.rotation.set(0.18, 0, 0);
+      dummy.position.set(lx, deckY + 1.82, cab.cz);
+      dummy.rotation.set(0, 0, 0);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       cParasolPoleMatrices.push(dummy.matrix.clone());
 
-      dummy.position.set(lx, deckY + 2.2, cab.cz);
+      dummy.position.set(lx, deckY + 3.58, cab.cz);
       dummy.rotation.set(0, 0, 0);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       cParasolCanopyMatrices.push(dummy.matrix.clone());
     }
-    buildInstancedBatch(new RoundedBoxGeometry(1.45, 0.22, 0.72, 2, 0.05), ivoryFabricMat, cLoungerMatrices, false);
-    buildInstancedBatch(new THREE.BoxGeometry(0.45, 0.24, 0.45), calacattaMat, cParasolBaseMatrices, false);
-    buildInstancedBatch(new THREE.CylinderGeometry(0.035, 0.045, 2.3, 8), blackSteelMat, cParasolPoleMatrices, false);
-    buildInstancedBatch(new THREE.ConeGeometry(1.15, 0.42, 8), ivoryFabricMat, cParasolCanopyMatrices, true);
+    buildInstancedBatch(new RoundedBoxGeometry(1.28, 0.32, 0.72, 2, 0.06), ivoryFabricMat, cLoungerMatrices, false, true);
+    buildInstancedBatch(new THREE.BoxGeometry(0.42, 0.22, 0.42), calacattaMat, cParasolBaseMatrices, false, true);
+    buildInstancedBatch(new THREE.CylinderGeometry(0.048, 0.058, 3.56, 8), blackSteelMat, cParasolPoleMatrices, true, true);
+    buildInstancedBatch(new THREE.ConeGeometry(1.48, 0.56, 10), ivoryFabricMat, cParasolCanopyMatrices, true, true);
     instancedBatchCount += 4;
   }
 
   // ============================================================================
-  // 9. 10 FLOATING SQUARE WHITE SUNKEN LOUNGE PODS + WARM AMBER TABLE LANTERNS
+  // 9. 6 FLOATING SQUARE WHITE SUNKEN LOUNGE PODS + WARM AMBER TABLE LANTERNS & THROW PILLOWS
+  //    Outer masonry rim grounded cleanly onto the -1.40m pool basin floor!
   // ============================================================================
   const podRimMatrices: THREE.Matrix4[] = [];
   const podCushionMatrices: THREE.Matrix4[] = [];
+  const podPillowMatrices: THREE.Matrix4[] = [];
   const podTableMatrices: THREE.Matrix4[] = [];
   const podLanternMatrices: THREE.Matrix4[] = [];
   const haloSpritePositions: { x: number; y: number; z: number; scale: number }[] = [];
 
   for (const pod of mp.sunkenPods) {
     const wy = pod.waterY;
-    dummy.position.set(pod.cx, wy - 0.04, pod.cz);
+    // Outer frame spans -1.37m (rooted in -1.34m pool floor) up to -0.89m (+13cm proud of water)
+    dummy.position.set(pod.cx, wy - 0.11, pod.cz);
     dummy.rotation.set(0, pod.rotY, 0);
     dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
@@ -2184,80 +3447,114 @@ export function buildCoastalBeachClub3D(
     dummy.updateMatrix();
     podCushionMatrices.push(dummy.matrix.clone());
 
+    // 4 warm terracotta throw pillows around the pod perimeter
+    const cPod = Math.cos(pod.rotY);
+    const sPod = Math.sin(pod.rotY);
+    for (const [plx, plz] of [
+      [-0.78, -0.78],
+      [0.78, -0.78],
+      [-0.78, 0.78],
+      [0.78, 0.78],
+    ] as const) {
+      dummy.position.set(pod.cx + plx * cPod + plz * sPod, wy + 0.24, pod.cz - plx * sPod + plz * cPod);
+      dummy.rotation.set(0.22, pod.rotY + Math.atan2(plx, plz), 0);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      podPillowMatrices.push(dummy.matrix.clone());
+    }
+
     dummy.position.set(pod.cx, wy + 0.2, pod.cz);
     dummy.rotation.set(0, pod.rotY, 0);
     dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
     podTableMatrices.push(dummy.matrix.clone());
 
-    dummy.position.set(pod.cx, wy + 0.42, pod.cz);
+    dummy.position.set(pod.cx, wy + 0.44, pod.cz);
     dummy.rotation.set(0, pod.rotY, 0);
     dummy.scale.set(1, 1, 1);
     dummy.updateMatrix();
     podLanternMatrices.push(dummy.matrix.clone());
 
-    haloSpritePositions.push({ x: pod.cx, y: wy + 0.44, z: pod.cz, scale: 0.95 });
+    haloSpritePositions.push({ x: pod.cx, y: wy + 0.46, z: pod.cz, scale: 1.05 });
   }
 
-  buildInstancedBatch(new RoundedBoxGeometry(2.65, 0.34, 2.65, 2, 0.06), whiteFrameMat, podRimMatrices, false);
-  buildInstancedBatch(new RoundedBoxGeometry(2.12, 0.14, 2.12, 2, 0.05), ivoryFabricMat, podCushionMatrices, false);
-  buildInstancedBatch(new THREE.CylinderGeometry(0.46, 0.42, 0.18, 12), calacattaMat, podTableMatrices, false);
-  buildInstancedBatch(new THREE.CylinderGeometry(0.1, 0.12, 0.26, 10), warmAmberGlowMat, podLanternMatrices, false, false);
-  instancedBatchCount += 4;
+  const warmTerracottaMat = makeWorldBlitzMat('#e08e5a');
+  buildInstancedBatch(new RoundedBoxGeometry(2.65, 0.48, 2.65, 2, 0.06), whiteFrameMat, podRimMatrices, false, true);
+  buildInstancedBatch(new RoundedBoxGeometry(2.12, 0.14, 2.12, 2, 0.05), ivoryFabricMat, podCushionMatrices, false, true);
+  buildInstancedBatch(new RoundedBoxGeometry(0.36, 0.22, 0.36, 2, 0.06), warmTerracottaMat, podPillowMatrices, false, true);
+  buildInstancedBatch(new THREE.CylinderGeometry(0.46, 0.42, 0.18, 12), calacattaMat, podTableMatrices, false, true);
+  buildInstancedBatch(new THREE.CylinderGeometry(0.11, 0.13, 0.3, 10), warmAmberGlowMat, podLanternMatrices, false, false);
+  instancedBatchCount += 5;
 
   // ============================================================================
   // 10. SEAWARD WOVEN PARASOL SETS & TIMBER PENINSULA TURQUOISE LOUNGERS + PARASOLS
+  //     Scaled up to 3.65m parasol height so 3.31m avatars walk comfortably underneath!
   // ============================================================================
   const sandSetPoleMats: THREE.Matrix4[] = [];
   const sandSetCanopyMats: THREE.Matrix4[] = [];
   const sandLoungerMats: THREE.Matrix4[] = [];
+  const sandPillowMats: THREE.Matrix4[] = [];
   const poolLoungerMats: THREE.Matrix4[] = [];
+  const poolPillowMats: THREE.Matrix4[] = [];
   const poolParasolPoleMats: THREE.Matrix4[] = [];
   const poolParasolCanopyMats: THREE.Matrix4[] = [];
 
   for (const bs of mp.beachSets) {
     if (bs.variant === 'sand_woven') {
-      dummy.position.set(bs.cx, bs.elevY + 1.15, bs.cz);
+      dummy.position.set(bs.cx, bs.elevY + 1.82, bs.cz);
       dummy.rotation.set(0, bs.rotY, 0);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       sandSetPoleMats.push(dummy.matrix.clone());
 
-      dummy.position.set(bs.cx, bs.elevY + 2.25, bs.cz);
+      dummy.position.set(bs.cx, bs.elevY + 3.65, bs.cz);
       dummy.rotation.set(0, bs.rotY, 0);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       sandSetCanopyMats.push(dummy.matrix.clone());
 
-      const cosY = Math.cos(bs.rotY);
-      const sinY = Math.sin(bs.rotY);
-      for (const sideOff of [-0.62, 0.62]) {
-        dummy.position.set(
-          bs.cx + cosY * sideOff * 0.2 - sinY * sideOff,
-          bs.elevY + 0.16,
-          bs.cz + sinY * sideOff * 0.2 + cosY * sideOff,
-        );
-        dummy.rotation.set(0, bs.rotY, 0);
+      // Align 1.88m lounger length along East-West ocean axis (yaw ≈ 0) with twin beds spaced cleanly side-by-side
+      const loungerYaw = bs.rotY + Math.PI / 2;
+      const cosL = Math.cos(loungerYaw);
+      const sinL = Math.sin(loungerYaw);
+      for (const sideOff of [-0.6, 0.6]) {
+        const lx = bs.cx + sinL * sideOff;
+        const lz = bs.cz + cosL * sideOff;
+        dummy.position.set(lx, bs.elevY + 0.16, lz);
+        dummy.rotation.set(0, loungerYaw, 0);
         dummy.scale.set(1, 1, 1);
         dummy.updateMatrix();
         sandLoungerMats.push(dummy.matrix.clone());
+
+        // Raised backrest pillow on landward (-X) end so guests recline facing the ocean (+X)
+        dummy.position.set(lx - cosL * 0.64, bs.elevY + 0.36, lz + sinL * 0.64);
+        dummy.rotation.set(0, loungerYaw, -0.32);
+        dummy.scale.set(1, 1, 1);
+        dummy.updateMatrix();
+        sandPillowMats.push(dummy.matrix.clone());
       }
     } else {
-      // Twin turquoise loungers + Balinese woven parasol on the +0.46m Timber Sunbed Peninsula!
+      // Twin turquoise loungers facing East (+X, yaw=0) with 0.44m center aisle on the -0.54m Timber Sunbed Peninsula!
       for (const sideOff of [-0.58, 0.58]) {
-        dummy.position.set(bs.cx, bs.elevY + 0.13, bs.cz + sideOff);
-        dummy.rotation.set(0, bs.rotY, 0);
+        dummy.position.set(bs.cx, bs.elevY + 0.15, bs.cz + sideOff);
+        dummy.rotation.set(0, 0, 0);
         dummy.scale.set(1, 1, 1);
         dummy.updateMatrix();
         poolLoungerMats.push(dummy.matrix.clone());
+
+        dummy.position.set(bs.cx - 0.64, bs.elevY + 0.34, bs.cz + sideOff);
+        dummy.rotation.set(0, 0, -0.32);
+        dummy.scale.set(1, 1, 1);
+        dummy.updateMatrix();
+        poolPillowMats.push(dummy.matrix.clone());
       }
-      dummy.position.set(bs.cx - 0.15, bs.elevY + 1.15, bs.cz);
+      dummy.position.set(bs.cx - 0.15, bs.elevY + 1.82, bs.cz);
       dummy.rotation.set(0, bs.rotY, 0);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       poolParasolPoleMats.push(dummy.matrix.clone());
 
-      dummy.position.set(bs.cx - 0.15, bs.elevY + 2.25, bs.cz);
+      dummy.position.set(bs.cx - 0.15, bs.elevY + 3.65, bs.cz);
       dummy.rotation.set(0, bs.rotY, 0);
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
@@ -2265,22 +3562,286 @@ export function buildCoastalBeachClub3D(
     }
   }
   if (sandSetPoleMats.length > 0) {
-    buildInstancedBatch(new THREE.CylinderGeometry(0.045, 0.055, 2.4, 8), blackSteelMat, sandSetPoleMats, false);
-    buildInstancedBatch(new THREE.ConeGeometry(1.38, 0.62, 10), parasolStrawMat, sandSetCanopyMats, true);
-    buildInstancedBatch(new RoundedBoxGeometry(1.88, 0.24, 0.72, 2, 0.06), ivoryFabricMat, sandLoungerMats, false);
-    instancedBatchCount += 3;
+    buildInstancedBatch(new THREE.CylinderGeometry(0.055, 0.068, 3.64, 8), blackSteelMat, sandSetPoleMats, true, true);
+    buildInstancedBatch(new THREE.ConeGeometry(1.62, 0.74, 10), parasolStrawMat, sandSetCanopyMats, true, true);
+    buildInstancedBatch(new RoundedBoxGeometry(1.88, 0.32, 0.72, 2, 0.06), ivoryFabricMat, sandLoungerMats, false, true);
+    buildInstancedBatch(new RoundedBoxGeometry(0.48, 0.2, 0.62, 2, 0.05), whiteFrameMat, sandPillowMats, false, true);
+    instancedBatchCount += 4;
   }
   if (poolLoungerMats.length > 0) {
-    buildInstancedBatch(new RoundedBoxGeometry(1.85, 0.22, 0.72, 2, 0.06), turquoiseMeshMat, poolLoungerMats, false);
-    buildInstancedBatch(new THREE.CylinderGeometry(0.045, 0.055, 2.35, 8), blackSteelMat, poolParasolPoleMats, false);
-    buildInstancedBatch(new THREE.ConeGeometry(1.35, 0.58, 10), parasolStrawMat, poolParasolCanopyMats, true);
-    instancedBatchCount += 3;
+    buildInstancedBatch(new RoundedBoxGeometry(1.85, 0.3, 0.72, 2, 0.06), turquoiseMeshMat, poolLoungerMats, false, true);
+    buildInstancedBatch(new RoundedBoxGeometry(0.46, 0.18, 0.6, 2, 0.05), ivoryFabricMat, poolPillowMats, false, true);
+    buildInstancedBatch(new THREE.CylinderGeometry(0.055, 0.068, 3.64, 8), blackSteelMat, poolParasolPoleMats, true, true);
+    buildInstancedBatch(new THREE.ConeGeometry(1.58, 0.7, 10), parasolStrawMat, poolParasolCanopyMats, true, true);
+    instancedBatchCount += 4;
   }
 
   // ============================================================================
+  // 10B. SCULPTED ORGANIC COASTAL GRANITE BOULDERS, LAYERED REEF SHELVES & SHALLOW MARINE ECOSYSTEM
+  //      - Real pale-champagne beach sand & crystal-clear turquoise water rendered directly by CurvedPlanetGround & Ocean shaders (ZERO pasted sand planes!)
+  //      - Every boulder, reef outcrop, branching coral, tubular anemone, 9-blade seagrass clump, 5-arm starfish,
+  //        multi-leg coastal crab, sea urchin & swimming fish is grounded to exact `evaluateHarborSeabedDrop(x, z)`!
+  // ============================================================================
+  const coastalGraniteTex = trackTex(createCoastalGraniteBoulderTexture());
+  const coastalBoulderMat = makeWorldBlitzMat('#ffffff', coastalGraniteTex, 0.16);
+  const coastalReefRockMat = makeWorldBlitzMat('#d9e3e8', coastalGraniteTex, 0.14);
+  const reefBranchPinkMat = makeWorldBlitzMat('#e879a9', undefined, 0.14);
+  const reefBranchLilacMat = makeWorldBlitzMat('#8b7cf6', undefined, 0.14);
+  const reefTubeVioletMat = makeWorldBlitzMat('#6366f1', undefined, 0.14);
+  const reefTubeGoldMat = makeWorldBlitzMat('#eab308', undefined, 0.14);
+  const reefSeagrassMat = makeWorldBlitzMat('#2eb85c', undefined, 0.16);
+  const reefStarfishMat = makeWorldBlitzMat('#ea7c49', undefined, 0.12);
+  const shoreCrabMat = makeWorldBlitzMat('#d9463e', undefined, 0.12);
+  const reefUrchinMat = makeWorldBlitzMat('#4a2c38', undefined, 0.1);
+  const shallowFishMat = makeWorldBlitzMat('#183a54', undefined, 0.1);
+
+  const boulderMatsA: THREE.Matrix4[] = [];
+  const boulderMatsB: THREE.Matrix4[] = [];
+  const reefShelfMats: THREE.Matrix4[] = [];
+  const branchPinkMats: THREE.Matrix4[] = [];
+  const branchLilacMats: THREE.Matrix4[] = [];
+  const tubeVioletMats: THREE.Matrix4[] = [];
+  const tubeGoldMats: THREE.Matrix4[] = [];
+  const seagrassMats: THREE.Matrix4[] = [];
+  const starfishMats: THREE.Matrix4[] = [];
+  const crabMats: THREE.Matrix4[] = [];
+  const urchinMats: THREE.Matrix4[] = [];
+
+  interface ShallowFishSwimSpec {
+    cx: number;
+    cz: number;
+    y: number;
+    radiusX: number;
+    radiusZ: number;
+    speed: number;
+    phase: number;
+    scale: number;
+  }
+  const fishSwimSpecs: ShallowFishSwimSpec[] = [];
+
+  // 1. Sculpted smooth pale-grey coastal granite boulders along dry/wet shoreline & palm edges (100% clear of all 4 beach stairs!)
+  const shoreBoulderSpecs: readonly [number, number, number, number, number, number, boolean][] = [
+    // [x, z, sx, sy, sz, rotY, isVariantB]
+    [125.6, -88.5, 1.65, 1.05, 1.42, 0.4, false],
+    [127.3, -86.6, 0.78, 0.52, 0.72, 1.9, true],
+    [131.6, -79.2, 1.95, 1.15, 1.55, 0.9, false],
+    [132.8, -77.1, 0.85, 0.48, 0.76, 2.5, true],
+    [126.2, -56.2, 1.48, 0.88, 1.26, 1.2, true],
+    [133.2, -46.8, 1.15, 0.62, 1.02, 0.7, false],
+    [132.8, -32.4, 1.52, 0.84, 1.28, 2.1, true],
+    [127.8, -8.5, 1.45, 0.92, 1.22, 0.5, false], // cleanly clear of stair_beach_c (z=-17.2..-11.4)!
+    [132.2, 15.8, 1.68, 0.96, 1.42, 1.6, false],
+    [133.6, 17.6, 0.76, 0.44, 0.68, 2.8, true],
+    [126.8, 37.8, 1.78, 1.05, 1.52, 0.3, false],
+    [132.8, 39.8, 1.32, 0.72, 1.15, 1.4, true],
+  ];
+  for (const [bx, bz, sx, sy, sz, rotY, isB] of shoreBoulderSpecs) {
+    const bedY = evaluateHarborSeabedDrop(bx, bz);
+    dummy.position.set(bx, bedY + sy * 0.14, bz);
+    dummy.rotation.set(0, rotY, 0);
+    dummy.scale.set(sx, sy, sz);
+    dummy.updateMatrix();
+    (isB ? boulderMatsB : boulderMatsA).push(dummy.matrix.clone());
+  }
+
+  // 2. Layered Underwater Coral Reef Outcrops perched right in the crystal-clear turquoise shallows (x = 135.5..143.5)
+  //    Each reef shelf hosts multi-branch staghorn coral, hollow flared tubular anemones, swaying seagrass & sea urchins!
+  const reefOutcrops: readonly [number, number, number, number][] = [
+    // [x, z, scale, rotY]
+    [137.4, -71.5, 1.15, 0.35],
+    [139.2, -55.0, 1.32, -0.42],
+    [136.8, -39.5, 1.05, 0.85],
+    [139.8, -23.5, 1.38, 0.18],
+    [137.2, -6.5, 1.18, -0.62],
+    [140.2, 8.5, 1.35, 0.48],
+    [137.6, 23.5, 1.22, -0.28],
+    [139.6, 35.5, 1.28, 0.72],
+  ];
+  for (let i = 0; i < reefOutcrops.length; i++) {
+    const [rx, rz, sc, rotY] = reefOutcrops[i];
+    const bedY = evaluateHarborSeabedDrop(rx, rz);
+    dummy.position.set(rx, bedY + 0.04, rz);
+    dummy.rotation.set(0, rotY, 0);
+    dummy.scale.set(sc, sc, sc);
+    dummy.updateMatrix();
+    reefShelfMats.push(dummy.matrix.clone());
+
+    const reefTopY = bedY + 0.34 * sc;
+    // Branching pink & lilac staghorn coral gardens atop the reef shelf
+    for (let c = 0; c < 3; c++) {
+      const ang = rotY + (c / 3) * Math.PI * 2 + 0.4;
+      const cx = rx + Math.cos(ang) * 0.65 * sc;
+      const cz = rz + Math.sin(ang) * 0.45 * sc;
+      dummy.position.set(cx, reefTopY - 0.04, cz);
+      dummy.rotation.set(0, ang * 1.4, 0);
+      dummy.scale.setScalar(0.95 + (c % 2) * 0.32);
+      dummy.updateMatrix();
+      ((i + c) % 2 === 0 ? branchPinkMats : branchLilacMats).push(dummy.matrix.clone());
+    }
+
+    // Hollow flared tubular violet & gold sea anemones on & beside the reef shelf
+    for (let t = 0; t < 2; t++) {
+      const ang = rotY + t * Math.PI + 0.9;
+      const tx = rx + Math.cos(ang) * 0.92 * sc;
+      const tz = rz + Math.sin(ang) * 0.62 * sc;
+      const tBedY = t === 0 ? reefTopY - 0.08 : evaluateHarborSeabedDrop(tx, tz);
+      dummy.position.set(tx, tBedY, tz);
+      dummy.rotation.set(0, ang, 0);
+      dummy.scale.setScalar(1.05 + t * 0.25);
+      dummy.updateMatrix();
+      ((i + t) % 2 === 0 ? tubeVioletMats : tubeGoldMats).push(dummy.matrix.clone());
+    }
+
+    // Lush arched multi-blade seagrass clumps & spiny sea urchins tucked around the reef base
+    for (let g = 0; g < 3; g++) {
+      const ang = rotY + g * 2.1 + 0.2;
+      const gx = rx + Math.cos(ang) * (1.45 * sc);
+      const gz = rz + Math.sin(ang) * (1.15 * sc);
+      const gBedY = evaluateHarborSeabedDrop(gx, gz);
+      dummy.position.set(gx, gBedY - 0.02, gz);
+      dummy.rotation.set(0, ang, 0);
+      dummy.scale.setScalar(1.0 + (g % 2) * 0.35);
+      dummy.updateMatrix();
+      seagrassMats.push(dummy.matrix.clone());
+    }
+    const ux = rx - Math.cos(rotY) * 1.55 * sc;
+    const uz = rz + Math.sin(rotY) * 1.1 * sc;
+    dummy.position.set(ux, evaluateHarborSeabedDrop(ux, uz), uz);
+    dummy.rotation.set(0, i * 1.3, 0);
+    dummy.scale.setScalar(1.15);
+    dummy.updateMatrix();
+    urchinMats.push(dummy.matrix.clone());
+
+    // Smooth stepping-stone submerged pebbles near each reef (like reference center-left)
+    for (let p = 0; p < 2; p++) {
+      const px = rx - 1.9 - p * 0.85;
+      const pz = rz + (p === 0 ? 1.6 : -1.4);
+      const pBedY = evaluateHarborSeabedDrop(px, pz);
+      dummy.position.set(px, pBedY + 0.04, pz);
+      dummy.rotation.set(0, i + p * 1.7, 0);
+      dummy.scale.set(0.65 + p * 0.22, 0.32, 0.56 + p * 0.16);
+      dummy.updateMatrix();
+      boulderMatsB.push(dummy.matrix.clone());
+    }
+
+    // Small schools of streamlined shallow-water fish circling gently around each turquoise reef
+    for (let f = 0; f < 3; f++) {
+      const fBedY = evaluateHarborSeabedDrop(rx + 0.5, rz);
+      const swimY = Math.min(EAST_WATER_SURFACE_Y - 0.14, fBedY + 0.26 + f * 0.09);
+      fishSwimSpecs.push({
+        cx: rx + (f - 1) * 0.9,
+        cz: rz + (f % 2 === 0 ? 1.2 : -1.2),
+        y: swimY,
+        radiusX: 1.15 + f * 0.35,
+        radiusZ: 1.65 + f * 0.45,
+        speed: (0.42 + (f % 3) * 0.14) * (i % 2 === 0 ? 1 : -1),
+        phase: i * 1.35 + f * 2.1,
+        scale: 0.9 + (f % 2) * 0.28,
+      });
+    }
+  }
+
+  // 3. Sculpted 5-Arm Starfish & Multi-Leg Red Coastal Crabs along the pale wet shoreline sand!
+  for (let z = -82; z <= 38; z += 11.5) {
+    const seed = Math.abs(Math.round(z * 7));
+    // Sculpted red beach crab on damp shoreline sand
+    const crabX = 128.8 + (seed % 5) * 0.88;
+    const crabZ = z + 1.8;
+    dummy.position.set(crabX, evaluateHarborSeabedDrop(crabX, crabZ) + 0.01, crabZ);
+    dummy.rotation.set(0, (seed % 9) * 0.7, 0);
+    dummy.scale.setScalar(1.05 + (seed % 3) * 0.15);
+    dummy.updateMatrix();
+    crabMats.push(dummy.matrix.clone());
+
+    // Organic 5-arm coral starfish in shallow swash / wet sand margin (guaranteed clear of submerged reef boulders!)
+    const starX = 132.2 + (seed % 3) * 0.75;
+    const starZ = z - 2.6;
+    const clearOfReefs = reefOutcrops.every(([rx, rz]) => Math.hypot(starX - rx, starZ - rz) > 3.4);
+    if (clearOfReefs) {
+      dummy.position.set(starX, evaluateHarborSeabedDrop(starX, starZ) + 0.015, starZ);
+      dummy.rotation.set(0, seed * 1.1, 0);
+      dummy.scale.setScalar(1.15 + (seed % 2) * 0.25);
+      dummy.updateMatrix();
+      starfishMats.push(dummy.matrix.clone());
+    }
+  }
+
+  // Build instanced batches using our sculpted organic multi-part BufferGeometries!
+  if (boulderMatsA.length > 0) {
+    buildInstancedBatch(createSculptedCoastalBoulderGeometry(0), coastalBoulderMat, boulderMatsA, true, true);
+    instancedBatchCount++;
+  }
+  if (boulderMatsB.length > 0) {
+    buildInstancedBatch(createSculptedCoastalBoulderGeometry(1), coastalBoulderMat, boulderMatsB, true, true);
+    instancedBatchCount++;
+  }
+  if (reefShelfMats.length > 0) {
+    buildInstancedBatch(createReefShelfGeometry(), coastalReefRockMat, reefShelfMats, false, true);
+    instancedBatchCount++;
+  }
+  if (branchPinkMats.length > 0) {
+    buildInstancedBatch(createBranchingCoralGeometry(), reefBranchPinkMat, branchPinkMats, false, true);
+    instancedBatchCount++;
+  }
+  if (branchLilacMats.length > 0) {
+    buildInstancedBatch(createBranchingCoralGeometry(), reefBranchLilacMat, branchLilacMats, false, true);
+    instancedBatchCount++;
+  }
+  if (tubeVioletMats.length > 0) {
+    buildInstancedBatch(createTubeCoralClusterGeometry(), reefTubeVioletMat, tubeVioletMats, false, true);
+    instancedBatchCount++;
+  }
+  if (tubeGoldMats.length > 0) {
+    buildInstancedBatch(createTubeCoralClusterGeometry(), reefTubeGoldMat, tubeGoldMats, false, true);
+    instancedBatchCount++;
+  }
+  if (seagrassMats.length > 0) {
+    const seagrassGeo = createSeagrassClumpGeometry();
+    const seagrassSideMat = trackMat(
+      new THREE.MeshStandardMaterial({
+        color: '#2eb85c',
+        roughness: 0.65,
+        side: THREE.DoubleSide,
+      }),
+    );
+    void reefSeagrassMat;
+    buildInstancedBatch(seagrassGeo, seagrassSideMat, seagrassMats, false, true);
+    instancedBatchCount++;
+  }
+  if (starfishMats.length > 0) {
+    buildInstancedBatch(createStarfishGeometry(), reefStarfishMat, starfishMats, false, true);
+    instancedBatchCount++;
+  }
+  if (crabMats.length > 0) {
+    buildInstancedBatch(createCoastalCrabGeometry(), shoreCrabMat, crabMats, true, true);
+    instancedBatchCount++;
+  }
+  if (urchinMats.length > 0) {
+    buildInstancedBatch(createSeaUrchinGeometry(), reefUrchinMat, urchinMats, false, true);
+    instancedBatchCount++;
+  }
+  const shallowFishInitMats = fishSwimSpecs.map((f) => {
+    dummy.position.set(f.cx, f.y, f.cz);
+    dummy.rotation.set(0, f.phase, 0);
+    dummy.scale.setScalar(f.scale);
+    dummy.updateMatrix();
+    return dummy.matrix.clone();
+  });
+  const shallowFishInst =
+    shallowFishInitMats.length > 0
+      ? buildInstancedBatch(createShallowFishGeometry(), shallowFishMat, shallowFishInitMats, false, false)
+      : null;
+  if (shallowFishInst) {
+    instancedBatchCount++;
+  }
+  const fishAnimDummy = new THREE.Object3D();
+
+  // ============================================================================
   // 11. CRISSCROSS CATENARY FESTOON BULB GARLANDS (`InstancedMesh` + Halos)
+  //     Deduplicated poles anchored 1:1 to exact ground elevation via evaluateBeachClubElevation!
   // ============================================================================
   const festoonPoleMatrices: THREE.Matrix4[] = [];
+  const seenFestoonPoles = new Set<string>();
   const festoonBulbMatrices: THREE.Matrix4[] = [];
   const wirePoints: number[] = [];
   let festoonBulbCount = 0;
@@ -2290,13 +3851,17 @@ export function buildCoastalBeachClub3D(
       [span.ax, span.ay, span.az],
       [span.bx, span.by, span.bz],
     ] as const) {
-      const poleBaseY = px >= 112.0 ? -1.04 : px >= 99.6 ? -0.62 : 0.6;
-      const poleH = Math.max(2.5, py - poleBaseY);
-      dummy.position.set(px, poleBaseY + poleH * 0.5, pz);
-      dummy.rotation.set(0, 0, 0);
-      dummy.scale.set(1, poleH / 4.5, 1);
-      dummy.updateMatrix();
-      festoonPoleMatrices.push(dummy.matrix.clone());
+      const poleKey = `${Math.round(px * 10)}_${Math.round(pz * 10)}`;
+      if (!seenFestoonPoles.has(poleKey)) {
+        seenFestoonPoles.add(poleKey);
+        const poleBaseY = evaluateBeachClubElevation(px, pz) - 0.08;
+        const poleH = Math.max(2.5, py - poleBaseY);
+        dummy.position.set(px, poleBaseY + poleH * 0.5, pz);
+        dummy.rotation.set(0, 0, 0);
+        dummy.scale.set(1, poleH / 4.5, 1);
+        dummy.updateMatrix();
+        festoonPoleMatrices.push(dummy.matrix.clone());
+      }
     }
 
     const cableSubdivs = 14;
@@ -2332,7 +3897,7 @@ export function buildCoastalBeachClub3D(
   }
 
   if (festoonPoleMatrices.length > 0) {
-    buildInstancedBatch(new THREE.CylinderGeometry(0.055, 0.07, 4.5, 8), blackSteelMat, festoonPoleMatrices, false);
+    buildInstancedBatch(new THREE.CylinderGeometry(0.055, 0.07, 4.5, 8), blackSteelMat, festoonPoleMatrices, true, true);
     instancedBatchCount += 1;
   }
   if (wirePoints.length > 0) {
@@ -2482,23 +4047,40 @@ export function buildCoastalBeachClub3D(
 
   const palmTrunkMatrices: THREE.Matrix4[] = [];
   const palmFrondMatrices: THREE.Matrix4[] = [];
+  const palmRingMatrices: THREE.Matrix4[] = [];
 
   for (const palm of mp.palms) {
     const kaiScale = palm.scale * 1.38;
-    dummy.position.set(palm.x, palm.baseY - 0.04, palm.z);
+    dummy.position.set(palm.x, palm.baseY - 0.06, palm.z);
     dummy.rotation.set(0, palm.rotY, 0);
     dummy.scale.setScalar(kaiScale);
     dummy.updateMatrix();
     palmTrunkMatrices.push(dummy.matrix.clone());
     palmFrondMatrices.push(dummy.matrix.clone());
+
+    // Low limestone planter collar grounding each palm base cleanly on promenade & terraced decks
+    dummy.position.set(palm.x, palm.baseY + 0.04, palm.z);
+    dummy.rotation.set(0, 0, 0);
+    dummy.scale.set(1, 1, 1);
+    dummy.updateMatrix();
+    palmRingMatrices.push(dummy.matrix.clone());
   }
+  const palmRingMat = makeWorldBlitzMat('#e8dfd0', limestoneTex, 0.16);
   const palmTrunkInst = buildInstancedBatch(trunkGeo, palmTrunkMat, palmTrunkMatrices, true, true);
   const palmCollarInst = buildInstancedBatch(collarAndNutsGeo, palmCollarMat, palmTrunkMatrices, false, true);
   const palmFrondInst = buildInstancedBatch(frondsGeo, palmFrondShaderMat, palmFrondMatrices, true, false);
+  const palmRingInst = buildInstancedBatch(
+    new THREE.CylinderGeometry(0.56, 0.62, 0.14, 12),
+    palmRingMat,
+    palmRingMatrices,
+    false,
+    true,
+  );
   void palmTrunkInst;
   void palmCollarInst;
   void palmFrondInst;
-  instancedBatchCount += 3;
+  void palmRingInst;
+  instancedBatchCount += 4;
 
   bakeStaticGroupMeshes(staticClubGroup, { minShadowCasterSpan: 0.75 });
 
@@ -2517,6 +4099,8 @@ export function buildCoastalBeachClub3D(
     poolCyanLedMat.emissiveIntensity = 0.25 + clubNightMix * 2.15;
     warmAmberGlowMat.emissiveIntensity = 0.35 + clubNightMix * 2.25;
     djPurpleWashMat.emissiveIntensity = 0.35 + clubNightMix * 1.85;
+    djLedWallMat.emissiveIntensity = 0.68 + clubNightMix * 1.15 + Math.sin(timeSec * 2.4) * 0.08;
+    djLinearLightMat.emissiveIntensity = 1.15 + clubNightMix * 1.85;
     aquaBoxGlassMat.emissiveIntensity = 0.2 + clubNightMix * 1.45;
     skylightPanelMat.emissiveIntensity = 0.18 + clubNightMix * 1.4;
     waterfallCurtainMat.emissiveIntensity = 0.28 + clubNightMix * 1.35;
@@ -2534,6 +4118,22 @@ export function buildCoastalBeachClub3D(
       const phase = timeSec * 1.15 + i * 1.1;
       djSpotPivots[i].rotation.z = Math.sin(phase) * 0.28;
       djSpotPivots[i].rotation.x = Math.cos(phase * 0.8) * 0.2 + 0.12;
+    }
+    if (shallowFishInst) {
+      for (let i = 0; i < fishSwimSpecs.length; i++) {
+        const f = fishSwimSpecs[i];
+        const a = f.phase + timeSec * f.speed;
+        const fx = f.cx + Math.cos(a) * f.radiusX;
+        const fz = f.cz + Math.sin(a) * f.radiusZ;
+        const vx = -Math.sin(a) * f.radiusX * f.speed;
+        const vz = Math.cos(a) * f.radiusZ * f.speed;
+        fishAnimDummy.position.set(fx, f.y + Math.sin(timeSec * 2.2 + f.phase) * 0.025, fz);
+        fishAnimDummy.rotation.set(0, Math.atan2(vx, vz) + Math.sin(timeSec * 8.5 + i) * 0.06, 0);
+        fishAnimDummy.scale.setScalar(f.scale);
+        fishAnimDummy.updateMatrix();
+        shallowFishInst.setMatrixAt(i, fishAnimDummy.matrix);
+      }
+      shallowFishInst.instanceMatrix.needsUpdate = true;
     }
   };
 

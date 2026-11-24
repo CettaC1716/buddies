@@ -4,6 +4,8 @@ import {
   ArrowUpDown,
   Camera,
   Check,
+  ChevronDown,
+  ChevronUp,
   Crown,
   Download,
   Eye,
@@ -33,6 +35,11 @@ import {
   X,
 } from 'lucide-react';
 import studioBackdropUrl from '../assets/images/wardrobe_dressing_room_studio_1795152181264.jpg';
+import { useAdaptiveViewport } from '../lib/useAdaptiveViewport';
+import {
+  computeWardrobeStudioLayout,
+  type WardrobeStudioAdaptiveLayout,
+} from '../game/buddiesAdaptiveViewportRules';
 import {
   applyBuddyRigBodyShape,
   applyCitizenClothingTint,
@@ -49,6 +56,7 @@ import {
   drawStylizedEyeOnCanvas,
   drawStylizedEyebrowOnCanvas,
   drawStylizedLipsOnCanvas,
+  drawStylizedNoseOnCanvas,
 } from '../game/buddiesFaceCompositor';
 import {
   EMPTY_WARDROBE_DRAFT,
@@ -244,12 +252,45 @@ const LipGlyphIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+const NoseGlyphIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+    <path
+      d="M12 4V13.8C12 15.6 10.6 17 8.8 17C7.3 17 6.2 16 6.2 15"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+    />
+    <path
+      d="M12 13.8C12 15.6 13.4 17 15.2 17C16.7 17 17.8 16 17.8 15"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
+const TuningGlyphIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+    <path d="M4 6H14M18 6H20M14 4V8M4 18H6M10 18H20M10 16V20M4 12H10M14 12H20M10 10V14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+  </svg>
+);
+
+const HeadScaleGlyphIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+    <circle cx="12" cy="10" r="5.5" stroke="currentColor" strokeWidth="1.8" />
+    <path d="M7 20C8.2 18 9.8 17 12 17C14.2 17 15.8 18 17 20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+  </svg>
+);
+
 const FACE_RAIL_ITEMS: ReadonlyArray<{
   id: WardrobeFaceCategoryId;
   label: string;
   Icon: React.FC<{ className?: string }>;
   maleOnly?: boolean;
 }> = [
+  { id: 'face_tuning', label: 'Tuning', Icon: TuningGlyphIcon },
+  { id: 'face_nose', label: 'Nose', Icon: NoseGlyphIcon },
+  { id: 'face_head', label: 'Head', Icon: HeadScaleGlyphIcon },
   { id: 'face_eyes', label: 'Eyes', Icon: Eye },
   { id: 'face_brows', label: 'Brows', Icon: BrowGlyphIcon },
   { id: 'face_lips', label: 'Lips', Icon: LipGlyphIcon },
@@ -295,6 +336,9 @@ function FaceFeaturePreviewGlyph({ item }: { item: WardrobeCatalogItem }) {
     } else if (item.slot === 'face_lips' && item.lipStyle) {
       ctx.translate(w * 0.5, h * 0.52);
       drawStylizedLipsOnCanvas(ctx, w * 0.32, h * 0.16, item.lipStyle);
+    } else if (item.slot === 'face_nose') {
+      ctx.translate(w * 0.5, h * 0.5);
+      drawStylizedNoseOnCanvas(ctx, w * 0.34, h * 0.38, item.id, [233, 197, 171], true);
     }
     ctx.restore();
   }, [item]);
@@ -433,6 +477,20 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
   }, [isOpen]);
   const [webglLost, setWebglLost] = useState<boolean>(false);
   const [isAvatarLoading, setIsAvatarLoading] = useState<boolean>(true);
+  const adaptiveViewport = useAdaptiveViewport();
+  const [isPortraitSheetCollapsed, setIsPortraitSheetCollapsed] = useState<boolean>(false);
+  const studioLayout: WardrobeStudioAdaptiveLayout = useMemo(
+    () => computeWardrobeStudioLayout(adaptiveViewport, isPortraitSheetCollapsed),
+    [adaptiveViewport, isPortraitSheetCollapsed],
+  );
+  const studioLayoutRef = useRef<WardrobeStudioAdaptiveLayout>(studioLayout);
+  studioLayoutRef.current = studioLayout;
+
+  useEffect(() => {
+    if (!isOpen || !studioLayout.isPortraitSheet) {
+      setIsPortraitSheetCollapsed(false);
+    }
+  }, [isOpen, studioLayout.isPortraitSheet]);
 
   const stageHostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -723,14 +781,17 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(32, width / height, 0.1, 40);
 
-    // Offset optical center left so avatar frames naturally in the open window space beside the right glass panel
-    const applyCameraViewOffset = (w: number, h: number) => {
-      const shiftRightPx = w >= 960 ? Math.round(w * 0.145) : 0;
+    // Offset optical center dynamically for Desktop/Tablet split (shift left) and Portrait bottom sheet (shift up)
+    let stageWidth = width;
+    let stageHeight = height;
+    let smoothViewOffsetX = studioLayoutRef.current.cameraShiftRightPx;
+    let smoothViewOffsetY = studioLayoutRef.current.cameraShiftDownPx;
+    const applyCameraViewOffset = (w: number, h: number, offX: number, offY: number) => {
       camera.aspect = w / h;
-      camera.setViewOffset(w, h, shiftRightPx, 0, w, h);
+      camera.setViewOffset(w, h, Math.round(offX), Math.round(offY), w, h);
       camera.updateProjectionMatrix();
     };
-    applyCameraViewOffset(width, height);
+    applyCameraViewOffset(stageWidth, stageHeight, smoothViewOffsetX, smoothViewOffsetY);
 
     // Three-point warm dressing-room studio lighting matching the ring light on left + golden accent on right
     const hemiLight = new THREE.HemisphereLight('#fff7ee', '#45323c', 1.38);
@@ -839,19 +900,60 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     canvas.addEventListener('webglcontextlost', onContextLost);
     canvas.addEventListener('webglcontextrestored', onContextRestored);
 
+    const activePointers = new Map<number, { x: number; y: number }>();
+    let lastPinchDist: number | null = null;
+    const getPinchDistance = (): number | null => {
+      if (activePointers.size < 2) return null;
+      const pts = Array.from(activePointers.values());
+      return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    };
+
     const onPointerDown = (e: PointerEvent) => {
-      dragStateRef.current.dragging = true;
-      dragStateRef.current.lastX = e.clientX;
+      activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       canvas.setPointerCapture?.(e.pointerId);
+      if (activePointers.size === 1) {
+        dragStateRef.current.dragging = true;
+        dragStateRef.current.lastX = e.clientX;
+        lastPinchDist = null;
+      } else if (activePointers.size >= 2) {
+        dragStateRef.current.dragging = false;
+        lastPinchDist = getPinchDistance();
+      }
     };
     const onPointerMove = (e: PointerEvent) => {
+      if (activePointers.has(e.pointerId)) {
+        activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+      if (activePointers.size >= 2) {
+        const dist = getPinchDistance();
+        if (dist !== null && lastPinchDist !== null) {
+          const delta = lastPinchDist - dist;
+          dragStateRef.current.zoomDelta = THREE.MathUtils.clamp(
+            dragStateRef.current.zoomDelta + delta * 0.0065,
+            -0.85,
+            1.6,
+          );
+        }
+        lastPinchDist = dist;
+        return;
+      }
       if (!dragStateRef.current.dragging) return;
       const dx = e.clientX - dragStateRef.current.lastX;
       dragStateRef.current.lastX = e.clientX;
       dragStateRef.current.targetYaw += dx * 0.011;
     };
     const onPointerUp = (e: PointerEvent) => {
-      dragStateRef.current.dragging = false;
+      activePointers.delete(e.pointerId);
+      if (activePointers.size < 2) {
+        lastPinchDist = null;
+      }
+      if (activePointers.size === 1) {
+        const remaining = Array.from(activePointers.values())[0];
+        dragStateRef.current.dragging = true;
+        dragStateRef.current.lastX = remaining.x;
+      } else if (activePointers.size === 0) {
+        dragStateRef.current.dragging = false;
+      }
       try {
         canvas.releasePointerCapture?.(e.pointerId);
       } catch {
@@ -869,17 +971,22 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     canvas.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
     canvas.addEventListener('wheel', onWheel, { passive: false });
 
     const onResize = () => {
       if (!stageHostRef.current || disposed) return;
       const rw = Math.max(320, stageHostRef.current.clientWidth || window.innerWidth);
       const rh = Math.max(240, stageHostRef.current.clientHeight || window.innerHeight);
+      stageWidth = rw;
+      stageHeight = rh;
       renderer.setSize(rw, rh, false);
-      applyCameraViewOffset(rw, rh);
+      applyCameraViewOffset(rw, rh, smoothViewOffsetX, smoothViewOffsetY);
       setBlitzStylizedCharViewportSize(rw, rh);
     };
     window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    window.visualViewport?.addEventListener('resize', onResize);
 
     const curSpec = CAMERA_FRAMING_SPECS[framingRef.current];
     let smoothDist = curSpec.dist;
@@ -926,15 +1033,41 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       turntable.rotation.y = st.currentYaw;
 
       const targetSpec = CAMERA_FRAMING_SPECS[framingRef.current];
+      const layoutNow = studioLayoutRef.current;
       const desiredDist = THREE.MathUtils.clamp(targetSpec.dist + st.currentZoomDelta, 1.45, 7.2);
       smoothDist = THREE.MathUtils.damp(smoothDist, desiredDist, 6.8, dt);
       smoothCamY = THREE.MathUtils.damp(smoothCamY, targetSpec.camY, 6.8, dt);
       smoothTargetY = THREE.MathUtils.damp(smoothTargetY, targetSpec.targetY, 6.8, dt);
-      smoothFov = THREE.MathUtils.damp(smoothFov, targetSpec.fov, 6.8, dt);
+      smoothFov = THREE.MathUtils.damp(
+        smoothFov,
+        targetSpec.fov + layoutNow.cameraFovDelta,
+        6.8,
+        dt,
+      );
 
-      if (Math.abs(camera.fov - smoothFov) > 0.05) {
+      const prevOffX = smoothViewOffsetX;
+      const prevOffY = smoothViewOffsetY;
+      smoothViewOffsetX = THREE.MathUtils.damp(
+        smoothViewOffsetX,
+        layoutNow.cameraShiftRightPx,
+        9.0,
+        dt,
+      );
+      smoothViewOffsetY = THREE.MathUtils.damp(
+        smoothViewOffsetY,
+        layoutNow.cameraShiftDownPx,
+        9.0,
+        dt,
+      );
+
+      const fovChanged = Math.abs(camera.fov - smoothFov) > 0.05;
+      const offsetChanged =
+        Math.abs(smoothViewOffsetX - prevOffX) > 0.25 ||
+        Math.abs(smoothViewOffsetY - prevOffY) > 0.25;
+
+      if (fovChanged || offsetChanged) {
         camera.fov = smoothFov;
-        camera.updateProjectionMatrix();
+        applyCameraViewOffset(stageWidth, stageHeight, smoothViewOffsetX, smoothViewOffsetY);
       }
       camera.position.set(0, smoothCamY, smoothDist);
       camera.lookAt(0, smoothTargetY, 0);
@@ -942,6 +1075,15 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       const ctrl = studioRig.customGlbController;
       if (ctrl) {
         ctrl.mixer.update(dt);
+        const head = ctrl.bones.get('Head');
+        if (head) {
+          const rawHeadScale = draftRef.current?.headScale ?? 1.0;
+          const targetHeadScale =
+            typeof rawHeadScale === 'number' && Number.isFinite(rawHeadScale)
+              ? Math.max(0.78, Math.min(1.06, rawHeadScale))
+              : 1.0;
+          head.scale.setScalar(targetHeadScale);
+        }
 
         // Live procedural dance & emote pose overlay driven by Style -> Dance selection
         const danceCfg = activeDanceRef.current;
@@ -1014,8 +1156,11 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       disposed = true;
       window.cancelAnimationFrame(rafId);
       window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+      window.visualViewport?.removeEventListener('resize', onResize);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
       canvas.removeEventListener('pointerdown', onPointerDown);
       canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('webglcontextlost', onContextLost);
@@ -1036,14 +1181,15 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, characterGender]);
 
-  // Live multi-slot modular outfit, body shape morphs & clothing dye sync whenever draft updates
+  // Async modular GLB garment swap — runs ONLY when modular garment slot IDs change
   useEffect(() => {
     if (!isOpen) return;
     const rig = rigRef.current;
     if (!rig || !rig.customGlbController) return;
     let cancelled = false;
     (async () => {
-      const baseUrls = resolveWardrobeDraftToModularOutfitUrls(draft, characterGender);
+      const currentDraft = draftRef.current;
+      const baseUrls = resolveWardrobeDraftToModularOutfitUrls(currentDraft, characterGender);
       const previewBare =
         activeBottomTab === 'outfit' && activeCategory === 'underwear' && underwearPreviewBare;
       const urls = {
@@ -1052,14 +1198,15 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       };
       await setBuddyRigModularOutfitUrls(rig, urls);
       if (cancelled) return;
-      applyBuddyRigBodyShape(rig, resolveWardrobeDraftBodyShape(draft));
+      const latestDraft = draftRef.current;
+      applyBuddyRigBodyShape(rig, resolveWardrobeDraftBodyShape(latestDraft));
       applyBuddyRigFaceCustomization(
         rig,
-        resolveWardrobeDraftFaceCustomization(draft, characterGender),
+        resolveWardrobeDraftFaceCustomization(latestDraft, characterGender),
         characterGender,
       );
-      if (draft.clothingTintHex) {
-        applyCitizenClothingTint(rig, draft.clothingTintHex, 0.45);
+      if (latestDraft.clothingTintHex) {
+        applyCitizenClothingTint(rig, latestDraft.clothingTintHex, 0.45);
       } else {
         applyCitizenClothingTint(rig, '#ffffff', 0.0);
       }
@@ -1069,12 +1216,59 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     };
   }, [
     isOpen,
-    draft,
+    draft.setId,
+    draft.topId,
+    draft.bottomsId,
+    draft.shoesId,
+    draft.hairId,
+    draft.hideOuterForUnderwear,
     characterGender,
     externalCatalogRevision,
     activeBottomTab,
     activeCategory,
     underwearPreviewBare,
+  ]);
+
+  // Instant 60 FPS synchronous sync for Face Tuning, Nose, Makeup, Body Shape, Head Scale & Dye
+  useEffect(() => {
+    if (!isOpen) return;
+    const rig = rigRef.current;
+    if (!rig || !rig.customGlbController) return;
+    applyBuddyRigBodyShape(rig, resolveWardrobeDraftBodyShape(draft));
+    applyBuddyRigFaceCustomization(
+      rig,
+      resolveWardrobeDraftFaceCustomization(draft, characterGender),
+      characterGender,
+    );
+    if (draft.clothingTintHex) {
+      applyCitizenClothingTint(rig, draft.clothingTintHex, 0.45);
+    } else {
+      applyCitizenClothingTint(rig, '#ffffff', 0.0);
+    }
+  }, [
+    isOpen,
+    characterGender,
+    externalCatalogRevision,
+    draft.bodyShapeId,
+    draft.headScale,
+    draft.eyeStyleId,
+    draft.browStyleId,
+    draft.lipStyleId,
+    draft.eyeshadowId,
+    draft.blushId,
+    draft.facepaintId,
+    draft.beardId,
+    draft.underwearId,
+    draft.corewearId,
+    draft.noseStyleId,
+    draft.lipScale,
+    draft.lipOffsetY,
+    draft.eyeSpacing,
+    draft.eyeTiltDeg,
+    draft.eyeScale,
+    draft.browOffsetY,
+    draft.browTiltDeg,
+    draft.clothingTintHex,
   ]);
 
   // Animation Set (Idle/Walk/Run/Sit preview), Dance, Pose & Action sync inside the live studio
@@ -1176,7 +1370,8 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       item.slot === 'face_eyeshadow' ||
       item.slot === 'face_blush' ||
       item.slot === 'face_facepaint' ||
-      item.slot === 'face_beard'
+      item.slot === 'face_beard' ||
+      item.slot === 'face_nose'
     ) {
       setCameraFraming('face');
     }
@@ -1266,7 +1461,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
 
       const dataUrl = out.toDataURL('image/jpeg', 0.88);
       window.localStorage.setItem(AVATAR_PHOTO_STORAGE_KEY, dataUrl);
-      showNotice('Studio snapshot saved to your Profile Avatar');
+      showNotice('Photo saved to your Profile Avatar');
     } catch {
       showNotice('Could not save snapshot on this browser');
     }
@@ -1328,10 +1523,83 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
         eyeStyleId: null,
         browStyleId: null,
         lipStyleId: null,
+        eyeshadowId: null,
+        blushId: null,
+        facepaintId: null,
+        beardId: null,
+        noseStyleId: 'face_nose_default',
+        lipScale: 1.0,
+        lipOffsetY: 0,
+        eyeSpacing: 0,
+        eyeTiltDeg: 0,
+        eyeScale: 1.0,
+        browOffsetY: 0,
+        browTiltDeg: 0,
+        headScale: 1.0,
       }),
     );
     showNotice('Reset face to Natural Starter');
   }, [showNotice]);
+
+  const handleResetFaceTuning = useCallback(() => {
+    soundEngine.playUiClick();
+    setHistory((prev) =>
+      pushWardrobeDraft(prev, {
+        ...prev.present,
+        lipScale: 1.0,
+        lipOffsetY: 0,
+        eyeSpacing: 0,
+        eyeTiltDeg: 0,
+        eyeScale: 1.0,
+        browOffsetY: 0,
+        browTiltDeg: 0,
+      }),
+    );
+    showNotice('Reset face fine-tuning');
+  }, [showNotice]);
+
+  const handleResetHeadScale = useCallback(() => {
+    soundEngine.playUiClick();
+    setHistory((prev) =>
+      pushWardrobeDraft(prev, {
+        ...prev.present,
+        headScale: 1.0,
+      }),
+    );
+    showNotice('Reset head scale to 1.00x');
+  }, [showNotice]);
+
+  const sliderDragAnchorRef = useRef<WardrobeOutfitDraft | null>(null);
+  const beginSliderDrag = useCallback(() => {
+    sliderDragAnchorRef.current = { ...draftRef.current };
+  }, []);
+  const endSliderDrag = useCallback(() => {
+    sliderDragAnchorRef.current = null;
+  }, []);
+
+  const updateDraftTuning = useCallback(
+    (key: keyof WardrobeOutfitDraft, val: number | string | null, liveDrag = false) => {
+      setHistory((prev) => {
+        const nextPresent: WardrobeOutfitDraft = {
+          ...prev.present,
+          [key]: val,
+        };
+        if (liveDrag && sliderDragAnchorRef.current) {
+          // Keep ONE clean undo entry for the whole slider drag instead of flooding all 25 slots
+          const anchor = sliderDragAnchorRef.current;
+          const lastPast = prev.past[prev.past.length - 1];
+          const pastHasAnchor = lastPast && lastPast === anchor;
+          return {
+            past: pastHasAnchor ? prev.past : [...prev.past, anchor].slice(-25),
+            present: nextPresent,
+            future: [],
+          };
+        }
+        return pushWardrobeDraft(prev, nextPresent);
+      });
+    },
+    [],
+  );
 
   const handleResetBody = useCallback(() => {
     soundEngine.playUiClick();
@@ -1341,7 +1609,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
         bodyShapeId: null,
       }),
     );
-    showNotice('Reset body shape to Balanced Studio');
+    showNotice('Reset body shape to Balanced');
   }, [showNotice]);
 
   const handleResetStyle = useCallback(() => {
@@ -1444,6 +1712,12 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
         return item.isStarterDefault
           ? (draft.beardId ?? null) === null
           : draft.beardId === item.id;
+      }
+      if (item.slot === 'face_nose') {
+        const currentNose = draft.noseStyleId ?? 'face_nose_default';
+        return item.isStarterDefault
+          ? currentNose === 'face_nose_default' || !draft.noseStyleId
+          : currentNose === item.id;
       }
       if (item.slot === 'style_anim') {
         return item.isStarterDefault ? draft.animSetId === null : draft.animSetId === item.id;
@@ -1553,19 +1827,25 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     activeBottomTab === 'character'
       ? 'Character'
       : activeBottomTab === 'face'
-        ? activeFaceCategory === 'face_eyes'
-          ? 'Face · Eyes'
-          : activeFaceCategory === 'face_brows'
-            ? 'Face · Eyebrows'
-            : activeFaceCategory === 'face_lips'
-              ? 'Face · Lips'
-              : activeFaceCategory === 'face_eyeshadow'
-                ? 'Face · Eyeshadow'
-                : activeFaceCategory === 'face_blush'
-                  ? 'Face · Blush'
-                  : activeFaceCategory === 'face_beard'
-                    ? 'Face · Beard'
-                    : 'Face · Makeup'
+        ? activeFaceCategory === 'face_tuning'
+          ? 'Face · Tuning'
+          : activeFaceCategory === 'face_nose'
+            ? 'Face · Nose'
+            : activeFaceCategory === 'face_head'
+              ? 'Face · Head'
+              : activeFaceCategory === 'face_eyes'
+                ? 'Face · Eyes'
+                : activeFaceCategory === 'face_brows'
+                  ? 'Face · Eyebrows'
+                  : activeFaceCategory === 'face_lips'
+                    ? 'Face · Lips'
+                    : activeFaceCategory === 'face_eyeshadow'
+                      ? 'Face · Eyeshadow'
+                      : activeFaceCategory === 'face_blush'
+                        ? 'Face · Blush'
+                        : activeFaceCategory === 'face_beard'
+                          ? 'Face · Beard'
+                          : 'Face · Makeup'
         : activeBottomTab === 'body'
           ? 'Body Shape'
           : activeBottomTab === 'style'
@@ -1594,6 +1874,35 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                         ? 'Underwear'
                         : 'Shoes';
 
+  const orbSizeClass =
+    studioLayout.mode === 'phone_landscape_split'
+      ? 'w-[60px] h-[60px]'
+      : studioLayout.isPortraitSheet
+        ? 'w-[68px] h-[68px] sm:w-[76px] sm:h-[76px]'
+        : studioLayout.mode === 'tablet_split'
+          ? 'w-[74px] h-[74px]'
+          : 'w-[82px] h-[82px]';
+  const itemGridClass =
+    studioLayout.gridCols === 4
+      ? 'grid grid-cols-4 gap-x-2.5 gap-y-3.5'
+      : studioLayout.mode === 'phone_landscape_split'
+        ? 'grid grid-cols-3 gap-x-2 gap-y-3'
+        : 'grid grid-cols-3 gap-x-3 gap-y-4';
+  const railBodyWrapperClass = studioLayout.useHorizontalCategoryStrip
+    ? 'flex-1 flex flex-col min-h-0'
+    : 'flex-1 flex min-h-0';
+  const railNavClass = studioLayout.useHorizontalCategoryStrip
+    ? 'shrink-0 py-2 px-3 border-b border-white/[0.10] flex flex-row items-center gap-2.5 overflow-x-auto no-scrollbar'
+    : studioLayout.mode === 'phone_landscape_split'
+      ? 'w-[58px] shrink-0 py-2.5 px-1 border-r border-white/[0.10] flex flex-col items-center gap-2.5 overflow-y-auto no-scrollbar'
+      : 'w-[74px] shrink-0 py-3 px-1.5 border-r border-white/[0.10] flex flex-col items-center gap-3 overflow-y-auto no-scrollbar';
+  const railBtnClass = studioLayout.useHorizontalCategoryStrip
+    ? 'flex flex-col items-center gap-1 shrink-0 min-w-[48px] cursor-pointer group focus-visible:outline-none'
+    : 'flex flex-col items-center gap-1 w-full cursor-pointer group focus-visible:outline-none';
+  const railIconBubbleClass = studioLayout.mode === 'phone_landscape_split' || studioLayout.useHorizontalCategoryStrip
+    ? 'w-9 h-9'
+    : 'w-10 h-10';
+
   const renderCircularItemButton = (item: WardrobeCatalogItem, owned: boolean) => {
     const selected = isItemSelectedInDraft(item);
     const thumbUrl = thumbMap[item.id];
@@ -1604,7 +1913,8 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       item.slot === 'face_eyeshadow' ||
       item.slot === 'face_blush' ||
       item.slot === 'face_facepaint' ||
-      item.slot === 'face_beard';
+      item.slot === 'face_beard' ||
+      item.slot === 'face_nose';
     const isStyleDanceOrPose =
       item.slot === 'style_dance' || item.slot === 'style_pose' || item.slot === 'style_action';
     return (
@@ -1617,7 +1927,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
         title={`${item.name} · ${owned ? 'Owned' : `${item.priceLul} $LUL`}`}
       >
         <div
-          className={`relative w-[82px] h-[82px] rounded-full overflow-hidden flex items-center justify-center transition-transform duration-150 group-hover:scale-[1.04] group-active:scale-95 ${
+          className={`relative ${orbSizeClass} rounded-full overflow-hidden flex items-center justify-center transition-transform duration-150 group-hover:scale-[1.04] group-active:scale-95 ${
             selected
               ? 'ring-2 ring-white shadow-[0_0_0_4px_rgba(138,216,255,0.35)]'
               : 'ring-1 ring-white/20 group-hover:ring-white/45'
@@ -1724,9 +2034,168 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     );
   };
 
+  const studioToolbarPill = (
+    <div
+      className={`inline-flex w-fit items-center gap-0.5 px-1.5 sm:px-2 py-1 rounded-full shrink-0 ${glassPillClass}`}
+    >
+      <button
+        type="button"
+        onClick={handleCyclePose}
+        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white/85 hover:text-white hover:bg-white/12 transition-colors cursor-pointer shrink-0"
+        title={`Switch Pose (${WARDROBE_STUDIO_POSES.find((p) => p.id === activePoseId)?.label})`}
+        aria-label="Switch Pose"
+      >
+        <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+      </button>
+      <button
+        type="button"
+        onClick={handleCaptureProfileSnapshot}
+        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white/85 hover:text-white hover:bg-white/12 transition-colors cursor-pointer shrink-0"
+        title="Capture Snapshot to Profile Avatar"
+        aria-label="Take Profile Photo"
+      >
+        <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+      </button>
+
+      <span className="w-px h-4 bg-white/15 mx-0.5 sm:mx-1 shrink-0" aria-hidden="true" />
+
+      <button
+        type="button"
+        onClick={() => {
+          soundEngine.playUiClick();
+          setCameraFraming('face');
+        }}
+        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+          cameraFraming === 'face'
+            ? 'bg-white text-slate-950'
+            : 'text-white/85 hover:text-white hover:bg-white/12'
+        }`}
+        title="Face Close-Up"
+        aria-label="Face Close-Up"
+      >
+        <ScanFace className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          soundEngine.playUiClick();
+          setCameraFraming('upper');
+        }}
+        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+          cameraFraming === 'upper'
+            ? 'bg-white text-slate-950'
+            : 'text-white/85 hover:text-white hover:bg-white/12'
+        }`}
+        title="Upper Body Portrait"
+        aria-label="Upper Body Portrait"
+      >
+        <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          soundEngine.playUiClick();
+          setCameraFraming('full');
+        }}
+        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+          cameraFraming === 'full'
+            ? 'bg-white text-slate-950'
+            : 'text-white/85 hover:text-white hover:bg-white/12'
+        }`}
+        title="Full Body View"
+        aria-label="Full Body View"
+      >
+        <Maximize2 className="w-3.5 h-3.5" />
+      </button>
+
+      <span className="w-px h-4 bg-white/15 mx-0.5 sm:mx-1 shrink-0" aria-hidden="true" />
+
+      <button
+        type="button"
+        disabled={history.past.length === 0}
+        onClick={() => {
+          soundEngine.playUiClick();
+          setHistory((h) => undoWardrobeDraft(h));
+        }}
+        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white/85 hover:text-white hover:bg-white/12 disabled:opacity-35 disabled:pointer-events-none transition-colors cursor-pointer shrink-0"
+        title="Undo (Ctrl+Z)"
+        aria-label="Undo"
+      >
+        <Undo2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+      </button>
+      <button
+        type="button"
+        disabled={history.future.length === 0}
+        onClick={() => {
+          soundEngine.playUiClick();
+          setHistory((h) => redoWardrobeDraft(h));
+        }}
+        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white/85 hover:text-white hover:bg-white/12 disabled:opacity-35 disabled:pointer-events-none transition-colors cursor-pointer shrink-0"
+        title="Redo (Ctrl+Shift+Z)"
+        aria-label="Redo"
+      >
+        <Redo2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+      </button>
+
+      <span className="w-px h-4 bg-white/15 mx-0.5 sm:mx-1 shrink-0" aria-hidden="true" />
+
+      <button
+        type="button"
+        onClick={handleCycleGlass}
+        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white/85 hover:text-white hover:bg-white/12 transition-colors cursor-pointer shrink-0"
+        title={`Glass Style: ${
+          resolvedGlassMode === 'smoked_pseudo' ? 'Smoked (0% FPS overhead)' : 'Frosted Blur'
+        }`}
+        aria-label="Toggle Glass Style"
+      >
+        <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+      </button>
+    </div>
+  );
+
+  const studioBalanceAndClose = (
+    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+      <div
+        className={`h-8 sm:h-9 px-2.5 sm:px-3.5 rounded-full flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-semibold tabular-nums ${glassPillClass}`}
+      >
+        <span className="text-amber-300">{Math.floor(lulBalance).toLocaleString()}</span>
+        <span className="text-white/65">$LUL</span>
+      </div>
+      <button
+        type="button"
+        data-wardrobe-close-btn="true"
+        onClick={() => {
+          soundEngine.playUiClick();
+          onClose();
+        }}
+        className="h-8 sm:h-9 px-2.5 sm:px-3.5 rounded-full bg-white hover:bg-slate-100 text-slate-950 text-[11px] sm:text-xs font-semibold flex items-center gap-1 sm:gap-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.3)] transition-colors cursor-pointer whitespace-nowrap"
+      >
+        <X className="w-3.5 h-3.5 stroke-[2.5]" />
+        <span className="hidden sm:inline">Exit Wardrobe</span>
+        <span className="sm:hidden">Exit</span>
+      </button>
+    </div>
+  );
+
+  const panelPositionClass = studioLayout.isPortraitSheet
+    ? `left-2 right-2 sm:left-4 sm:right-4 bottom-[calc(58px+var(--safe-bottom))] transition-[height] duration-200 ease-out ${
+        isPortraitSheetCollapsed ? 'h-[46px]' : 'h-[45dvh] max-h-[450px] min-h-[250px]'
+      }`
+    : studioLayout.mode === 'phone_landscape_split'
+      ? 'top-[50px] right-[max(0.625rem,var(--safe-right))] bottom-[52px]'
+      : studioLayout.mode === 'tablet_split'
+        ? 'top-[60px] right-4 bottom-[68px]'
+        : 'top-[64px] right-5 bottom-[74px] w-[420px] max-w-[calc(100vw-24px)]';
+
+  const panelInlineStyle: React.CSSProperties | undefined =
+    !studioLayout.isPortraitSheet && studioLayout.mode !== 'desktop_split'
+      ? { width: `${studioLayout.panelWidthPx}px` }
+      : undefined;
+
   return (
     <div
       data-wardrobe-studio-modal="true"
+      data-wardrobe-layout-mode={studioLayout.mode}
       className="fixed inset-0 z-[95] overflow-hidden select-none text-white"
       style={{ fontFamily: '"Plus Jakarta Sans", "Outfit", system-ui, sans-serif' }}
     >
@@ -1734,11 +2203,11 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       <div className="absolute inset-0 bg-[#1a1316]">
         <img
           src={studioBackdropUrl}
-          alt="Dressing Room Studio"
+          alt="Wardrobe Dressing Room"
           referrerPolicy="no-referrer"
           className="w-full h-full object-cover object-center scale-[1.03] brightness-[0.94] contrast-[1.03]"
         />
-        {/* Subtle studio cinematic vignette & right-side reading scrim */}
+        {/* Subtle studio cinematic vignette & reading scrim */}
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
@@ -1753,201 +2222,119 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
 
       {/* Loading / WebGL fallback indicator */}
       {(isAvatarLoading || webglLost) && (
-        <div className="pointer-events-none absolute inset-y-0 left-0 right-0 md:right-[430px] z-[8] flex items-center justify-center">
+        <div
+          className={`pointer-events-none absolute z-[8] flex items-center justify-center ${
+            studioLayout.isPortraitSheet
+              ? 'top-14 inset-x-0 bottom-[50dvh]'
+              : 'inset-y-0 left-0 right-0 md:right-[430px]'
+          }`}
+        >
           <div className={`px-4 py-2 rounded-full text-xs font-medium text-white/90 ${glassPillClass}`}>
-            {webglLost ? 'Studio 3D preview paused — WebGL context unavailable' : 'Preparing studio avatar…'}
+            {webglLost ? 'Avatar preview paused — graphics unavailable' : 'Loading avatar preview…'}
           </div>
         </div>
       )}
 
-      {/* 3. Top-Center Floating Studio Toolbar (matching reference) */}
-      <div className="absolute top-4 left-1/2 md:left-[35%] -translate-x-1/2 z-20 flex items-center gap-1 px-2.5 py-1.5 rounded-full">
-        <div className={`flex items-center gap-0.5 px-2 py-1 rounded-full ${glassPillClass}`}>
-          <button
-            type="button"
-            onClick={handleCyclePose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-white/85 hover:text-white hover:bg-white/12 transition-colors cursor-pointer"
-            title={`Switch Pose (${WARDROBE_STUDIO_POSES.find((p) => p.id === activePoseId)?.label})`}
-            aria-label="Switch Studio Pose"
-          >
-            <Sparkles className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={handleCaptureProfileSnapshot}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-white/85 hover:text-white hover:bg-white/12 transition-colors cursor-pointer"
-            title="Capture Snapshot to Profile Avatar"
-            aria-label="Capture Studio Snapshot"
-          >
-            <Camera className="w-4 h-4" />
-          </button>
-
-          <span className="w-px h-4 bg-white/15 mx-1" aria-hidden="true" />
-
-          <button
-            type="button"
-            onClick={() => {
-              soundEngine.playUiClick();
-              setCameraFraming('face');
-            }}
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
-              cameraFraming === 'face'
-                ? 'bg-white text-slate-950'
-                : 'text-white/85 hover:text-white hover:bg-white/12'
-            }`}
-            title="Face Close-Up"
-            aria-label="Face Close-Up"
-          >
-            <ScanFace className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              soundEngine.playUiClick();
-              setCameraFraming('upper');
-            }}
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
-              cameraFraming === 'upper'
-                ? 'bg-white text-slate-950'
-                : 'text-white/85 hover:text-white hover:bg-white/12'
-            }`}
-            title="Upper Body Portrait"
-            aria-label="Upper Body Portrait"
-          >
-            <User className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              soundEngine.playUiClick();
-              setCameraFraming('full');
-            }}
-            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
-              cameraFraming === 'full'
-                ? 'bg-white text-slate-950'
-                : 'text-white/85 hover:text-white hover:bg-white/12'
-            }`}
-            title="Full Body View"
-            aria-label="Full Body View"
-          >
-            <Maximize2 className="w-3.5 h-3.5" />
-          </button>
-
-          <span className="w-px h-4 bg-white/15 mx-1" aria-hidden="true" />
-
-          <button
-            type="button"
-            disabled={history.past.length === 0}
-            onClick={() => {
-              soundEngine.playUiClick();
-              setHistory((h) => undoWardrobeDraft(h));
-            }}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-white/85 hover:text-white hover:bg-white/12 disabled:opacity-35 disabled:pointer-events-none transition-colors cursor-pointer"
-            title="Undo (Ctrl+Z)"
-            aria-label="Undo"
-          >
-            <Undo2 className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            disabled={history.future.length === 0}
-            onClick={() => {
-              soundEngine.playUiClick();
-              setHistory((h) => redoWardrobeDraft(h));
-            }}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-white/85 hover:text-white hover:bg-white/12 disabled:opacity-35 disabled:pointer-events-none transition-colors cursor-pointer"
-            title="Redo (Ctrl+Shift+Z)"
-            aria-label="Redo"
-          >
-            <Redo2 className="w-4 h-4" />
-          </button>
-
-          <span className="w-px h-4 bg-white/15 mx-1" aria-hidden="true" />
-
-          <button
-            type="button"
-            onClick={handleCycleGlass}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-white/85 hover:text-white hover:bg-white/12 transition-colors cursor-pointer"
-            title={`Glass Style: ${
-              resolvedGlassMode === 'smoked_pseudo' ? 'Smoked (0% FPS overhead)' : 'Frosted Blur'
-            }`}
-            aria-label="Toggle Glass Style"
-          >
-            <Layers className="w-4 h-4" />
-          </button>
+      {/* 3 & 4. Adaptive Top Bar: unified non-colliding bar on mobile/tablet; classic split on desktop */}
+      {studioLayout.isCompactTopBar ? (
+        <div
+          className="absolute inset-x-2.5 sm:inset-x-4 z-20 flex items-center justify-between gap-2 pointer-events-none"
+          style={{ top: 'max(0.5rem, var(--safe-top))' }}
+        >
+          <div className="pointer-events-auto min-w-0 flex-1 overflow-x-auto no-scrollbar">
+            {studioToolbarPill}
+          </div>
+          <div className="pointer-events-auto shrink-0">{studioBalanceAndClose}</div>
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="absolute top-4 left-[35%] -translate-x-1/2 z-20 flex items-center gap-1 px-2.5 py-1.5 rounded-full">
+            {studioToolbarPill}
+          </div>
+          <div className="absolute top-4 right-5 z-20">{studioBalanceAndClose}</div>
+        </>
+      )}
 
       {/* Subtle status toast under top toolbar */}
       {statusNotice && (
-        <div className="pointer-events-none absolute top-[62px] left-1/2 md:left-[35%] -translate-x-1/2 z-20">
-          <div className={`px-3.5 py-1.5 rounded-full text-xs font-medium text-white/95 whitespace-nowrap ${glassPillClass}`}>
+        <div
+          className={`pointer-events-none absolute z-20 left-1/2 -translate-x-1/2 max-w-[calc(100vw-1.5rem)] ${
+            studioLayout.isCompactTopBar
+              ? 'top-[52px]'
+              : 'top-[62px] md:left-[35%]'
+          }`}
+        >
+          <div className={`px-3.5 py-1.5 rounded-full text-xs font-medium text-white/95 truncate ${glassPillClass}`}>
             {statusNotice}
           </div>
         </div>
       )}
 
-      {/* 4. Top-Right Balance & Close Pill (matching reference top-right action slot) */}
-      <div className="absolute top-4 right-5 z-20 flex items-center gap-2">
-        <div className={`h-9 px-3.5 rounded-full flex items-center gap-2 text-xs font-semibold tabular-nums ${glassPillClass}`}>
-          <span className="text-amber-300">{Math.floor(lulBalance).toLocaleString()}</span>
-          <span className="text-white/65">$LUL</span>
-        </div>
-        <button
-          type="button"
-          data-wardrobe-close-btn="true"
-          onClick={() => {
-            soundEngine.playUiClick();
-            onClose();
-          }}
-          className="h-9 px-3.5 rounded-full bg-white hover:bg-slate-100 text-slate-950 text-xs font-semibold flex items-center gap-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.3)] transition-colors cursor-pointer whitespace-nowrap"
-        >
-          <X className="w-3.5 h-3.5 stroke-[2.5]" />
-          <span>Exit Studio</span>
-        </button>
-      </div>
-
       {/* Drag hint subtle unobtrusive bottom-left helper above bottom bar */}
-      <div className="hidden md:flex pointer-events-none absolute bottom-[78px] left-6 z-10 items-center gap-2 text-[11px] text-white/60">
-        <span>Drag avatar to rotate 360°</span>
-        <span aria-hidden="true">·</span>
-        <span>Scroll to zoom</span>
-      </div>
+      {!studioLayout.isPortraitSheet && studioLayout.mode !== 'phone_landscape_split' && (
+        <div className="hidden md:flex pointer-events-none absolute bottom-[78px] left-6 z-10 items-center gap-2 text-[11px] text-white/60">
+          <span>Drag avatar to rotate 360°</span>
+          <span aria-hidden="true">·</span>
+          <span>Scroll to zoom</span>
+        </div>
+      )}
 
-      {/* 5. Right Floating Smoked-Glass Wardrobe Panel (matching reference two-column layout) */}
+      {/* 5. Adaptive Smoked-Glass Wardrobe Panel (Right Panel on Desktop/Landscape, Bottom Sheet on Portrait) */}
       <aside
         data-wardrobe-glass-panel="true"
         data-wardrobe-glass-mode={resolvedGlassMode}
-        className={`absolute top-[64px] right-5 bottom-[74px] w-[420px] max-w-[calc(100vw-24px)] z-20 rounded-2xl flex flex-col overflow-hidden ${glassSurfaceClass}`}
+        style={panelInlineStyle}
+        className={`absolute z-20 rounded-2xl flex flex-col overflow-hidden ${panelPositionClass} ${glassSurfaceClass}`}
       >
         {/* Panel Header */}
-        <div className="px-5 pt-4 pb-3 border-b border-white/[0.14] flex items-center justify-between gap-3">
-          <h2 className="text-[15px] font-semibold tracking-wide text-white whitespace-nowrap">
-            {panelHeaderTitle}
-          </h2>
-          <div className="flex items-center gap-1 text-white/75">
+        <div className="px-4 sm:px-5 py-2.5 sm:pt-4 sm:pb-3 border-b border-white/[0.14] flex items-center justify-between gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            {studioLayout.isPortraitSheet && (
+              <button
+                type="button"
+                data-wardrobe-sheet-toggle="true"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  setIsPortraitSheetCollapsed((prev) => !prev);
+                }}
+                aria-label={isPortraitSheetCollapsed ? 'Expand Wardrobe Panel' : 'Collapse Wardrobe Panel'}
+                title={isPortraitSheetCollapsed ? 'Expand Panel' : 'Full Avatar View'}
+                className="w-7 h-7 rounded-full bg-white/[0.10] hover:bg-white/[0.20] text-white/90 flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+              >
+                {isPortraitSheetCollapsed ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+              </button>
+            )}
+            <h2 className="text-[14px] sm:text-[15px] font-semibold tracking-wide text-white truncate">
+              {panelHeaderTitle}
+            </h2>
+          </div>
+          <div className="flex items-center gap-1 text-white/75 shrink-0">
             <button
               type="button"
               onClick={handleRemoveAll}
-              className="w-8 h-8 rounded-full flex items-center justify-center hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
               title="Reset Outfit to Default"
               aria-label="Reset Outfit"
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
             <button
               type="button"
               onClick={handleCycleSort}
-              className="w-8 h-8 rounded-full flex items-center justify-center hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
               title={`Sort: ${sortMode === 'featured' ? 'Featured' : sortMode === 'price_asc' ? 'Price Low-High' : 'Price High-Low'}`}
               aria-label="Sort Items"
             >
-              <ArrowUpDown className="w-4 h-4" />
+              <ArrowUpDown className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
             <button
               type="button"
               onClick={handleCycleFilter}
-              className={`h-8 px-2.5 rounded-full flex items-center gap-1.5 text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
+              className={`h-7 sm:h-8 px-2 sm:px-2.5 rounded-full flex items-center gap-1.5 text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap ${
                 filterMode !== 'all'
                   ? 'bg-white/18 text-white'
                   : 'hover:text-white hover:bg-white/10 text-white/75'
@@ -1961,7 +2348,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
         </div>
 
         {/* Panel Body: Character | Face | Body Shape | Style (Anim/Dance/Dye) | Outfit & Shop */}
-        {activeBottomTab === 'character' ? (
+        {isPortraitSheetCollapsed ? null : activeBottomTab === 'character' ? (
           <div
             data-wardrobe-character-panel="true"
             className="flex-1 overflow-y-auto px-5 py-4 space-y-5"
@@ -2013,7 +2400,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                 <span aria-hidden="true">·</span>
                 <span className="tabular-nums">{savedPresets.length}</span>
               </div>
-              <div className="grid grid-cols-3 gap-x-3 gap-y-4">
+              <div className={itemGridClass}>
                 {/* White Circular Save Character Button */}
                 <button
                   type="button"
@@ -2021,7 +2408,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                   onClick={handleSavePreset}
                   className="group flex flex-col items-center gap-1.5 cursor-pointer"
                 >
-                  <div className="w-[82px] h-[82px] rounded-full bg-white hover:bg-slate-100 text-slate-950 flex flex-col items-center justify-center gap-1 shadow-[0_6px_20px_rgba(0,0,0,0.3)] transition-transform group-hover:scale-[1.04] group-active:scale-95">
+                  <div className={`${orbSizeClass} rounded-full bg-white hover:bg-slate-100 text-slate-950 flex flex-col items-center justify-center gap-1 shadow-[0_6px_20px_rgba(0,0,0,0.3)] transition-transform group-hover:scale-[1.04] group-active:scale-95`}>
                     <Download className="w-5 h-5 stroke-[2.2]" />
                     <span className="text-[11px] font-semibold">Save</span>
                   </div>
@@ -2034,7 +2421,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                       type="button"
                       data-wardrobe-saved-character-btn={preset.id}
                       onClick={() => handleSelectPreset(preset)}
-                      className="relative w-[82px] h-[82px] rounded-full ring-1 ring-white/25 hover:ring-white flex flex-col items-center justify-center text-white transition-transform hover:scale-[1.04] cursor-pointer"
+                      className={`relative ${orbSizeClass} rounded-full ring-1 ring-white/25 hover:ring-white flex flex-col items-center justify-center text-white transition-transform hover:scale-[1.04] cursor-pointer`}
                       style={{
                         background: `radial-gradient(circle at 30% 25%, ${preset.accentGradient[0]}, ${preset.accentGradient[1]})`,
                       }}
@@ -2049,7 +2436,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                     <button
                       type="button"
                       onClick={() => handleDeleteSavedPreset(preset.id)}
-                      className="absolute top-0 right-1 w-5 h-5 rounded-full bg-[#151115]/90 border border-white/25 text-white/75 hover:text-rose-300 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                      className="absolute top-0 right-1 w-5 h-5 rounded-full bg-[#151115]/90 border border-white/25 text-white/75 hover:text-rose-300 flex items-center justify-center opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity cursor-pointer"
                       title="Delete Saved Character"
                       aria-label={`Delete ${preset.name}`}
                     >
@@ -2070,7 +2457,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                 <span aria-hidden="true">·</span>
                 <span>{characterGender === 'female' ? 'Female' : 'Male'}</span>
               </div>
-              <div className="grid grid-cols-3 gap-x-3 gap-y-4">
+              <div className={itemGridClass}>
                 {visibleBuiltInPresets.map((preset) => {
                   const lockedCount = collectUnownedItemsInDraft(
                     preset.draft,
@@ -2088,7 +2475,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                       className="group flex flex-col items-center gap-1.5 cursor-pointer"
                     >
                       <div
-                        className="relative w-[82px] h-[82px] rounded-full overflow-hidden ring-1 ring-white/22 group-hover:ring-white/60 flex items-center justify-center transition-transform group-hover:scale-[1.04]"
+                        className={`relative ${orbSizeClass} rounded-full overflow-hidden ring-1 ring-white/22 group-hover:ring-white/60 flex items-center justify-center transition-transform group-hover:scale-[1.04]`}
                         style={{
                           background: `radial-gradient(circle at 32% 28%, ${preset.accentGradient[0]}, ${preset.accentGradient[1]})`,
                         }}
@@ -2124,11 +2511,11 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
             </section>
           </div>
         ) : activeBottomTab === 'face' ? (
-          <div className="flex-1 flex min-h-0">
-            {/* Left Vertical Face Feature Rail (Eyes / Brows / Lips) */}
+          <div className={railBodyWrapperClass}>
+            {/* Face Feature Rail (Vertical on Desktop/Landscape, Horizontal Strip on Portrait) */}
             <nav
               aria-label="Face features"
-              className="w-[74px] shrink-0 py-3 px-1.5 border-r border-white/[0.10] flex flex-col items-center gap-3 overflow-y-auto"
+              className={railNavClass}
             >
               {FACE_RAIL_ITEMS.filter((it) => !it.maleOnly || characterGender === 'male').map(({ id, label, Icon }) => {
                 const isActive = activeFaceCategory === id;
@@ -2140,12 +2527,16 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                     onClick={() => {
                       soundEngine.playUiClick();
                       setActiveFaceCategory(id);
-                      setCameraFraming('face');
+                      if (id === 'face_head') {
+                        setCameraFraming('upper');
+                      } else {
+                        setCameraFraming('face');
+                      }
                     }}
-                    className="flex flex-col items-center gap-1 w-full cursor-pointer group focus-visible:outline-none"
+                    className={railBtnClass}
                   >
                     <span
-                      className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                      className={`${railIconBubbleClass} rounded-full flex items-center justify-center transition-all ${
                         isActive
                           ? 'bg-[#8ad8ff] text-slate-950 shadow-[0_4px_14px_rgba(138,216,255,0.38)]'
                           : 'bg-white/[0.08] text-white/80 group-hover:bg-white/[0.16] group-hover:text-white'
@@ -2165,66 +2556,472 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
               })}
             </nav>
 
-            {/* Right 3-Column Circular Face Feature Grid */}
+            {/* Right Face Feature Content (Precision Tuning / Circular Items Grid) */}
             <div className="flex-1 min-w-0 overflow-y-auto px-4 py-3.5 space-y-4">
               <div className="flex items-center justify-between text-xs">
-                <button
-                  type="button"
-                  onClick={handleResetFace}
-                  className="inline-flex items-center gap-1.5 text-white/75 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Reset Face</span>
-                </button>
-                <span className="text-[11px] text-white/50 tabular-nums">
-                  {partitionedFaceItems.owned.length} owned · {partitionedFaceItems.shop.length} shop
-                </span>
+                {activeFaceCategory === 'face_tuning' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleResetFaceTuning}
+                      className="inline-flex items-center gap-1.5 text-white/75 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Reset Tuning</span>
+                    </button>
+                    <span className="text-[11px] text-white/50">Aesthetic Bounds</span>
+                  </>
+                ) : activeFaceCategory === 'face_head' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleResetHeadScale}
+                      className="inline-flex items-center gap-1.5 text-white/75 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Reset Head</span>
+                    </button>
+                    <span className="text-[11px] text-white/50">Proportion</span>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleResetFace}
+                      className="inline-flex items-center gap-1.5 text-white/75 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Reset Face</span>
+                    </button>
+                    <span className="text-[11px] text-white/50 tabular-nums">
+                      {partitionedFaceItems.owned.length} owned · {partitionedFaceItems.shop.length} shop
+                    </span>
+                  </>
+                )}
               </div>
 
-              <div className="space-y-5">
-                {partitionedFaceItems.owned.length > 0 && (
-                  <section className="space-y-2.5">
-                    <div className="text-[11px] font-semibold text-white/65 flex items-center gap-1.5">
-                      <span>Owned</span>
-                      <span aria-hidden="true">·</span>
-                      <span className="tabular-nums">{partitionedFaceItems.owned.length}</span>
+              {activeFaceCategory === 'face_tuning' ? (
+                <div data-wardrobe-face-tuning="true" className="space-y-4 pb-4">
+                  {/* Lips Group */}
+                  <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-3.5 space-y-3.5">
+                    <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5">
+                      <div className="flex items-center gap-2">
+                        <LipGlyphIcon className="w-4 h-4 text-[#8ad8ff]" />
+                        <span className="text-xs font-semibold text-white/90">Lips (Bibir)</span>
+                      </div>
+                      <span className="text-[10px] text-white/50">Size & Height</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-x-3 gap-y-4">
-                      {partitionedFaceItems.owned.map((item) =>
-                        renderCircularItemButton(item, true),
-                      )}
-                    </div>
-                  </section>
-                )}
 
-                {partitionedFaceItems.shop.length > 0 && (
-                  <section className="space-y-2.5">
-                    <div className="text-[11px] font-semibold text-amber-200/85 flex items-center gap-1.5">
-                      <ShoppingBag className="w-3 h-3" />
-                      <span>Shop</span>
-                      <span aria-hidden="true">·</span>
-                      <span>Click to Try On</span>
+                    {/* Lip Scale */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-white/75">Lip Size</span>
+                        <span className="text-[#8ad8ff] font-mono tabular-nums font-semibold">
+                          {(draft.lipScale ?? 1.0).toFixed(2)}x
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-white/40 w-8">0.72x</span>
+                        <input
+                          type="range"
+                          aria-label="Lip Size"
+                          data-tuning-slider="lipScale"
+                          min={0.72}
+                          max={1.18}
+                          step={0.01}
+                          value={draft.lipScale ?? 1.0}
+                          onPointerDown={beginSliderDrag}
+                          onPointerUp={endSliderDrag}
+                          onChange={(e) => updateDraftTuning('lipScale', parseFloat(e.target.value), true)}
+                          className="flex-1 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-[#8ad8ff]"
+                        />
+                        <span className="text-[10px] text-white/40 w-8 text-right">1.18x</span>
+                        <button
+                          type="button"
+                          onClick={() => updateDraftTuning('lipScale', 1.0)}
+                          className="text-[10px] text-white/50 hover:text-white px-1.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] cursor-pointer"
+                          title="Reset to 1.00x"
+                        >
+                          1.0x
+                        </button>
+                      </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-x-3 gap-y-4">
-                      {partitionedFaceItems.shop.map((item) =>
-                        renderCircularItemButton(item, isWardrobeItemOwned(item, ownedApparelIds)),
-                      )}
-                    </div>
-                  </section>
-                )}
 
-                {partitionedFaceItems.allVisible.length === 0 && (
-                  <div className="py-10 text-center text-xs text-white/55">
-                    No face styles match this filter yet.
+                    {/* Lip Offset Y */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-white/75">Lip Vertical Position</span>
+                        <span className="text-[#8ad8ff] font-mono tabular-nums font-semibold">
+                          {((draft.lipOffsetY ?? 0) * 0.25) > 0
+                            ? `+${((draft.lipOffsetY ?? 0) * 0.25).toFixed(2)}`
+                            : ((draft.lipOffsetY ?? 0) * 0.25).toFixed(2)}{' '}
+                          cm
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-white/40 w-8">Lower</span>
+                        <input
+                          type="range"
+                          aria-label="Lip Vertical Position"
+                          data-tuning-slider="lipOffsetY"
+                          min={-6}
+                          max={6}
+                          step={0.5}
+                          value={draft.lipOffsetY ?? 0}
+                          onPointerDown={beginSliderDrag}
+                          onPointerUp={endSliderDrag}
+                          onChange={(e) => updateDraftTuning('lipOffsetY', parseFloat(e.target.value), true)}
+                          className="flex-1 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-[#8ad8ff]"
+                        />
+                        <span className="text-[10px] text-white/40 w-8 text-right">Raise</span>
+                        <button
+                          type="button"
+                          onClick={() => updateDraftTuning('lipOffsetY', 0)}
+                          className="text-[10px] text-white/50 hover:text-white px-1.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] cursor-pointer"
+                          title="Reset to 0"
+                        >
+                          0
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                )}
-              </div>
+
+                  {/* Eyes Group */}
+                  <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-3.5 space-y-3.5">
+                    <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5">
+                      <div className="flex items-center gap-2">
+                        <Eye className="w-4 h-4 text-[#8ad8ff]" />
+                        <span className="text-xs font-semibold text-white/90">Eyes (Mata)</span>
+                      </div>
+                      <span className="text-[10px] text-white/50">Spacing, Tilt, Size</span>
+                    </div>
+
+                    {/* Eye Spacing */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-white/75">Eye Spacing</span>
+                        <span className="text-[#8ad8ff] font-mono tabular-nums font-semibold">
+                          {(draft.eyeSpacing ?? 0) > 0
+                            ? `+${(draft.eyeSpacing ?? 0).toFixed(1)}`
+                            : (draft.eyeSpacing ?? 0).toFixed(1)}{' '}
+                          px
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-white/40 w-8">Close</span>
+                        <input
+                          type="range"
+                          aria-label="Eye Spacing"
+                          data-tuning-slider="eyeSpacing"
+                          min={-5}
+                          max={10}
+                          step={0.5}
+                          value={draft.eyeSpacing ?? 0}
+                          onPointerDown={beginSliderDrag}
+                          onPointerUp={endSliderDrag}
+                          onChange={(e) => updateDraftTuning('eyeSpacing', parseFloat(e.target.value), true)}
+                          className="flex-1 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-[#8ad8ff]"
+                        />
+                        <span className="text-[10px] text-white/40 w-8 text-right">Wide</span>
+                        <button
+                          type="button"
+                          onClick={() => updateDraftTuning('eyeSpacing', 0)}
+                          className="text-[10px] text-white/50 hover:text-white px-1.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] cursor-pointer"
+                          title="Reset to 0"
+                        >
+                          0
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Eye Tilt */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-white/75">Eye Tilt</span>
+                        <span className="text-[#8ad8ff] font-mono tabular-nums font-semibold">
+                          {(draft.eyeTiltDeg ?? 0) > 0
+                            ? `+${(draft.eyeTiltDeg ?? 0).toFixed(1)}`
+                            : (draft.eyeTiltDeg ?? 0).toFixed(1)}
+                          °
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-white/40 w-8">Soft</span>
+                        <input
+                          type="range"
+                          aria-label="Eye Tilt"
+                          data-tuning-slider="eyeTiltDeg"
+                          min={-8}
+                          max={10}
+                          step={0.5}
+                          value={draft.eyeTiltDeg ?? 0}
+                          onPointerDown={beginSliderDrag}
+                          onPointerUp={endSliderDrag}
+                          onChange={(e) => updateDraftTuning('eyeTiltDeg', parseFloat(e.target.value), true)}
+                          className="flex-1 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-[#8ad8ff]"
+                        />
+                        <span className="text-[10px] text-white/40 w-8 text-right">Foxy</span>
+                        <button
+                          type="button"
+                          onClick={() => updateDraftTuning('eyeTiltDeg', 0)}
+                          className="text-[10px] text-white/50 hover:text-white px-1.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] cursor-pointer"
+                          title="Reset to 0°"
+                        >
+                          0°
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Eye Scale */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-white/75">Eye Size</span>
+                        <span className="text-[#8ad8ff] font-mono tabular-nums font-semibold">
+                          {(draft.eyeScale ?? 1.0).toFixed(2)}x
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-white/40 w-8">0.82x</span>
+                        <input
+                          type="range"
+                          aria-label="Eye Size"
+                          data-tuning-slider="eyeScale"
+                          min={0.82}
+                          max={1.22}
+                          step={0.01}
+                          value={draft.eyeScale ?? 1.0}
+                          onPointerDown={beginSliderDrag}
+                          onPointerUp={endSliderDrag}
+                          onChange={(e) => updateDraftTuning('eyeScale', parseFloat(e.target.value), true)}
+                          className="flex-1 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-[#8ad8ff]"
+                        />
+                        <span className="text-[10px] text-white/40 w-8 text-right">1.22x</span>
+                        <button
+                          type="button"
+                          onClick={() => updateDraftTuning('eyeScale', 1.0)}
+                          className="text-[10px] text-white/50 hover:text-white px-1.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] cursor-pointer"
+                          title="Reset to 1.00x"
+                        >
+                          1.0x
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Eyebrows Group */}
+                  <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-3.5 space-y-3.5">
+                    <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5">
+                      <div className="flex items-center gap-2">
+                        <BrowGlyphIcon className="w-4 h-4 text-[#8ad8ff]" />
+                        <span className="text-xs font-semibold text-white/90">Eyebrows (Alis)</span>
+                      </div>
+                      <span className="text-[10px] text-white/50">Height & Angle</span>
+                    </div>
+
+                    {/* Brow Offset Y */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-white/75">Brow Height</span>
+                        <span className="text-[#8ad8ff] font-mono tabular-nums font-semibold">
+                          {(draft.browOffsetY ?? 0) > 0
+                            ? `+${(draft.browOffsetY ?? 0).toFixed(1)}`
+                            : (draft.browOffsetY ?? 0).toFixed(1)}{' '}
+                          px
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-white/40 w-8">Lower</span>
+                        <input
+                          type="range"
+                          aria-label="Brow Height"
+                          data-tuning-slider="browOffsetY"
+                          min={-7}
+                          max={6}
+                          step={0.5}
+                          value={draft.browOffsetY ?? 0}
+                          onPointerDown={beginSliderDrag}
+                          onPointerUp={endSliderDrag}
+                          onChange={(e) => updateDraftTuning('browOffsetY', parseFloat(e.target.value), true)}
+                          className="flex-1 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-[#8ad8ff]"
+                        />
+                        <span className="text-[10px] text-white/40 w-8 text-right">Raise</span>
+                        <button
+                          type="button"
+                          onClick={() => updateDraftTuning('browOffsetY', 0)}
+                          className="text-[10px] text-white/50 hover:text-white px-1.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] cursor-pointer"
+                          title="Reset to 0"
+                        >
+                          0
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Brow Tilt */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-white/75">Brow Tilt</span>
+                        <span className="text-[#8ad8ff] font-mono tabular-nums font-semibold">
+                          {(draft.browTiltDeg ?? 0) > 0
+                            ? `+${(draft.browTiltDeg ?? 0).toFixed(1)}`
+                            : (draft.browTiltDeg ?? 0).toFixed(1)}
+                          °
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-white/40 w-8">Soft</span>
+                        <input
+                          type="range"
+                          aria-label="Brow Tilt"
+                          data-tuning-slider="browTiltDeg"
+                          min={-10}
+                          max={12}
+                          step={0.5}
+                          value={draft.browTiltDeg ?? 0}
+                          onPointerDown={beginSliderDrag}
+                          onPointerUp={endSliderDrag}
+                          onChange={(e) => updateDraftTuning('browTiltDeg', parseFloat(e.target.value), true)}
+                          className="flex-1 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-[#8ad8ff]"
+                        />
+                        <span className="text-[10px] text-white/40 w-8 text-right">Arch</span>
+                        <button
+                          type="button"
+                          onClick={() => updateDraftTuning('browTiltDeg', 0)}
+                          className="text-[10px] text-white/50 hover:text-white px-1.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] cursor-pointer"
+                          title="Reset to 0°"
+                        >
+                          0°
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : activeFaceCategory === 'face_head' ? (
+                <div data-wardrobe-head-tuning="true" className="space-y-4 pb-4">
+                  <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-3.5 space-y-3.5">
+                    <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5">
+                      <div className="flex items-center gap-2">
+                        <HeadScaleGlyphIcon className="w-4 h-4 text-[#8ad8ff]" />
+                        <span className="text-xs font-semibold text-white/90">Head Size (Proportion)</span>
+                      </div>
+                      <span className="text-[10px] text-white/50">Body Proportion</span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-white/75">Head Scale</span>
+                        <span className="text-[#8ad8ff] font-mono tabular-nums font-semibold">
+                          {(draft.headScale ?? 1.0).toFixed(2)}x
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-white/40 w-8">0.78x</span>
+                        <input
+                          type="range"
+                          aria-label="Head Scale"
+                          data-tuning-slider="headScale"
+                          min={0.78}
+                          max={1.06}
+                          step={0.01}
+                          value={draft.headScale ?? 1.0}
+                          onPointerDown={beginSliderDrag}
+                          onPointerUp={endSliderDrag}
+                          onChange={(e) => updateDraftTuning('headScale', parseFloat(e.target.value), true)}
+                          className="flex-1 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-[#8ad8ff]"
+                        />
+                        <span className="text-[10px] text-white/40 w-8 text-right">1.06x</span>
+                        <button
+                          type="button"
+                          onClick={() => updateDraftTuning('headScale', 1.0)}
+                          className="text-[10px] text-white/50 hover:text-white px-1.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] cursor-pointer"
+                          title="Reset to 1.00x"
+                        >
+                          1.0x
+                        </button>
+                      </div>
+                    </div>
+
+                    <div
+                      className={`grid gap-1.5 pt-1 ${
+                        studioLayout.mode === 'phone_landscape_split' ? 'grid-cols-2' : 'grid-cols-4'
+                      }`}
+                    >
+                      {[
+                        { label: 'Model', sub: '0.84x', val: 0.84 },
+                        { label: 'Anime', sub: '0.90x', val: 0.9 },
+                        { label: 'Balanced', sub: '1.00x', val: 1.0 },
+                        { label: 'Cute', sub: '1.05x', val: 1.05 },
+                      ].map((preset) => {
+                        const isSelected = Math.abs((draft.headScale ?? 1.0) - preset.val) < 0.005;
+                        return (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              updateDraftTuning('headScale', preset.val);
+                            }}
+                            className={`py-1.5 px-1 text-[10px] rounded-xl border text-center transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#8ad8ff]/20 border-[#8ad8ff] text-white font-semibold'
+                                : 'bg-white/[0.05] border-white/10 text-white/75 hover:bg-white/[0.10]'
+                            }`}
+                          >
+                            {preset.label}
+                            <span className="block text-[9px] text-white/50 mt-0.5 tabular-nums">
+                              {preset.sub}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  {partitionedFaceItems.owned.length > 0 && (
+                    <section className="space-y-2.5">
+                      <div className="text-[11px] font-semibold text-white/65 flex items-center gap-1.5">
+                        <span>Owned</span>
+                        <span aria-hidden="true">·</span>
+                        <span className="tabular-nums">{partitionedFaceItems.owned.length}</span>
+                      </div>
+                      <div className={itemGridClass}>
+                        {partitionedFaceItems.owned.map((item) =>
+                          renderCircularItemButton(item, true),
+                        )}
+                      </div>
+                    </section>
+                  )}
+
+                  {partitionedFaceItems.shop.length > 0 && (
+                    <section className="space-y-2.5">
+                      <div className="text-[11px] font-semibold text-amber-200/85 flex items-center gap-1.5">
+                        <ShoppingBag className="w-3 h-3" />
+                        <span>Shop</span>
+                        <span aria-hidden="true">·</span>
+                        <span>Click to Try On</span>
+                      </div>
+                      <div className={itemGridClass}>
+                        {partitionedFaceItems.shop.map((item) =>
+                          renderCircularItemButton(item, isWardrobeItemOwned(item, ownedApparelIds)),
+                        )}
+                      </div>
+                    </section>
+                  )}
+
+                  {partitionedFaceItems.allVisible.length === 0 && (
+                    <div className="py-10 text-center text-xs text-white/55">
+                      No face styles match this filter yet.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         ) : activeBottomTab === 'body' ? (
           <div
             data-wardrobe-body-panel="true"
-            className="flex-1 overflow-y-auto px-5 py-4 space-y-5"
+            className="flex-1 overflow-y-auto px-4 sm:px-5 py-3.5 sm:py-4 space-y-5"
           >
             <div className="flex items-center justify-between text-xs">
               <button
@@ -2247,7 +3044,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                   <span aria-hidden="true">·</span>
                   <span className="tabular-nums">{partitionedBodyShapeItems.owned.length}</span>
                 </div>
-                <div className="grid grid-cols-3 gap-x-3 gap-y-4">
+                <div className={itemGridClass}>
                   {partitionedBodyShapeItems.owned.map((item) =>
                     renderCircularItemButton(item, true),
                   )}
@@ -2263,7 +3060,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                   <span aria-hidden="true">·</span>
                   <span>Click to Try On</span>
                 </div>
-                <div className="grid grid-cols-3 gap-x-3 gap-y-4">
+                <div className={itemGridClass}>
                   {partitionedBodyShapeItems.shop.map((item) =>
                     renderCircularItemButton(item, isWardrobeItemOwned(item, ownedApparelIds)),
                   )}
@@ -2278,11 +3075,11 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
             )}
           </div>
         ) : activeBottomTab === 'style' ? (
-          <div data-wardrobe-style-panel="true" className="flex-1 flex min-h-0">
-            {/* Left Vertical Style Rail (Anim Set / Dance / Dye) */}
+          <div data-wardrobe-style-panel="true" className={railBodyWrapperClass}>
+            {/* Style Rail (Vertical on Desktop/Landscape, Horizontal Strip on Portrait) */}
             <nav
               aria-label="Style categories"
-              className="w-[74px] shrink-0 py-3 px-1.5 border-r border-white/[0.10] flex flex-col items-center gap-3 overflow-y-auto"
+              className={railNavClass}
             >
               {STYLE_RAIL_ITEMS.map(({ id, label, Icon }) => {
                 const isActive = activeStyleCategory === id;
@@ -2296,10 +3093,10 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                       setActiveStyleCategory(id);
                       setCameraFraming('full');
                     }}
-                    className="flex flex-col items-center gap-1 w-full cursor-pointer group focus-visible:outline-none"
+                    className={railBtnClass}
                   >
                     <span
-                      className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                      className={`${railIconBubbleClass} rounded-full flex items-center justify-center transition-all ${
                         isActive
                           ? 'bg-[#8ad8ff] text-slate-950 shadow-[0_4px_14px_rgba(138,216,255,0.38)]'
                           : 'bg-white/[0.08] text-white/80 group-hover:bg-white/[0.16] group-hover:text-white'
@@ -2451,7 +3248,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                           <span aria-hidden="true">·</span>
                           <span className="tabular-nums">{partitionedStyleItems.owned.length}</span>
                         </div>
-                        <div className="grid grid-cols-3 gap-x-3 gap-y-4">
+                        <div className={itemGridClass}>
                           {partitionedStyleItems.owned.map((item) =>
                             renderCircularItemButton(item, true),
                           )}
@@ -2467,7 +3264,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                           <span aria-hidden="true">·</span>
                           <span>Click to Try On</span>
                         </div>
-                        <div className="grid grid-cols-3 gap-x-3 gap-y-4">
+                        <div className={itemGridClass}>
                           {partitionedStyleItems.shop.map((item) =>
                             renderCircularItemButton(
                               item,
@@ -2489,11 +3286,11 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex min-h-0">
-            {/* Left Vertical Garment Rail (Top / Bottoms / Set / Hair / Shoes / Underwear) */}
+          <div className={railBodyWrapperClass}>
+            {/* Garment Rail (Vertical on Desktop/Landscape, Horizontal Strip on Portrait) */}
             <nav
               aria-label="Wardrobe categories"
-              className="w-[74px] shrink-0 py-3 px-1.5 border-r border-white/[0.10] flex flex-col items-center gap-3 overflow-y-auto"
+              className={railNavClass}
             >
               {CATEGORY_RAIL_ITEMS.map(({ id, label, Icon }) => {
                 const isActive = activeCategory === id;
@@ -2509,10 +3306,10 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                         setCameraFraming('full');
                       }
                     }}
-                    className="flex flex-col items-center gap-1 w-full cursor-pointer group focus-visible:outline-none"
+                    className={railBtnClass}
                   >
                     <span
-                      className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                      className={`${railIconBubbleClass} rounded-full flex items-center justify-center transition-all ${
                         isActive
                           ? 'bg-[#8ad8ff] text-slate-950 shadow-[0_4px_14px_rgba(138,216,255,0.38)]'
                           : 'bg-white/[0.08] text-white/80 group-hover:bg-white/[0.16] group-hover:text-white'
@@ -2650,7 +3447,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                       <span aria-hidden="true">·</span>
                       <span className="tabular-nums">{partitionedSlotItems.owned.length}</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-x-3 gap-y-4">
+                    <div className={itemGridClass}>
                       {partitionedSlotItems.owned
                         .slice(0, outfitVisibleLimit)
                         .map((item) => renderCircularItemButton(item, true))}
@@ -2679,7 +3476,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                       <span aria-hidden="true">·</span>
                       <span>Click to Try On</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-x-3 gap-y-4">
+                    <div className={itemGridClass}>
                       {partitionedSlotItems.shop.map((item) =>
                         renderCircularItemButton(item, isWardrobeItemOwned(item, ownedApparelIds)),
                       )}
@@ -2698,8 +3495,8 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
         )}
 
         {/* Inline Boutique Unlock Bar when previewing locked Shop items */}
-        {unownedPreviewItems.length > 0 && (
-          <div className="px-4 py-3 border-t border-white/[0.14] bg-[#120d11]/85 flex items-center justify-between gap-2.5">
+        {!isPortraitSheetCollapsed && unownedPreviewItems.length > 0 && (
+          <div className="px-4 py-2.5 sm:py-3 border-t border-white/[0.14] bg-[#120d11]/85 flex items-center justify-between gap-2.5 shrink-0">
             <div className="min-w-0">
               <div className="text-[11px] font-semibold text-amber-200 truncate">
                 Try-On Preview · {unownedPreviewItems[0].name}
@@ -2721,9 +3518,14 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
         )}
       </aside>
 
-      {/* 6. Bottom Floating Navigation Bar + Complete CTA */}
-      <div className="absolute bottom-4 left-6 right-5 z-20 flex items-center justify-between gap-4">
-        <div className={`inline-flex items-center gap-0.5 p-1 rounded-full ${glassPillClass}`}>
+      {/* 6. Adaptive Bottom Floating Navigation Bar + Complete CTA */}
+      <div
+        className="absolute left-2.5 right-2.5 sm:left-6 sm:right-5 z-20 flex items-center justify-between gap-2 sm:gap-4"
+        style={{ bottom: 'max(0.5rem, var(--safe-bottom))' }}
+      >
+        <div
+          className={`flex items-center gap-0.5 p-1 rounded-full overflow-x-auto no-scrollbar min-w-0 max-w-full ${glassPillClass}`}
+        >
           {(
             [
               { id: 'character', label: 'Character' },
@@ -2740,8 +3542,11 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                 key={tab.id}
                 type="button"
                 data-wardrobe-bottom-tab={tab.id}
-                onClick={() => handleBottomTabClick(tab.id)}
-                className={`h-8 px-3.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
+                onClick={() => {
+                  if (isPortraitSheetCollapsed) setIsPortraitSheetCollapsed(false);
+                  handleBottomTabClick(tab.id);
+                }}
+                className={`h-8 px-2.5 sm:px-3.5 rounded-full text-[11px] sm:text-xs font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                   active
                     ? 'bg-white text-slate-950 font-semibold shadow-sm'
                     : 'text-white/80 hover:text-white hover:bg-white/10'
@@ -2757,7 +3562,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
           type="button"
           data-wardrobe-complete-btn="true"
           onClick={handleCommitComplete}
-          className="h-10 px-8 rounded-full bg-[#9ad8ff] hover:bg-[#bae6fd] text-slate-950 text-xs font-semibold shadow-[0_10px_28px_rgba(138,216,255,0.28)] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+          className="h-9 sm:h-10 px-4 sm:px-8 rounded-full bg-[#9ad8ff] hover:bg-[#bae6fd] text-slate-950 text-xs font-semibold shadow-[0_10px_28px_rgba(138,216,255,0.28)] transition-colors cursor-pointer whitespace-nowrap shrink-0"
         >
           Complete
         </button>

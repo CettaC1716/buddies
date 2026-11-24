@@ -19,6 +19,7 @@ import {
   isPointOnZebraCrosswalk,
 } from './buddiesPlanetCurvature';
 import { buildCityLightingAndTrafficSystem } from './buddiesCityLightingAndTrafficBuilder';
+import { BEACH_CLUB_MASTERPLAN } from './buddiesBeachClubRules';
 import {
   CITY_BUILDING_GLOW_MANIFEST,
   CITY_LAMP_MANIFEST,
@@ -841,6 +842,56 @@ test('Pier-mounted Tier 2 lanterns render lantern-only batch without brick pedes
   for (const id of ['existing_civic_planter_w', 'existing_civic_planter_e']) {
     const a = EXISTING_CITY_LAMP_POOL_ANCHORS.find((entry) => entry.id === id);
     assert.ok(a && a.lanternYOffset === 4.96, `Upgraded civic planter bronze lamp ${id} should align lanternYOffset at 4.96m`);
+  }
+});
+
+test('Zero city streetlamps or road signs clip into Beach Club entrances, decks, staircases, or palm trunks', () => {
+  const deck = BEACH_CLUB_MASTERPLAN.mainDeck;
+
+  for (const lamp of CITY_LAMP_MANIFEST) {
+    // Never inside Beach Club terraced decks or seaward beach stairs
+    const insideDecks =
+      lamp.x >= deck.minX - 0.2 &&
+      lamp.x <= deck.maxX + 2.4 &&
+      lamp.z >= deck.minZ - 0.3 &&
+      lamp.z <= deck.maxZ + 0.3;
+    assert.equal(insideDecks, false, `Lamp ${lamp.id} (${lamp.x}, ${lamp.z}) clipped into Beach Club terraced decks`);
+
+    // Never overlapping any Beach Club staircase flight
+    for (const sf of BEACH_CLUB_MASTERPLAN.stairFlights) {
+      const hitsStair =
+        lamp.x >= sf.minX - 0.35 &&
+        lamp.x <= sf.maxX + 0.35 &&
+        lamp.z >= sf.minZ - 0.35 &&
+        lamp.z <= sf.maxZ + 0.35;
+      assert.equal(hitsStair, false, `Lamp ${lamp.id} clipped into Beach Club stair ${sf.id}`);
+    }
+
+    // Clear of East Harbor road entrance spurs (z = ±15.0) along the Beach Club border
+    if (lamp.x >= 77.5 && lamp.x <= 82.0) {
+      assert.ok(
+        Math.abs(lamp.z - -15.0) >= 4.5 && Math.abs(lamp.z - 15.0) >= 4.5,
+        `Lamp ${lamp.id} (${lamp.x}, ${lamp.z}) crowds Beach Club road entrance spur`,
+      );
+    }
+
+    // Generous clearance (>= 3.0m) from every Beach Club coconut palm trunk
+    for (const palm of BEACH_CLUB_MASTERPLAN.palms) {
+      const d = Math.hypot(lamp.x - palm.x, lamp.z - palm.z);
+      assert.ok(
+        d >= 3.0,
+        `Lamp ${lamp.id} (${lamp.x}, ${lamp.z}) too close (${d.toFixed(2)}m < 3.0m) to Beach Club palm ${palm.id}`,
+      );
+    }
+  }
+
+  for (const sign of CITY_TRAFFIC_SIGN_SPECS) {
+    const insideBeachClub =
+      sign.x >= BEACH_CLUB_MASTERPLAN.promenade.minX - 0.2 &&
+      sign.x <= deck.maxX + 2.4 &&
+      sign.z >= BEACH_CLUB_MASTERPLAN.promenade.minZ - 0.3 &&
+      sign.z <= BEACH_CLUB_MASTERPLAN.promenade.maxZ + 0.3;
+    assert.equal(insideBeachClub, false, `Traffic sign ${sign.id} (${sign.x}, ${sign.z}) encroached into Beach Club`);
   }
 });
 

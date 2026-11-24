@@ -5,15 +5,15 @@ interface WalletAssetPortraitCardProps {
   badgeLabel?: string;
   badgeTone?: 'neutral' | 'emerald' | 'amber' | 'sky';
   title: string;
-  description?: string;
-  tokenId?: string;
-  statusLabel: string;
-  statusTone?: 'emerald' | 'amber';
-  priceLabel: string;
+  statusLabel?: string;
+  statusTone?: 'emerald' | 'amber' | 'neutral';
+  priceLabel?: string;
   visual: React.ReactNode;
   visualAspectClass?: string;
   headerAction?: React.ReactNode;
   extraFooter?: React.ReactNode;
+  onClick?: () => void;
+  ariaLabel?: string;
   className?: string;
   dataAttrs?: Record<string, string | undefined>;
 }
@@ -21,15 +21,13 @@ interface WalletAssetPortraitCardProps {
 /**
  * Editorial vertical hang-tag portrait card inspired by boutique 3D object cards:
  * matte porcelain surface, top-center punch-hole + hanging clasp, light-grey studio
- * visual stage, crisp dark title, hairline divider, and compact metadata footer.
+ * visual stage, crisp dark title, and optional compact status/action footer.
  */
 export const WalletAssetPortraitCard: React.FC<WalletAssetPortraitCardProps> = ({
   brandLabel,
   badgeLabel,
   badgeTone = 'neutral',
   title,
-  description,
-  tokenId,
   statusLabel,
   statusTone = 'emerald',
   priceLabel,
@@ -37,6 +35,8 @@ export const WalletAssetPortraitCard: React.FC<WalletAssetPortraitCardProps> = (
   visualAspectClass = 'aspect-[4/4.25]',
   headerAction,
   extraFooter,
+  onClick,
+  ariaLabel,
   className = '',
   dataAttrs,
 }) => {
@@ -50,12 +50,34 @@ export const WalletAssetPortraitCard: React.FC<WalletAssetPortraitCardProps> = (
           : 'bg-neutral-900/[0.06] text-neutral-700';
 
   const statusClass =
-    statusTone === 'amber' ? 'text-amber-600' : 'text-emerald-600';
+    statusTone === 'amber'
+      ? 'text-amber-600'
+      : statusTone === 'neutral'
+        ? 'text-neutral-500'
+        : 'text-emerald-600';
+
+  const interactiveProps = onClick
+    ? {
+        role: 'button' as const,
+        tabIndex: 0,
+        'aria-label': ariaLabel ?? title,
+        onClick,
+        onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick();
+          }
+        },
+      }
+    : {};
 
   return (
     <div
       {...dataAttrs}
-      className={`group/card relative flex flex-col rounded-[20px] bg-[#fafafa] text-neutral-900 border border-white/60 shadow-[0_10px_26px_rgba(0,0,0,0.28),0_1px_2px_rgba(0,0,0,0.14)] pt-5 px-3 pb-3 overflow-visible transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_32px_rgba(0,0,0,0.34)] ${className}`}
+      {...interactiveProps}
+      className={`group/card relative flex flex-col rounded-[20px] bg-[#fafafa] text-neutral-900 border border-white/60 shadow-[0_10px_26px_rgba(0,0,0,0.28),0_1px_2px_rgba(0,0,0,0.14)] pt-5 px-3 pb-3 overflow-visible transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_32px_rgba(0,0,0,0.34)] ${
+        onClick ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/80' : ''
+      } ${className}`}
     >
       {/* Signature Hang-Tag Lanyard Clasp + Recessed Punch Hole */}
       <div
@@ -74,7 +96,7 @@ export const WalletAssetPortraitCard: React.FC<WalletAssetPortraitCardProps> = (
         </span>
         {badgeLabel && (
           <span
-            className={`px-1.5 py-0.5 rounded-md font-mono font-semibold text-[9px] leading-none tracking-tight shrink-0 ${badgeClass}`}
+            className={`px-1.5 py-0.5 rounded-md font-semibold text-[9px] leading-none tracking-tight shrink-0 ${badgeClass}`}
           >
             {badgeLabel}
           </span>
@@ -89,41 +111,32 @@ export const WalletAssetPortraitCard: React.FC<WalletAssetPortraitCardProps> = (
       </div>
 
       {/* Editorial Title Row */}
-      <div className="mt-2.5 flex items-start justify-between gap-1.5">
+      <div className="mt-2.5 flex items-start justify-between gap-1.5 flex-1">
         <div className="text-[12.5px] font-bold tracking-[-0.02em] text-neutral-950 leading-[1.2] line-clamp-2 min-w-0">
           {title}
         </div>
         {headerAction && <div className="shrink-0">{headerAction}</div>}
       </div>
 
-      {/* Crisp Hairline Rule */}
-      <div className="my-2 border-t border-neutral-300/80" />
+      {/* Status Footer (no price on owned cards) */}
+      {(statusLabel || priceLabel) && (
+        <div className="mt-2.5 pt-2 border-t border-black/[0.06] flex items-center justify-between gap-1 text-[10px] font-medium tabular-nums">
+          {statusLabel ? (
+            <span className={`${statusClass} font-semibold truncate`}>
+              {statusLabel}
+            </span>
+          ) : (
+            <span />
+          )}
+          {priceLabel && (
+            <span className="text-neutral-600 font-medium shrink-0">
+              {priceLabel}
+            </span>
+          )}
+        </div>
+      )}
 
-      {/* Description & Token ID */}
-      <div className="space-y-1 flex-1">
-        {description && (
-          <p className="text-[10px] leading-[1.38] text-neutral-500 line-clamp-2">
-            {description}
-          </p>
-        )}
-        {tokenId && (
-          <div className="text-[9px] font-mono text-neutral-400 truncate">
-            {tokenId}
-          </div>
-        )}
-      </div>
-
-      {/* Status & Price Footer */}
-      <div className="mt-2.5 pt-2 border-t border-black/[0.06] flex items-center justify-between gap-1 text-[10px] font-mono tabular-nums">
-        <span className={`${statusClass} font-semibold truncate`}>
-          {statusLabel}
-        </span>
-        <span className="text-neutral-600 font-medium shrink-0">
-          {priceLabel}
-        </span>
-      </div>
-
-      {extraFooter && <div className="mt-2.5">{extraFooter}</div>}
+      {extraFooter && <div className="mt-2">{extraFooter}</div>}
     </div>
   );
 };

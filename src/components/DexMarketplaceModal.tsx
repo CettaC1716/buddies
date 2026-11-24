@@ -1185,21 +1185,21 @@ export const DexMarketplaceModal: React.FC<DexMarketplaceModalProps> = ({
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         <div className="p-3 rounded-xl bg-white/[0.04] border border-white/12">
-          <div className="text-[10.5px] text-white/50">NEAR Balance</div>
-          <div className="text-base font-bold text-white mt-0.5 tabular-nums">
-            {nearTestnetBalance.toFixed(4)} NEAR
-          </div>
-          <div className="text-[10px] text-white/45 mt-0.5 tabular-nums">
-            ≈ {Math.floor(nearTestnetBalance * respiteRatePerNear).toLocaleString()} R power
-          </div>
-        </div>
-        <div className="p-3 rounded-xl bg-white/[0.04] border border-white/12">
           <div className="text-[10.5px] text-white/50">RESPITE Balance</div>
           <div className="text-base font-bold text-emerald-300 mt-0.5 tabular-nums">
             {respiteBalance.toLocaleString()} R
           </div>
           <div className="text-[10px] text-white/45 mt-0.5 tabular-nums">
             ≈ {(respiteBalance * NEAR_PER_RESPITE).toFixed(4)} NEAR
+          </div>
+        </div>
+        <div className="p-3 rounded-xl bg-white/[0.04] border border-white/12">
+          <div className="text-[10.5px] text-white/50">NEAR Balance</div>
+          <div className="text-base font-bold text-white mt-0.5 tabular-nums">
+            {nearTestnetBalance.toFixed(4)} NEAR
+          </div>
+          <div className="text-[10px] text-white/45 mt-0.5 tabular-nums">
+            ≈ {Math.floor(nearTestnetBalance * respiteRatePerNear).toLocaleString()} R power
           </div>
         </div>
         <div className="p-3 rounded-xl bg-white/[0.04] border border-white/12">
@@ -1481,12 +1481,12 @@ export const DexMarketplaceModal: React.FC<DexMarketplaceModalProps> = ({
               </button>
 
               <div className="hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-white/[0.06] border border-white/12 text-xs font-semibold tabular-nums whitespace-nowrap">
-                <span className="text-sky-300">
-                  {nearTestnetBalance.toFixed(2)} NEAR
-                </span>
-                <span className="text-white/25">·</span>
                 <span className="text-emerald-300">
                   {respiteBalance.toLocaleString()} RESPITE
+                </span>
+                <span className="text-white/25">·</span>
+                <span className="text-sky-300">
+                  {nearTestnetBalance.toFixed(2)} NEAR
                 </span>
               </div>
 

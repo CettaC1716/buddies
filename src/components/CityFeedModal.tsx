@@ -29,6 +29,17 @@ import {
   simplifyDisplayName,
   type NearbyEntityUser,
 } from './SocialChatModal';
+import { RoleBadgeCircle } from './RoleBadgeCircle';
+import {
+  DEFAULT_PLAYER_SOCIAL_GRAPH,
+  isFollowingPlayer,
+  type PlayerSocialGraph,
+} from '../game/buddiesSocialGraph';
+import { normalizePlayerPrivacyKey } from '../game/buddiesPrivacySettings';
+import {
+  fetchPlayerProfilesByAccounts,
+  type SearchedPlayerProfile,
+} from '../lib/supabaseClient';
 
 export interface CityFeedModalProps {
   isOpen: boolean;
@@ -40,11 +51,13 @@ export interface CityFeedModalProps {
   playerTeam: 'blue' | 'red';
   currentDistrict: string;
   nearbyUsers: NearbyEntityUser[];
+  socialGraph?: PlayerSocialGraph;
+  onToggleFollowPlayer?: (user: NearbyEntityUser) => void;
   onOpenPlayerProfile?: (user: NearbyEntityUser) => void;
   onStartWhisper?: (user: NearbyEntityUser) => void;
 }
 
-type FeedFilterTab = 'all' | 'nearby' | 'mine';
+type FeedFilterTab = 'all' | 'following' | 'nearby' | 'mine';
 
 const FEED_MOODS = ['Exploring', 'Chill', 'Fishing', 'Racing', 'Trading', 'Cafe'] as const;
 const AVATAR_PHOTO_STORAGE_KEY = 'bb_player_avatar_photo_v1';
@@ -84,6 +97,8 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
   playerTeam,
   currentDistrict,
   nearbyUsers,
+  socialGraph = DEFAULT_PLAYER_SOCIAL_GRAPH,
+  onToggleFollowPlayer: _onToggleFollowPlayer,
   onOpenPlayerProfile,
   onStartWhisper,
 }) => {
@@ -128,6 +143,7 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [brokenPhotoIds, setBrokenPhotoIds] = useState<Record<string, boolean>>({});
+  const [followedRemoteProfiles, setFollowedRemoteProfiles] = useState<SearchedPlayerProfile[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -135,6 +151,67 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
     () => filterRealHumanOnlinePlayers(nearbyUsers, cleanSelfName, playerUid),
     [nearbyUsers, cleanSelfName, playerUid],
   );
+
+  useEffect(() => {
+    if (!isOpen || socialGraph.following.length === 0) {
+      setFollowedRemoteProfiles([]);
+      return;
+    }
+    let cancelled = false;
+    const ids = socialGraph.following.map((f) => f.id);
+    void fetchPlayerProfilesByAccounts(ids).then((profiles) => {
+      if (!cancelled) {
+        setFollowedRemoteProfiles(profiles);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, socialGraph.following]);
+
+  const followedBuilders = useMemo(() => {
+    const remoteById = new Map<string, SearchedPlayerProfile>();
+    for (const p of followedRemoteProfiles) {
+      remoteById.set(normalizePlayerPrivacyKey(p.nearAccountId), p);
+    }
+    return socialGraph.following.map((entry) => {
+      const key = normalizePlayerPrivacyKey(entry.id);
+      const onlinePeer = onlineHumanPeers.find(
+        (u) =>
+          normalizePlayerPrivacyKey(u.nearAccountId || u.id) === key ||
+          normalizePlayerPrivacyKey(u.name) === normalizePlayerPrivacyKey(entry.name),
+      );
+      const remote = remoteById.get(key);
+      const buildingProject =
+        onlinePeer?.buildingProject || remote?.buildingProject || entry.buildingProject || '';
+      const roleBadge = onlinePeer?.roleBadge || remote?.roleBadge || entry.roleBadge;
+      const targetUser: NearbyEntityUser = onlinePeer ?? {
+        id: remote?.nearAccountId || entry.id,
+        nearAccountId: remote?.nearAccountId || entry.id,
+        name: remote?.displayName || entry.name,
+        distance: 999,
+        isNpc: false,
+        roleBadge,
+        buildingProject,
+        socialX: remote?.socialX,
+        socialGithub: remote?.socialGithub,
+        socialWebsite: remote?.socialWebsite,
+        allowFriendRequests: remote?.allowFriendRequests,
+        privateMessages: remote?.privateMessages,
+        apartmentVisits: remote?.apartmentVisits,
+        showWalletAddressOnProfile: remote?.showWalletAddressOnProfile,
+        showThingsOnProfile: remote?.showThingsOnProfile,
+      };
+      return {
+        id: entry.id,
+        name: remote?.displayName || onlinePeer?.name || entry.name,
+        roleBadge,
+        buildingProject,
+        isOnline: Boolean(onlinePeer),
+        targetUser,
+      };
+    });
+  }, [socialGraph.following, followedRemoteProfiles, onlineHumanPeers]);
 
   const loadFeed = useCallback(async (showSpinner = false) => {
     if (showSpinner) setIsLoading(true);
@@ -185,6 +262,13 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
     if (filterTab === 'mine') {
       return posts.filter(isOwnPost);
     }
+    if (filterTab === 'following') {
+      return posts.filter(
+        (p) =>
+          !isOwnPost(p) &&
+          isFollowingPlayer(socialGraph, p.authorNearAccount || p.authorId, p.authorName),
+      );
+    }
     if (filterTab === 'nearby') {
       const peerNames = new Set(
         onlineHumanPeers.map((u) => simplifyDisplayName(u.name).toLowerCase()),
@@ -198,7 +282,7 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
       });
     }
     return posts;
-  }, [posts, filterTab, isOwnPost, onlineHumanPeers]);
+  }, [posts, filterTab, isOwnPost, onlineHumanPeers, socialGraph]);
 
   const handleUploadSnapshot = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -360,13 +444,14 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
       <div
         role="tablist"
         aria-label="Feed Filter"
-        className="grid grid-cols-3 gap-1 p-1 mt-2.5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_6px_16px_rgba(15,23,42,0.14)] shrink-0"
+        className="grid grid-cols-4 gap-1 p-1 mt-2.5 rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_6px_16px_rgba(15,23,42,0.14)] shrink-0"
       >
         {(
           [
-            { id: 'all', label: 'All Posts' },
+            { id: 'all', label: 'All' },
+            { id: 'following', label: `Following (${socialGraph.following.length})` },
             { id: 'nearby', label: `Nearby (${onlineHumanPeers.length})` },
-            { id: 'mine', label: 'My Posts' },
+            { id: 'mine', label: 'Mine' },
           ] as const
         ).map((tab) => {
           const active = filterTab === tab.id;
@@ -381,7 +466,7 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
                 soundEngine.playUiClick();
                 setFilterTab(tab.id);
               }}
-              className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold whitespace-nowrap truncate transition-colors cursor-pointer ${
+              className={`py-1.5 px-1.5 rounded-xl text-[10.5px] font-semibold whitespace-nowrap truncate transition-colors cursor-pointer ${
                 active
                   ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.1)]'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/55'
@@ -395,6 +480,60 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
 
       {/* Scrollable Feed Area */}
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-0.5 mt-2.5 space-y-2.5">
+        {/* Followed Builders' "Building —" Project Status Strip */}
+        {(filterTab === 'all' || filterTab === 'following') && followedBuilders.length > 0 && (
+          <div
+            data-city-feed-following-builders="true"
+            className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_6px_16px_rgba(15,23,42,0.14)] p-2.5 space-y-1.5 text-slate-900"
+          >
+            <div className="flex items-center justify-between gap-2 px-0.5">
+              <span className="text-[10.5px] font-semibold text-slate-700">
+                Builders you follow
+              </span>
+              <span className="text-[10px] font-medium text-slate-500">
+                {followedBuilders.length} following
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {followedBuilders.map((builder) => (
+                <button
+                  key={builder.id}
+                  type="button"
+                  data-city-feed-followed-builder={builder.id}
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    onOpenPlayerProfile?.(builder.targetUser);
+                  }}
+                  className="w-full px-2.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-2 text-left cursor-pointer transition-colors"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <RoleBadgeCircle roleId={builder.roleBadge} size="xs" />
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-semibold text-slate-900 truncate flex items-center gap-1.5">
+                        <span className="truncate">{simplifyDisplayName(builder.name)}</span>
+                        {builder.isOnline && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                        )}
+                      </div>
+                      <div className="text-[10.5px] text-slate-600 truncate">
+                        {builder.buildingProject ? (
+                          <>
+                            Building —{' '}
+                            <span className="font-semibold text-slate-900">
+                              {builder.buildingProject}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-slate-400">Following their City Feed updates</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {/* Live Online Citizens Quick Strip */}
         {onlineHumanPeers.length > 0 && (
           <div className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_6px_16px_rgba(15,23,42,0.14)] p-2.5 space-y-1.5 text-slate-900">
@@ -570,14 +709,20 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
         ) : filteredPosts.length === 0 ? (
           <div className="rounded-2xl bg-[#eef0f4]/90 border border-white/80 py-8 px-4 text-center space-y-1 shadow-sm">
             <div className="text-[12px] font-semibold text-slate-900">
-              {filterTab === 'nearby'
-                ? 'No posts from nearby players yet'
-                : filterTab === 'mine'
-                  ? 'You have not posted to City Feed yet'
-                  : 'No posts in City Feed yet'}
+              {filterTab === 'following'
+                ? socialGraph.following.length === 0
+                  ? 'You are not following anyone yet'
+                  : 'No City Feed announcements from followed builders yet'
+                : filterTab === 'nearby'
+                  ? 'No posts from nearby players yet'
+                  : filterTab === 'mine'
+                    ? 'You have not posted to City Feed yet'
+                    : 'No posts in City Feed yet'}
             </div>
             <p className="text-[11px] text-slate-500">
-              Share what you are doing in {currentDistrict || 'Central Plaza'} so other players can see and reply.
+              {filterTab === 'following'
+                ? 'Follow builders from their profile card or search results to see what they are building and their announcements here.'
+                : `Share what you are doing in ${currentDistrict || 'Central Plaza'} so other players can see and reply.`}
             </p>
           </div>
         ) : (

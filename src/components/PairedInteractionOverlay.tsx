@@ -128,7 +128,7 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
           data-paired-interaction-popup="true"
           onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
-          className={`fixed left-3 sm:left-4 top-14 bottom-[76px] my-auto z-50 w-[min(340px,calc(100vw-1.5rem))] sm:w-[356px] max-h-[620px] pointer-events-auto select-none transition-all duration-250 ease-out ${
+          className={`fixed inset-x-2.5 sm:inset-x-auto sm:left-4 top-[max(0.5rem,var(--safe-top))] sm:top-14 bottom-[calc(64px+var(--safe-bottom))] sm:bottom-[76px] my-auto z-50 sm:w-[356px] max-w-[400px] mx-auto sm:mx-0 max-h-[min(620px,calc(100dvh-4.75rem))] pointer-events-auto select-none transition-all duration-250 ease-out ${
             hasEntered ? 'translate-x-0 opacity-100' : '-translate-x-8 opacity-0'
           }`}
         >
@@ -256,7 +256,7 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
                 {filteredItems.length === 0 ? (
                   <div className="py-10 text-center text-xs text-white/55 px-2">
                     {ownedPairedItems.length === 0
-                      ? 'No paired animations owned yet. Open Wardrobe Studio → Style → Paired.'
+                      ? 'No paired animations owned yet. Open Wardrobe → Style → Paired.'
                       : 'No matching paired animations found.'}
                   </div>
                 ) : (

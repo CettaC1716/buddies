@@ -41,6 +41,7 @@ export interface HudWeatherAndTimeControlProps {
   onToggleAutoCycle: (enabled: boolean) => void;
   onChangeCityLightsScale: (scale: number) => void;
   audioControls?: HudWeatherAudioControls;
+  compactPill?: boolean;
 }
 
 const TIME_PHASE_ITEMS: ReadonlyArray<{
@@ -111,6 +112,7 @@ export function HudWeatherAndTimeControl({
   onToggleAutoCycle,
   onChangeCityLightsScale,
   audioControls,
+  compactPill = false,
 }: HudWeatherAndTimeControlProps) {
   const [isOpen, setIsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -199,8 +201,8 @@ export function HudWeatherAndTimeControl({
           onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
           className={`absolute ${popoverAlign === 'left' ? 'left-0' : 'right-0'} ${
-            popoverPlacement === 'bottom' ? 'top-full mt-2.5' : 'bottom-full mb-2.5'
-          } z-50 w-[316px] max-h-[82vh] overflow-y-auto rounded-[28px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 text-white border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)]`}
+            popoverPlacement === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2'
+          } z-50 w-[min(316px,calc(100vw-1.5rem))] max-h-[min(76dvh,540px)] overflow-y-auto rounded-[24px] sm:rounded-[28px] bg-gradient-to-b from-[#171d2c]/88 via-[#111622]/86 to-[#0c101a]/90 text-white border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)]`}
         >
           {/* Top Clock + Weather Header (matching BLITZ OS translucent dark glass header) */}
           <div className="px-4 pt-3.5 pb-3 border-b border-white/12">
@@ -576,22 +578,24 @@ export function HudWeatherAndTimeControl({
             ? `Weather, Time & Audio: ${timeMeta.label} (${clockLabel}) · ${weatherMeta.label} · Sound ${effectiveSfxPct}%`
             : `Weather & Time: ${timeMeta.label} (${clockLabel}) · ${weatherMeta.label} (Press [L] to cycle phase)`
         }
-        className={`h-9 px-3 rounded-full flex items-center gap-2 border shadow-[0_6px_20px_rgba(0,0,0,0.35)] cursor-pointer active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70 ${
+        className={`${compactPill ? 'h-8 px-2.5 gap-1.5' : 'h-9 px-3 gap-2'} rounded-full flex items-center border shadow-[0_6px_20px_rgba(0,0,0,0.35)] cursor-pointer active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70 ${
           isOpen
             ? 'bg-[#1c2436]/92 border-white/35 text-white'
             : 'bg-[#111622]/84 hover:bg-[#192133]/92 border-white/18 hover:border-white/30 text-white'
         }`}
       >
-        <span className="flex items-center gap-1.5 text-[11.5px] font-medium whitespace-nowrap">
+        <span className={`flex items-center ${compactPill ? 'gap-1 text-[11px]' : 'gap-1.5 text-[11.5px]'} font-medium whitespace-nowrap`}>
           <span className="font-mono tabular-nums font-semibold text-white/95">
             {clockLabel}
           </span>
           <span className="text-white/25">·</span>
           <span aria-hidden="true" className="text-xs leading-none">{timeMeta.icon}</span>
-          <span className="text-white/80 hidden sm:inline">{timeMeta.label}</span>
-          <span className="text-white/25 hidden sm:inline">·</span>
-          <span aria-hidden="true" className="text-xs leading-none">{weatherMeta.icon}</span>
-          <span className="text-sky-200/95">{weatherMeta.label}</span>
+          {!compactPill && <span className="text-white/80 hidden sm:inline">{timeMeta.label}</span>}
+          {!compactPill && <span className="text-white/25 hidden sm:inline">·</span>}
+          {(!compactPill || weatherMeta.icon !== timeMeta.icon) && (
+            <span aria-hidden="true" className="text-xs leading-none">{weatherMeta.icon}</span>
+          )}
+          {!compactPill && <span className="text-sky-200/95">{weatherMeta.label}</span>}
           {autoCycleEnabled && (
             <span
               aria-hidden="true"

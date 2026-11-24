@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
   Backpack,
-  Bike,
   ChevronLeft,
   ClipboardList,
-  Coins,
   Globe,
   Home,
   Map as MapIcon,
@@ -23,12 +21,13 @@ import {
 import { soundEngine } from '../game/audio';
 import { formatClock24h } from '../game/buddiesWeatherSystem';
 import type { LightingPresetKey, WeatherConditionKey } from '../game/buddiesBlitzRules';
+import type { CityNewsCardSummary } from '../lib/phoneHomeCityNews';
+import { useAdaptiveViewport } from '../lib/useAdaptiveViewport';
 
 export type SmartphoneAppId =
   | 'home'
   | 'wallet'
-  | 'bag'
-  | 'scooters'
+  | 'my_things'
   | 'missions'
   | 'profile'
   | 'public'
@@ -50,8 +49,8 @@ export interface SmartphoneOsModalProps {
   timeOfDayHours: number;
   lightingPreset: LightingPresetKey;
   weatherCondition: WeatherConditionKey;
-  lulBalance: number;
-  nearBalance: number;
+  cityNews: CityNewsCardSummary;
+  pendingWalletTxCount?: number;
   completedMissionsCount: number;
   totalMissionsCount: number;
   actionableMissionsCount: number;
@@ -143,8 +142,8 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
   timeOfDayHours,
   lightingPreset,
   weatherCondition,
-  lulBalance,
-  nearBalance,
+  cityNews,
+  pendingWalletTxCount = 0,
   completedMissionsCount,
   totalMissionsCount,
   actionableMissionsCount,
@@ -160,6 +159,9 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [hasEntered, setHasEntered] = useState(false);
+  const adaptive = useAdaptiveViewport();
+  const isPhoneOverlay = adaptive.isPhonePortrait;
+  const isShortLandscape = adaptive.isCompactHeight;
 
   useEffect(() => {
     if (!isOpen) {
@@ -199,8 +201,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
     activeApp === 'profile' ||
     activeApp === 'city_feed' ||
     activeApp === 'wallet' ||
-    activeApp === 'bag' ||
-    activeApp === 'scooters' ||
+    activeApp === 'my_things' ||
     activeApp === 'missions' ||
     activeApp === 'public' ||
     activeApp === 'messages' ||
@@ -246,29 +247,35 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
       onClick: () => launchExternal(onOpenWardrobe),
     },
     {
-      id: 'scooters',
-      label: 'Scooters',
-      gradient: 'from-amber-400 to-orange-500',
-      icon: <Bike className="w-6 h-6 text-white stroke-[1.9]" />,
-      badge: isRidingScooter ? 'ON' : undefined,
-      badgeColor: 'bg-emerald-400 text-slate-950',
-      onClick: () => openInPhone('scooters'),
-    },
-    {
-      id: 'bag',
-      label: 'Bag',
+      id: 'my_things',
+      label: 'My Things',
       gradient: 'from-emerald-400 to-teal-600',
       icon: <Backpack className="w-6 h-6 text-white stroke-[1.9]" />,
-      badge: isFishingRodEquipped ? '🎣' : undefined,
-      badgeColor: 'bg-sky-300 text-slate-950',
-      onClick: () => openInPhone('bag'),
+      badge: isRidingScooter
+        ? 'ON'
+        : isFishingRodEquipped
+          ? '🎣'
+          : newAssetCount > 0
+            ? newAssetCount
+            : undefined,
+      badgeColor: isRidingScooter
+        ? 'bg-emerald-400 text-slate-950'
+        : isFishingRodEquipped
+          ? 'bg-sky-300 text-slate-950'
+          : 'bg-rose-500 text-white',
+      onClick: () => openInPhone('my_things'),
     },
     {
       id: 'wallet',
-      label: 'Payments',
+      label: 'Wallet',
       gradient: 'from-yellow-400 to-amber-500',
       icon: <Wallet className="w-6 h-6 text-white stroke-[1.9]" />,
-      badge: newAssetCount > 0 ? newAssetCount : undefined,
+      badge:
+        pendingWalletTxCount > 0
+          ? pendingWalletTxCount > 9
+            ? '9+'
+            : pendingWalletTxCount
+          : undefined,
       badgeColor: 'bg-rose-500 text-white',
       onClick: () => openInPhone('wallet'),
     },
@@ -320,25 +327,33 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
       data-smartphone-active-app={activeApp}
       data-smartphone-expanded={isExpanded ? 'true' : 'false'}
       onPointerDown={(e) => {
-        if (isExpanded && e.target === e.currentTarget) {
+        if ((isExpanded || isPhoneOverlay) && e.target === e.currentTarget) {
           soundEngine.playUiClick();
           onClose();
         }
       }}
       className={`fixed inset-0 z-50 select-none transition-colors duration-200 ${
-        isExpanded
-          ? 'bg-black/35 pointer-events-auto'
+        isExpanded || isPhoneOverlay
+          ? 'bg-black/40 pointer-events-auto'
           : 'bg-transparent pointer-events-none'
       }`}
     >
-      {/* Outer Positioning Wrapper: slides in docked on the left by default; expands & centers when toggled */}
+      {/* Outer Positioning Wrapper: full centered mobile sheet on phones; docked left on tablet/desktop */}
       <div
         className={`fixed pointer-events-auto transition-transform duration-200 ease-out ${
-          isExpanded
-            ? 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(560px,calc(100vw-2rem))] h-[min(680px,88vh)]'
-            : `left-3 sm:left-4 top-14 bottom-[76px] my-auto w-[min(340px,calc(100vw-1.5rem))] sm:w-[356px] max-h-[620px] ${
-                hasEntered ? 'translate-x-0' : '-translate-x-8'
+          isPhoneOverlay
+            ? `inset-x-2.5 top-[max(0.6rem,var(--safe-top))] bottom-[max(0.6rem,var(--safe-bottom))] mx-auto max-w-[400px] ${
+                hasEntered ? 'translate-y-0' : 'translate-y-4'
               }`
+            : isExpanded
+              ? 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(560px,calc(100vw-1.5rem))] h-[min(680px,90dvh)]'
+              : isShortLandscape
+                ? `left-[max(0.75rem,var(--safe-left))] top-2 bottom-2 w-[min(340px,calc(100vw-1.5rem))] max-h-[calc(100dvh-1rem)] ${
+                    hasEntered ? 'translate-x-0' : '-translate-x-8'
+                  }`
+                : `left-3 sm:left-4 top-14 bottom-[76px] my-auto w-[min(340px,calc(100vw-1.5rem))] sm:w-[356px] max-h-[min(620px,calc(100dvh-7.5rem))] ${
+                    hasEntered ? 'translate-x-0' : '-translate-x-8'
+                  }`
         }`}
       >
         {/* Unified Smartphone OS Frame */}
@@ -441,27 +456,28 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
                     </div>
                   </button>
 
-                  {/* Widget 2: Wallet & Bills */}
+                  {/* Widget 2: City News (City Feed / Letters pulse — no open balances on home) */}
                   <button
                     type="button"
-                    onClick={() => openInPhone('wallet')}
+                    data-smartphone-city-news-card="true"
+                    onClick={() => openInPhone(cityNews.targetApp)}
                     className="group rounded-2xl bg-white/95 hover:bg-white text-slate-900 overflow-hidden shadow-[0_8px_22px_rgba(0,0,0,0.22)] text-left flex flex-col cursor-pointer transition-transform active:scale-[0.98]"
                   >
-                    <div className="px-2.5 py-1.5 bg-gradient-to-r from-orange-400 to-rose-400 text-white text-[10px] font-semibold flex items-center gap-1">
-                      <Coins className="w-3 h-3 shrink-0" />
-                      <span>Wallet Balance</span>
+                    <div className="px-2.5 py-1.5 bg-gradient-to-r from-cyan-500 to-teal-500 text-white text-[10px] font-semibold flex items-center justify-between gap-1">
+                      <span className="flex items-center gap-1 truncate">
+                        <Newspaper className="w-3 h-3 shrink-0" />
+                        <span>City News</span>
+                      </span>
+                      <span className="text-[9px] font-semibold opacity-90 shrink-0">
+                        {cityNews.badgeLabel}
+                      </span>
                     </div>
                     <div className="p-2.5 flex-1 flex flex-col justify-between min-h-[72px]">
-                      <div>
-                        <div className="text-[9.5px] text-slate-500">Available Funds</div>
-                        <div className="text-sm font-bold text-slate-900 font-mono tabular-nums mt-0.5">
-                          {lulBalance.toLocaleString()}{' '}
-                          <span className="text-[10px] font-semibold text-amber-600">LUL</span>
-                        </div>
+                      <div className="text-[11px] font-semibold text-slate-900 leading-snug line-clamp-2">
+                        {cityNews.headline}
                       </div>
-                      <div className="text-[9.5px] font-mono tabular-nums text-slate-500">
-                        {nearBalance >= 1 ? nearBalance.toFixed(2) : Number(nearBalance.toFixed(4))}{' '}
-                        NEAR
+                      <div className="text-[9.5px] text-slate-500 mt-1 truncate">
+                        {cityNews.subtitle}
                       </div>
                     </div>
                   </button>
@@ -626,8 +642,8 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
                 soundEngine.playUiClick();
                 setIsExpanded((prev) => !prev);
               }}
-              aria-label={isExpanded ? 'Perkecil Smartphone ke kiri' : 'Perlebar Smartphone'}
-              title={isExpanded ? 'Perkecil ke sisi kiri' : 'Perlebar'}
+              aria-label={isExpanded ? 'Collapse Smartphone' : 'Expand Smartphone'}
+              title={isExpanded ? 'Collapse to left' : 'Expand'}
               className={`w-10 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer active:scale-90 ${
                 isDarkShell
                   ? 'hover:bg-white/12 text-white/75 hover:text-white'

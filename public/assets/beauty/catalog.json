@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "total": 401,
+  "total": 395,
   "counts": {
     "blush": 64,
     "eyeshadow": 33,
@@ -8,7 +8,7 @@
     "eyes": 111,
     "brows": 59,
     "facepaint": 17,
-    "beard": 17,
+    "beard": 11,
     "faceoverlay": 22
   },
   "items": [
@@ -7981,7 +7981,7 @@
       "sourceId": "28124C01",
       "category": "beard",
       "gender": "male",
-      "label": "Facial Hair / Beard 28124C",
+      "label": "Clean Chin Curtain",
       "thumbUrl": "/assets/beauty/beard/28124C01_t.webp",
       "m": {
         "url": "/assets/beauty/beard/28124C01_m.webp",
@@ -8040,7 +8040,7 @@
       "sourceId": "3A262860",
       "category": "beard",
       "gender": "male",
-      "label": "Facial Hair / Beard 3A2628",
+      "label": "Soft Light Stubble",
       "thumbUrl": "/assets/beauty/beard/3A262860_t.webp",
       "m": {
         "url": "/assets/beauty/beard/3A262860_m.webp",
@@ -8099,7 +8099,7 @@
       "sourceId": "504CBAA3",
       "category": "beard",
       "gender": "male",
-      "label": "Facial Hair / Beard 504CBA",
+      "label": "Dark Sculpted Beard",
       "thumbUrl": "/assets/beauty/beard/504CBAA3_t.webp",
       "m": {
         "url": "/assets/beauty/beard/504CBAA3_m.webp",
@@ -8129,36 +8129,6 @@
         "y": 0,
         "w": 313,
         "h": 321
-      }
-    },
-    {
-      "id": "beauty_beard_536654fa",
-      "sourceId": "536654FA",
-      "category": "beard",
-      "gender": "male",
-      "label": "Facial Hair / Beard 536654",
-      "thumbUrl": "/assets/beauty/beard/536654FA_t.webp",
-      "m": {
-        "url": "/assets/beauty/beard/536654FA_m.webp",
-        "x": 683,
-        "y": 0,
-        "w": 258,
-        "h": 277
-      }
-    },
-    {
-      "id": "beauty_beard_5c2bff5",
-      "sourceId": "5C2BFF5",
-      "category": "beard",
-      "gender": "male",
-      "label": "Facial Hair / Beard 5C2BFF",
-      "thumbUrl": "/assets/beauty/beard/5C2BFF5_t.webp",
-      "m": {
-        "url": "/assets/beauty/beard/5C2BFF5_m.webp",
-        "x": 634,
-        "y": 0,
-        "w": 304,
-        "h": 223
       }
     },
     {
@@ -8250,21 +8220,6 @@
       }
     },
     {
-      "id": "beauty_beard_67564f99",
-      "sourceId": "67564F99",
-      "category": "beard",
-      "gender": "male",
-      "label": "Facial Hair / Beard 67564F",
-      "thumbUrl": "/assets/beauty/beard/67564F99_t.webp",
-      "m": {
-        "url": "/assets/beauty/beard/67564F99_m.webp",
-        "x": 638,
-        "y": 0,
-        "w": 333,
-        "h": 228
-      }
-    },
-    {
       "id": "beauty_faceoverlay_6939af43",
       "sourceId": "6939AF43",
       "category": "faceoverlay",
@@ -8313,7 +8268,7 @@
       "sourceId": "6D58106B",
       "category": "beard",
       "gender": "male",
-      "label": "Facial Hair / Beard 6D5810",
+      "label": "Full Rugged Beard",
       "thumbUrl": "/assets/beauty/beard/6D58106B_t.webp",
       "m": {
         "url": "/assets/beauty/beard/6D58106B_m.webp",
@@ -8321,21 +8276,6 @@
         "y": 0,
         "w": 392,
         "h": 206
-      }
-    },
-    {
-      "id": "beauty_beard_7d2c934b",
-      "sourceId": "7D2C934B",
-      "category": "beard",
-      "gender": "male",
-      "label": "Facial Hair / Beard 7D2C93",
-      "thumbUrl": "/assets/beauty/beard/7D2C934B_t.webp",
-      "m": {
-        "url": "/assets/beauty/beard/7D2C934B_m.webp",
-        "x": 639,
-        "y": 0,
-        "w": 287,
-        "h": 215
       }
     },
     {
@@ -8365,7 +8305,7 @@
       "sourceId": "8339F33E",
       "category": "beard",
       "gender": "male",
-      "label": "Facial Hair / Beard 8339F3",
+      "label": "Classic Full Beard",
       "thumbUrl": "/assets/beauty/beard/8339F33E_t.webp",
       "m": {
         "url": "/assets/beauty/beard/8339F33E_m.webp",
@@ -8402,7 +8342,7 @@
       "sourceId": "97928A5B",
       "category": "beard",
       "gender": "male",
-      "label": "Facial Hair / Beard 97928A",
+      "label": "Natural Designer Stubble",
       "thumbUrl": "/assets/beauty/beard/97928A5B_t.webp",
       "m": {
         "url": "/assets/beauty/beard/97928A5B_m.webp",
@@ -8410,21 +8350,6 @@
         "y": 0,
         "w": 390,
         "h": 135
-      }
-    },
-    {
-      "id": "beauty_beard_9f2a0727",
-      "sourceId": "9F2A0727",
-      "category": "beard",
-      "gender": "male",
-      "label": "Facial Hair / Beard 9F2A07",
-      "thumbUrl": "/assets/beauty/beard/9F2A0727_t.webp",
-      "m": {
-        "url": "/assets/beauty/beard/9F2A0727_m.webp",
-        "x": 634,
-        "y": 0,
-        "w": 304,
-        "h": 223
       }
     },
     {
@@ -8586,7 +8511,7 @@
       "sourceId": "D66410ED",
       "category": "beard",
       "gender": "male",
-      "label": "Facial Hair / Beard D66410",
+      "label": "Warm Brown Beard",
       "thumbUrl": "/assets/beauty/beard/D66410ED_t.webp",
       "m": {
         "url": "/assets/beauty/beard/D66410ED_m.webp",
@@ -8597,26 +8522,11 @@
       }
     },
     {
-      "id": "beauty_beard_de6a5df5",
-      "sourceId": "DE6A5DF5",
-      "category": "beard",
-      "gender": "male",
-      "label": "Facial Hair / Beard DE6A5D",
-      "thumbUrl": "/assets/beauty/beard/DE6A5DF5_t.webp",
-      "m": {
-        "url": "/assets/beauty/beard/DE6A5DF5_m.webp",
-        "x": 619,
-        "y": 0,
-        "w": 297,
-        "h": 202
-      }
-    },
-    {
       "id": "beauty_beard_e7fd5c1f",
       "sourceId": "E7FD5C1F",
       "category": "beard",
       "gender": "male",
-      "label": "Facial Hair / Beard E7FD5C",
+      "label": "Subtle 5 O'Clock Shadow",
       "thumbUrl": "/assets/beauty/beard/E7FD5C1F_t.webp",
       "m": {
         "url": "/assets/beauty/beard/E7FD5C1F_m.webp",
@@ -8675,7 +8585,7 @@
       "sourceId": "5FCBD71E",
       "category": "beard",
       "gender": "male",
-      "label": "Facial Hair / Beard 5FCBD7",
+      "label": "Curled Mustache & Beard",
       "thumbUrl": "/assets/beauty/beard/5FCBD71E_t.webp",
       "m": {
         "url": "/assets/beauty/beard/5FCBD71E_m.webp",
@@ -8690,7 +8600,7 @@
       "sourceId": "B636D159",
       "category": "beard",
       "gender": "male",
-      "label": "Facial Hair / Beard B636D1",
+      "label": "Sharp Chinstrap & Goatee",
       "thumbUrl": "/assets/beauty/beard/B636D159_t.webp",
       "m": {
         "url": "/assets/beauty/beard/B636D159_m.webp",
@@ -8705,7 +8615,7 @@
       "sourceId": "BC9E6D4E",
       "category": "beard",
       "gender": "male",
-      "label": "Facial Hair / Beard BC9E6D",
+      "label": "Trimmed Mustache & Chinstrap",
       "thumbUrl": "/assets/beauty/beard/BC9E6D4E_t.webp",
       "m": {
         "url": "/assets/beauty/beard/BC9E6D4E_m.webp",

@@ -229,9 +229,10 @@ test('All modular garment catalog items point exclusively to clean Blender /asse
       item.slot === 'face_eyeshadow' ||
       item.slot === 'face_blush' ||
       item.slot === 'face_facepaint' ||
-      item.slot === 'face_beard'
+      item.slot === 'face_beard' ||
+      item.slot === 'face_nose'
     ) {
-      assert.ok(item.isStarterDefault || item.beautyOverlay);
+      assert.ok(item.isStarterDefault || item.beautyOverlay || item.slot === 'face_nose');
     } else if (item.slot === 'style_anim') {
       assert.ok(
         item.animSet && item.animSet.clipCandidates.length > 0,
@@ -395,15 +396,74 @@ test('Face categories (Eyes, Brows, Lips) partition Free Owned vs Shop, stay ort
   assert.equal(sanitized.browStyleId, null, 'Unowned paid brow is stripped on commit');
   assert.equal(sanitized.lipStyleId, null, 'Unowned paid lip is stripped on commit');
 
-  // Verify non-overlapping 1024x1024 UV clear regions (lips < nose gap < eyes <= brows) for both genders
+  const nosePart = partitionWardrobeCategoryItems('face_nose', [], 'all', 'featured', 'female');
+  assert.equal(nosePart.owned.length, 6, 'All 6 nose styles are free/starter owned options');
+
+  // Test face fine-tuning resolution and clamping
+  const tunedDraft: WardrobeOutfitDraft = {
+    ...EMPTY_WARDROBE_DRAFT,
+    lipScale: 0.85,
+    lipOffsetY: 2.5,
+    eyeSpacing: 4.0,
+    eyeTiltDeg: 3.5,
+    eyeScale: 1.1,
+    browOffsetY: -1.5,
+    browTiltDeg: 4.0,
+    noseStyleId: 'face_nose_button',
+    headScale: 0.92,
+  };
+  const resolvedTuning = resolveWardrobeDraftFaceCustomization(tunedDraft).tuning;
+  assert.ok(resolvedTuning, 'Tuning profile must be present');
+  assert.equal(resolvedTuning.lipScale, 0.85);
+  assert.equal(resolvedTuning.lipOffsetY, 2.5);
+  assert.equal(resolvedTuning.eyeSpacing, 4.0);
+  assert.equal(resolvedTuning.eyeTiltDeg, 3.5);
+  assert.equal(resolvedTuning.eyeScale, 1.1);
+  assert.equal(resolvedTuning.browOffsetY, -1.5);
+  assert.equal(resolvedTuning.browTiltDeg, 4.0);
+  assert.equal(resolvedTuning.noseStyleId, 'face_nose_button');
+  assert.equal(resolvedTuning.headScale, 0.92);
+  assert.equal(resolveWardrobeDraftBodyShape(tunedDraft).headScale, 0.92);
+
+  // Verify strict aesthetic clamping on extreme out-of-bounds values
+  const extremeDraft: WardrobeOutfitDraft = {
+    ...EMPTY_WARDROBE_DRAFT,
+    lipScale: 0.1,
+    lipOffsetY: 99,
+    eyeSpacing: 50,
+    eyeTiltDeg: -45,
+    eyeScale: 3.0,
+    browOffsetY: -99,
+    browTiltDeg: 80,
+    headScale: 0.4,
+  };
+  const clamped = resolveWardrobeDraftFaceCustomization(extremeDraft).tuning!;
+  assert.equal(clamped.lipScale, 0.72);
+  assert.equal(clamped.lipOffsetY, 6);
+  assert.equal(clamped.eyeSpacing, 10);
+  assert.equal(clamped.eyeTiltDeg, -8);
+  assert.equal(clamped.eyeScale, 1.22);
+  assert.equal(clamped.browOffsetY, -7);
+  assert.equal(clamped.browTiltDeg, 12);
+  assert.equal(clamped.headScale, 0.78);
+  assert.equal(resolveWardrobeDraftBodyShape(extremeDraft).headScale, 0.78);
+
+  // Verify non-overlapping 1024x1024 UV clear regions (lips <= nose <= eyes <= brows) for both genders
   for (const gender of ['male', 'female'] as const) {
     const uv = getBlitzFaceUvCalibration(gender);
     const lipBottom = uv.lipClearRect.y + uv.lipClearRect.h;
+    const noseTop = uv.noseClearRect.y;
+    const noseBottom = uv.noseClearRect.y + uv.noseClearRect.h;
     const eyeTop = uv.eyeClearRect.y;
     const eyeBottom = uv.eyeClearRect.y + uv.eyeClearRect.h;
     const browTop = uv.browClearRect.y;
-    assert.ok(lipBottom < eyeTop - 20, `${gender} lips clear rect must stay well clear of nose & eyes`);
+    assert.ok(lipBottom <= noseTop, `${gender} lips clear rect must stay below nose`);
+    assert.ok(noseBottom <= eyeTop, `${gender} nose clear rect must stay below eyes`);
     assert.ok(eyeBottom <= browTop, `${gender} eye clear rect must not overlap brow clear rect`);
+    assert.ok(
+      uv.eyeLeftClearRect.x + uv.eyeLeftClearRect.w < uv.eyeRightClearRect.x,
+      `${gender} left & right eye clear rects must preserve center nose bridge`,
+    );
   }
 });
 
@@ -660,7 +720,7 @@ test('shouldFlipWardrobeThumbY flips glTF UV beauty thumbnails upright without f
     true,
   );
   assert.equal(
-    shouldFlipWardrobeThumbY({ thumbUrl: '/assets/beauty/beard/536654FA_t.webp' }),
+    shouldFlipWardrobeThumbY({ thumbUrl: '/assets/beauty/beard/28124C01_t.webp' }),
     true,
   );
   assert.equal(
