@@ -142,11 +142,10 @@ test('Amusement park colliders keep Entrance Archway, Midway spine, staircases, 
 });
 
 test('DEFAULT_ARENA_MAP_LAYOUT contains zero industrial props overlapping the Taman Ria footprint', async () => {
-  const { DEFAULT_ARENA_MAP_LAYOUT, isInsideCoastalAmusementParkFootprint } = await import(
-    './buddiesBlitzWorldBuilder'
-  );
-  const overlapping = DEFAULT_ARENA_MAP_LAYOUT.props.filter((p) =>
-    isInsideCoastalAmusementParkFootprint(p.x, p.z),
+  const { DEFAULT_ARENA_MAP_LAYOUT } = await import('./buddiesBlitzWorldBuilder');
+  const { bounds } = COASTAL_AMUSEMENT_PARK_MASTERPLAN;
+  const overlapping = DEFAULT_ARENA_MAP_LAYOUT.props.filter(
+    (p) => p.x >= bounds.minX && p.x <= bounds.maxX && p.z >= bounds.minZ && p.z <= bounds.maxZ,
   );
   assert.deepEqual(overlapping, []);
 });

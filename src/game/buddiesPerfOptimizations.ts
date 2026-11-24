@@ -298,3 +298,115 @@ export function shouldRefreshNightLightingFrame(input: NightLightingThrottleInpu
   }
   return false;
 }
+
+export type AdaptiveShadowMapRes = 1024 | 1536 | 2048;
+
+export interface AdaptiveShadowMapInput {
+  isSoftwareGl: boolean;
+  isFullMapOverview: boolean;
+  smoothedFrameMs: number;
+  currentRes: AdaptiveShadowMapRes;
+  cooldownFrames: number;
+}
+
+export interface AdaptiveShadowMapResult {
+  nextRes: AdaptiveShadowMapRes;
+  changed: boolean;
+  nextCooldownFrames: number;
+}
+
+const ADAPTIVE_SHADOW_RES_LADDER: readonly AdaptiveShadowMapRes[] = [1024, 1536, 2048];
+
+/**
+ * Hysteresis-guarded DirectionalLight shadow map resolution controller:
+ * - Drops immediately to 1024 on software WebGL or aerial City View (where the frustum spans ~300m)
+ * - Steps down smoothly 2048 -> 1536 -> 1024 under sustained GPU load (> 20.5ms smoothed frame time)
+ * - Steps back up 1024 -> 1536 -> 2048 when GPU headroom returns (< 13.5ms) with long cooldown
+ */
+export function computeAdaptiveShadowMapRes(
+  input: AdaptiveShadowMapInput,
+): AdaptiveShadowMapResult {
+  if (input.isSoftwareGl || input.isFullMapOverview) {
+    const target: AdaptiveShadowMapRes = 1024;
+    return {
+      nextRes: target,
+      changed: input.currentRes !== target,
+      nextCooldownFrames: input.currentRes !== target ? 30 : 0,
+    };
+  }
+
+  if (input.cooldownFrames > 0) {
+    return {
+      nextRes: input.currentRes,
+      changed: false,
+      nextCooldownFrames: input.cooldownFrames - 1,
+    };
+  }
+
+  const curIdx = Math.max(0, ADAPTIVE_SHADOW_RES_LADDER.indexOf(input.currentRes));
+  if (input.smoothedFrameMs > 20.5 && curIdx > 0) {
+    const nextRes = ADAPTIVE_SHADOW_RES_LADDER[curIdx - 1];
+    return {
+      nextRes,
+      changed: nextRes !== input.currentRes,
+      nextCooldownFrames: 90,
+    };
+  }
+
+  if (input.smoothedFrameMs < 13.5 && curIdx < ADAPTIVE_SHADOW_RES_LADDER.length - 1) {
+    const nextRes = ADAPTIVE_SHADOW_RES_LADDER[curIdx + 1];
+    return {
+      nextRes,
+      changed: nextRes !== input.currentRes,
+      nextCooldownFrames: 150,
+    };
+  }
+
+  return {
+    nextRes: input.currentRes,
+    changed: false,
+    nextCooldownFrames: 0,
+  };
+}
+
+export interface FoliageShadowPolicyInput {
+  isSoftwareGl: boolean;
+  isFullMapOverview: boolean;
+  smoothedFrameMs: number;
+  currentlyEnabled: boolean;
+}
+
+/**
+ * Disables tree crown shadow proxies in aerial City View or under heavy GPU frame times
+ * (> 24ms), re-enabling cleanly with hysteresis (< 17.5ms) so shadows never flicker on/off.
+ */
+export function shouldEnableFoliageShadows(input: FoliageShadowPolicyInput): boolean {
+  if (input.isSoftwareGl || input.isFullMapOverview) {
+    return false;
+  }
+  if (input.currentlyEnabled) {
+    return input.smoothedFrameMs <= 24.0;
+  }
+  return input.smoothedFrameMs < 17.5;
+}
+
+export interface HudBackdropBlurPolicyInput {
+  isSoftwareGl: boolean;
+  smoothedFrameMs: number;
+  currentlyEnabled: boolean;
+}
+
+/**
+ * Keeps frosted-glass HUD backdrop-blur active when rendering smoothly, and
+ * cleanly disables per-frame compositor blur over WebGL on software GL or
+ * sustained GPU load (> 23ms), re-enabling with hysteresis (< 17ms).
+ */
+export function shouldEnableHudBackdropBlur(input: HudBackdropBlurPolicyInput): boolean {
+  if (input.isSoftwareGl) {
+    return false;
+  }
+  if (input.currentlyEnabled) {
+    return input.smoothedFrameMs <= 23.0;
+  }
+  return input.smoothedFrameMs < 17.0;
+}

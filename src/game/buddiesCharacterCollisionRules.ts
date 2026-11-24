@@ -15,10 +15,7 @@ import {
   getTerrainElevation,
   wrapPlanetCoord,
 } from './buddiesPlanetCurvature';
-import {
-  COASTAL_AMUSEMENT_PARK_MASTERPLAN,
-  isPointOnAmusementOverwaterPier,
-} from './buddiesAmusementParkRules';
+import { evaluateBeachClubPoolWaterSdf } from './buddiesBeachClubRules';
 import { CENTRAL_PARK_BOTANICAL_BEDS, CENTRAL_PARK_MASTERPLAN } from './buddiesCentralParkRules';
 import { CITY_LAMP_MANIFEST, type LampTier } from './buddiesCityLightingAndTrafficRules';
 
@@ -71,13 +68,13 @@ export const WORLD_STAIRCASE_CORRIDORS: readonly StaircaseChannelRect[] = [
   // Central Plaza Grand Staircase (-87.55..-79.10, left of |z|<=8.36 planter cheeks)
   { id: 'central_plaza_stairs_n', minX: -87.55, maxX: -79.1, minZ: -8.36, maxZ: -0.22 },
   { id: 'central_plaza_stairs_s', minX: -87.55, maxX: -79.1, minZ: 0.22, maxZ: 8.36 },
-  // SE Beachfront Promenade Stair 1 & Stair 2
-  { id: 'se_beach_stair_1', minX: 92.0, maxX: 95.5, minZ: 70.52, maxZ: 76.48 },
-  { id: 'se_beach_stair_2', minX: 92.0, maxX: 95.5, minZ: 94.32, maxZ: 98.88 },
+  // SE Beachfront Promenade Stair 1 & Stair 2 (+0.82m -> -1.00m Box 1 Beach)
+  { id: 'se_beach_stair_1', minX: 92.0, maxX: 97.8, minZ: 70.52, maxZ: 76.48 },
+  { id: 'se_beach_stair_2', minX: 92.0, maxX: 97.8, minZ: 94.32, maxZ: 98.88 },
   // SE Beachfront West Travertine Boardwalk Access Steps
   { id: 'se_beach_west_steps', minX: 76.6, maxX: 79.4, minZ: 46.6, maxZ: 101.8 },
-  // Stilt Cabin Wooden Entry Steps
-  { id: 'se_stilt_cabin_stairs', minX: 103.5, maxX: 104.82, minZ: 83.24, maxZ: 85.56 },
+  // Stilt Cabin Wooden Entry Steps (+24m East on widened coastline)
+  { id: 'se_stilt_cabin_stairs', minX: 127.5, maxX: 128.82, minZ: 83.24, maxZ: 85.56 },
 ];
 
 const LAMP_HALF_EXTENT_BY_TIER: Record<LampTier, number> = {
@@ -209,18 +206,7 @@ export function getAuditedStaticWorldStructures(
     });
   }
 
-  // Missing Taman Ria Wave Swinger (Ontang-Anting) ride podium & perimeter fence
-  const ontang = COASTAL_AMUSEMENT_PARK_MASTERPLAN.rides.ontagAnting;
-  if (!hasCloseCollider(obbs, circles, ontang.x, ontang.z, 3.0)) {
-    circles.push({
-      id: 'taman_ontang_anting_core',
-      x: ontang.x,
-      z: ontang.z,
-      radius: ontang.podiumRadius,
-      heightY: ontang.totalHeight,
-      mat: 'metal',
-    });
-  }
+  // (Beach Club architectural colliders are included directly via getBeachClubObstacles)
 
   // Central Plaza Municipal Hall portico columns, bench, letterbox & lion-head water spigots
   const municipalExtras: StaticWorldStructureObb[] = [
@@ -847,27 +833,44 @@ export function resolveExtendedWaterMarginGuard2D(params: {
       }
     }
 
-    // 2. SE Harbor & East Open Ocean (honoring BOTH Taman Ria Overwater Pier AND Beachfront Stilt Cabin Deck!)
+    // 2. East Open Ocean (honoring Beachfront Stilt Cabin Deck) + Beach Club Infinity Pool Basins
     const harborWaterSdf = evaluateSeHarborSdf(x, z).waterSdf;
-    const onSafeOverwaterDeck =
-      isPointOnAmusementOverwaterPier(x, z) || isPointOnBeachfrontStiltCabinDeck(x, z);
+    const onSafeOverwaterDeck = isPointOnBeachfrontStiltCabinDeck(x, z);
     if (harborWaterSdf < -waterMargin && !onSafeOverwaterDeck) {
       const nx = -1.0;
       const nz = 0.0;
       const pushOut = -waterMargin - harborWaterSdf;
       x = wrapPlanetCoord(x + nx * pushOut);
       z = wrapPlanetCoord(z + nz * pushOut);
-      // If previous frame was on pier/stilt deck over deep sea (> 0.6m off shore), keep clamped on deck
+      // If previous frame was on stilt deck over deep sea (> 0.6m off shore), keep clamped on deck
       if (
         params.prevX !== undefined &&
         params.prevZ !== undefined &&
-        (isPointOnAmusementOverwaterPier(params.prevX, params.prevZ) ||
-          isPointOnBeachfrontStiltCabinDeck(params.prevX, params.prevZ)) &&
+        isPointOnBeachfrontStiltCabinDeck(params.prevX, params.prevZ) &&
         evaluateSeHarborSdf(params.prevX, params.prevZ).waterSdf < -0.5
       ) {
         x = params.prevX;
         z = params.prevZ;
       }
+      const vn = vx * nx + vz * nz;
+      if (vn < 0) {
+        vx -= vn * nx;
+        vz -= vn * nz;
+      }
+      hitWater = true;
+    }
+
+    const poolWaterSdf = evaluateBeachClubPoolWaterSdf(x, z);
+    if (poolWaterSdf < -waterMargin) {
+      const eps = 0.25;
+      const gx = evaluateBeachClubPoolWaterSdf(x + eps, z) - evaluateBeachClubPoolWaterSdf(x - eps, z);
+      const gz = evaluateBeachClubPoolWaterSdf(x, z + eps) - evaluateBeachClubPoolWaterSdf(x, z - eps);
+      const glen = Math.hypot(gx, gz);
+      const nx = glen > 1e-4 ? gx / glen : -1.0;
+      const nz = glen > 1e-4 ? gz / glen : 0.0;
+      const pushOut = Math.min(2.2, -waterMargin - poolWaterSdf);
+      x = wrapPlanetCoord(x + nx * pushOut);
+      z = wrapPlanetCoord(z + nz * pushOut);
       const vn = vx * nx + vz * nz;
       if (vn < 0) {
         vx -= vn * nx;
@@ -980,7 +983,7 @@ export function resolveStaircaseAndElevationGuard2D(params: {
 
 /**
  * Multi-iteration static world collision solver combining audited OBBs, true circle colliders
- * (Central Park Fountain/Lily Pond, cozy bistro sets, Taman Ria Ontang-Anting, botanical beds),
+ * (Central Park Fountain/Lily Pond, cozy bistro sets, botanical beds),
  * and water/embankment boundaries for any ground mover (player or ambient NPC).
  */
 export function resolveGroundMoverAuditedCollisions2D(params: {
@@ -1488,9 +1491,11 @@ function evaluateTerrainClearanceAlongRay2D(
     }
     if (
       evaluateSeHarborSdf(px, pz).waterSdf < 0.25 &&
-      !isPointOnAmusementOverwaterPier(px, pz) &&
       !isPointOnBeachfrontStiltCabinDeck(px, pz)
     ) {
+      return Math.max(0, dist - 0.35);
+    }
+    if (evaluateBeachClubPoolWaterSdf(px, pz) < 0.2) {
       return Math.max(0, dist - 0.35);
     }
 

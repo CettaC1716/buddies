@@ -997,7 +997,7 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
          ===================================================================== */}
       <div
         data-fishing-hud-bar="true"
-        className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex flex-col items-center gap-1.5 select-none"
+        className={`fixed ${fishingPhase === 'idle' ? 'bottom-[96px] sm:bottom-[104px]' : 'bottom-3'} left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex flex-col items-center gap-1.5 select-none`}
       >
         {/* Top transient toast pill if line snapped or early nibble */}
         {fishingHintMessage && (

@@ -55,7 +55,7 @@ export const TabletDeviceMockupShell: React.FC<TabletDeviceMockupShellProps> = (
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className={`relative w-full ${maxWidthClass} ${heightClass} rounded-[32px] overflow-hidden flex flex-col bg-[#141926]/68 backdrop-blur-2xl border border-white/25 shadow-[0_24px_70px_rgba(0,0,0,0.52)] text-white select-none`}
+      className={`relative w-full ${maxWidthClass} ${heightClass} rounded-[32px] overflow-hidden flex flex-col bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] text-white select-none`}
     >
       {/* Persistent Tablet OS Status Bar (matching SmartphoneOsModal BLITZ OS) */}
       <div className="shrink-0 flex items-center justify-between gap-3 px-5 pt-3 pb-2 border-b border-white/[0.12] text-[10.5px] font-medium text-white/90">

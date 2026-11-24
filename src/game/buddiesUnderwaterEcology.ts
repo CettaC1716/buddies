@@ -1,8 +1,13 @@
 import * as THREE from 'three';
-import { getNeTamanRiaShorelineX } from './buddiesAmusementParkRules';
 import type { BlitzWindUniforms } from './buddiesBlitzShadersAndAssets';
 import { computeInstancedBoundingVolumes } from './buddiesHubRenderOptimizer';
-import { evaluateNwLakeSdf, evaluateSeHarborSdf } from './buddiesPlanetCurvature';
+import {
+  EAST_WATER_SURFACE_Y,
+  evaluateHarborSeabedDrop,
+  evaluateNwLakeSdf,
+  evaluateSeHarborSdf,
+  getEastCoastalShorelineX,
+} from './buddiesPlanetCurvature';
 
 export const WATER_SURFACE_Y = -0.16;
 export const OASIS_LILY_PAD_BASE_Y = -0.155;
@@ -99,15 +104,10 @@ function createSeededRng(seed: number): () => number {
 }
 
 /**
- * Evaluates whether `worldZ` lies along the sloped sandy beaches (NE Taman Ria or SE Beachfront)
- * rather than the steep concrete Harbor Quay seawall or overwater Bianglala bay.
+ * Evaluates whether `worldZ` lies along the continuous East Coast sandy shoreline (`[-105.5 .. +104.2]`).
  */
 export function evaluateBeachSlopeMask(worldZ: number): number {
-  const neMask =
-    smoothstep(-105.5, -103.5, worldZ) * (1.0 - smoothstep(-47.5, -45.5, worldZ));
-  const seMask =
-    smoothstep(46.2, 48.2, worldZ) * (1.0 - smoothstep(102.2, 104.2, worldZ));
-  return Math.max(neMask, seMask);
+  return smoothstep(-105.5, -103.5, worldZ) * (1.0 - smoothstep(102.2, 104.2, worldZ));
 }
 
 /**
@@ -125,17 +125,12 @@ export function evaluateSeabedElevation(worldX: number, worldZ: number): number 
     lakeBasinDepression = lakeStep1 + lakeStep2 + lakeStep3;
   }
 
-  const { waterSdf } = evaluateSeHarborSdf(worldX, worldZ);
-  const beachSlopeMask = evaluateBeachSlopeMask(worldZ);
-  const steepDrop = -1.65 * smoothstep(0.15, -1.2, waterSdf);
-  const beachSlopeDrop = -1.65 * smoothstep(0.35, -14.0, waterSdf);
-  const harborDrop = steepDrop * (1.0 - beachSlopeMask) + beachSlopeDrop * beachSlopeMask;
-
+  const harborDrop = evaluateHarborSeabedDrop(worldX, worldZ);
   return harborDrop - lakeBasinDepression;
 }
 
 /**
- * Returns positive depth in meters below `WATER_SURFACE_Y = -0.16m` where water exists.
+ * Returns positive depth in meters below water surface (`-0.16m` in Oasis Lake, `-2.16m` in East Ocean).
  */
 export function evaluateWaterDepthAt(worldX: number, worldZ: number): number {
   const lakeSdf = evaluateNwLakeSdf(worldX, worldZ);
@@ -144,41 +139,32 @@ export function evaluateWaterDepthAt(worldX: number, worldZ: number): number {
     return 0;
   }
   const bedY = evaluateSeabedElevation(worldX, worldZ);
-  return Math.max(0, WATER_SURFACE_Y - bedY);
+  const surfaceY = worldX >= 90.0 ? EAST_WATER_SURFACE_Y : WATER_SURFACE_Y;
+  return Math.max(0, surfaceY - bedY);
 }
 
 /**
- * Guard ensuring underwater boulders, reefs, and fish schools never obstruct the
- * Bianglala Overwater Pier & Gazebo Jetty pilings (`x in [115..131], z in [-43..-22]`),
- * the Harbor Concrete Quay seawall (`x < 112.5`), or the SE Beachfront Stilt Timber Cabin
- * piling footprint (`[106.5..113.5] x [81.5..89.0]`).
+ * Guard ensuring underwater boulders, reefs, and fish schools never intrude dry sandy beach land
+ * (`worldX < getEastCoastalShorelineX(z) + 2.5`) or the SE Beachfront Stilt Timber Cabin
+ * piling footprint (`[130.5..137.5] x [81.5..89.0]`).
  */
 export function isPointClearOfPierAndQuay(
   worldX: number,
   worldZ: number,
   paddingM = 0,
 ): boolean {
-  // Oasis Lake region (west of Harbor/Ocean) is always clear of East pier & quay
+  // Oasis Lake region (west of East Coast) is always clear of East beach & cabin pilings
   if (worldX < 90.0) {
     return true;
   }
-  // Never place East Ocean elements against or west of the x = 112.5 Harbor Quay clearance line
-  if (worldX < 112.5 + paddingM) {
+  const shoreX = getEastCoastalShorelineX(worldZ);
+  if (worldX < shoreX + 2.5 + paddingM) {
     return false;
   }
-  // Keep clear of Bianglala Overwater Pier, sway braces & Gazebo Finger Jetty footprint
+  // Keep clear of SE Beachfront Stilt Timber Cabin piling footprint `[130.5..137.5] x [81.5..89.0]`
   if (
-    worldX >= 109.5 - paddingM &&
-    worldX <= 132.5 + paddingM &&
-    worldZ >= -44.5 - paddingM &&
-    worldZ <= -20.5 + paddingM
-  ) {
-    return false;
-  }
-  // Keep clear of SE Beachfront Stilt Timber Cabin piling footprint `[106.5..113.5] x [81.5..89.0]`
-  if (
-    worldX >= 106.5 - paddingM &&
-    worldX <= 113.5 + paddingM &&
+    worldX >= 130.5 - paddingM &&
+    worldX <= 137.5 + paddingM &&
     worldZ >= 81.5 - paddingM &&
     worldZ <= 89.0 + paddingM
   ) {
@@ -298,14 +284,14 @@ export function generateUnderwaterEcologyPlacements(): {
     while (added < targetCount && attempts < 2200) {
       attempts++;
       const z = zMin + rng() * (zMax - zMin);
-      const shoreX = getNeTamanRiaShorelineX(z);
+      const shoreX = getEastCoastalShorelineX(z);
       const offshoreM = 3.8 + rng() * 8.4;
       const x = shoreX + offshoreM;
       if (!isPointClearOfPierAndQuay(x, z, 1.5)) continue;
       const { waterSdf } = evaluateSeHarborSdf(x, z);
       if (waterSdf > -0.5) continue;
       const bedY = evaluateSeabedElevation(x, z);
-      const depth = WATER_SURFACE_Y - bedY;
+      const depth = EAST_WATER_SURFACE_Y - bedY;
       if (depth < 0.18 || depth > 1.35) continue;
       if (!hasMinSpacing(pebbles, x, z, 1.15)) continue;
 
@@ -373,14 +359,14 @@ export function generateUnderwaterEcologyPlacements(): {
     while (added < targetCount && attempts < 2400) {
       attempts++;
       const z = zMin + rng() * (zMax - zMin);
-      const shoreX = getNeTamanRiaShorelineX(z);
+      const shoreX = getEastCoastalShorelineX(z);
       const offshoreM = 4.2 + rng() * 8.2;
       const x = shoreX + offshoreM;
       if (!isPointClearOfPierAndQuay(x, z, 1.5)) continue;
       const { waterSdf } = evaluateSeHarborSdf(x, z);
       if (waterSdf > -0.5) continue;
       const bedY = evaluateSeabedElevation(x, z);
-      const depth = WATER_SURFACE_Y - bedY;
+      const depth = EAST_WATER_SURFACE_Y - bedY;
       if (depth < 0.24 || depth > 1.38) continue;
       if (!hasMinSpacing(coralsAndKelp, x, z, 1.05)) continue;
 
@@ -457,16 +443,16 @@ export function generateUnderwaterEcologyPlacements(): {
     });
   }
 
-  // NE Taman Ria Beach School A (6 figure-8) & School B (6 elliptical) in sunlit shallow-to-mid crystal zone
+  // NE Beach Club Coastline School A & B in sunlit shallow-to-mid crystal zone (~7.5m off 134m shoreline)
   for (let i = 0; i < 6; i++) {
     fishTracks.push({
       index: fishIdx++,
       zone: 'ne_beach',
-      cx: 134.0 + (i % 2) * 0.4,
+      cx: 141.6 + (i % 2) * 0.4,
       cz: -81.0,
       rx: 2.0,
       rz: 6.8 + (i % 3) * 0.45,
-      baseY: -0.33 - (i % 3) * 0.04,
+      baseY: -2.33 - (i % 3) * 0.04,
       ampY: 0.035,
       speed: 0.42 + (i % 3) * 0.03,
       phase: i * 0.48,
@@ -479,30 +465,30 @@ export function generateUnderwaterEcologyPlacements(): {
     fishTracks.push({
       index: fishIdx++,
       zone: 'ne_beach',
-      cx: 133.9 - (i % 2) * 0.3,
+      cx: 141.5 - (i % 2) * 0.3,
       cz: -64.0,
       rx: 1.9,
       rz: 6.0 + (i % 2) * 0.55,
-      baseY: -0.34 - (i % 3) * 0.04,
+      baseY: -2.34 - (i % 3) * 0.04,
       ampY: 0.035,
       speed: -0.38 - (i % 2) * 0.04,
       phase: 1.1 + i * 0.5,
       figure8: false,
-      scale: 1.20 + (i % 3) * 0.15,
+      scale: 1.2 + (i % 3) * 0.15,
       colorHex: OCEAN_FISH_PALETTE[(i + 1) % OCEAN_FISH_PALETTE.length],
     });
   }
 
-  // SE Beachfront School A (6 figure-8) & School B (6 elliptical) in sunlit shallow-to-mid crystal zone
+  // SE Beachfront School A & B in sunlit shallow-to-mid crystal zone (~7.5m off 134m shoreline)
   for (let i = 0; i < 6; i++) {
     fishTracks.push({
       index: fishIdx++,
       zone: 'se_beach',
-      cx: 117.6 + (i % 2) * 0.4,
+      cx: 141.6 + (i % 2) * 0.4,
       cz: 62.0,
       rx: 2.0,
       rz: 6.8 + (i % 3) * 0.45,
-      baseY: -0.33 - (i % 3) * 0.04,
+      baseY: -2.33 - (i % 3) * 0.04,
       ampY: 0.035,
       speed: 0.4 + (i % 3) * 0.03,
       phase: 0.6 + i * 0.48,
@@ -515,11 +501,11 @@ export function generateUnderwaterEcologyPlacements(): {
     fishTracks.push({
       index: fishIdx++,
       zone: 'se_beach',
-      cx: 117.7 - (i % 2) * 0.3,
+      cx: 141.7 - (i % 2) * 0.3,
       cz: 84.0,
       rx: 1.9,
       rz: 6.8 + (i % 2) * 0.5,
-      baseY: -0.35 - (i % 3) * 0.04,
+      baseY: -2.35 - (i % 3) * 0.04,
       ampY: 0.035,
       speed: -0.37 - (i % 2) * 0.04,
       phase: 2.2 + i * 0.5,
@@ -592,8 +578,12 @@ export function evaluateFishTrackPose(
   const seabedY = evaluateSeabedElevation(x, z);
   const rawWaveY = track.baseY + Math.sin(timeSec * 1.45 + track.phase * 1.7) * track.ampY;
   const minSafeY = seabedY + 0.16;
-  const clampedTarget = clamp(rawWaveY, -0.68, -0.30);
-  const y = Math.min(-0.22, Math.max(minSafeY, clampedTarget));
+  const isOceanZone = track.zone !== 'oasis_lake';
+  const bandMinY = isOceanZone ? -2.68 : -0.68;
+  const bandMaxY = isOceanZone ? -2.3 : -0.3;
+  const maxSubmergedY = isOceanZone ? -2.22 : -0.22;
+  const clampedTarget = clamp(rawWaveY, bandMinY, bandMaxY);
+  const y = Math.min(maxSubmergedY, Math.max(minSafeY, clampedTarget));
   const vy = Math.cos(timeSec * 1.45 + track.phase * 1.7) * track.ampY * 1.45;
 
   const horizSpeed = Math.hypot(vx, vz) || 1e-4;

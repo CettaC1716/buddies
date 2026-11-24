@@ -27,10 +27,7 @@ import {
   evaluateGrandCasinoPavedPlatformSdf,
   isPointOnGrandCasinoCrosswalk,
 } from './buddiesGrandCasinoRules';
-import {
-  COASTAL_AMUSEMENT_PARK_MASTERPLAN,
-  isPointOnAmusementOverwaterPier,
-} from './buddiesAmusementParkRules';
+import { BEACH_CLUB_MASTERPLAN } from './buddiesBeachClubRules';
 
 /**
  * Shared dynamic atmosphere state published on `scene.userData.weatherEnvState` by `@dynamiccuaca`
@@ -206,8 +203,7 @@ export type CityLampDistrict =
   | 'inner_boulevard'
   | 'outer_ring'
   | 'residential'
-  | 'harbor_dock'
-  | 'taman_ria'
+  | 'beach_club'
   | 'se_beach';
 
 export interface CityLampSpec {
@@ -270,40 +266,19 @@ export function isInsideBuildingOrPropFootprint(x: number, z: number): boolean {
   if (x >= -62.5 && x <= -55.2 && Math.abs(z) <= 9.6) return true;
   if (x >= -6.0 && x <= 13.0 && z >= -44.4 && z <= -37.2) return true;
   if (x >= -46.0 && x <= -27.0 && z >= 37.2 && z <= 44.4) return true;
-  if (x >= 76.0 && x <= 83.4 && z >= 20.0 && z <= 39.0) return true;
-  // Harbor container stacks & crane
-  if (x >= 90.0 && x <= 105.6 && z >= 20.5 && z <= 38.5) return true;
-  if (x >= 103.5 && x <= 108.5 && z >= 18.8 && z <= 24.2) return true;
-  // Taman Ria Hero Ride Footprints (Komidi Putar, Ontang-Anting, Bumper Car Arena, Kora-Kora, Bianglala)
-  const rides = COASTAL_AMUSEMENT_PARK_MASTERPLAN.rides;
-  if (Math.hypot(x - rides.komidiPutar.x, z - rides.komidiPutar.z) <= rides.komidiPutar.fenceRadius + 0.8) {
-    return true;
-  }
-  if (Math.hypot(x - rides.ontagAnting.x, z - rides.ontagAnting.z) <= rides.ontagAnting.fenceRadius + 0.8) {
-    return true;
-  }
+  if (x >= 55.2 && x <= 62.5 && z >= 19.2 && z <= 38.2) return true;
+  // East Coastal Beach Club Main Pool Terrace, DJ Stage, Cocktail Bar & Cabanas
+  if (x >= 91.5 && x <= 119.8 && z >= -96.2 && z <= 45.2) return true;
   if (
-    Math.abs(x - rides.bumperCarArena.x) <= rides.bumperCarArena.halfX + 0.8 &&
-    Math.abs(z - rides.bumperCarArena.z) <= rides.bumperCarArena.halfZ + 0.8
+    Math.hypot(x - BEACH_CLUB_MASTERPLAN.cocktailBar.cx, z - BEACH_CLUB_MASTERPLAN.cocktailBar.cz) <=
+    BEACH_CLUB_MASTERPLAN.cocktailBar.padRadiusM + 0.5
   ) {
     return true;
   }
-  if (
-    Math.abs(x - rides.koraKora.x) <= rides.koraKora.towerBaseHalfX + 1.4 &&
-    Math.abs(z - rides.koraKora.z) <= rides.koraKora.towerBaseHalfZ + 1.4
-  ) {
-    return true;
-  }
-  if (
-    Math.abs(x - rides.bianglala.x) <= rides.bianglala.footingHalfSpanX + 1.0 &&
-    Math.abs(z - rides.bianglala.z) <= rides.bianglala.footingHalfSpanZ + 1.0
-  ) {
-    return true;
-  }
-  // SE Beachfront Pergola, Juice Kiosk, Surf Rack, Watchtower
+  // SE Beachfront Pergola, Juice Kiosk, Surf Rack, Watchtower (+16m seaward)
   if (x >= 79.0 && x <= 89.2 && z >= 80.5 && z <= 96.5) return true;
   if (x >= 78.8 && x <= 86.2 && z >= 55.2 && z <= 64.8) return true;
-  if (x >= 97.5 && x <= 105.5 && z >= 64.5 && z <= 70.5) return true;
+  if (x >= 113.5 && x <= 121.5 && z >= 64.5 && z <= 70.5) return true;
   return false;
 }
 
@@ -327,8 +302,7 @@ export function isValidCityLampPlacement(
   if (evaluateNwLakeSdf(x, z) <= 0.75) return false;
 
   const { waterSdf } = evaluateSeHarborSdf(x, z);
-  const onPier = isPointOnAmusementOverwaterPier(x, z);
-  if (!onPier && waterSdf <= 0.55) return false;
+  if (waterSdf <= 0.55) return false;
   if (evaluateOuterEmbankmentSdf(x, z) >= -0.35) return false;
 
   for (let i = 0; i < CITY_TRAFFIC_SIGNAL_POLE_SPECS.length; i++) {
@@ -356,7 +330,7 @@ function computeLampGroundY(x: number, z: number): number {
   ) {
     return 0.09;
   }
-  return baseElev;
+  return Math.abs(baseElev) <= 0.05 ? 0 : baseElev;
 }
 
 interface RawLampEntry {
@@ -372,23 +346,16 @@ interface RawLampEntry {
 
 const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   // =========================================================================
-  // TIER 1: GROUND BOLLARD / PATHWAY SPIKE LIGHTS (~0.45m) — 18 lamps
+  // TIER 1: GROUND BOLLARD / PATHWAY SPIKE LIGHTS (~0.45m) — 60 lamps
   // =========================================================================
   // Glasshouse Cafe West L-Wing Terrace Border (clear of Cafe door, parasol tables, & chandelier at -95.55, 11.6)
   { id: 'lamp_t1_cafe_terrace_1', tier: 1, district: 'glasshouse_cafe', x: -93.85, z: 16.0, rotY: 0 },
   { id: 'lamp_t1_cafe_terrace_2', tier: 1, district: 'glasshouse_cafe', x: -93.85, z: 20.6, rotY: 0 },
-  // Harbor Concrete Coping Edge (rhythmic 10–11m coastal edge spacing)
-  { id: 'lamp_t1_harbor_cope_1', tier: 1, district: 'harbor_dock', x: 108.4, z: -14.0, rotY: 0 },
-  { id: 'lamp_t1_harbor_cope_2', tier: 1, district: 'harbor_dock', x: 108.4, z: -3.0, rotY: 0 },
-  { id: 'lamp_t1_harbor_cope_3', tier: 1, district: 'harbor_dock', x: 108.4, z: 8.0, rotY: 0 },
-  { id: 'lamp_t1_harbor_cope_4', tier: 1, district: 'harbor_dock', x: 108.4, z: 18.0, rotY: 0 },
-  { id: 'lamp_t1_harbor_cope_5', tier: 1, district: 'harbor_dock', x: 108.4, z: 29.0, rotY: 0 },
-  { id: 'lamp_t1_harbor_cope_6', tier: 1, district: 'harbor_dock', x: 108.4, z: 40.0, rotY: 0 },
-  // Taman Ria Boardwalk Edge (rhythmic ~14.8m spacing, clear of stairways)
-  { id: 'lamp_t1_taman_bw_1', tier: 1, district: 'taman_ria', x: 102.3, z: -25.0, rotY: 0 },
-  { id: 'lamp_t1_taman_bw_2', tier: 1, district: 'taman_ria', x: 102.3, z: -39.5, rotY: 0 },
-  { id: 'lamp_t1_taman_bw_3', tier: 1, district: 'taman_ria', x: 102.3, z: -54.5, rotY: 0 },
-  { id: 'lamp_t1_taman_bw_4', tier: 1, district: 'taman_ria', x: 102.3, z: -69.5, rotY: 0 },
+  // Beach Club Western Palm Promenade Approach Bollards (aligned along x = 78.85 border)
+  { id: 'lamp_t1_beach_club_prom_n1', tier: 1, district: 'beach_club', x: 78.85, z: -48.0, rotY: 0 },
+  { id: 'lamp_t1_beach_club_prom_n2', tier: 1, district: 'beach_club', x: 78.85, z: -28.0, rotY: 0 },
+  { id: 'lamp_t1_beach_club_prom_c1', tier: 1, district: 'beach_club', x: 78.85, z: -8.0, rotY: 0 },
+  { id: 'lamp_t1_beach_club_prom_s1', tier: 1, district: 'beach_club', x: 78.85, z: 24.0, rotY: 0 },
   // Central Park East Gate Approach & Oasis Lake Scenic Rim (strictly outside Central Park core!)
   { id: 'lamp_t1_park_east_n', tier: 1, district: 'central_park_edge', x: 61.72, z: -8.5, rotY: 0 },
   { id: 'lamp_t1_park_east_s', tier: 1, district: 'central_park_edge', x: 61.72, z: 8.5, rotY: 0 },
@@ -396,6 +363,54 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   { id: 'lamp_t1_oasis_s', tier: 1, district: 'inner_boulevard', x: -31.0, z: 15.8, rotY: 0 },
   { id: 'lamp_t1_oasis_wn', tier: 1, district: 'inner_boulevard', x: -41.5, z: -12.0, rotY: 0 },
   { id: 'lamp_t1_oasis_ws', tier: 1, district: 'inner_boulevard', x: -41.5, z: 12.0, rotY: 0 },
+  // Oasis Lake Park Scenic Entry, Bench Promenade & Shoreline Loop
+  { id: 'lamp_t1_oasis_gate_w', tier: 1, district: 'inner_boulevard', x: -52.2, z: 0.0, rotY: 0 },
+  { id: 'lamp_t1_oasis_plaza_c', tier: 1, district: 'inner_boulevard', x: -47.2, z: 0.0, rotY: 0 },
+  { id: 'lamp_t1_oasis_bench_n', tier: 1, district: 'inner_boulevard', x: -47.2, z: -5.3, rotY: 0 },
+  { id: 'lamp_t1_oasis_bench_s', tier: 1, district: 'inner_boulevard', x: -47.2, z: 5.3, rotY: 0 },
+  { id: 'lamp_t1_oasis_bench_sw', tier: 1, district: 'inner_boulevard', x: -51.4, z: 11.4, rotY: 0 },
+  { id: 'lamp_t1_oasis_rim_sw1', tier: 1, district: 'inner_boulevard', x: -45.6, z: 16.2, rotY: 0 },
+  { id: 'lamp_t1_oasis_rim_nw', tier: 1, district: 'inner_boulevard', x: -36.2, z: -14.8, rotY: 0 },
+  { id: 'lamp_t1_oasis_rim_sw2', tier: 1, district: 'inner_boulevard', x: -36.4, z: 17.6, rotY: 0 },
+  { id: 'lamp_t1_oasis_rim_ne', tier: 1, district: 'inner_boulevard', x: -27.8, z: -19.2, rotY: 0 },
+  { id: 'lamp_t1_oasis_rim_se', tier: 1, district: 'inner_boulevard', x: -25.8, z: 18.6, rotY: 0 },
+  // West-North City Park Lawn
+  { id: 'lamp_t1_park_wn_1', tier: 1, district: 'inner_boulevard', x: -52.0, z: -24.0, rotY: 0 },
+  { id: 'lamp_t1_park_wn_2', tier: 1, district: 'inner_boulevard', x: -51.8, z: -32.4, rotY: 0 },
+  { id: 'lamp_t1_park_wn_3', tier: 1, district: 'inner_boulevard', x: -47.0, z: -28.0, rotY: 0 },
+  { id: 'lamp_t1_park_wn_4', tier: 1, district: 'inner_boulevard', x: -41.2, z: -31.8, rotY: 0 },
+  { id: 'lamp_t1_park_wn_5', tier: 1, district: 'inner_boulevard', x: -32.2, z: -32.0, rotY: 0 },
+  // West-South S-Curve City Park & Flower Trail
+  { id: 'lamp_t1_park_ws_1', tier: 1, district: 'inner_boulevard', x: -52.2, z: 22.8, rotY: 0 },
+  { id: 'lamp_t1_park_ws_2', tier: 1, district: 'inner_boulevard', x: -47.2, z: 23.6, rotY: 0 },
+  { id: 'lamp_t1_park_ws_3', tier: 1, district: 'inner_boulevard', x: -39.6, z: 23.6, rotY: 0 },
+  { id: 'lamp_t1_park_ws_4', tier: 1, district: 'inner_boulevard', x: -32.2, z: 24.4, rotY: 0 },
+  { id: 'lamp_t1_park_ws_5', tier: 1, district: 'inner_boulevard', x: -29.2, z: 29.2, rotY: 0 },
+  { id: 'lamp_t1_park_ws_6', tier: 1, district: 'inner_boulevard', x: -37.8, z: 29.8, rotY: 0 },
+  { id: 'lamp_t1_park_ws_7', tier: 1, district: 'inner_boulevard', x: -44.2, z: 28.4, rotY: 0 },
+  { id: 'lamp_t1_park_ws_8', tier: 1, district: 'inner_boulevard', x: -51.6, z: 32.0, rotY: 0 },
+  // Center-North City Park Lawn (framing seating & flowerbeds)
+  { id: 'lamp_t1_park_cn_1', tier: 1, district: 'inner_boulevard', x: -14.2, z: -27.0, rotY: 0 },
+  { id: 'lamp_t1_park_cn_2', tier: 1, district: 'inner_boulevard', x: -7.5, z: -32.2, rotY: 0 },
+  { id: 'lamp_t1_park_cn_3', tier: 1, district: 'inner_boulevard', x: -1.4, z: -27.4, rotY: 0 },
+  { id: 'lamp_t1_park_cn_4', tier: 1, district: 'inner_boulevard', x: 7.4, z: -34.6, rotY: 0 },
+  { id: 'lamp_t1_park_cn_5', tier: 1, district: 'inner_boulevard', x: 12.6, z: -32.2, rotY: 0 },
+  { id: 'lamp_t1_park_cn_6', tier: 1, district: 'inner_boulevard', x: 11.4, z: -27.2, rotY: 0 },
+  // Center-South City Park Lawn (framing seating & flowerbeds)
+  { id: 'lamp_t1_park_cs_1', tier: 1, district: 'inner_boulevard', x: -14.2, z: 28.6, rotY: 0 },
+  { id: 'lamp_t1_park_cs_2', tier: 1, district: 'inner_boulevard', x: -8.2, z: 34.0, rotY: 0 },
+  { id: 'lamp_t1_park_cs_3', tier: 1, district: 'inner_boulevard', x: -5.4, z: 25.4, rotY: 0 },
+  { id: 'lamp_t1_park_cs_4', tier: 1, district: 'inner_boulevard', x: 2.0, z: 28.2, rotY: 0 },
+  { id: 'lamp_t1_park_cs_5', tier: 1, district: 'inner_boulevard', x: 8.6, z: 34.6, rotY: 0 },
+  { id: 'lamp_t1_park_cs_6', tier: 1, district: 'inner_boulevard', x: 13.0, z: 30.8, rotY: 0 },
+  { id: 'lamp_t1_park_cs_7', tier: 1, district: 'inner_boulevard', x: 10.2, z: 25.4, rotY: 0 },
+  // East-North & East-South Pocket Parks
+  { id: 'lamp_t1_park_en_1', tier: 1, district: 'inner_boulevard', x: 34.6, z: -31.8, rotY: 0 },
+  { id: 'lamp_t1_park_en_2', tier: 1, district: 'inner_boulevard', x: 48.2, z: -34.2, rotY: 0 },
+  { id: 'lamp_t1_park_en_3', tier: 1, district: 'inner_boulevard', x: 55.2, z: -32.2, rotY: 0 },
+  { id: 'lamp_t1_park_es_1', tier: 1, district: 'inner_boulevard', x: 31.6, z: 32.0, rotY: 0 },
+  { id: 'lamp_t1_park_es_2', tier: 1, district: 'inner_boulevard', x: 48.2, z: 34.2, rotY: 0 },
+  { id: 'lamp_t1_park_es_3', tier: 1, district: 'inner_boulevard', x: 53.2, z: 33.2, rotY: 0 },
 
   // =========================================================================
   // TIER 2: WAIST-HEIGHT BRICK PEDESTAL LANTERNS (~1.10m) — 14 lamps
@@ -413,9 +428,9 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   // Model Estate House Gateposts ONLY (intact house at -45, 81.7; zero empty-lot stray posts!)
   { id: 'lamp_t2_res_blue0_w', tier: 2, district: 'residential', x: -49.2, z: 62.6, rotY: 0 },
   { id: 'lamp_t2_res_blue0_e', tier: 2, district: 'residential', x: -40.8, z: 62.6, rotY: 0 },
-  // Harbor Dock Entry Piers & SE Beachfront Collinear Framing (x = 75.85 matches beach_lamp_1..4)
-  { id: 'lamp_t2_harbor_entry_n', tier: 2, district: 'harbor_dock', x: 75.2, z: -20.4, rotY: 0 },
-  { id: 'lamp_t2_harbor_entry_s', tier: 2, district: 'harbor_dock', x: 75.2, z: 20.4, rotY: 0 },
+  // Beach Club Promenade Entry Piers & SE Beachfront Collinear Framing (x = 75.85 matches beach_lamp_1..4)
+  { id: 'lamp_t2_beach_club_entry_n', tier: 2, district: 'beach_club', x: 78.85, z: -72.0, rotY: 0 },
+  { id: 'lamp_t2_beach_club_entry_s', tier: 2, district: 'beach_club', x: 78.85, z: 32.0, rotY: 0 },
   { id: 'lamp_t2_se_beach_entry', tier: 2, district: 'se_beach', x: 75.85, z: 45.2, rotY: 0 },
   { id: 'lamp_t2_se_beach_south', tier: 2, district: 'se_beach', x: 75.85, z: 103.5, rotY: 0 },
 
@@ -445,13 +460,13 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   // Inner Tram Ring Main Corners ('corner' on inner grass corners, facing outward over curved sidewalk + road)
   { id: 'lamp_t3_inner_nw_c', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: -56.6, z: -38.6, rotY: Math.PI },
   { id: 'lamp_t3_inner_ne_c', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: 56.6, z: -38.6, rotY: Math.PI / 2 },
-  { id: 'lamp_t3_inner_se_c', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: 56.6, z: 38.6, rotY: 0 },
+  { id: 'lamp_t3_inner_se_c', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: 54.5, z: 39.0, rotY: 0 },
   { id: 'lamp_t3_inner_sw_c', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: -56.6, z: 38.6, rotY: -Math.PI / 2 },
   // Inner S-Curve Entrance Grass Corners ('corner' framing W/E S-curve intersections)
   { id: 'lamp_t3_scurve_wn', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: -57.1, z: -20.0, rotY: -Math.PI / 2 },
   { id: 'lamp_t3_scurve_ws', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: -57.1, z: 20.0, rotY: Math.PI },
   { id: 'lamp_t3_scurve_en', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: 57.1, z: -20.0, rotY: 0 },
-  { id: 'lamp_t3_scurve_es', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: 57.1, z: 20.0, rotY: Math.PI / 2 },
+  { id: 'lamp_t3_scurve_es', tier: 3, lampVariant: 'corner', district: 'inner_boulevard', x: 53.6, z: 23.4, rotY: Math.PI / 2 },
   // Inner Tram Straight Grass Verges ('single', spacious spacing, clear of Halte & Central Park)
   { id: 'lamp_t3_inner_nmw', tier: 3, lampVariant: 'single', district: 'inner_boulevard', x: -33.5, z: -39.2, rotY: Math.PI },
   { id: 'lamp_t3_inner_nme', tier: 3, lampVariant: 'single', district: 'inner_boulevard', x: 27.5, z: -39.2, rotY: Math.PI },
@@ -473,9 +488,9 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   { id: 'lamp_t3_res_n_0e', tier: 3, lampVariant: 'single', district: 'residential', x: 4.65, z: -78.0, rotY: -Math.PI / 2 },
   { id: 'lamp_t3_res_n_e30', tier: 3, lampVariant: 'single', district: 'residential', x: 25.35, z: -78.0, rotY: Math.PI / 2 },
   { id: 'lamp_t3_res_n_e60', tier: 3, lampVariant: 'single', district: 'residential', x: 55.35, z: -78.0, rotY: Math.PI / 2 },
-  // Harbor Quay Boardwalk Edge ('single' facing West onto quay apron)
-  { id: 'lamp_t3_harbor_bw_n', tier: 3, lampVariant: 'single', district: 'harbor_dock', x: 99.5, z: -10.5, rotY: -Math.PI / 2 },
-  { id: 'lamp_t3_harbor_bw_s', tier: 3, lampVariant: 'single', district: 'harbor_dock', x: 99.5, z: 10.5, rotY: -Math.PI / 2 },
+  // Beach Club North & South Boulevard Verge Streetlamps
+  { id: 'lamp_t3_beach_club_nw', tier: 3, lampVariant: 'single', district: 'beach_club', x: 78.85, z: -64.0, rotY: -Math.PI / 2 },
+  { id: 'lamp_t3_beach_club_sw', tier: 3, lampVariant: 'single', district: 'beach_club', x: 78.85, z: -22.0, rotY: -Math.PI / 2 },
 
   // =========================================================================
   // TIER 4: GRAND MULTI-ARM VICTORIAN CHANDELIER + FLOWER BASKETS (~4.80m) — 11 lamps
@@ -487,9 +502,9 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   // Grand Casino South Forecourt Plaza & North Lawn Approach
   { id: 'lamp_t4_casino_forecourt_s', tier: 4, district: 'grand_casino', x: -68.0, z: -55.5, rotY: Math.PI / 4 },
   { id: 'lamp_t4_casino_forecourt_n', tier: 4, district: 'grand_casino', x: -69.5, z: -88.0, rotY: -Math.PI / 4 },
-  // Taman Ria Entrance Archway Promenade
-  { id: 'lamp_t4_taman_arch_w', tier: 4, district: 'taman_ria', x: 81.2, z: -18.2, rotY: 0 },
-  { id: 'lamp_t4_taman_arch_e', tier: 4, district: 'taman_ria', x: 93.8, z: -18.2, rotY: 0 },
+  // Beach Club Promenade Architectural Gateway Chandeliers
+  { id: 'lamp_t4_beach_club_gate_n', tier: 4, district: 'beach_club', x: 78.85, z: -41.0, rotY: 0 },
+  { id: 'lamp_t4_beach_club_gate_s', tier: 4, district: 'beach_club', x: 78.85, z: 2.0, rotY: 0 },
   // Four Outer Corners Outside the Central Urban Plaza Island (strictly outside Central Urban Plaza interior!)
   { id: 'lamp_t4_park_corner_nw', tier: 4, district: 'central_park_edge', x: -20.8, z: -10.5, rotY: Math.PI / 4 },
   { id: 'lamp_t4_park_corner_sw', tier: 4, district: 'central_park_edge', x: -20.8, z: 10.5, rotY: -Math.PI / 4 },
@@ -498,7 +513,7 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
 ];
 
 const POOL_RADIUS_BY_TIER: Record<LampTier, number> = {
-  1: 2.8,
+  1: 4.6,
   2: 4.8,
   3: 9.2,
   4: 11.4,

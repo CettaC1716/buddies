@@ -59,7 +59,7 @@ import {
   isPointClearOfPierAndQuay,
 } from './buddiesUnderwaterEcology';
 import { buildSouthEastCoastalBeachfront3D } from './buddiesCoastalBeachBuilder';
-import { buildCoastalAmusementPark3D } from './buddiesAmusementParkBuilder';
+import { buildCoastalBeachClub3D } from './buddiesBeachClubBuilder';
 
 test('PLANET_CURVATURE_STRENGTH is 0.0 for 100% flat Buddies Blitz ground', () => {
   assert.equal(PLANET_CURVATURE_STRENGTH, 0.0);
@@ -128,8 +128,8 @@ test('getRawGroundElevation and getTerrainElevation are flat (0.0m) in playable 
   assert.ok(evaluateOuterEmbankmentSdf(0, -154) > 2.0);
   assert.ok(evaluateOuterEmbankmentSdf(-112, 0) > 4.0);
   assert.ok(evaluateOuterEmbankmentSdf(-153, 0) > 1.5);
-  // East boundary (x > 109.2) is the Impassable Open Ocean / Coastal Seawall ("ujung dermaga")
-  assert.ok(evaluateOuterEmbankmentSdf(118, 0) > 4.0);
+  // East boundary (x > 133.2) is the Impassable Open Ocean past the widened 134m shoreline
+  assert.ok(evaluateOuterEmbankmentSdf(140, 0) > 4.0);
 
   // Walkable +8.50m Twin Peaks Ridge Highway & 3 flat (+8.50m) Hilltop Villa Plateaus
   assert.ok(evaluateOuterEmbankmentSdf(0, 125) < -3.0);
@@ -244,44 +244,31 @@ test('evaluateRoadNetworkSdf, evaluateNwLakeSdf, and evaluateSeHarborSdf match 1
   assert.ok(evaluatePlanetWaterField(-31.0, 0.0) > 0.9);
   assert.ok(Math.abs(evaluateNwLakeSdf(-31.0, 6.5) - evaluateNwLakeSdf(-31.0, -6.5)) < 1e-6);
 
-  // 3. Shifted Right-Side (East) Harbor Concrete Dock (x ∈ [76, 110]), Coastal Seawall (x ∈ [101.5, 110]), & Open East Ocean (x > 110)
-  const pier = evaluateSeHarborSdf(88, 0);
-  assert.ok(pier.concreteSdf < 0);
-  assert.ok(pier.waterSdf > 0);
+  // 3. Widened Continuous East Coast Beach & Beach Club Terrace (shoreline = 134.0m across z in [-104.2..+104.2]) & Open East Ocean (x > 134)
+  const beachClubLand = evaluateSeHarborSdf(95, 0);
+  assert.ok(beachClubLand.waterSdf > 10.0);
 
-  const expandedPier = evaluateSeHarborSdf(102, -28);
-  assert.ok(expandedPier.concreteSdf < 0);
-  assert.ok(expandedPier.waterSdf > 0);
+  const widenedSandSouth = evaluateSeHarborSdf(126, 75);
+  assert.ok(widenedSandSouth.waterSdf > 5.0);
 
-  const coastalSeawall = evaluateSeHarborSdf(106, 95);
-  assert.ok(coastalSeawall.concreteSdf < 0);
-  assert.ok(coastalSeawall.waterSdf > 0);
+  const coastalSeawallTail = evaluateSeHarborSdf(106, 120);
+  assert.ok(coastalSeawallTail.waterSdf > 0);
 
-  const seaEast = evaluateSeHarborSdf(120, 0);
+  const seaEast = evaluateSeHarborSdf(140, 0);
   assert.ok(seaEast.waterSdf < 0);
-  assert.ok(evaluatePlanetWaterField(120, 0) > 0.9);
-  assert.ok(evaluatePlanetWaterField(120, 95) > 0.9);
+  assert.ok(evaluatePlanetWaterField(140, 0) > 0.9);
+  assert.ok(evaluatePlanetWaterField(140, 95) > 0.9);
 
-  // 4. Reclaimed NE Taman Ria Golden Sand Land vs Over-Water Pier Bay & Open Ocean
-  const reclaimedSand = evaluateSeHarborSdf(120, -75);
-  assert.ok(reclaimedSand.waterSdf > 5.0, 'Reclaimed NE Taman Ria sand at (120, -75) must be dry land');
-  assert.ok(evaluateOuterEmbankmentSdf(120, -75) < -4.0, 'Player must be able to walk onto reclaimed NE sand');
-  assert.equal(evaluateBlitzGrassMask(120, -75), 0.0, 'Reclaimed NE beach sand must have zero grass');
+  // 4. Widened NE Beach Club Sand vs Open Ocean past 134m shoreline
+  const reclaimedSand = evaluateSeHarborSdf(126, -75);
+  assert.ok(reclaimedSand.waterSdf > 5.0, 'Widened NE beach sand at (126, -75) must be dry land');
+  assert.ok(evaluateOuterEmbankmentSdf(126, -75) < -4.0, 'Player must be able to walk onto widened NE sand');
+  assert.equal(evaluateBlitzGrassMask(126, -75), 0.0, 'Widened NE beach sand must have zero grass');
 
-  const bumperArenaReclaimed = evaluateSeHarborSdf(113.0, -90.5);
-  assert.ok(bumperArenaReclaimed.waterSdf > 10.0, 'Bumper Car Arena east edge at x=113 sits cleanly on reclaimed sand');
-  assert.ok(evaluateOuterEmbankmentSdf(113.0, -90.5) < -10.0);
-
-  // Ocean beyond reclaimed NE shoreline (x >= 129) remains ocean water & impassable outside pier
-  assert.ok(evaluateSeHarborSdf(129, -75).waterSdf < 0);
-  assert.ok(evaluateOuterEmbankmentSdf(129, -75) > 1.5);
-  assert.ok(evaluatePlanetWaterField(129, -75) > 0.9);
-
-  // Bianglala Over-Water Pier (z = -32.5) stays over open ocean (waterSdf < 0) while walkable via pier deck
-  assert.ok(evaluateSeHarborSdf(118.2, -32.5).waterSdf < -5.0);
-  assert.ok(evaluateOuterEmbankmentSdf(118.2, -32.5) < 0.0);
-  assert.equal(getTerrainElevation(118.2, -32.5), 1.1);
-  assert.equal(getTerrainElevation(127.4, -26.6), 1.1);
+  // Ocean beyond widened shoreline (x >= 138) remains ocean water & impassable outside stilt cabin
+  assert.ok(evaluateSeHarborSdf(138, -75).waterSdf < 0);
+  assert.ok(evaluateOuterEmbankmentSdf(138, -75) > 1.5);
+  assert.ok(evaluatePlanetWaterField(138, -75) > 0.9);
 });
 
 test('evaluateBlitzGrassMask preserves zero grass inside the single intact Bottom-Left Model Estate Base and renders lush green lawn across all 7 emptied base lots and Warzone islands', () => {
@@ -529,7 +516,6 @@ test('Widened Tram+Car Ring Road & 4.40m Inner Tram Sidewalk span all 4 sides cl
     [-60.0, 15.0],
     [60.0, 0.0],
     [60.0, -30.0],
-    [60.0, 30.0],
     [-40.0, -42.0],
     [-9.5, -42.0],
     [13.7, -42.0],
@@ -547,7 +533,7 @@ test('Widened Tram+Car Ring Road & 4.40m Inner Tram Sidewalk span all 4 sides cl
     assert.equal(evaluateBlitzGrassMask(ix, iz), 0.0, `Expected zero grass on inner sidewalk at (${ix}, ${iz})`);
   }
 
-  // Exclusions: open intersecting S-curve roads & shifted inner Halte decks
+  // Exclusions: open intersecting S-curve roads & 4 inner Halte decks (including relocated Beachfront Harbor Halte at (58.9, 28.6))
   for (const [ex, ez] of [
     [-60.0, -15.0],
     [60.0, -15.0],
@@ -561,6 +547,7 @@ test('Widened Tram+Car Ring Road & 4.40m Inner Tram Sidewalk span all 4 sides cl
     [-58.9, 4.6],
     [3.5, -40.87],
     [-36.5, 40.87],
+    [58.9, 28.6],
   ] as const) {
     assert.equal(
       isPointOnInnerTramSidewalk(ex, ez),
@@ -570,51 +557,49 @@ test('Widened Tram+Car Ring Road & 4.40m Inner Tram Sidewalk span all 4 sides cl
   }
 });
 
-test('East coastal seabed slopes gently from 0.0m shoreline through crystal shallows to -1.65m ocean while Harbor Quay & seawalls drop steeply', () => {
+test('East coastal seabed slopes gently continuously from 134.0m (-2.00m Box 2) shoreline through crystal shallows to -3.65m ocean while N/S seawalls drop steeply', () => {
   resetTerrainSculptGrid();
-  assert.equal(EAST_WATER_SURFACE_Y, -0.16);
-  assert.equal(HARBOR_SEABED_DEEP_Y, -1.65);
+  assert.equal(EAST_WATER_SURFACE_Y, -2.16);
+  assert.equal(HARBOR_SEABED_DEEP_Y, -3.65);
 
-  // 1. SE Beachfront (z = 75.0 in [+46.2..+104.2]): smooth 14m sandy seabed slope
+  // 1. SE Beachfront (z = 75.0 in [-104.2..+104.2]): Box 1 (-1.00m) -> Box 2 (-2.00m) -> smooth 14m sandy seabed slope off widened x=134.0
   assert.equal(evaluateEastCoastalSandyMask(75.0), 1.0);
-  const seDry = getTerrainElevation(108.5, 75.0);
-  const seShore = getTerrainElevation(110.0, 75.0);
-  const seShallowNear = getTerrainElevation(114.5, 75.0);
-  const seShallowMid = getTerrainElevation(117.5, 75.0);
-  const seDeep = getTerrainElevation(124.5, 75.0);
+  const seBox1 = getTerrainElevation(110.0, 75.0);
+  const seDry = getTerrainElevation(132.5, 75.0);
+  const seShore = getTerrainElevation(134.0, 75.0);
+  const seShallowNear = getTerrainElevation(138.5, 75.0);
+  const seShallowMid = getTerrainElevation(141.5, 75.0);
+  const seDeep = getTerrainElevation(148.5, 75.0);
 
-  assert.equal(seDry, 0.0);
-  assert.ok(seShore > -0.02 && seShore <= 0.0, `SE shoreline expected near 0.0m, got ${seShore}`);
-  // Crystal shallow water depth (WATER_Y - bedY) spans 0.2m..0.9m before dropping to -1.65m
+  assert.equal(seBox1, -1.0);
+  assert.equal(seDry, -2.0);
+  assert.ok(seShore > -2.02 && seShore <= -2.0, `SE shoreline expected near -2.0m, got ${seShore}`);
   const depthNear = EAST_WATER_SURFACE_Y - seShallowNear;
   const depthMid = EAST_WATER_SURFACE_Y - seShallowMid;
-  assert.ok(depthNear >= 0.2 && depthNear <= 0.55, `Expected 0.2-0.55m shallow depth at x=114.5, got ${depthNear}`);
-  assert.ok(depthMid >= 0.65 && depthMid <= 0.95, `Expected 0.65-0.95m mid shallow depth at x=117.5, got ${depthMid}`);
+  assert.ok(depthNear >= 0.2 && depthNear <= 0.55, `Expected 0.2-0.55m shallow depth at x=138.5, got ${depthNear}`);
+  assert.ok(depthMid >= 0.65 && depthMid <= 0.95, `Expected 0.65-0.95m mid shallow depth at x=141.5, got ${depthMid}`);
   assert.ok(seShore > seShallowNear && seShallowNear > seShallowMid && seShallowMid > seDeep);
-  assert.ok(Math.abs(seDeep - -1.65) < 1e-5, `Expected -1.65m deep ocean at x=124.5, got ${seDeep}`);
+  assert.ok(Math.abs(seDeep - -3.65) < 1e-5, `Expected -3.65m deep ocean at x=148.5, got ${seDeep}`);
 
-  // 2. NE Taman Ria Beach (z = -75.0 in [-105.5..-45.5]): reclaimed shoreline at x = 126.5 slopes smoothly to -1.65m
-  assert.equal(evaluateEastCoastalSandyMask(-75.0), 1.0);
-  assert.equal(getTerrainElevation(120.0, -75.0), 0.0);
-  const neShore = getTerrainElevation(126.5, -75.0);
-  const neShallow = getTerrainElevation(132.5, -75.0);
-  const neDeep = getTerrainElevation(141.0, -75.0);
-  const neShallowDepth = EAST_WATER_SURFACE_Y - neShallow;
-  assert.ok(neShore > -0.02 && neShore <= 0.0, `NE shoreline expected near 0.0m, got ${neShore}`);
-  assert.ok(neShallowDepth >= 0.35 && neShallowDepth <= 0.80, `Expected crystal NE shallow depth, got ${neShallowDepth}`);
-  assert.ok(Math.abs(neDeep - -1.65) < 1e-5, `Expected -1.65m deep ocean at NE x=141, got ${neDeep}`);
-
-  // 3. Harbor Quay (z in [-45.5..+46.2]) & North/South seawall tails (|z| > 104.2) keep steep -1.65m drop
-  for (const quayZ of [-32.5, 0.0, 30.0, -120.0, 120.0]) {
-    assert.equal(evaluateEastCoastalSandyMask(quayZ), 0.0, `Expected quay/seawall mask 0 at z=${quayZ}`);
-    const quayDrop = evaluateHarborSeabedDrop(111.3, quayZ);
-    assert.ok(Math.abs(quayDrop - -1.65) < 1e-5, `Expected steep -1.65m drop at (111.3, ${quayZ}), got ${quayDrop}`);
+  // 2. Central Beach Club Coast (z = 0.0) & North Beach (z = -75.0): continuous widened beach slope!
+  for (const bz of [0.0, -75.0]) {
+    assert.equal(evaluateEastCoastalSandyMask(bz), 1.0);
+    assert.equal(getTerrainElevation(128.0, bz), -2.0);
+    const shore = getTerrainElevation(134.0, bz);
+    const shallow = getTerrainElevation(140.0, bz);
+    const deep = getTerrainElevation(148.5, bz);
+    const shallowDepth = EAST_WATER_SURFACE_Y - shallow;
+    assert.ok(shore > -2.02 && shore <= -2.0, `Shoreline at z=${bz} expected near -2.0m, got ${shore}`);
+    assert.ok(shallowDepth >= 0.35 && shallowDepth <= 0.85, `Expected crystal shallow depth at z=${bz}, got ${shallowDepth}`);
+    assert.ok(Math.abs(deep - -3.65) < 1e-5, `Expected -3.65m deep ocean at z=${bz}, got ${deep}`);
   }
 
-  // 4. Overwater Bianglala Pier & Gazebo Jetty retain +1.10m walkable deck above -1.65m seabed
-  assert.equal(getTerrainElevation(118.2, -32.5), 1.1);
-  assert.equal(getTerrainElevation(127.4, -26.6), 1.1);
-  assert.ok(Math.abs(evaluateHarborSeabedDrop(118.2, -32.5) - -1.65) < 1e-5);
+  // 3. North/South outer seawall tails (|z| > 105.2) keep steep -3.65m drop
+  for (const tailZ of [-120.0, 120.0]) {
+    assert.equal(evaluateEastCoastalSandyMask(tailZ), 0.0, `Expected seawall mask 0 at z=${tailZ}`);
+    const tailDrop = evaluateHarborSeabedDrop(111.3, tailZ);
+    assert.ok(Math.abs(tailDrop - -3.65) < 1e-5, `Expected steep -3.65m drop at (111.3, ${tailZ}), got ${tailDrop}`);
+  }
 });
 
 test('createUnifiedWaterSurfaceMaterial configures Beer-Lambert depth, Voronoi foam, Fresnel/sun glint, weather uniforms, and Linear THREE.Fog', () => {
@@ -662,29 +647,31 @@ test('createUnifiedWaterSurfaceMaterial configures Beer-Lambert depth, Voronoi f
 
 test('BEACHFRONT_STILT_CABIN_SPEC provides walkable elevated deck, West stairs, and East ocean balcony', () => {
   const c = BEACHFRONT_STILT_CABIN_SPEC;
-  assert.equal(c.centerX, 108.4);
+  assert.equal(c.centerX, 132.4);
   assert.equal(c.centerZ, 85.2);
-  assert.equal(c.deckTopY, 0.96);
+  assert.equal(c.baseSandY, -2.0);
+  assert.equal(c.deckTopY, -1.04);
 
-  // West veranda & East overwater balcony sit cleanly at +0.96m and pass embankment walkability
-  assert.equal(isPointOnBeachfrontStiltCabinDeck(105.6, 84.4), true);
-  assert.equal(isPointOnBeachfrontStiltCabinDeck(112.0, 85.2), true);
-  assert.equal(evaluateBeachfrontStiltCabinElevation(112.0, 85.2), c.deckTopY);
-  assert.equal(getBaseProceduralGroundElevation(112.0, 85.2), c.deckTopY);
+  // West veranda & East overwater balcony sit cleanly at -1.04m (+0.96m above -2.00m Box 2 sand) and pass embankment walkability
+  assert.equal(isPointOnBeachfrontStiltCabinDeck(129.6, 84.4), true);
+  assert.equal(isPointOnBeachfrontStiltCabinDeck(136.0, 85.2), true);
+  assert.equal(evaluateBeachfrontStiltCabinElevation(136.0, 85.2), c.deckTopY);
+  assert.equal(getBaseProceduralGroundElevation(136.0, 85.2), c.deckTopY);
   assert.ok(
-    evaluateOuterEmbankmentSdf(112.0, 85.2) < 0,
+    evaluateOuterEmbankmentSdf(136.0, 85.2) < 0,
     'East ocean-facing balcony of BeachfrontStiltTimberCabin should remain walkable',
   );
 
   // Outside cabin deck over open ocean stays blocked by outer embankment SDF
-  assert.equal(isPointOnBeachfrontStiltCabinDeck(114.5, 85.2), false);
-  assert.ok(evaluateOuterEmbankmentSdf(114.5, 85.2) > 0);
+  assert.equal(isPointOnBeachfrontStiltCabinDeck(138.5, 85.2), false);
+  assert.ok(evaluateOuterEmbankmentSdf(138.5, 85.2) > 0);
 
-  // West sand-to-porch staircase ramps smoothly from 0 -> deckTopY
+  // West sand-to-porch staircase ramps smoothly from baseSandY (-2.00m) -> deckTopY (-1.04m)
   const stairMidX = (c.stairMinX + c.stairMaxX) * 0.5;
   const stairMidZ = (c.stairMinZ + c.stairMaxZ) * 0.5;
-  assert.ok(Math.abs(evaluateBeachfrontStiltCabinElevation(stairMidX, stairMidZ) - c.deckTopY * 0.5) < 1e-6);
-  assert.ok(Math.abs(getBaseProceduralGroundElevation(stairMidX, stairMidZ) - c.deckTopY * 0.5) < 1e-6);
+  const expectedMidElev = (c.baseSandY + c.deckTopY) * 0.5;
+  assert.ok(Math.abs(evaluateBeachfrontStiltCabinElevation(stairMidX, stairMidZ) - expectedMidElev) < 1e-6);
+  assert.ok(Math.abs(getBaseProceduralGroundElevation(stairMidX, stairMidZ) - expectedMidElev) < 1e-6);
 });
 
 test('buildStaticWorldStructuresList registers cabin body and railings while keeping stairs and veranda navigable', () => {
@@ -718,20 +705,20 @@ test('buildStaticWorldStructuresList registers cabin body and railings while kee
         Math.abs(z - s.z) < s.halfZ,
     );
 
-  assert.equal(hitsCabinCollider(108.8, 84.4), true, 'Interior cabin room must remain solid');
-  assert.equal(hitsCabinCollider(104.2, 84.4), false, 'West stair entry must stay unobstructed');
-  assert.equal(hitsCabinCollider(105.6, 84.4), false, 'West front veranda must stay unobstructed');
-  assert.equal(hitsCabinCollider(112.0, 85.2), false, 'East ocean-facing balcony must stay unobstructed');
+  assert.equal(hitsCabinCollider(132.8, 84.4), true, 'Interior cabin room must remain solid');
+  assert.equal(hitsCabinCollider(128.2, 84.4), false, 'West stair entry must stay unobstructed');
+  assert.equal(hitsCabinCollider(129.6, 84.4), false, 'West front veranda must stay unobstructed');
+  assert.equal(hitsCabinCollider(136.0, 85.2), false, 'East ocean-facing balcony must stay unobstructed');
 });
 
-test('Underwater ecology avoids BeachfrontStiltTimberCabin piling footprint [106.5..113.5] x [81.5..89.0]', () => {
-  assert.equal(isPointClearOfPierAndQuay(109.5, 85.2, 0), false);
-  assert.equal(isPointClearOfPierAndQuay(115.0, 85.2, 0), true);
+test('Underwater ecology avoids BeachfrontStiltTimberCabin piling footprint [130.5..137.5] x [81.5..89.0]', () => {
+  assert.equal(isPointClearOfPierAndQuay(133.5, 85.2, 0), false);
+  assert.equal(isPointClearOfPierAndQuay(139.0, 85.2, 0), true);
 
   const { pebbles, coralsAndKelp } = generateUnderwaterEcologyPlacements();
   for (const sample of [...pebbles, ...coralsAndKelp]) {
     const insideCabinFootprint =
-      sample.x >= 106.5 && sample.x <= 113.5 && sample.z >= 81.5 && sample.z <= 89.0;
+      sample.x >= 130.5 && sample.x <= 137.5 && sample.z >= 81.5 && sample.z <= 89.0;
     assert.equal(
       insideCabinFootprint,
       false,
@@ -740,7 +727,7 @@ test('Underwater ecology avoids BeachfrontStiltTimberCabin piling footprint [106
   }
 });
 
-test('Coastal Beachfront & Taman Ria render timber, shingles, and BeachfrontStiltTimberCabin with 3-map PBR materials and zero black outlines or cel shaders', () => {
+test('Coastal Beachfront & Beach Club render timber, shingles, and BeachfrontStiltTimberCabin with 3-map PBR materials and zero black outlines or cel shaders', () => {
   const origDocument = (globalThis as { document?: unknown }).document;
   const noop = () => {};
   const stubCtx = new Proxy(
@@ -843,10 +830,10 @@ test('Coastal Beachfront & Taman Ria render timber, shingles, and BeachfrontStil
     assert.ok(beachPbrMeshCount >= 90, `Expected >= 90 PBR wood/cabin meshes, got ${beachPbrMeshCount}`);
     assert.ok(beachPbrMats.size <= 28, `Expected tightly cached PBR materials, got ${beachPbrMats.size}`);
 
-    // Verify Coastal Amusement Park PBR timber + static batching budget
+    // Verify Coastal Beach Club PBR timber + static batching budget
     strokedGeos.clear();
     celUpgradedMeshes.clear();
-    const parkHandle = buildCoastalAmusementPark3D({
+    const clubHandle = buildCoastalBeachClub3D({
       windUniforms,
       isSoftwareGl: false,
       upgradeMeshToBlitzWorldMaterial: spyUpgradeMat,
@@ -854,37 +841,37 @@ test('Coastal Beachfront & Taman Ria render timber, shingles, and BeachfrontStil
       bakeStaticGroupMeshes,
     });
 
-    let parkTotalMeshes = 0;
-    let parkPbrWoodMeshes = 0;
-    let parkInstancedBatches = 0;
-    parkHandle.group.traverse((obj) => {
+    let clubTotalMeshes = 0;
+    let clubPbrWoodMeshes = 0;
+    let clubInstancedBatches = 0;
+    clubHandle.group.traverse((obj) => {
       if ((obj as THREE.InstancedMesh).isInstancedMesh) {
-        parkInstancedBatches++;
+        clubInstancedBatches++;
       }
       if (!(obj as THREE.Mesh).isMesh) return;
       const mesh = obj as THREE.Mesh;
       if (!(obj as THREE.InstancedMesh).isInstancedMesh) {
-        parkTotalMeshes++;
+        clubTotalMeshes++;
       }
       const mat = mesh.material;
       if (mat instanceof THREE.MeshStandardMaterial && mat.bumpMap && mat.roughnessMap && mat.map) {
-        parkPbrWoodMeshes++;
-        assert.ok(mat.bumpScale >= 0.032 && mat.bumpScale <= 0.045, `Unexpected park bumpScale ${mat.bumpScale}`);
+        clubPbrWoodMeshes++;
+        assert.ok(mat.bumpScale >= 0.025 && mat.bumpScale <= 0.045, `Unexpected club bumpScale ${mat.bumpScale}`);
         assert.equal(mat.metalness, 0.02);
         assert.equal(mat.fog, true);
         assert.equal(mesh.receiveShadow, true);
-        assert.equal(celUpgradedMeshes.has(mesh), false, 'Park PBR wood must not get cel shader override');
+        assert.equal(celUpgradedMeshes.has(mesh), false, 'Beach Club PBR wood must not get cel shader override');
         assert.equal(
           mesh.children.some((c) => Boolean(c.userData?.isModelStroke)),
           false,
-          'Park PBR wood must not carry black cartoon stroke child',
+          'Beach Club PBR wood must not carry black cartoon stroke child',
         );
       }
     });
-    assert.ok(parkInstancedBatches >= 14, `Expected >= 14 instanced batches in park, got ${parkInstancedBatches}`);
-    assert.ok(parkPbrWoodMeshes >= 6, `Expected >= 6 PBR wood batches/parts in park, got ${parkPbrWoodMeshes}`);
-    assert.ok(parkTotalMeshes <= 145, `Expected <= 145 non-instanced park meshes after baking, got ${parkTotalMeshes}`);
-    parkHandle.dispose();
+    assert.ok(clubInstancedBatches >= 14, `Expected >= 14 instanced batches in Beach Club, got ${clubInstancedBatches}`);
+    assert.ok(clubPbrWoodMeshes >= 5, `Expected >= 5 PBR wood batches/parts in Beach Club, got ${clubPbrWoodMeshes}`);
+    assert.ok(clubTotalMeshes <= 160, `Expected <= 160 non-instanced Beach Club meshes after baking, got ${clubTotalMeshes}`);
+    clubHandle.dispose();
   } finally {
     stubTex.dispose();
     if (!origDocument) {

@@ -127,8 +127,8 @@ test('4-tier lamp manifest spans all districts without overlapping roads, water,
       );
       assert.equal(lamp.y, 0, `Tier 3 lamp ${lamp.id} must stand at ground level y=0`);
 
-      const onHarborConcreteApron = lamp.district === 'harbor_dock' || (lamp.x >= 76.0 && Math.abs(lamp.z) <= 46.0);
-      if (!onHarborConcreteApron) {
+      const onBeachClubApron = lamp.district === 'beach_club' || (lamp.x >= 76.0 && Math.abs(lamp.z) <= 46.0);
+      if (!onBeachClubApron) {
         const gMask = evaluateBlitzGrassMask(lamp.x, lamp.z);
         assert.ok(
           gMask > 0.4,
@@ -159,7 +159,7 @@ test('4-tier lamp manifest spans all districts without overlapping roads, water,
       }
     } else if (
       (onPlazaSidewalk || isPointOnOuterTramSidewalk(lamp.x, lamp.z) || isPointOnInnerTramSidewalk(lamp.x, lamp.z)) &&
-      lamp.district !== 'harbor_dock' &&
+      lamp.district !== 'beach_club' &&
       lamp.district !== 'se_beach'
     ) {
       const rSdf = evaluateRoadNetworkSdf(lamp.x, lamp.z);

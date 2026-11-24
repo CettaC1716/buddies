@@ -254,6 +254,7 @@ import {
   evaluateNwLakeSdf,
   evaluateSeHarborSdf,
   evaluateBlitzGrassMask,
+  EAST_WATER_SURFACE_Y,
 } from './buddiesPlanetCurvature';
 import {
   evaluateShorelineWaveHeight,
@@ -273,7 +274,11 @@ import {
 } from './buddiesAmbientAudioRules';
 import {
   computeAdaptiveDprTarget,
+  computeAdaptiveShadowMapRes,
   evaluateShadowMapRefreshDecision,
+  shouldEnableFoliageShadows,
+  shouldEnableHudBackdropBlur,
+  type AdaptiveShadowMapRes,
 } from './buddiesPerfOptimizations';
 import {
   loadAllRealBlitzAssets,
@@ -1605,7 +1610,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             playerUnit.x - BEACHFRONT_KAI_KIOSK_SPEC.kioskX,
             playerUnit.z - BEACHFRONT_KAI_KIOSK_SPEC.kioskZ,
           );
-          const dHalte = Math.hypot(playerUnit.x - 79.35, playerUnit.z - 29.5);
+          const dHalte = Math.hypot(playerUnit.x - 59.18, playerUnit.z - 28.6);
           if (dKai <= dHalte) {
             return kaiKiosk;
           }
@@ -1746,17 +1751,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       // (`Sit_—_Kasual_Harian_#6`), scaled 1.798x on flat sand (elev 0).
       // Spot yaw = placement rotY - PI/2 (backrest at local -Z, character faces east toward ocean).
       // Loungers step sideways off the bed (`standUpX/Z`) so stand-up clears the halfX=1.38 collider.
-      { id: 'beach_lounger_1', x: 100.2, z: 54.0, yaw: -0.12, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
-      { id: 'beach_lounger_2', x: 100.2, z: 57.2, yaw: -0.08, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
-      { id: 'beach_lounger_3', x: 100.2, z: 60.4, yaw: -0.05, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
-      { id: 'beach_lounger_4', x: 101.0, z: 77.5, yaw: 0.08, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
-      { id: 'beach_lounger_5', x: 101.0, z: 80.8, yaw: 0.12, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
-      { id: 'beach_lounger_6', x: 100.2, z: 91.5, yaw: -0.1, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
-      { id: 'beach_lounger_7', x: 100.2, z: 94.8, yaw: -0.06, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
-      { id: 'beach_chair_1', x: 96.2, z: 81.8, yaw: 0.15, seatLiftY: 0, indicatorHeightY: 1.2, sitVariant: 'chair_casual' },
-      { id: 'beach_chair_2', x: 96.2, z: 85.0, yaw: 0.05, seatLiftY: 0, indicatorHeightY: 1.2, sitVariant: 'chair_casual' },
-      { id: 'beach_chair_3', x: 96.2, z: 88.2, yaw: -0.1, seatLiftY: 0, indicatorHeightY: 1.2, sitVariant: 'chair_casual' },
-      { id: 'beach_chair_4', x: 97.5, z: 49.5, yaw: -0.2, seatLiftY: 0, indicatorHeightY: 1.2, sitVariant: 'chair_casual' },
+      { id: 'beach_lounger_1', x: 116.2, z: 54.0, yaw: -0.12, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
+      { id: 'beach_lounger_2', x: 116.2, z: 57.2, yaw: -0.08, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
+      { id: 'beach_lounger_3', x: 116.2, z: 60.4, yaw: -0.05, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
+      { id: 'beach_lounger_4', x: 117.0, z: 77.5, yaw: 0.08, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
+      { id: 'beach_lounger_5', x: 117.0, z: 80.8, yaw: 0.12, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
+      { id: 'beach_lounger_6', x: 116.2, z: 91.5, yaw: -0.1, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
+      { id: 'beach_lounger_7', x: 116.2, z: 94.8, yaw: -0.06, seatLiftY: 0.741, indicatorHeightY: 1.1, sitVariant: 'sun_lounger' },
+      { id: 'beach_chair_1', x: 112.2, z: 81.8, yaw: 0.15, seatLiftY: 0, indicatorHeightY: 1.2, sitVariant: 'chair_casual' },
+      { id: 'beach_chair_2', x: 112.2, z: 85.0, yaw: 0.05, seatLiftY: 0, indicatorHeightY: 1.2, sitVariant: 'chair_casual' },
+      { id: 'beach_chair_3', x: 112.2, z: 88.2, yaw: -0.1, seatLiftY: 0, indicatorHeightY: 1.2, sitVariant: 'chair_casual' },
+      { id: 'beach_chair_4', x: 113.5, z: 49.5, yaw: -0.2, seatLiftY: 0, indicatorHeightY: 1.2, sitVariant: 'chair_casual' },
       ...CENTRAL_PARK_SEAT_SPOTS,
     ];
 
@@ -3109,10 +3114,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     const dirLight = new THREE.DirectionalLight('#ffe9bc', 2.18);
     dirLight.position.copy(blitzSunOffset);
     dirLight.castShadow = true;
-    const shadowMapRes = isSoftwareGl ? 1024 : 2048;
+    let shadowMapRes: AdaptiveShadowMapRes = isSoftwareGl ? 1024 : 2048;
     dirLight.shadow.mapSize.set(shadowMapRes, shadowMapRes);
     const d = 36;
-    const shadowTexelWorldSize = (d * 2) / shadowMapRes;
+    let shadowTexelWorldSize = (d * 2) / shadowMapRes;
+    let shadowResCooldownFrames = 0;
+    let activeFoliageShadowsEnabled = !isSoftwareGl;
+    let activeHudBlurEnabled = !isSoftwareGl;
+    if (typeof document !== 'undefined') {
+      document.documentElement.classList.toggle('hud-blur-lite', !activeHudBlurEnabled);
+    }
+    let lastShadowHalfSpan = d;
+    let lastShadowFar = 122;
     const shadowLightBack = blitzSunOffset.clone().normalize();
     const shadowLightRight = new THREE.Vector3()
       .crossVectors(new THREE.Vector3(0, 1, 0), shadowLightBack)
@@ -3122,6 +3135,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       .normalize();
     dirLight.shadow.camera.near = 2;
     const syncDirShadowCameraEnvelope = (halfSpan: number, far: number, force = false) => {
+      lastShadowHalfSpan = halfSpan;
+      lastShadowFar = far;
       if (
         !force &&
         Math.abs(dirLight.shadow.camera.right - halfSpan) <= 0.5 &&
@@ -3935,59 +3950,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       return cachedRiverRockTemplateParts;
     };
 
-    let cachedFlowerClusterTemplateParts: SharedPropTemplatePart[] | null = null;
-    const getSharedFlowerClusterTemplateParts = (): SharedPropTemplatePart[] => {
-      if (cachedFlowerClusterTemplateParts) return cachedFlowerClusterTemplateParts;
-      const tmp = new THREE.Group();
-      const stemGeo = new THREE.CylinderGeometry(0.032, 0.038, 0.28, 5);
-      const blossomGeo = new THREE.CylinderGeometry(0.2, 0.12, 0.08, 7);
-      const centerGeo = new THREE.SphereGeometry(0.085, 6, 6);
-      const stemMat = new THREE.MeshToonMaterial({ color: '#4ca854' });
-      const centerMat = new THREE.MeshBasicMaterial({ color: '#fff6a1' });
-      const colors = ['#2998ff', '#ffe033', '#ff70c6'];
-      for (let i = 0; i < 6; i++) {
-        const ang = (i / 6) * Math.PI * 2;
-        const rad = i === 0 ? 0.05 : 0.4 + (i % 2) * 0.24;
-        const bx = Math.cos(ang) * rad;
-        const bz = Math.sin(ang) * rad;
-        const h = 0.24 + (i % 3) * 0.07;
-
-        const stem = new THREE.Mesh(stemGeo, stemMat);
-        stem.position.set(bx, h * 0.5, bz);
-        upgradeMeshToBlitzWorldMaterial(stem, windUniforms, '#4ca854', 0.25);
-        tmp.add(stem);
-
-        const headCol = colors[i % colors.length];
-        const head = new THREE.Mesh(blossomGeo, new THREE.MeshBasicMaterial({ color: headCol }));
-        head.position.set(bx, h, bz);
-        upgradeMeshToBlitzWorldMaterial(head, windUniforms, headCol, 0.15);
-        tmp.add(head);
-
-        const center = new THREE.Mesh(centerGeo, centerMat);
-        center.position.set(bx, h + 0.05, bz);
-        upgradeMeshToBlitzWorldMaterial(center, windUniforms, '#fff6a1', 0.1);
-        tmp.add(center);
-      }
-      bakeStaticGroupMeshes(tmp, { minShadowCasterSpan: 0.45 });
-      cachedFlowerClusterTemplateParts = [];
-      tmp.traverse((node) => {
-        const m = node as THREE.Mesh;
-        if (m.isMesh && !Array.isArray(m.material)) {
-          if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
-          cachedFlowerClusterTemplateParts!.push({
-            geometry: m.geometry,
-            material: m.material,
-            castShadow: m.castShadow,
-            receiveShadow: m.receiveShadow,
-            isModelStroke: Boolean(m.userData?.isModelStroke),
-          });
-        }
-      });
-      stemGeo.dispose();
-      blossomGeo.dispose();
-      centerGeo.dispose();
-      return cachedFlowerClusterTemplateParts;
-    };
+    interface ParkFlowerSpotSpec {
+      x: number;
+      y: number;
+      z: number;
+      rotY: number;
+      scale: number;
+      seed: number;
+    }
+    const pendingParkFlowerSpots: ParkFlowerSpotSpec[] = [];
+    let disposeActiveParkFlowerBatch: (() => void) | null = null;
 
     const clonePropGroupFromTemplate = (parts: readonly SharedPropTemplatePart[]): THREE.Group => {
       const grp = new THREE.Group();
@@ -4139,16 +4111,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       }
 
       if (prop.kind === 'flower_cluster') {
-        const cluster = clonePropGroupFromTemplate(getSharedFlowerClusterTemplateParts());
-        const sc = prop.scale;
-        cluster.scale.setScalar(sc);
-        cluster.position.set(prop.x, getTerrainElevation(prop.x, prop.z), prop.z);
-        cluster.rotation.y = prop.rotY;
-        cluster.userData.propId = prop.id;
-        cluster.userData.worldX = prop.x;
-        cluster.userData.worldZ = prop.z;
-        cluster.userData.baseRotY = prop.rotY;
-        realPropsGroup.add(cluster);
+        pendingParkFlowerSpots.push({
+          x: prop.x,
+          y: getTerrainElevation(prop.x, prop.z),
+          z: prop.z,
+          rotY: prop.rotY,
+          scale: prop.scale,
+          seed: prop.id,
+        });
         return;
       }
 
@@ -4299,8 +4269,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
       // 3. Spawn all trees & props from layout, then promote repetitive props & trees into GPU-instanced batches
       worldPropBatchManager.clear();
+      pendingParkFlowerSpots.length = 0;
+      disposeActiveParkFlowerBatch?.();
+      disposeActiveParkFlowerBatch = null;
       layout.props.forEach((p) => spawnSingleMapProp(p));
+      if (pendingParkFlowerSpots.length > 0) {
+        const parkFlowerBatch = curvedPlanetEnv.buildCentralPlazaParkFlowerBatch(
+          pendingParkFlowerSpots,
+          'ParkCentralPlazaFlowers',
+        );
+        curvedPlanetEnv.natureGroup.add(parkFlowerBatch.group);
+        disposeActiveParkFlowerBatch = parkFlowerBatch.dispose;
+      }
       worldPropBatchManager.promoteTreesToInstancedBatches(trees);
+      worldPropBatchManager.setTreeFoliageShadowsEnabled(activeFoliageShadowsEnabled);
       worldPropBatchManager.promoteStaticPropsToInstancedBatches(realPropsGroup.children, 2);
       scene.userData.__staticWorldAligned = false;
       navGridDirty = true;
@@ -21455,8 +21437,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       // 0. Shoreline, Stilt Cabin / Pier Deck & Outer Perimeter Hill Embankment ("Tanggul Bukit") Boundary:
       //    - Tracked Tanks (`vehicleKind === 'tank'`) and Airborne Planes can freely cross the Centered Oasis Lake!
       //    - Foot characters (`BuddyUnit`) and wheeled Dump Trucks (`vehicleKind === 'truck'`) remain blocked by the Oasis Lake shoreline.
-      //    - All non-flying ground units & vehicles remain blocked from falling off the East Harbor Quay Wall into the deep sea,
-      //      while both Taman Ria Overwater Pier and Beachfront Stilt Cabin Deck remain dry-walkable.
+      //    - All non-flying ground units & vehicles remain blocked from stepping into deep ocean water,
+      //      while the widened East Coast sandy beach & Beachfront Stilt Cabin Deck remain dry-walkable.
       //    - ALL units and vehicles (including Tanks, Trucks, Planes & Characters) are 100% blocked by the Outer Perimeter Hill Embankment ("Tanggul Bukit").
       const isTrackedTank = isVehicle && mover.vehicleKind === 'tank';
       const waterAndEmb = resolveExtendedWaterMarginGuard2D({
@@ -22372,7 +22354,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       { x: -58.9, z: 4.6, yaw: 0, halfLen: 3.6, halfWidth: 9.6 },
       { x: 3.5, z: -40.87, yaw: 0, halfLen: 9.6, halfWidth: 3.6 },
       { x: -36.5, z: 40.87, yaw: 0, halfLen: 9.6, halfWidth: 3.6 },
-      { x: 79.63, z: 29.5, yaw: 0, halfLen: 3.6, halfWidth: 9.6 },
+      { x: 58.9, z: 28.6, yaw: 0, halfLen: 3.6, halfWidth: 9.6 },
       ...PUBLIC_WARZONE_CRATE_PADS.map((p) => ({
         x: p.worldX,
         z: p.worldZ,
@@ -22381,13 +22363,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         halfWidth: 2.15,
       })),
     ];
-    const filteredGrassExclusions: {
-      x: number;
-      z: number;
-      yaw: number;
-      halfLen: number;
-      halfWidth: number;
-    }[] = [];
     const scratchRearVentPos = new THREE.Vector3();
     const scratchNegDir = new THREE.Vector3();
     const scratchRocketLookAhead = new THREE.Vector3();
@@ -23307,9 +23282,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
       if (frameTickCount <= 2 || frameTickCount % 6 === 0) {
         reusableGrassExclusions.length = 0;
-        // Intact Bottom-Left Model Estate Skyshield bastion at (-51.4, 60.0) + Shifted Central Plaza Halte Platform at (-58.90, 4.6)
+        // Intact Bottom-Left Model Estate Skyshield bastion + All 4 Halte Tram Platforms exclude grass globally in uTerrainAccelTex.a
         reusableGrassExclusions.push({ x: -51.4, z: 60.0, yaw: 0, halfLen: 2.15, halfWidth: 2.15 });
         reusableGrassExclusions.push({ x: -58.9, z: 4.6, yaw: 0, halfLen: 3.6, halfWidth: 9.6 });
+        reusableGrassExclusions.push({ x: 3.5, z: -40.87, yaw: 0, halfLen: 9.6, halfWidth: 3.6 });
+        reusableGrassExclusions.push({ x: -36.5, z: 40.87, yaw: 0, halfLen: 9.6, halfWidth: 3.6 });
+        reusableGrassExclusions.push({ x: 58.9, z: 28.6, yaw: 0, halfLen: 3.6, halfWidth: 9.6 });
         // Public Warzone Crate Pads exclude grass ONLY in Warzone mode (disabled in Safezone / Kota Damai mode)
         if (cityArenaMode === 'warzone') {
           for (let pi = 0; pi < PUBLIC_WARZONE_CRATE_PADS.length; pi++) {
@@ -23381,19 +23359,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         for (let i = 0; i < centralParkExclusions.length; i++) {
           reusableGrassExclusions.push(centralParkExclusions[i]);
         }
-        // Filter exclusion boxes to those overlapping the 26m grass streaming window around viewCenter
-        filteredGrassExclusions.length = 0;
-        for (let i = 0; i < reusableGrassExclusions.length; i++) {
-          const ex = reusableGrassExclusions[i];
-          const reach = 26.0 + Math.max(ex.halfLen, ex.halfWidth);
-          if (
-            Math.abs(getPlanetShortestDelta(ex.x, viewCenterX)) <= reach &&
-            Math.abs(getPlanetShortestDelta(ex.z, viewCenterZ)) <= reach
-          ) {
-            filteredGrassExclusions.push(ex);
-          }
-        }
-        blitzGrassSystem.setDynamicExclusions(filteredGrassExclusions);
+        // Dirty-checked GPU bake into uTerrainAccelTex.a (0 GPU cost unless an exclusion box actually changes!)
+        terrainAccelBake.updateExclusions(reusableGrassExclusions);
       }
 
       // 2. Raycast Mouse Crosshair onto Ground Plane (using active camera world matrix)
@@ -26937,48 +26904,68 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               }
             }
             if (b.isPlayer || b.root.visible) {
-              const unitSecondaryLod: SecondaryPhysicsLodMode = b.isPlayer
-                ? 'full'
-                : resolveWrappedWorldSecondaryLod(
-                    b.x,
-                    terrainY,
-                    b.z,
-                    false,
-                    npcCameraMode === 'cafe_interior' ||
-                      npcCameraMode === 'casino_interior' ||
-                      npcCameraMode === 'house_interior' ||
-                      npcCameraMode === 'house_visit',
-                    camFollowPos.x,
-                    camFollowPos.z,
-                  );
-              updateCharacterWeaponStance(
-                b.rig,
-                b.weaponId,
-                b.walkCycle,
-                isMoving,
-                b.carryingCrate !== 'none',
-                b.saluteTimer,
-                b.weaponRecoil,
-                b.punchTimer,
-                b.punchHand,
-                b.kickTimer,
-                b.jumpOffset,
-                walkSync.legSwingAmplitude,
-                unitStrafeDir,
-                true,
-                'front',
-                unitForwardDir,
-                b.yaw,
-                speedMag,
-                unitIsSitting,
-                unitIsDriving,
-                unitIsSleeping,
-                scooterPose,
-                unitCafeWorkAction,
-                b.isPlayer && activeSeatedSpot?.sitVariant ? activeSeatedSpot.sitVariant : 'chair',
-                b.isPlayer ? activeCafeConsumeItemId : null,
-                unitSecondaryLod,
+              const unitDistSqToCam = b.isPlayer
+                ? 0
+                : (() => {
+                    const dxC = getPlanetShortestDelta(b.x, camFollowPos.x);
+                    const dzC = getPlanetShortestDelta(b.z, camFollowPos.z);
+                    return dxC * dxC + dzC * dzC;
+                  })();
+              const shouldStepUnitDetail = shouldStepCharacterDetailThisFrame(
+                unitDistSqToCam,
+                frameTickCount,
+                typeof b.id === 'number' ? b.id : 0,
+                b.isPlayer,
+                isMoving ||
+                  b.punchTimer > 0 ||
+                  b.kickTimer > 0 ||
+                  b.weaponRecoil > 0 ||
+                  b.jumpOffset > 0.05,
               );
+              if (shouldStepUnitDetail) {
+                const unitSecondaryLod: SecondaryPhysicsLodMode = b.isPlayer
+                  ? 'full'
+                  : resolveWrappedWorldSecondaryLod(
+                      b.x,
+                      terrainY,
+                      b.z,
+                      false,
+                      npcCameraMode === 'cafe_interior' ||
+                        npcCameraMode === 'casino_interior' ||
+                        npcCameraMode === 'house_interior' ||
+                        npcCameraMode === 'house_visit',
+                      camFollowPos.x,
+                      camFollowPos.z,
+                    );
+                updateCharacterWeaponStance(
+                  b.rig,
+                  b.weaponId,
+                  b.walkCycle,
+                  isMoving,
+                  b.carryingCrate !== 'none',
+                  b.saluteTimer,
+                  b.weaponRecoil,
+                  b.punchTimer,
+                  b.punchHand,
+                  b.kickTimer,
+                  b.jumpOffset,
+                  walkSync.legSwingAmplitude,
+                  unitStrafeDir,
+                  true,
+                  'front',
+                  unitForwardDir,
+                  b.yaw,
+                  speedMag,
+                  unitIsSitting,
+                  unitIsDriving,
+                  unitIsSleeping,
+                  scooterPose,
+                  unitCafeWorkAction,
+                  b.isPlayer && activeSeatedSpot?.sitVariant ? activeSeatedSpot.sitVariant : 'chair',
+                  b.isPlayer ? activeCafeConsumeItemId : null,
+                  unitSecondaryLod,
+                );
+              }
               if (
                 b.isPlayer &&
                 localActiveEmote &&
@@ -30955,61 +30942,78 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                   ? 'serve'
                   : 'idle';
           if (distToPeer <= 52.0) {
-            restoreSocialEmoteOverlay(av.rig);
-            const peerSecondaryLod = resolveWrappedWorldSecondaryLod(
-              av.renderX,
-              peerInFlatIndoor ? av.root.position.y : getTerrainElevation(av.renderX, av.renderZ),
-              av.renderZ,
+            const peerSeed =
+              peer.sessionId.length > 0
+                ? peer.sessionId.charCodeAt(0) + peer.sessionId.charCodeAt(peer.sessionId.length - 1)
+                : 0;
+            const shouldStepPeerDetail = shouldStepCharacterDetailThisFrame(
+              distToPeer * distToPeer,
+              frameTickCount,
+              peerSeed,
               false,
-              peerInFlatIndoor,
-              finalLookX,
-              finalLookZ,
+              peerWalk.isMoving ||
+                av.remotePunchTimer > 0 ||
+                av.remoteKickTimer > 0 ||
+                av.fishingCastRecoilTimer > 0 ||
+                av.renderJumpOffset > 0.08,
             );
-            updateCharacterWeaponStance(
-              av.rig,
-              peerWeaponId,
-              av.walkCycle,
-              peerWalk.isMoving,
-              peer.carryingCrate !== 'none' && peer.carryingCrate !== '',
-              0,
-              av.fishingCastRecoilTimer > 0 ? 0.4 : 0,
-              av.remotePunchTimer,
-              'right',
-              av.remoteKickTimer,
-              av.renderJumpOffset,
-              peerWalk.legSwingAmplitude,
-              0,
-              true,
-              'front',
-              1,
-              av.renderYaw,
-              peerSpeed,
-              peer.isSitting || peer.scooterKind === 'electric_scooter_bike',
-              peer.isDriving,
-              activeEmoteClip === 'bed:sleep',
-              peer.scooterKind ? av.scooterPose : null,
-              peerCafeWorkAction,
-              resolvePeerSitVariantAndLift(activeEmoteClip, peer.isSitting).variant,
-              parsePeerEatEmoteItemId(activeEmoteClip),
-              peerSecondaryLod,
-            );
-            if (
-              activeEmoteClip.startsWith('emote:') &&
-              activeEmoteClip !== 'emote:punch' &&
-              activeEmoteClip !== 'emote:kick' &&
-              !peerWalk.isMoving &&
-              !peer.isSitting &&
-              !peer.isDriving &&
-              !peer.scooterKind &&
-              peerWeaponId === 'unarmed' &&
-              (peer.carryingCrate === 'none' || peer.carryingCrate === '')
-            ) {
-              applySocialEmotePoseOverlay(
-                av.rig,
-                av.bodyGroup,
-                activeEmoteClip,
-                Math.max(0, (nowPeerWallMs - av.emoteState.startedAtMs) / 1000),
+            if (shouldStepPeerDetail) {
+              restoreSocialEmoteOverlay(av.rig);
+              const peerSecondaryLod = resolveWrappedWorldSecondaryLod(
+                av.renderX,
+                peerInFlatIndoor ? av.root.position.y : getTerrainElevation(av.renderX, av.renderZ),
+                av.renderZ,
+                false,
+                peerInFlatIndoor,
+                finalLookX,
+                finalLookZ,
               );
+              updateCharacterWeaponStance(
+                av.rig,
+                peerWeaponId,
+                av.walkCycle,
+                peerWalk.isMoving,
+                peer.carryingCrate !== 'none' && peer.carryingCrate !== '',
+                0,
+                av.fishingCastRecoilTimer > 0 ? 0.4 : 0,
+                av.remotePunchTimer,
+                'right',
+                av.remoteKickTimer,
+                av.renderJumpOffset,
+                peerWalk.legSwingAmplitude,
+                0,
+                true,
+                'front',
+                1,
+                av.renderYaw,
+                peerSpeed,
+                peer.isSitting || peer.scooterKind === 'electric_scooter_bike',
+                peer.isDriving,
+                activeEmoteClip === 'bed:sleep',
+                peer.scooterKind ? av.scooterPose : null,
+                peerCafeWorkAction,
+                resolvePeerSitVariantAndLift(activeEmoteClip, peer.isSitting).variant,
+                parsePeerEatEmoteItemId(activeEmoteClip),
+                peerSecondaryLod,
+              );
+              if (
+                activeEmoteClip.startsWith('emote:') &&
+                activeEmoteClip !== 'emote:punch' &&
+                activeEmoteClip !== 'emote:kick' &&
+                !peerWalk.isMoving &&
+                !peer.isSitting &&
+                !peer.isDriving &&
+                !peer.scooterKind &&
+                peerWeaponId === 'unarmed' &&
+                (peer.carryingCrate === 'none' || peer.carryingCrate === '')
+              ) {
+                applySocialEmotePoseOverlay(
+                  av.rig,
+                  av.bodyGroup,
+                  activeEmoteClip,
+                  Math.max(0, (nowPeerWallMs - av.emoteState.startedAtMs) / 1000),
+                );
+              }
             }
             if (peerWeaponId === 'fishing_rod' && av.rig.fishingRodGroup) {
               const pRodFlex = av.rig.fishingRodGroup.userData.rodFlexPivot as THREE.Group | undefined;
@@ -32445,7 +32449,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             timeSec,
             shorelineFishingSync.zoneId,
           );
-          const baseWaterY = -0.16;
+          const baseWaterY =
+            targetLogicalX < 90.0 ? -0.16 : EAST_WATER_SURFACE_Y;
           const nibbleDip =
             shorelineFishingSync.nibblePulse > 0.01
               ? -0.058 *
@@ -33352,8 +33357,62 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       }
 
       if (!isSoftwareGl && !isFlatIndoorRoomMode && state !== 'paused') {
+        const isAerialOverview =
+          isFullMapOverview || (npcCameraMode === 'city_view' && cityViewTarget === 'kota');
+
+        // Adaptive directional shadow map resolution (2048 -> 1536 -> 1024 under GPU load or in wide aerial City View)
+        const shadowResDecision = computeAdaptiveShadowMapRes({
+          smoothedFrameMs,
+          currentRes: shadowMapRes,
+          isSoftwareGl,
+          isFullMapOverview: isAerialOverview,
+          cooldownFrames: shadowResCooldownFrames,
+        });
+        shadowResCooldownFrames = shadowResDecision.nextCooldownFrames;
+        if (shadowResDecision.changed) {
+          shadowMapRes = shadowResDecision.nextRes;
+          shadowTexelWorldSize = (d * 2) / shadowMapRes;
+          dirLight.shadow.map?.dispose();
+          dirLight.shadow.map = null;
+          dirLight.shadow.mapSize.set(shadowMapRes, shadowMapRes);
+          if (windUniforms.uDirShadowMapSize) {
+            windUniforms.uDirShadowMapSize.value = shadowMapRes;
+          }
+          syncDirShadowCameraEnvelope(lastShadowHalfSpan, lastShadowFar, true);
+          renderer.shadowMap.needsUpdate = true;
+        }
+
+        // Adaptive HUD backdrop-blur toggle: disables per-frame compositor blur over WebGL under GPU pressure
+        if (frameTickCount % 15 === 0) {
+          const nextHudBlur = shouldEnableHudBackdropBlur({
+            isSoftwareGl,
+            smoothedFrameMs,
+            currentlyEnabled: activeHudBlurEnabled,
+          });
+          if (nextHudBlur !== activeHudBlurEnabled) {
+            activeHudBlurEnabled = nextHudBlur;
+            if (typeof document !== 'undefined') {
+              document.documentElement.classList.toggle('hud-blur-lite', !nextHudBlur);
+            }
+          }
+        }
+
+        // Disable opaque foliage shadow proxies during aerial overview or heavy GPU load (with hysteresis)
+        const nextFoliageShadows = shouldEnableFoliageShadows({
+          smoothedFrameMs,
+          currentlyEnabled: activeFoliageShadowsEnabled,
+          isSoftwareGl,
+          isFullMapOverview: isAerialOverview,
+        });
+        if (nextFoliageShadows !== activeFoliageShadowsEnabled) {
+          activeFoliageShadowsEnabled = nextFoliageShadows;
+          worldPropBatchManager.setTreeFoliageShadowsEnabled(nextFoliageShadows);
+          centralPark.setCanopyShadowsEnabled(nextFoliageShadows);
+          renderer.shadowMap.needsUpdate = true;
+        }
+
         // Snap directional light target to an exact integer texel stride (6 texels = ~0.21m)
-        // and throttle shadow depth passes while walking so crisp 2048x2048 shadows stay
+        // and throttle shadow depth passes while walking so crisp shadows stay
         // rock-steady without re-rendering the entire scene every single frame.
         const shadowDecision = evaluateShadowMapRefreshDecision({
           finalLookX,
@@ -34482,8 +34541,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         {
           mesh: scene.getObjectByName('CityTransitKiosk3D_beachfront_harbor') ?? null,
           stationId: 'beachfront_harbor',
-          kioskX: 79.35,
-          kioskZ: 29.5,
+          kioskX: 59.18,
+          kioskZ: 28.6,
         },
       ];
       for (let ti = 0; ti < CITY_TRANSIT_DESTINATIONS.length; ti++) {
@@ -38043,6 +38102,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       if (promptOverlay.parentElement) {
         promptOverlay.parentElement.removeChild(promptOverlay);
       }
+      if (typeof document !== 'undefined') {
+        document.documentElement.classList.remove('hud-blur-lite');
+      }
       horizonBackdrop.dispose();
       continuousLaserVisuals.forEach((vis) => {
         scene.remove(vis.group);
@@ -38071,6 +38133,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       animeSparkleMat.dispose();
       weatherSystem.dispose();
       terrainAccelBake.dispose();
+      disposeActiveParkFlowerBatch?.();
+      disposeActiveParkFlowerBatch = null;
       curvedPlanetEnv.dispose();
       underwaterEcology.dispose();
       centralPark.dispose();

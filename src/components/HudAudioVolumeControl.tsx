@@ -137,7 +137,7 @@ export function HudAudioVolumeControl({
           onKeyDown={(e) => e.stopPropagation()}
           className={`absolute right-0 ${
             popoverPlacement === 'bottom' ? 'top-full mt-2.5' : 'bottom-full mb-2.5'
-          } z-50 w-[238px] rounded-2xl bg-[#0d1118]/86 backdrop-blur-xl text-white border border-white/15 shadow-[0_18px_46px_rgba(0,0,0,0.58)] p-3.5 space-y-3`}
+          } z-50 w-[238px] rounded-2xl bg-[#0d1118]/86 backdrop-blur-sm text-white border border-white/15 shadow-[0_18px_46px_rgba(0,0,0,0.58)] p-3.5 space-y-3`}
         >
           <div className="flex items-center justify-between border-b border-white/10 pb-2">
             <span className="text-xs font-semibold tracking-tight text-white whitespace-nowrap">
@@ -277,7 +277,7 @@ export function HudAudioVolumeControl({
               : `Adjust Music Volume (${effectiveMusicPct}%)`
           }
           title={`Music: ${effectiveMusicPct}% (Click to adjust / mute)`}
-          className="relative w-9 h-9 rounded-full flex items-center justify-center bg-[#0d1118]/65 hover:bg-[#171d29]/82 backdrop-blur-xl text-white border border-white/15 hover:border-white/30 shadow-[0_6px_20px_rgba(0,0,0,0.35)] cursor-pointer active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70"
+          className="relative w-9 h-9 rounded-full flex items-center justify-center bg-[#0d1118]/65 hover:bg-[#171d29]/82 backdrop-blur-sm text-white border border-white/15 hover:border-white/30 shadow-[0_6px_20px_rgba(0,0,0,0.35)] cursor-pointer active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70"
         >
           <span className="relative flex items-center justify-center">
             <Music
@@ -318,7 +318,7 @@ export function HudAudioVolumeControl({
             : `Adjust Sound FX Volume (${effectiveSfxPct}%)`
         }
         title={`Sound FX: ${effectiveSfxPct}% (Click to adjust / mute · M)`}
-        className={`relative w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-xl border shadow-[0_6px_20px_rgba(0,0,0,0.35)] cursor-pointer active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70 ${
+        className={`relative w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-sm border shadow-[0_6px_20px_rgba(0,0,0,0.35)] cursor-pointer active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70 ${
           isMixerOpen
             ? 'bg-white/18 border-white/35 text-white'
             : 'bg-[#0d1118]/65 hover:bg-[#171d29]/82 border-white/15 hover:border-white/30 text-white'

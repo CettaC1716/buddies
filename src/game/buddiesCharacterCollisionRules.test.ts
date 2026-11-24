@@ -33,7 +33,7 @@ import type { StaticWorldStructureObb } from './buddiesBlitzTypes';
 import { buildStaticWorldStructuresList, DEFAULT_ARENA_MAP_LAYOUT } from './buddiesBlitzWorldBuilder';
 import { buildArenaNavGrids, isPointOnPedestrianCrosswalkCorridor } from './buddiesBlitzSquadAi';
 import { CITY_LAMP_MANIFEST } from './buddiesCityLightingAndTrafficRules';
-import { COASTAL_AMUSEMENT_PARK_MASTERPLAN } from './buddiesAmusementParkRules';
+import { BEACH_CLUB_MASTERPLAN } from './buddiesBeachClubRules';
 import { evaluateRoadNetworkSdf, getTerrainElevation } from './buddiesPlanetCurvature';
 
 function buildTestBaseStructures(): StaticWorldStructureObb[] {
@@ -189,7 +189,7 @@ test('resolveCapsulePairSeparation2D skips cross-deck collisions with >2.2m vert
   assert.equal(low.x, 0.1);
 });
 
-test('resolveExtendedWaterMarginGuard2D blocks NW Lake & SE Sea while allowing Stilt Cabin & Taman Ria Pier', () => {
+test('resolveExtendedWaterMarginGuard2D blocks NW Lake, SE Sea & Beach Club Pools while allowing Stilt Cabin & Beach Club Crossing Bridge', () => {
   // Inside NW Oasis Lake center (-31, 0)
   const lake = resolveExtendedWaterMarginGuard2D({
     x: -31.0,
@@ -201,39 +201,49 @@ test('resolveExtendedWaterMarginGuard2D blocks NW Lake & SE Sea while allowing S
   assert.equal(lake.hitWater, true);
   assert.ok(Math.hypot(lake.x - -31.0, lake.z) > 2.0);
 
-  // In deep open SE sea south of Stilt Cabin
+  // In deep open SE sea east of widened 134m shoreline south of Stilt Cabin
   const ocean = resolveExtendedWaterMarginGuard2D({
-    x: 118.0,
+    x: 142.0,
     z: 70.0,
     vx: 2.0,
     vz: 0,
     radius: PLAYER_FOOT_CAPSULE_RADIUS,
   });
   assert.equal(ocean.hitWater, true);
-  assert.ok(ocean.x < 118.0);
+  assert.ok(ocean.x < 142.0);
   assert.equal(ocean.vx, 0);
 
-  // On Beachfront Stilt Cabin deck over ocean (108.8, 85.2) -> must NOT push off deck!
+  // On Beachfront Stilt Cabin deck over ocean (134.5, 85.2) -> must NOT push off deck!
   const stiltDeck = resolveExtendedWaterMarginGuard2D({
-    x: 110.5,
+    x: 134.5,
     z: 85.2,
     vx: 1.5,
     vz: 0,
     radius: PLAYER_FOOT_CAPSULE_RADIUS,
   });
   assert.equal(stiltDeck.hitWater, false);
-  assert.equal(stiltDeck.x, 110.5);
+  assert.equal(stiltDeck.x, 134.5);
 
-  // On Taman Ria Overwater Pier / Gazebo deck (127.8, -26.6) -> must NOT push off deck!
-  const pierDeck = resolveExtendedWaterMarginGuard2D({
-    x: 127.8,
-    z: -26.6,
+  // On Beach Club Crossing Bridge (95.8, -14.3) above West flanking pool -> must stay walkable!
+  const bridgeDeck = resolveExtendedWaterMarginGuard2D({
+    x: 95.8,
+    z: -14.3,
     vx: 1.0,
     vz: 0,
     radius: PLAYER_FOOT_CAPSULE_RADIUS,
   });
-  assert.equal(pierDeck.hitWater, false);
-  assert.equal(pierDeck.x, 127.8);
+  assert.equal(bridgeDeck.hitWater, false);
+  assert.equal(bridgeDeck.x, 95.8);
+
+  // Inside Beach Club Lap Pool basin -> water margin pushes smoothly back onto coping
+  const poolStep = resolveExtendedWaterMarginGuard2D({
+    x: 102.0,
+    z: -45.0,
+    vx: 1.0,
+    vz: 0,
+    radius: PLAYER_FOOT_CAPSULE_RADIUS,
+  });
+  assert.equal(poolStep.hitWater, true);
 });
 
 test('resolveStaircaseAndElevationGuard2D permits stair ascents/descents and blocks sheer sideways drops', () => {
@@ -300,18 +310,18 @@ test('getAuditedStaticWorldStructures audits circular basins, Ontang-Anting, lam
   });
   assert.equal(diagCornerTest.collided, false);
 
-  // Ontang-Anting Wave Swinger ride is now guarded
-  const ontang = COASTAL_AMUSEMENT_PARK_MASTERPLAN.rides.ontagAnting;
-  const ontangHit = resolveGroundMoverAuditedCollisions2D({
-    x: ontang.x + 2.0,
-    z: ontang.z,
-    vx: -2.0,
+  // Beach Club DJ booth & Cocktail Bar colliders are guarded
+  const djBooth = audited.obbs.find((s) => s.id === 'beach_club_dj_booth');
+  assert.ok(djBooth, 'Expected beach_club_dj_booth OBB collider');
+  const boothHit = resolveGroundMoverAuditedCollisions2D({
+    x: BEACH_CLUB_MASTERPLAN.djStage.cx + 1.0,
+    z: BEACH_CLUB_MASTERPLAN.djStage.cz,
+    vx: -1.5,
     vz: 0,
     radius: PLAYER_FOOT_CAPSULE_RADIUS,
     audited,
   });
-  assert.equal(ontangHit.collided, true);
-  assert.ok(ontangHit.x >= ontang.x + ontang.podiumRadius + PLAYER_FOOT_CAPSULE_RADIUS - 0.05);
+  assert.equal(boothHit.collided, true);
 
   // Every lamp in CITY_LAMP_MANIFEST has an active nearby collider (at player ground/deck elevation)
   for (const lamp of CITY_LAMP_MANIFEST) {
@@ -378,9 +388,9 @@ test('all SE beachfront & stilt stairs allow multi-step ascents while Plaza/Park
   assert.equal(stair1.clamped, false);
 
   const stiltStair = resolveStaircaseAndElevationGuard2D({
-    prevX: 103.6,
+    prevX: 127.6,
     prevZ: 84.5,
-    nextX: 104.5,
+    nextX: 128.4,
     nextZ: 84.5,
     vx: 2.5,
     vz: 0,

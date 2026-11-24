@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {
   computeAdaptiveDprTarget,
+  computeAdaptiveShadowMapRes,
   evaluateAvatarOutlinePixelWidth,
   evaluateShadowMapRefreshDecision,
   getAvatarOutlineScreenSpaceProfile,
+  shouldEnableFoliageShadows,
+  shouldEnableHudBackdropBlur,
   shouldRefreshNightLightingFrame,
 } from './buddiesPerfOptimizations';
 import {
@@ -317,3 +320,190 @@ test('updateCityWindowNightLighting avoids full-scene rebuilds when dynamic crat
   winGeo.dispose();
   winMat.dispose();
 });
+
+test('computeAdaptiveShadowMapRes scales shadow map between 2048/1536/1024 on GPU pressure or aerial overview', () => {
+  // Software WebGL always clamps to 1024
+  const sw = computeAdaptiveShadowMapRes({
+    smoothedFrameMs: 10,
+    currentRes: 2048,
+    isSoftwareGl: true,
+    isFullMapOverview: false,
+    cooldownFrames: 50,
+  });
+  assert.equal(sw.nextRes, 1024);
+  assert.equal(sw.changed, true);
+
+  // Aerial overview drops immediately to 1024 even during cooldown
+  const aerial = computeAdaptiveShadowMapRes({
+    smoothedFrameMs: 12,
+    currentRes: 2048,
+    isSoftwareGl: false,
+    isFullMapOverview: true,
+    cooldownFrames: 40,
+  });
+  assert.equal(aerial.nextRes, 1024);
+  assert.equal(aerial.changed, true);
+
+  // Step down 2048 -> 1536 when smoothedFrameMs > 20.5
+  const down1 = computeAdaptiveShadowMapRes({
+    smoothedFrameMs: 22.0,
+    currentRes: 2048,
+    isSoftwareGl: false,
+    isFullMapOverview: false,
+    cooldownFrames: 0,
+  });
+  assert.equal(down1.nextRes, 1536);
+  assert.equal(down1.changed, true);
+  assert.equal(down1.nextCooldownFrames, 90);
+
+  // Respects cooldown while waiting
+  const cooling = computeAdaptiveShadowMapRes({
+    smoothedFrameMs: 30.0,
+    currentRes: 1536,
+    isSoftwareGl: false,
+    isFullMapOverview: false,
+    cooldownFrames: 12,
+  });
+  assert.equal(cooling.nextRes, 1536);
+  assert.equal(cooling.changed, false);
+  assert.equal(cooling.nextCooldownFrames, 11);
+
+  // Step down 1536 -> 1024 once cooldown clears
+  const down2 = computeAdaptiveShadowMapRes({
+    smoothedFrameMs: 25.0,
+    currentRes: 1536,
+    isSoftwareGl: false,
+    isFullMapOverview: false,
+    cooldownFrames: 0,
+  });
+  assert.equal(down2.nextRes, 1024);
+  assert.equal(down2.changed, true);
+
+  // Recovers smoothly 1024 -> 1536 -> 2048 when GPU has plenty of headroom (< 13.5ms)
+  const up1 = computeAdaptiveShadowMapRes({
+    smoothedFrameMs: 12.0,
+    currentRes: 1024,
+    isSoftwareGl: false,
+    isFullMapOverview: false,
+    cooldownFrames: 0,
+  });
+  assert.equal(up1.nextRes, 1536);
+  assert.equal(up1.changed, true);
+  assert.equal(up1.nextCooldownFrames, 150);
+
+  const up2 = computeAdaptiveShadowMapRes({
+    smoothedFrameMs: 11.5,
+    currentRes: 1536,
+    isSoftwareGl: false,
+    isFullMapOverview: false,
+    cooldownFrames: 0,
+  });
+  assert.equal(up2.nextRes, 2048);
+  assert.equal(up2.changed, true);
+});
+
+test('shouldEnableFoliageShadows uses hysteresis and disables in aerial overview or software GL', () => {
+  assert.equal(
+    shouldEnableFoliageShadows({
+      smoothedFrameMs: 14,
+      currentlyEnabled: true,
+      isSoftwareGl: true,
+      isFullMapOverview: false,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldEnableFoliageShadows({
+      smoothedFrameMs: 14,
+      currentlyEnabled: true,
+      isSoftwareGl: false,
+      isFullMapOverview: true,
+    }),
+    false,
+  );
+  // Stays enabled at moderate frame times <= 24ms
+  assert.equal(
+    shouldEnableFoliageShadows({
+      smoothedFrameMs: 21,
+      currentlyEnabled: true,
+      isSoftwareGl: false,
+      isFullMapOverview: false,
+    }),
+    true,
+  );
+  // Disables above 24ms
+  assert.equal(
+    shouldEnableFoliageShadows({
+      smoothedFrameMs: 25.5,
+      currentlyEnabled: true,
+      isSoftwareGl: false,
+      isFullMapOverview: false,
+    }),
+    false,
+  );
+  // Hysteresis: remains disabled at 20ms until frame time recovers below 17.5ms
+  assert.equal(
+    shouldEnableFoliageShadows({
+      smoothedFrameMs: 20.0,
+      currentlyEnabled: false,
+      isSoftwareGl: false,
+      isFullMapOverview: false,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldEnableFoliageShadows({
+      smoothedFrameMs: 16.0,
+      currentlyEnabled: false,
+      isSoftwareGl: false,
+      isFullMapOverview: false,
+    }),
+    true,
+  );
+});
+
+test('shouldEnableHudBackdropBlur disables compositor blur on software GL or >23ms frames with hysteresis', () => {
+  assert.equal(
+    shouldEnableHudBackdropBlur({
+      isSoftwareGl: true,
+      smoothedFrameMs: 12.0,
+      currentlyEnabled: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldEnableHudBackdropBlur({
+      isSoftwareGl: false,
+      smoothedFrameMs: 20.0,
+      currentlyEnabled: true,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldEnableHudBackdropBlur({
+      isSoftwareGl: false,
+      smoothedFrameMs: 24.5,
+      currentlyEnabled: true,
+    }),
+    false,
+  );
+  // Hysteresis: stays off at 19.5ms until frame time recovers below 17ms
+  assert.equal(
+    shouldEnableHudBackdropBlur({
+      isSoftwareGl: false,
+      smoothedFrameMs: 19.5,
+      currentlyEnabled: false,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldEnableHudBackdropBlur({
+      isSoftwareGl: false,
+      smoothedFrameMs: 15.5,
+      currentlyEnabled: false,
+    }),
+    true,
+  );
+});
+
+

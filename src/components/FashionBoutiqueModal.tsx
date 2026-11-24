@@ -438,7 +438,7 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
           onClose();
         }
       }}
-      className="fixed inset-0 z-[130] flex items-center justify-center p-2.5 sm:p-5 bg-black/25 backdrop-blur-[2px] pointer-events-auto select-none"
+      className="fixed inset-0 z-[130] flex items-center justify-center p-2.5 sm:p-5 bg-black/25 pointer-events-auto select-none"
     >
       <TabletDeviceMockupShell
         appLabel="FASHION BOUTIQUE"

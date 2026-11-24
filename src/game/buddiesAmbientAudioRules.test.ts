@@ -10,13 +10,14 @@ import {
 } from './buddiesAmbientAudioRules';
 
 test('classifyFootstepSurface resolves distinct surfaces cleanly across map habitats', () => {
-  // Golden sandy East Beach (outside boardwalk & outer roads)
+  // Golden sandy East Beach (Kai South Beachfront + widened sand East of Beach Club)
   assert.equal(classifyFootstepSurface(99.5, 62.0), 'sand');
-  assert.equal(classifyFootstepSurface(112.0, -78.0), 'sand');
+  assert.equal(classifyFootstepSurface(126.0, -78.0), 'sand');
+  assert.equal(classifyFootstepSurface(112.0, -78.0), 'stone_road');
 
   // SE Beachfront Boardwalk (+0.82m), Stilt Cabin deck (+0.96m), and indoor wooden home
   assert.equal(classifyFootstepSurface(85.0, 72.0), 'wood');
-  assert.equal(classifyFootstepSurface(108.5, 85.0), 'wood');
+  assert.equal(classifyFootstepSurface(132.4, 85.0), 'wood');
   assert.equal(classifyFootstepSurface(0.0, 0.0, 'house_interior'), 'wood');
 
   // Central Park Terrazzo vs Manicured Oasis Meadow & Fountain water
@@ -31,18 +32,18 @@ test('classifyFootstepSurface resolves distinct surfaces cleanly across map habi
   assert.equal(classifyFootstepSurface(0.0, 0.0, 'cafe_interior'), 'stone_road');
   assert.equal(classifyFootstepSurface(0.0, 0.0, 'salon_interior'), 'stone_road');
 
-  // NW Oasis Lake & Open East Ocean
+  // NW Oasis Lake & Open East Ocean (beyond widened 134.0m shoreline)
   assert.equal(classifyFootstepSurface(-31.0, 0.0), 'water');
-  assert.equal(classifyFootstepSurface(130.0, 70.0), 'water');
+  assert.equal(classifyFootstepSurface(142.0, 70.0), 'water');
 
   // Hilltop Villa Plateau Meadow (+8.50m)
   assert.equal(classifyFootstepSurface(-10.0, -130.0), 'grass');
 });
 
 test('computeAmbientSoundscapeMix balances coastal surf, lake stillness, birdsong, and UI ducking', () => {
-  // Sunny afternoon on East Beach: strong ocean surf, seagulls active, zero lake ripple
+  // Sunny afternoon on widened East Beach near surf: strong ocean surf, seagulls active, zero lake ripple
   const beachDay = computeAmbientSoundscapeMix({
-    listenerX: 100.0,
+    listenerX: 124.0,
     listenerZ: 68.0,
     timeOfDayHours: 14.0,
     rainIntensity01: 0.0,
@@ -70,7 +71,7 @@ test('computeAmbientSoundscapeMix balances coastal surf, lake stillness, birdson
   assert.equal(computeAmbientNightFactor(23.0), 1);
   assert.equal(computeAmbientNightFactor(12.0), 0);
   const beachStormNight = computeAmbientSoundscapeMix({
-    listenerX: 100.0,
+    listenerX: 124.0,
     listenerZ: 68.0,
     timeOfDayHours: 23.0,
     rainIntensity01: 1.0,
@@ -82,7 +83,7 @@ test('computeAmbientSoundscapeMix balances coastal surf, lake stillness, birdson
 
   // UI Modal / City View gently ducks master ambient & rolls off bright foam
   const modalBeach = computeAmbientSoundscapeMix({
-    listenerX: 100.0,
+    listenerX: 124.0,
     listenerZ: 68.0,
     timeOfDayHours: 14.0,
     rainIntensity01: 0.0,

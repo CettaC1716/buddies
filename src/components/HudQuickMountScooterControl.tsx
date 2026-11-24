@@ -179,7 +179,7 @@ export function HudQuickMountScooterControl({
           onKeyDown={(e) => e.stopPropagation()}
           className={`absolute right-0 ${
             popoverPlacement === 'bottom' ? 'top-full mt-2.5' : 'bottom-full mb-2.5'
-          } z-50 w-[262px] rounded-2xl bg-[#0d1118]/86 backdrop-blur-xl text-white border border-white/15 shadow-[0_18px_46px_rgba(0,0,0,0.58)] p-3.5 space-y-2.5`}
+          } z-50 w-[262px] rounded-2xl bg-[#0d1118]/86 backdrop-blur-sm text-white border border-white/15 shadow-[0_18px_46px_rgba(0,0,0,0.58)] p-3.5 space-y-2.5`}
         >
           <div className="flex items-center justify-between border-b border-white/10 pb-2">
             <span className="text-xs font-semibold tracking-tight text-white whitespace-nowrap">
@@ -342,7 +342,7 @@ export function HudQuickMountScooterControl({
                 : 'Step outside to mount your scooter'
               : 'Vehicles — Buy a scooter at Central Plaza Showroom'
         }
-        className={`relative w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-xl border shadow-[0_6px_20px_rgba(0,0,0,0.35)] cursor-pointer active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70 ${
+        className={`relative w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-sm border shadow-[0_6px_20px_rgba(0,0,0,0.35)] cursor-pointer active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70 ${
           isRiding
             ? 'bg-emerald-400/22 hover:bg-emerald-400/32 border-emerald-300/60 text-emerald-200'
             : isOpen

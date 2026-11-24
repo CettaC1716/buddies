@@ -683,7 +683,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
         soundEngine.playUiCancel();
         onClose();
       }}
-      className="fixed inset-0 z-[210] flex items-center justify-center p-2.5 sm:p-5 bg-black/25 backdrop-blur-[2px] pointer-events-auto select-none"
+      className="fixed inset-0 z-[210] flex items-center justify-center p-2.5 sm:p-5 bg-black/25 pointer-events-auto select-none"
     >
       <TabletDeviceMockupShell
         appLabel="ESTATE STUDIO"
@@ -812,11 +812,11 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                       />
                       <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-950/75 via-slate-950/25 to-transparent pointer-events-none" />
                       <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
-                        <span className="px-3 py-1 rounded-full bg-slate-950/70 backdrop-blur-md border border-white/15 text-[11px] font-medium text-white truncate">
+                        <span className="px-3 py-1 rounded-full bg-slate-950/75 border border-white/15 text-[11px] font-medium text-white truncate">
                           {selectedHouse.location} ·{' '}
                           {houseStageAngle === 'exterior' ? 'Exterior Elevation' : 'Interior Studio'}
                         </span>
-                        <div className="flex items-center gap-1 p-0.5 rounded-full bg-slate-950/70 backdrop-blur-md border border-white/15 shrink-0">
+                        <div className="flex items-center gap-1 p-0.5 rounded-full bg-slate-950/75 border border-white/15 shrink-0">
                           {(['exterior', 'interior'] as const).map((angle) => (
                             <button
                               key={angle}
@@ -1107,7 +1107,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                         <div
                           className={`absolute inset-0 bg-gradient-to-br ${selectedThemeSpec.overlayClass}`}
                         />
-                        <div className="relative z-10 m-3 px-3.5 py-2.5 rounded-xl flex items-center justify-between gap-3 bg-slate-950/70 backdrop-blur-md border border-white/15">
+                        <div className="relative z-10 m-3 px-3.5 py-2.5 rounded-xl flex items-center justify-between gap-3 bg-slate-950/75 border border-white/15">
                           <span className="text-xs font-medium text-white">
                             House Theme Architectural Palette
                           </span>
@@ -1166,7 +1166,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                           className="absolute inset-0 w-full h-full block"
                         />
                         <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
-                          <span className="px-3 py-1 rounded-full bg-slate-950/75 backdrop-blur-md border border-white/15 text-[11px] font-medium text-white shadow-xs">
+                          <span className="px-3 py-1 rounded-full bg-slate-950/80 border border-white/15 text-[11px] font-medium text-white shadow-xs">
                             ‹ drag to turn it around ›
                           </span>
                         </div>

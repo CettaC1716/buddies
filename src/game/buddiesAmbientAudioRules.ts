@@ -1,7 +1,4 @@
-import {
-  evaluateAmusementBoardwalkElevation,
-  isPointOnAmusementOverwaterPier,
-} from './buddiesAmusementParkRules';
+import { classifyBeachClubSurface } from './buddiesBeachClubRules';
 import {
   evaluateRoadSurfaceSpeedBoost,
 } from './buddiesBlitzRules';
@@ -119,11 +116,15 @@ export function classifyFootstepSurface(
     return 'stone_road';
   }
 
-  // 1. Timber Boardwalks, Overwater Pier & Beachfront Stilt Cabin Deck (+0.82m .. +0.96m)
+  // 1. Finns-Style Tropical Beach Club (pools, timber DJ stage/bridge, marble/terrazzo decks, sand)
+  const beachClubSurface = classifyBeachClubSurface(worldX, worldZ);
+  if (beachClubSurface !== 'none') {
+    return beachClubSurface;
+  }
+
+  // 1B. Kai's Beachfront Timber Boardwalk & Stilt Cabin Deck
   if (
     isPointOnBeachfrontStiltCabinDeck(worldX, worldZ) ||
-    isPointOnAmusementOverwaterPier(worldX, worldZ) ||
-    evaluateAmusementBoardwalkElevation(worldX, worldZ) > 0.15 ||
     (worldX >= 77.6 && worldX <= 96.6 && worldZ >= 45.2 && worldZ <= 103.2)
   ) {
     return 'wood';
@@ -175,7 +176,7 @@ export function classifyFootstepSurface(
     return 'stone_road';
   }
 
-  // 5. Golden Sandy Beaches (NE Taman Ria & SE Coastal Beachfront east of Outer Road)
+  // 5. Widened Golden Sandy Beaches (Beach Club coastline & Kai's SE Beachfront east of promenade)
   if (waterSdf >= -0.15 && worldX >= 80.5 && evaluateEastCoastalSandyMask(worldZ) > 0.35) {
     return 'sand';
   }

@@ -19,7 +19,7 @@ import {
   PlacedMapProp,
   StaticWorldStructureObb,
 } from './buddiesBlitzTypes';
-import { getCoastalAmusementParkObstacles } from './buddiesAmusementParkRules';
+import { getBeachClubObstacles } from './buddiesBeachClubRules';
 import {
   getCentralParkObstacles,
   isPointInsideCentralIslandEnvelope,
@@ -93,8 +93,6 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
     ...buildTeamBaseQuadrant('red', -1, 200),
     { id: 502, kind: 'giant_pipe', x: -5.5, z: -22.5, rotY: 0.0, scale: 1.12 },
     { id: 503, kind: 'giant_pipe', x: -5.5, z: 22.5, rotY: 0.0, scale: 1.12 },
-    { id: 504, kind: 'pipe_cluster', x: 86.5, z: 21.5, rotY: 0.0, scale: 1.08 },
-    { id: 505, kind: 'pipe_cluster', x: 86.5, z: 38.5, rotY: Math.PI, scale: 1.08 },
     { id: 506, kind: 'tree_purple', x: -52.0, z: -28.0, rotY: 0.35, scale: 1.08 },
     { id: 507, kind: 'tree_purple', x: -52.0, z: 26.0, rotY: -0.35, scale: 1.08 },
     { id: 508, kind: 'tree_gold', x: -40.0, z: -35.0, rotY: 0.65, scale: 1.08 },
@@ -136,7 +134,7 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
     { id: 590, kind: 'tree_gold', x: 31.0, z: -36.5, rotY: 0.35, scale: 1.14 },
     { id: 591, kind: 'tree_gold', x: 31.0, z: 36.5, rotY: -0.35, scale: 1.14 },
     { id: 592, kind: 'tree_purple', x: 54.5, z: -27.5, rotY: -0.45, scale: 1.14 },
-    { id: 593, kind: 'tree_purple', x: 54.5, z: 27.5, rotY: 0.45, scale: 1.14 },
+    { id: 593, kind: 'tree_purple', x: 49.5, z: 30.2, rotY: 0.45, scale: 1.14 },
     { id: 594, kind: 'tree_gold', x: -26.0, z: -36.0, rotY: 0.55, scale: 1.12 },
     { id: 595, kind: 'tree_gold', x: -29.0, z: 34.5, rotY: -0.55, scale: 1.12 },
     { id: 596, kind: 'flower_cluster', x: 52.0, z: -38.5, rotY: 0.5, scale: 1.32 },
@@ -165,6 +163,34 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
     { id: 323, kind: 'flower_cluster', x: -25.5, z: -11.5, rotY: 1.5, scale: 1.35 },
     { id: 324, kind: 'flower_cluster', x: -25.5, z: 11.5, rotY: -1.5, scale: 1.35 },
     { id: 325, kind: 'flower_cluster', x: -21.5, z: 0.0, rotY: 1.2, scale: 1.3 },
+    // Extended Central Plaza botanical flower mounds spread across the Oasis, Center, and East parks
+    { id: 340, kind: 'flower_cluster', x: -50.0, z: -3.8, rotY: 0.35, scale: 1.32 },
+    { id: 341, kind: 'flower_cluster', x: -50.0, z: 3.8, rotY: -0.35, scale: 1.32 },
+    { id: 342, kind: 'flower_cluster', x: -48.0, z: 14.2, rotY: 0.75, scale: 1.35 },
+    { id: 343, kind: 'flower_cluster', x: -51.5, z: 19.5, rotY: 1.25, scale: 1.38 },
+    { id: 344, kind: 'flower_cluster', x: -44.5, z: 21.5, rotY: -0.65, scale: 1.40 },
+    { id: 345, kind: 'flower_cluster', x: -35.5, z: 22.5, rotY: 0.45, scale: 1.36 },
+    { id: 346, kind: 'flower_cluster', x: -34.0, z: 30.0, rotY: -1.15, scale: 1.34 },
+    { id: 347, kind: 'flower_cluster', x: -46.5, z: 31.0, rotY: 0.90, scale: 1.36 },
+    { id: 348, kind: 'flower_cluster', x: -45.0, z: -33.0, rotY: -0.50, scale: 1.34 },
+    { id: 349, kind: 'flower_cluster', x: -36.5, z: -32.5, rotY: 0.55, scale: 1.34 },
+    { id: 350, kind: 'flower_cluster', x: -35.0, z: -17.0, rotY: -0.85, scale: 1.32 },
+    { id: 351, kind: 'flower_cluster', x: -26.0, z: -17.0, rotY: 1.10, scale: 1.32 },
+    { id: 352, kind: 'flower_cluster', x: -26.0, z: 16.0, rotY: -1.10, scale: 1.32 },
+    { id: 353, kind: 'flower_cluster', x: -23.0, z: -14.0, rotY: 0.30, scale: 1.30 },
+    { id: 354, kind: 'flower_cluster', x: -10.0, z: -32.0, rotY: 0.60, scale: 1.35 },
+    { id: 355, kind: 'flower_cluster', x: -12.5, z: -25.5, rotY: -0.75, scale: 1.32 },
+    { id: 356, kind: 'flower_cluster', x: -4.5, z: -29.5, rotY: 1.35, scale: 1.34 },
+    { id: 357, kind: 'flower_cluster', x: 2.0, z: -24.5, rotY: -0.45, scale: 1.32 },
+    { id: 358, kind: 'flower_cluster', x: 5.0, z: -30.5, rotY: 0.85, scale: 1.34 },
+    { id: 359, kind: 'flower_cluster', x: -12.5, z: 26.5, rotY: -0.60, scale: 1.35 },
+    { id: 360, kind: 'flower_cluster', x: -4.5, z: 31.0, rotY: 0.75, scale: 1.34 },
+    { id: 361, kind: 'flower_cluster', x: 2.5, z: 23.5, rotY: -1.25, scale: 1.32 },
+    { id: 362, kind: 'flower_cluster', x: 5.5, z: 31.5, rotY: 0.50, scale: 1.34 },
+    { id: 363, kind: 'flower_cluster', x: 10.5, z: 28.0, rotY: -0.90, scale: 1.32 },
+    { id: 364, kind: 'flower_cluster', x: 31.5, z: -33.0, rotY: 0.40, scale: 1.35 },
+    { id: 365, kind: 'flower_cluster', x: 50.0, z: -30.0, rotY: -0.55, scale: 1.34 },
+    { id: 366, kind: 'flower_cluster', x: 35.0, z: 35.0, rotY: 0.70, scale: 1.35 },
 
     { id: 330, kind: 'tree_gold', x: -42.5, z: -7.8, rotY: 0.3, scale: 1.12 },
     { id: 331, kind: 'tree_gold', x: -42.5, z: 7.8, rotY: -0.3, scale: 1.12 },
@@ -174,9 +200,6 @@ export const DEFAULT_ARENA_MAP_LAYOUT: ArenaMapLayout = {
     { id: 335, kind: 'tree_gold', x: -48.5, z: 36.5, rotY: -0.6, scale: 1.1 },
     { id: 336, kind: 'tree_purple', x: -86.0, z: 82.0, rotY: -0.3, scale: 1.12 },
     { id: 337, kind: 'tree_purple', x: -74.0, z: 82.0, rotY: 0.3, scale: 1.12 },
-
-    { id: 401, kind: 'crane', x: 105.8, z: 21.5, rotY: Math.PI / 2, scale: 1.38 },
-    { id: 431, kind: 'forklift', x: 88.5, z: 29.5, rotY: Math.PI, scale: 1.18 },
 
     { id: 520, kind: 'bench', x: 2.0, z: -34.5, rotY: 0.0, scale: 1.35 },
     { id: 521, kind: 'bench', x: 2.0, z: -29.5, rotY: Math.PI, scale: 1.35 },
@@ -213,8 +236,8 @@ export function isInsideSouthPlazaGlasshouseFootprint(x: number, z: number): boo
   return inMainHall || inWestWing;
 }
 
-export function isInsideCoastalAmusementParkFootprint(x: number, z: number): boolean {
-  return x >= 76.2 && x <= 126.0 && z >= -104.5 && z <= -18.5;
+export function isInsideEastCoastalBeachClubFootprint(x: number, z: number): boolean {
+  return x >= 78.0 && x <= 134.5 && z >= -99.0 && z <= 46.2;
 }
 
 export function loadSavedArenaLayout(): ArenaMapLayout {
@@ -229,7 +252,7 @@ export function loadSavedArenaLayout(): ArenaMapLayout {
             p.id !== 530 &&
             p.id !== 531 &&
             !isInsideSouthPlazaGlasshouseFootprint(p.x, p.z) &&
-            !isInsideCoastalAmusementParkFootprint(p.x, p.z) &&
+            !isInsideEastCoastalBeachClubFootprint(p.x, p.z) &&
             !isInsideNorthGrandCasinoFootprint(p.x, p.z) &&
             !isPointInsideCentralIslandEnvelope(p.x, p.z),
         );
@@ -653,10 +676,10 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'north_residence_passenger_bench', x: 6.1, z: -39.52, halfX: 2.30, halfZ: 0.42, rotY: 0, heightY: 1.82, mat: 'wood' },
     { id: 'south_residence_shelter_windbreak', x: -36.5, z: 38.8, halfX: 6.8, halfZ: 0.28, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
     { id: 'south_residence_transit_kiosk', x: -36.5, z: 41.15, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
-    { id: 'beachfront_harbor_shelter_windbreak', x: 81.68, z: 29.5, halfX: 0.28, halfZ: 6.8, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
-    { id: 'beachfront_harbor_transit_kiosk', x: 79.35, z: 29.5, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
+    { id: 'beachfront_harbor_shelter_windbreak', x: 56.83, z: 28.6, halfX: 0.28, halfZ: 6.8, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.halteCanopyClearanceM, mat: 'concrete' },
+    { id: 'beachfront_harbor_transit_kiosk', x: 59.18, z: 28.6, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
     { id: 'beachfront_kai_transit_kiosk', x: 84.85, z: 65.65, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
-    { id: 'beachfront_harbor_passenger_bench', x: 80.98, z: 26.9, halfX: 0.42, halfZ: 2.30, rotY: 0, heightY: 1.82, mat: 'wood' },
+    { id: 'beachfront_harbor_passenger_bench', x: 57.55, z: 31.2, halfX: 0.42, halfZ: 2.30, rotY: 0, heightY: 1.82, mat: 'wood' },
     { id: 'nw_fishing_lake_transit_kiosk', x: -44.5, z: -6.5, halfX: 0.42, halfZ: 0.62, rotY: 0, heightY: HALTE_GOLDEN_SCALE_CONFIG.kioskColliderHeightY, mat: 'metal' },
     {
       id: 'central_park_transit_kiosk',
@@ -718,7 +741,7 @@ export function buildStaticWorldStructuresList(params: {
 
     // Surfboard Rental Rack & Coastal Lifeguard Watchtower
     { id: 'beach_surfboard_rack', x: 83.8, z: 49.5, halfX: +(1.28 * surfRackRatio).toFixed(2), halfZ: +(3.98 * surfRackRatio).toFixed(2), rotY: -0.18, heightY: +(5.5 * surfRackRatio).toFixed(2), mat: 'wood' },
-    { id: 'beach_lifeguard_tower', x: 101.6, z: 67.5, halfX: 3.45, halfZ: 2.35, rotY: 0, heightY: 7.5, mat: 'wood' },
+    { id: 'beach_lifeguard_tower', x: 117.6, z: 67.5, halfX: 3.45, halfZ: 2.35, rotY: 0, heightY: 7.5, mat: 'wood' },
 
     // Beachfront Stilt Timber Cabin ("Rumah Papan Panggung Tepi Pantai") — Cabin Body + Walkable Veranda Perimeter Railings (West Stair Opening Clear)
     {
@@ -808,23 +831,23 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'beach_railing_sea_mid', x: 91.9, z: 85.4, halfX: 0.28, halfZ: 8.65, rotY: 0, heightY: 2.4, mat: 'wood' },
     { id: 'beach_railing_sea_s', x: 91.9, z: 100.7, halfX: 0.28, halfZ: 1.55, rotY: 0, heightY: 2.4, mat: 'wood' },
     { id: 'beach_railing_south', x: 85.2, z: 102.2, halfX: 6.8, halfZ: 0.28, rotY: 0, heightY: 2.4, mat: 'wood' },
-    { id: 'beach_stair1_rail_n', x: 93.75, z: 70.3, halfX: 1.75, halfZ: 0.22, rotY: 0, heightY: 2.2, mat: 'wood' },
-    { id: 'beach_stair1_rail_s', x: 93.75, z: 76.7, halfX: 1.75, halfZ: 0.22, rotY: 0, heightY: 2.2, mat: 'wood' },
-    { id: 'beach_stair2_rail_n', x: 93.75, z: 94.1, halfX: 1.75, halfZ: 0.22, rotY: 0, heightY: 2.2, mat: 'wood' },
-    { id: 'beach_stair2_rail_s', x: 93.75, z: 99.1, halfX: 1.75, halfZ: 0.22, rotY: 0, heightY: 2.2, mat: 'wood' },
+    { id: 'beach_stair1_rail_n', x: 94.9, z: 70.3, halfX: 2.7, halfZ: 0.22, rotY: 0, heightY: 2.2, mat: 'wood' },
+    { id: 'beach_stair1_rail_s', x: 94.9, z: 76.7, halfX: 2.7, halfZ: 0.22, rotY: 0, heightY: 2.2, mat: 'wood' },
+    { id: 'beach_stair2_rail_n', x: 94.9, z: 94.1, halfX: 2.7, halfZ: 0.22, rotY: 0, heightY: 2.2, mat: 'wood' },
+    { id: 'beach_stair2_rail_s', x: 94.9, z: 99.1, halfX: 2.7, halfZ: 0.22, rotY: 0, heightY: 2.2, mat: 'wood' },
 
-    // 7 Slatted Timber Sun Loungers & 4 Coastal Adirondack Beach Chairs
-    { id: 'beach_lounger_1', x: 100.2, z: 54.0, halfX: 1.38, halfZ: 0.72, rotY: -0.12, heightY: 1.6, mat: 'wood' },
-    { id: 'beach_lounger_2', x: 100.2, z: 57.2, halfX: 1.38, halfZ: 0.72, rotY: -0.08, heightY: 1.6, mat: 'wood' },
-    { id: 'beach_lounger_3', x: 100.2, z: 60.4, halfX: 1.38, halfZ: 0.72, rotY: -0.05, heightY: 1.6, mat: 'wood' },
-    { id: 'beach_lounger_4', x: 101.0, z: 77.5, halfX: 1.38, halfZ: 0.72, rotY: 0.08, heightY: 1.6, mat: 'wood' },
-    { id: 'beach_lounger_5', x: 101.0, z: 80.8, halfX: 1.38, halfZ: 0.72, rotY: 0.12, heightY: 1.6, mat: 'wood' },
-    { id: 'beach_lounger_6', x: 100.2, z: 91.5, halfX: 1.38, halfZ: 0.72, rotY: -0.10, heightY: 1.6, mat: 'wood' },
-    { id: 'beach_lounger_7', x: 100.2, z: 94.8, halfX: 1.38, halfZ: 0.72, rotY: -0.06, heightY: 1.6, mat: 'wood' },
-    { id: 'beach_chair_1', x: 96.2, z: 81.8, halfX: 0.78, halfZ: 0.78, rotY: 0.15, heightY: 1.8, mat: 'wood' },
-    { id: 'beach_chair_2', x: 96.2, z: 85.0, halfX: 0.78, halfZ: 0.78, rotY: 0.05, heightY: 1.8, mat: 'wood' },
-    { id: 'beach_chair_3', x: 96.2, z: 88.2, halfX: 0.78, halfZ: 0.78, rotY: -0.10, heightY: 1.8, mat: 'wood' },
-    { id: 'beach_chair_4', x: 97.5, z: 49.5, halfX: 0.78, halfZ: 0.78, rotY: -0.20, heightY: 1.8, mat: 'wood' },
+    // 7 Slatted Timber Sun Loungers & 4 Coastal Adirondack Beach Chairs (+16m seaward on widened sand)
+    { id: 'beach_lounger_1', x: 116.2, z: 54.0, halfX: 1.38, halfZ: 0.72, rotY: -0.12, heightY: 1.6, mat: 'wood' },
+    { id: 'beach_lounger_2', x: 116.2, z: 57.2, halfX: 1.38, halfZ: 0.72, rotY: -0.08, heightY: 1.6, mat: 'wood' },
+    { id: 'beach_lounger_3', x: 116.2, z: 60.4, halfX: 1.38, halfZ: 0.72, rotY: -0.05, heightY: 1.6, mat: 'wood' },
+    { id: 'beach_lounger_4', x: 117.0, z: 77.5, halfX: 1.38, halfZ: 0.72, rotY: 0.08, heightY: 1.6, mat: 'wood' },
+    { id: 'beach_lounger_5', x: 117.0, z: 80.8, halfX: 1.38, halfZ: 0.72, rotY: 0.12, heightY: 1.6, mat: 'wood' },
+    { id: 'beach_lounger_6', x: 116.2, z: 91.5, halfX: 1.38, halfZ: 0.72, rotY: -0.10, heightY: 1.6, mat: 'wood' },
+    { id: 'beach_lounger_7', x: 116.2, z: 94.8, halfX: 1.38, halfZ: 0.72, rotY: -0.06, heightY: 1.6, mat: 'wood' },
+    { id: 'beach_chair_1', x: 112.2, z: 81.8, halfX: 0.78, halfZ: 0.78, rotY: 0.15, heightY: 1.8, mat: 'wood' },
+    { id: 'beach_chair_2', x: 112.2, z: 85.0, halfX: 0.78, halfZ: 0.78, rotY: 0.05, heightY: 1.8, mat: 'wood' },
+    { id: 'beach_chair_3', x: 112.2, z: 88.2, halfX: 0.78, halfZ: 0.78, rotY: -0.10, heightY: 1.8, mat: 'wood' },
+    { id: 'beach_chair_4', x: 113.5, z: 49.5, halfX: 0.78, halfZ: 0.78, rotY: -0.20, heightY: 1.8, mat: 'wood' },
 
     // 7 Tropical Coconut Palm Tree Trunks & 8 Coastal Flower Shrubs
     { id: 'beach_palm_1', x: 93.8, z: 48.2, halfX: 0.56, halfZ: 0.56, rotY: 0, heightY: 7.5, mat: 'wood' },
@@ -843,11 +866,7 @@ export function buildStaticWorldStructuresList(params: {
     { id: 'beach_shrub_7', x: 94.8, z: 100.0, halfX: 0.48, halfZ: 0.48, rotY: 0, heightY: 1.5, mat: 'wood' },
     { id: 'beach_shrub_8', x: 98.5, z: 88.5, halfX: 0.48, halfZ: 0.48, rotY: 0, heightY: 1.5, mat: 'wood' },
 
-    // Southern Dermaga Container Stacks (Northern Dermaga & Northern Beach claimed by 1:1 Taman Ria Dermaga!)
-    { id: 'cont_stack_harbor_sw', x: 94.15, z: 34.5, halfX: 3.55, halfZ: 3.64, rotY: 0, heightY: 6.72, mat: 'metal' },
-    { id: 'cont_stack_harbor_sc', x: 94.15, z: 24.5, halfX: 3.55, halfZ: 3.64, rotY: 0, heightY: 3.4, mat: 'metal' },
-    { id: 'cont_stack_harbor_se', x: 101.5, z: 33.45, halfX: 3.55, halfZ: 3.64, rotY: Math.PI / 2, heightY: 6.72, mat: 'metal' },
-    ...getCoastalAmusementParkObstacles(),
+    ...getBeachClubObstacles(),
     ...getGrandCasinoObstacles(),
     ...getCentralParkObstacles(),
   ];

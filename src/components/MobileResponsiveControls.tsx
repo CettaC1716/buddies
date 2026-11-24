@@ -444,7 +444,7 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                     soundEngine.playUiClick();
                     onTriggerBuddyAction(primaryContextualAction.actionEvent);
                   }}
-                  className="px-3.5 py-1.5 rounded-full bg-[#0d1118]/78 hover:bg-[#171e2b]/90 backdrop-blur-xl active:scale-95 text-white border border-white/25 shadow-[0_8px_24px_rgba(0,0,0,0.45)] font-semibold text-[11px] tracking-wide cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-full bg-[#0d1118]/78 hover:bg-[#171e2b]/90 backdrop-blur-sm active:scale-95 text-white border border-white/25 shadow-[0_8px_24px_rgba(0,0,0,0.45)] font-semibold text-[11px] tracking-wide cursor-pointer"
                 >
                   <span>{primaryContextualAction.label}</span>
                 </button>

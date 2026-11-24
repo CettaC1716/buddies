@@ -277,7 +277,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
       aria-label="City Transit Self-Service Kiosk"
       data-teleport-kiosk-modal="true"
       data-transit-kiosk-level={levelView}
-      className="fixed inset-0 z-[105] flex items-center justify-center p-2.5 sm:p-5 bg-black/25 backdrop-blur-[2px] pointer-events-auto select-none"
+      className="fixed inset-0 z-[105] flex items-center justify-center p-2.5 sm:p-5 bg-black/25 pointer-events-auto select-none"
       onClick={() => {
         soundEngine.playUiClick();
         onClose();
@@ -444,10 +444,10 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/35 to-slate-950/15" />
 
                 <div className="relative z-10 p-3.5 flex items-center justify-between">
-                  <span className="px-2.5 py-1 rounded-full bg-sky-500/90 backdrop-blur-md text-white text-[10px] font-bold uppercase tracking-wider shadow-xs">
+                  <span className="px-2.5 py-1 rounded-full bg-sky-500/90 text-white text-[10px] font-bold uppercase tracking-wider shadow-xs">
                     THE CITY NETWORK
                   </span>
-                  <span className="px-2.5 py-1 rounded-full bg-slate-900/75 backdrop-blur-md text-white border border-white/20 text-[10px] font-bold uppercase">
+                  <span className="px-2.5 py-1 rounded-full bg-slate-900/75 text-white border border-white/20 text-[10px] font-bold uppercase">
                     {districtDestinationCount} DISTRICTS
                   </span>
                 </div>
@@ -525,7 +525,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   <span className="px-2.5 py-1 rounded-full bg-emerald-500/90 text-white text-[10px] font-bold uppercase tracking-wider shadow-xs">
                     HOUSE
                   </span>
-                  <span className="px-2.5 py-1 rounded-full bg-slate-900/75 backdrop-blur-md text-white border border-white/20 text-[10px] font-bold uppercase">
+                  <span className="px-2.5 py-1 rounded-full bg-slate-900/75 text-white border border-white/20 text-[10px] font-bold uppercase">
                     {hasOwnedHouse ? 'INSTANT ENTRY' : 'BROWSE HOMES'}
                   </span>
                 </div>
@@ -542,35 +542,35 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 </div>
               </button>
 
-              {/* CARD 4: SHOP & EXCHANGE */}
+              {/* CARD 4: DEX & MARKETPLACE */}
               <button
                 type="button"
                 data-transit-card="shop_exchange"
                 onClick={handleClickShopExchange}
-                className="group relative h-[156px] sm:h-[168px] rounded-2xl bg-slate-900/70 border border-white/15 shadow-md hover:border-violet-400/60 hover:shadow-[0_12px_30px_rgba(0,0,0,0.45)] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
+                className="group relative h-[156px] sm:h-[168px] rounded-2xl bg-slate-900/70 border border-white/15 shadow-md hover:border-emerald-400/60 hover:shadow-[0_12px_30px_rgba(0,0,0,0.45)] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
               >
                 <img
                   src={kioskThumbnails.shop_exchange || '/docs/hero-4-hana-exchange.jpg'}
-                  alt="Shop & Exchange"
+                  alt="DEX & Marketplace"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/35 to-slate-950/15" />
 
                 <div className="relative z-10 p-3.5 flex items-center justify-between">
-                  <span className="px-2.5 py-1 rounded-full bg-violet-500/90 text-white text-[10px] font-bold uppercase tracking-wider shadow-xs">
-                    SHOP &amp; EXCHANGE
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-500/90 text-slate-950 text-[10px] font-bold uppercase tracking-wider shadow-xs">
+                    CRYPTO &amp; NFT DEX
                   </span>
-                  <span className="px-2.5 py-1 rounded-full bg-slate-900/75 backdrop-blur-md text-white border border-white/20 text-[10px] font-bold uppercase">
-                    LUL / CYON / RESPITE
+                  <span className="px-2.5 py-1 rounded-full bg-slate-900/75 text-white border border-white/20 text-[10px] font-bold uppercase">
+                    NEAR / RESPITE
                   </span>
                 </div>
 
                 <div className="relative z-10 p-4 pt-0">
                   <div className="text-lg sm:text-xl font-extrabold uppercase tracking-tight text-white">
-                    SHOP &amp; EXCHANGE
+                    DEX &amp; MARKETPLACE
                   </div>
                   <p className="mt-1 text-xs font-medium text-slate-200/90 line-clamp-2">
-                    Open the City Catalog, furniture items, outfits, and LUL / CYON / RESPITE token exchange counter.
+                    Live candlestick chart, NEAR to RESPITE swap terminal, and P2P Fish &amp; Collector NFT marketplace.
                   </p>
                 </div>
               </button>
@@ -597,7 +597,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   <span className="px-2.5 py-1 rounded-full bg-emerald-500/90 text-white text-[10px] font-bold uppercase tracking-wider shadow-xs">
                     WORK &amp; EARN XP
                   </span>
-                  <span className="px-2.5 py-1 rounded-full bg-slate-900/75 backdrop-blur-md text-white border border-white/20 text-[10px] font-bold uppercase">
+                  <span className="px-2.5 py-1 rounded-full bg-slate-900/75 text-white border border-white/20 text-[10px] font-bold uppercase">
                     {cafeJobStatus
                       ? cafeJobStatus.workerName
                         ? `ON SHIFT: ${cafeJobStatus.workerName.toUpperCase()}`
@@ -654,7 +654,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   <span className="px-2.5 py-1 rounded-full bg-emerald-500/90 text-white text-[10px] font-bold uppercase tracking-wider shadow-xs">
                     BARISTA SHIFT
                   </span>
-                  <span className="px-2.5 py-1 rounded-full bg-slate-900/75 backdrop-blur-md text-white border border-white/20 text-[10px] font-bold uppercase">
+                  <span className="px-2.5 py-1 rounded-full bg-slate-900/75 text-white border border-white/20 text-[10px] font-bold uppercase">
                     LUL / XP
                   </span>
                 </div>
@@ -853,7 +853,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
               {/* Top Badges inside Right Showcase */}
               <div className="relative z-10 p-4 flex items-center justify-between gap-2">
                 <span
-                  className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-sm backdrop-blur-md ${
+                  className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-sm ${
                     selectedDestination.id === 'warzone_arena'
                       ? 'bg-rose-500/90 text-white'
                       : 'bg-sky-500/90 text-white'
@@ -872,7 +872,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                     </span>
                   </div>
                 ) : (
-                  <span className="px-3 py-1 rounded-full bg-slate-950/65 backdrop-blur-md text-white/90 border border-white/15 text-[11px] font-bold uppercase shadow-sm">
+                  <span className="px-3 py-1 rounded-full bg-slate-950/75 text-white/90 border border-white/15 text-[11px] font-bold uppercase shadow-sm">
                     {selectedDestination.hasHalteShelter
                       ? 'RAIL TRANSIT STATION'
                       : 'STANDALONE TRANSIT KIOSK'}
@@ -881,7 +881,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
               </div>
 
               {/* Frosted Bottom Overlay with Title, 1-2 Line Description, and Pill ENTER > Button */}
-              <div className="relative z-10 p-5 sm:p-6 bg-slate-950/70 backdrop-blur-md border-t border-white/10 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+              <div className="relative z-10 p-5 sm:p-6 bg-slate-950/78 border-t border-white/10 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
                 <div className="min-w-0 flex-1">
                   <h3
                     data-transit-selected-title="true"

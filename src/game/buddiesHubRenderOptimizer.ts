@@ -430,6 +430,10 @@ export interface InstancedPropSlotBinding {
 export class InstancedWorldPropBatchManager {
   public readonly batchRootGroup: THREE.Group;
   private readonly instancedMeshes: THREE.InstancedMesh[] = [];
+  private readonly treeShadowProxies: THREE.InstancedMesh[] = [];
+  private treeShadowProxyGeo: THREE.BufferGeometry | null = null;
+  private treeShadowProxyMat: THREE.MeshBasicMaterial | null = null;
+  private foliageShadowsEnabled = true;
   private readonly lastSyncedState = new WeakMap<
     object,
     { x: number; y: number; z: number; rotY: number; tiltX: number; tiltZ: number; visible: boolean }
@@ -447,8 +451,28 @@ export class InstancedWorldPropBatchManager {
       m.dispose();
     }
     this.instancedMeshes.length = 0;
+    for (let i = 0; i < this.treeShadowProxies.length; i++) {
+      const p = this.treeShadowProxies[i];
+      this.batchRootGroup.remove(p);
+      p.dispose();
+    }
+    this.treeShadowProxies.length = 0;
+    this.treeShadowProxyGeo?.dispose();
+    this.treeShadowProxyGeo = null;
+    this.treeShadowProxyMat?.dispose();
+    this.treeShadowProxyMat = null;
     while (this.batchRootGroup.children.length > 0) {
       this.batchRootGroup.remove(this.batchRootGroup.children[0]);
+    }
+  }
+
+  setTreeFoliageShadowsEnabled(enabled: boolean): void {
+    if (this.foliageShadowsEnabled === enabled) return;
+    this.foliageShadowsEnabled = enabled;
+    for (let i = 0; i < this.treeShadowProxies.length; i++) {
+      const proxy = this.treeShadowProxies[i];
+      proxy.castShadow = enabled;
+      proxy.visible = enabled;
     }
   }
 
@@ -596,10 +620,40 @@ export class InstancedWorldPropBatchManager {
           );
           leavesBatchInst.count = totalLeafMarkers;
           leavesBatchInst.name = `InstancedTreeLeaves_${variantKey}`;
-          leavesBatchInst.castShadow = tmplLeaves.castShadow;
-          leavesBatchInst.receiveShadow = tmplLeaves.receiveShadow;
-          if (tmplLeaves.customDepthMaterial) {
-            leavesBatchInst.customDepthMaterial = tmplLeaves.customDepthMaterial;
+          const wantsOpaqueShadowProxy = Boolean(tmplLeaves.castShadow && tmplLeaves.userData?.useOpaqueShadowProxy);
+          if (wantsOpaqueShadowProxy) {
+            // Never run alpha-tested `discard` billboard leaf quads in the shadow depth pass:
+            // use a shared 20-triangle opaque icosahedron proxy per crown cluster for full Early-Z speed.
+            leavesBatchInst.castShadow = false;
+            leavesBatchInst.receiveShadow = tmplLeaves.receiveShadow;
+            if (!this.treeShadowProxyGeo) {
+              this.treeShadowProxyGeo = new THREE.IcosahedronGeometry(1.12, 0);
+            }
+            if (!this.treeShadowProxyMat) {
+              this.treeShadowProxyMat = new THREE.MeshBasicMaterial({
+                colorWrite: false,
+                depthWrite: false,
+              });
+            }
+            const shadowProxy = new THREE.InstancedMesh(
+              this.treeShadowProxyGeo,
+              this.treeShadowProxyMat,
+              Math.max(1, totalLeafMarkers),
+            );
+            shadowProxy.count = totalLeafMarkers;
+            shadowProxy.name = `InstancedTreeShadowProxy_${variantKey}`;
+            shadowProxy.instanceMatrix = leavesBatchInst.instanceMatrix;
+            shadowProxy.castShadow = this.foliageShadowsEnabled;
+            shadowProxy.visible = this.foliageShadowsEnabled;
+            shadowProxy.receiveShadow = false;
+            this.batchRootGroup.add(shadowProxy);
+            this.treeShadowProxies.push(shadowProxy);
+          } else {
+            leavesBatchInst.castShadow = tmplLeaves.castShadow;
+            leavesBatchInst.receiveShadow = tmplLeaves.receiveShadow;
+            if (tmplLeaves.customDepthMaterial) {
+              leavesBatchInst.customDepthMaterial = tmplLeaves.customDepthMaterial;
+            }
           }
           this.batchRootGroup.add(leavesBatchInst);
           this.instancedMeshes.push(leavesBatchInst);
@@ -699,10 +753,18 @@ export class InstancedWorldPropBatchManager {
         }
       }
       if (leavesBatchInst) {
-        computeInstancedBoundingVolumes(leavesBatchInst, {
+        const lb = computeInstancedBoundingVolumes(leavesBatchInst, {
           padding: 2.2,
           frustumCulled: true,
         });
+        const matchingProxy = this.treeShadowProxies.find(
+          (p) => p.instanceMatrix === leavesBatchInst!.instanceMatrix,
+        );
+        if (matchingProxy) {
+          matchingProxy.boundingBox = lb.boundingBox.clone();
+          matchingProxy.boundingSphere = lb.boundingSphere.clone();
+          matchingProxy.frustumCulled = true;
+        }
       }
     }
 

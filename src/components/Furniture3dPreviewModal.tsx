@@ -177,11 +177,11 @@ export const Furniture3dPreviewModal: React.FC<{
       aria-label={`${item.name} 3D Preview`}
       data-furniture-3d-preview-modal={item.catalogId}
       onClick={onClose}
-      className="fixed inset-0 z-[220] flex items-center justify-center p-3 sm:p-6 bg-slate-950/55 backdrop-blur-sm pointer-events-auto select-none"
+      className="fixed inset-0 z-[220] flex items-center justify-center p-3 sm:p-6 bg-slate-950/55 pointer-events-auto select-none"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-4xl h-[min(88vh,740px)] rounded-[24px] bg-[#edf0f5]/95 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.3)] text-slate-900 flex flex-col overflow-hidden"
+        className="w-full max-w-4xl h-[min(88vh,740px)] rounded-[24px] bg-[#edf0f5]/96 border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.3)] text-slate-900 flex flex-col overflow-hidden"
       >
         {/* Top Modal Header */}
         <div className="px-5 py-3.5 bg-white/95 border-b border-slate-200/80 flex items-center justify-between gap-3 shrink-0">
@@ -238,12 +238,12 @@ export const Furniture3dPreviewModal: React.FC<{
                 />
                 <div className="relative z-10 flex flex-col items-center gap-3 p-6">
                   <div
-                    className="w-16 h-16 rounded-2xl border border-white/25 bg-slate-950/65 backdrop-blur-xl flex items-center justify-center shadow-lg"
+                    className="w-16 h-16 rounded-2xl border border-white/25 bg-slate-950/72 flex items-center justify-center shadow-lg"
                     style={{ color: themeSpec.accentHex }}
                   >
                     <themeSpec.Icon className="w-9 h-9" aria-hidden="true" />
                   </div>
-                  <div className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-slate-950/70 backdrop-blur-xl border border-white/20 shadow-md">
+                  <div className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-slate-950/75 border border-white/20 shadow-md">
                     {themeSpec.swatches.map((hex) => (
                       <span
                         key={hex}
@@ -324,7 +324,7 @@ export const Furniture3dPreviewModal: React.FC<{
                 />
 
                 {/* Bottom-left drag & zoom hint */}
-                <div className="absolute bottom-3 left-3 px-3 py-1 rounded-full bg-white/85 backdrop-blur-md border border-slate-200/80 text-[10.5px] font-medium text-slate-600 pointer-events-none shadow-xs">
+                <div className="absolute bottom-3 left-3 px-3 py-1 rounded-full bg-white/92 border border-slate-200/80 text-[10.5px] font-medium text-slate-600 pointer-events-none shadow-xs">
                   Drag to rotate 360° · Scroll to zoom
                 </div>
 

@@ -23,7 +23,7 @@ import {
   DEFAULT_ARENA_MAP_LAYOUT,
   buildStaticWorldStructuresList,
   getPropBaseHeight,
-  isInsideCoastalAmusementParkFootprint,
+  isInsideEastCoastalBeachClubFootprint,
   isInsideSouthPlazaGlasshouseFootprint,
 } from './buddiesBlitzWorldBuilder';
 import {
@@ -69,8 +69,8 @@ import {
   evaluateHaltePlatformSdf,
 } from './buddiesPlanetCurvature';
 import {
-  isPointOnAmusementOverwaterPier,
-} from './buddiesAmusementParkRules';
+  evaluateBeachClubPoolWaterSdf,
+} from './buddiesBeachClubRules';
 import {
   evaluateGrandCasinoPavedPlatformSdf,
 } from './buddiesGrandCasinoRules';
@@ -90,7 +90,7 @@ import {
 } from './buddiesCharacterCollisionRules';
 
 export const CITY_NAV_MIN_COORD = -125.0;
-export const CITY_NAV_MAX_COORD = 125.0;
+export const CITY_NAV_MAX_COORD = 140.0;
 export const CITY_NAV_DEFAULT_CELL_SIZE = 1.25;
 export const CLICK_TO_WALK_MAX_DRAG_PX = 6;
 
@@ -155,7 +155,7 @@ export interface ClickToWalkState {
 }
 
 export interface CityMinimapPoiSpec {
-  id: 'hana' | 'cafe' | 'glow_studio' | 'kai' | 'park';
+  id: 'hana' | 'cafe' | 'glow_studio' | 'kai' | 'beach_club';
   label: string;
   x: number;
   z: number;
@@ -212,14 +212,14 @@ export const CITY_MINIMAP_POIS: readonly CityMinimapPoiSpec[] = [
     labelSide: 'left',
   },
   {
-    id: 'park',
-    label: 'PARK',
-    x: 101.0,
-    z: -61.0,
-    walkTargetX: 98.5,
-    walkTargetZ: -61.0,
-    colorClass: 'bg-[#c084fc]',
-    badgeHex: '#c084fc',
+    id: 'beach_club',
+    label: 'BEACH CLUB',
+    x: 105.0,
+    z: 2.0,
+    walkTargetX: 88.0,
+    walkTargetZ: -14.2,
+    colorClass: 'bg-[#22d3ee]',
+    badgeHex: '#22d3ee',
     labelSide: 'left',
   },
 ] as const;
@@ -387,7 +387,7 @@ function getDefaultTreesAndSolidProps(): {
     if (
       p.id === 491 ||
       isInsideSouthPlazaGlasshouseFootprint(p.x, p.z) ||
-      isInsideCoastalAmusementParkFootprint(p.x, p.z) ||
+      isInsideEastCoastalBeachClubFootprint(p.x, p.z) ||
       isInsideNorthGrandCasinoFootprint(p.x, p.z) ||
       isPointInsideCentralIslandEnvelope(p.x, p.z)
     ) {
@@ -428,9 +428,10 @@ function isInStaircaseCorridor(x: number, z: number): boolean {
 }
 
 function isOceanBlockedAt(x: number, z: number): boolean {
+  if (evaluateBeachClubPoolWaterSdf(x, z) < -0.15) return true;
   const waterSdf = evaluateSeHarborSdf(x, z).waterSdf;
   if (waterSdf >= 0.25) return false;
-  if (isPointOnAmusementOverwaterPier(x, z) || isPointOnBeachfrontStiltCabinDeck(x, z)) {
+  if (isPointOnBeachfrontStiltCabinDeck(x, z)) {
     return false;
   }
   return true;
@@ -533,16 +534,17 @@ export function buildCityNavGrid(options: CityNavGridOptions = {}): CityNavGridH
   for (let i = 0; i < obbs.length; i++) {
     const st = obbs[i];
     if (st.id.endsWith('_gate')) continue;
+    const isTrafficSignal = st.id.startsWith('traffic_signal_');
     const isPole =
       st.id.startsWith('city_traffic_sign_') ||
       st.id.startsWith('city_lamp_') ||
-      st.id.startsWith('traffic_signal_');
+      isTrafficSignal;
     const isThinRailOrFence =
       st.id.includes('_fence_') ||
       st.id.includes('_railing_') ||
       st.id.includes('_rail_') ||
       st.id.startsWith('gate_post_');
-    const pad = isPole ? 0.32 : isThinRailOrFence ? 0.26 : 0.45;
+    const pad = isTrafficSignal ? 0.52 : isPole ? 0.32 : isThinRailOrFence ? 0.26 : 0.45;
     // Prevent thin railings/fences/walls (< 0.54 * cellSize half-thickness) from falling strictly
     // between two adjacent 1.25m cell centers and allowing A* to tunnel straight across them.
     const minBarrierHalf = grid.cellSize * 0.55 - pad;

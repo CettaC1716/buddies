@@ -1470,7 +1470,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         className="fixed inset-0 z-40 pointer-events-none select-none"
       >
         {/* TOP BAR: Clean Frosted Architectural Studio Bar */}
-        <header className="fixed top-0 inset-x-0 h-14 bg-white/90 backdrop-blur-2xl text-slate-900 border-b border-slate-200/80 shadow-sm px-4 sm:px-6 flex items-center justify-between pointer-events-auto z-50">
+        <header className="fixed top-0 inset-x-0 h-14 bg-white/95 text-slate-900 border-b border-slate-200/80 shadow-sm px-4 sm:px-6 flex items-center justify-between pointer-events-auto z-50">
           <div className="flex items-center gap-2.5">
             <span
               className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-semibold border ${
@@ -1530,7 +1530,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         </header>
 
         {isSampleHouseView ? (
-          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto rounded-[24px] bg-white/95 backdrop-blur-2xl text-slate-900 border border-white/80 shadow-[0_20px_50px_rgba(15,23,42,0.22)] px-6 py-4 z-50 text-center max-w-lg space-y-1.5">
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto rounded-[24px] bg-white/95 text-slate-900 border border-white/80 shadow-[0_20px_50px_rgba(15,23,42,0.22)] px-6 py-4 z-50 text-center max-w-lg space-y-1.5">
             <div className="text-xs font-bold text-sky-600">
               Model House · Showcase Estate (View Only)
             </div>
@@ -1540,7 +1540,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
           </div>
         ) : (
         /* BOTTOM DOCK: Consolidated Tabbed Studio Bento Console */
-        <div className="fixed bottom-3 left-1/2 -translate-x-1/2 w-[96vw] max-w-4xl pointer-events-auto rounded-[24px] bg-[#e8ecf2]/94 backdrop-blur-2xl border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.26)] p-3.5 text-slate-900 z-50">
+        <div className="fixed bottom-3 left-1/2 -translate-x-1/2 w-[96vw] max-w-4xl pointer-events-auto rounded-[24px] bg-[#e8ecf2]/96 border border-white/80 shadow-[0_24px_64px_rgba(15,23,42,0.26)] p-3.5 text-slate-900 z-50">
           {/* Dock Header & Navigation Tabs */}
           <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-300/60">
             <div className="flex items-center gap-1.5">
@@ -1977,13 +1977,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         data-npc-merchant-modal="true"
         data-lobby-gold-exchange-modal="true"
         data-chat-glass-modal="true"
-        className={`fixed left-3 sm:left-4 top-14 bottom-[76px] my-auto z-40 w-[min(340px,calc(100vw-1.5rem))] sm:w-[356px] max-h-[620px] flex flex-col select-none transition-all duration-300 ease-out transform ${
+        className={`fixed left-3 sm:left-4 top-14 bottom-[76px] my-auto z-40 w-[min(340px,calc(100vw-1.5rem))] sm:w-[356px] max-h-[620px] flex flex-col select-none transition-transform duration-200 ease-out transform ${
           isNpcOpen
-            ? 'translate-x-0 opacity-100 pointer-events-auto'
-            : '-translate-x-[120%] opacity-0 pointer-events-none'
+            ? 'translate-x-0 visible pointer-events-auto'
+            : '-translate-x-[120%] invisible pointer-events-none'
         }`}
       >
-      <div className="relative flex-1 flex flex-col rounded-[32px] bg-[#141926]/68 backdrop-blur-2xl border border-white/25 shadow-[0_24px_70px_rgba(0,0,0,0.52)] text-white overflow-hidden min-h-0">
+      <div className="relative flex-1 flex flex-col rounded-[32px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] text-white overflow-hidden min-h-0">
         {/* Top Status Strip: BLITZ OS + Close Icon (replaces expand button) */}
         <div className="shrink-0 flex items-center justify-between text-[10.5px] font-medium px-4 pt-3 pb-1.5 text-white/90">
           <div className="flex items-center gap-1.5">
@@ -2173,7 +2173,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
                 {/* Guest Sign-In Callout (Compact 1-row dark glass card) */}
                 {!walletConnected && onConnectWallet && (
-                  <div className="px-3 py-2.5 rounded-2xl bg-white/10 text-white border border-white/15 backdrop-blur-md flex items-center justify-between gap-2">
+                  <div className="px-3 py-2.5 rounded-2xl bg-white/10 text-white border border-white/15 flex items-center justify-between gap-2">
                     <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-white/85 truncate">
                       <LogIn className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
                       <span className="truncate">Sign in to buy &amp; exchange</span>
@@ -2443,7 +2443,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   pitchView === 'full' && (
                     <div
                       data-hana-property-pitch="true"
-                      className="p-3 rounded-2xl bg-white/10 text-white border border-white/15 backdrop-blur-md space-y-2.5"
+                      className="p-3 rounded-2xl bg-white/10 text-white border border-white/15 space-y-2.5"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-sky-300">
@@ -2507,7 +2507,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   (!hanaWelcomeNearClaimed || hanaClaimResult?.ok) && (
                     <div
                       data-hana-onboarding-tutorial-box="true"
-                      className="p-3 rounded-2xl bg-emerald-500/18 text-white border border-emerald-300/35 backdrop-blur-md space-y-2.5"
+                      className="p-3 rounded-2xl bg-emerald-500/18 text-white border border-emerald-300/35 space-y-2.5"
                     >
                       {!hanaWelcomeNearClaimed && !hanaClaimResult?.ok ? (
                         <>

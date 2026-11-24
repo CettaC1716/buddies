@@ -101,6 +101,13 @@ body {
   border: 2px solid #11121a;
 }
 
+/* Adaptive HUD performance mode: disables per-frame WebGL backdrop-filter passes under GPU pressure */
+html.hud-blur-lite [class*="backdrop-blur"],
+html.hud-blur-lite .casino-glassmorph-scrim {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
 /* Attention cue for the First Home connect step: the WALLET button wiggles
    (standalone rotate/scale properties, so Tailwind transform/skew is kept)
    while its sibling buttons dim. */

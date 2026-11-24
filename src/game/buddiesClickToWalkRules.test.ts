@@ -56,7 +56,7 @@ test('minimap percentage <-> world coordinate roundtrip stays accurate across ci
     [-90.55, 22.35],
     [29.5, 14.0], // GLOW STUDIO
     [85.8, 60.0], // KAI
-    [101.0, -61.0], // PARK
+    [105.0, 2.0], // BEACH CLUB
     [-76.18, -70.6], // Grand Casino entrance
     [-100.9, -3.15], // HANA
   ];
@@ -78,9 +78,9 @@ test('minimap percentage <-> world coordinate roundtrip stays accurate across ci
   const topLeft = radarPercentToWorldCoord(-10, -10);
   assert.deepEqual(topLeft, { x: -RADAR_WORLD_HALF_EXTENT, z: -RADAR_WORLD_HALF_EXTENT });
 
-  // Verify GLOW STUDIO POI is registered at (29.5, 15.0) alongside HANA, CAFE, KAI, PARK
+  // Verify GLOW STUDIO POI is registered at (29.5, 15.0) alongside HANA, CAFE, KAI, BEACH CLUB
   const ids = CITY_MINIMAP_POIS.map((p) => p.id);
-  assert.deepEqual(ids, ['hana', 'cafe', 'glow_studio', 'kai', 'park']);
+  assert.deepEqual(ids, ['hana', 'cafe', 'glow_studio', 'kai', 'beach_club']);
   const glow = CITY_MINIMAP_POIS.find((p) => p.id === 'glow_studio')!;
   assert.equal(glow.x, 29.5);
   assert.equal(glow.z, 15.0);
@@ -98,7 +98,7 @@ test('isCleanClickTap distinguishes clicks/taps (<= 6px) from camera orbit drags
   assert.equal(isCleanClickTap(Number.NaN, 0, 0, 0), false);
 });
 
-test('buildCityNavGrid covers [-125, +125] and snaps clicks inside OBBs, fountain, lake & ocean to closest walkable point', () => {
+test('buildCityNavGrid covers [-125, +140] and snaps clicks inside OBBs, fountain, lake & ocean to closest walkable point', () => {
   const nav = buildCityNavGrid({ mode: 'foot', worldMode: 'safezone' });
   assert.equal(nav.grid.minX, CITY_NAV_MIN_COORD);
   assert.equal(nav.grid.maxX, CITY_NAV_MAX_COORD);
@@ -146,11 +146,11 @@ test('buildCityNavGrid covers [-125, +125] and snaps clicks inside OBBs, fountai
   assert.ok(evaluateNwLakeSdf(snapLake.x, snapLake.z) >= 0.25);
   assert.equal(isWorldPointStrictlyWalkable(nav, snapLake.x, snapLake.z), true);
 
-  // 6. Inside East Ocean (122.0, 60.0)
-  assert.equal(isWorldPointStrictlyWalkable(nav, 122.0, 60.0), false);
-  const snapOcean = snapWorldPointToWalkable(nav, 122.0, 60.0);
+  // 6. Inside East Ocean (139.0, 60.0) past widened 134.0m beach
+  assert.equal(isWorldPointStrictlyWalkable(nav, 139.0, 60.0), false);
+  const snapOcean = snapWorldPointToWalkable(nav, 139.0, 60.0);
   assert.equal(snapOcean.snapped, true);
-  assert.ok(snapOcean.x <= 111.0);
+  assert.ok(snapOcean.x <= 135.0);
   assert.equal(isWorldPointStrictlyWalkable(nav, snapOcean.x, snapOcean.z), true);
 });
 
@@ -177,9 +177,9 @@ test('long-distance cross-map A* routes stay collision-free across Central Fount
       grid: nav,
     },
     {
-      name: 'Grand Casino (-76.18, -70.6) -> Taman Ria (98.5, -61.0)',
+      name: 'Grand Casino (-76.18, -70.6) -> Beach Club Promenade (88.0, -14.2)',
       from: [-76.18, -70.6],
-      to: [98.5, -61.0],
+      to: [88.0, -14.2],
       grid: nav,
     },
     {

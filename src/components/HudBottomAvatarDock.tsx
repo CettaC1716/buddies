@@ -282,7 +282,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                   : `${displayName} · Open Interactions`
                 : `${displayName} · ${emblemName} · Click to open Profile`
             }
-            className={`group relative w-[72px] h-[94px] rounded-2xl bg-[#0d1118]/75 backdrop-blur-xl border shadow-[0_12px_34px_rgba(0,0,0,0.48)] overflow-hidden cursor-pointer transition-all active:scale-95 ${PORTRAIT_FRAME_GRADIENTS[displayTone]} ${
+            className={`group relative w-[72px] h-[94px] rounded-2xl bg-[#0d1118]/75 backdrop-blur-sm border shadow-[0_12px_34px_rgba(0,0,0,0.48)] overflow-hidden cursor-pointer transition-all active:scale-95 ${PORTRAIT_FRAME_GRADIENTS[displayTone]} ${
               showTargetInteractionBar ? 'ring-2 ring-white/60' : ''
             }`}
           >
@@ -326,7 +326,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
             {/* Pill 1: Clean Name Only (full room so name never truncates) */}
             <div
               data-dock-character-pill={hasTarget ? 'target' : 'self'}
-              className={`flex-1 min-w-0 h-full px-3 rounded-2xl backdrop-blur-xl border shadow-[0_8px_24px_rgba(0,0,0,0.34)] flex items-center justify-between gap-1.5 transition-all ${
+              className={`flex-1 min-w-0 h-full px-3 rounded-2xl backdrop-blur-sm border shadow-[0_8px_24px_rgba(0,0,0,0.34)] flex items-center justify-between gap-1.5 transition-all ${
                 hasTarget
                   ? showTargetInteractionBar
                     ? 'bg-sky-500/25 border-sky-300/65 ring-1 ring-sky-300/40'
@@ -411,7 +411,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
             <div
               data-dock-mode-switcher="true"
               data-dock-mode-switcher-disabled={isPairedModeActive ? 'true' : 'false'}
-              className="shrink-0 h-full px-1.5 rounded-2xl bg-[#0d1118]/62 backdrop-blur-xl border border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.34)] flex items-center gap-1.5"
+              className="shrink-0 h-full px-1.5 rounded-2xl bg-[#0d1118]/62 backdrop-blur-sm border border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.34)] flex items-center gap-1.5"
             >
               <button
                 type="button"
@@ -465,7 +465,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
           {showTargetInteractionBar && targetEntity ? (
             <div
               data-dock-target-interaction-bar="true"
-              className="w-full h-[52px] px-2.5 rounded-2xl bg-[#0d1118]/74 backdrop-blur-xl border border-sky-300/35 shadow-[0_10px_30px_rgba(0,0,0,0.48)] flex items-center justify-between gap-1.5"
+              className="w-full h-[52px] px-2.5 rounded-2xl bg-[#0d1118]/74 backdrop-blur-sm border border-sky-300/35 shadow-[0_10px_30px_rgba(0,0,0,0.48)] flex items-center justify-between gap-1.5"
             >
               <div className="flex items-center gap-2">
                 {/* 1. View Profile (Sky-Blue Glossy Button) */}
@@ -556,7 +556,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
           ) : dockCategory === 'scooter' ? (
             <div
               data-dock-scooter-bar="true"
-              className="w-full h-[52px] px-2.5 rounded-2xl bg-[#0d1118]/64 backdrop-blur-xl border border-white/15 shadow-[0_10px_30px_rgba(0,0,0,0.44)] flex items-center justify-between gap-2"
+              className="w-full h-[52px] px-2.5 rounded-2xl bg-[#0d1118]/64 backdrop-blur-sm border border-white/15 shadow-[0_10px_30px_rgba(0,0,0,0.44)] flex items-center justify-between gap-2"
             >
               <div className="flex items-center gap-2">
                 {URBAN_SCOOTER_CATALOG_ITEMS.map((scooter) => {
@@ -651,7 +651,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
           ) : (
             <div
               data-dock-bag-bar="true"
-              className="w-full h-[52px] px-2.5 rounded-2xl bg-[#0d1118]/64 backdrop-blur-xl border border-white/15 shadow-[0_10px_30px_rgba(0,0,0,0.44)] flex items-center justify-between gap-2"
+              className="w-full h-[52px] px-2.5 rounded-2xl bg-[#0d1118]/64 backdrop-blur-sm border border-white/15 shadow-[0_10px_30px_rgba(0,0,0,0.44)] flex items-center justify-between gap-2"
             >
               <div className="flex items-center gap-2">
                 {/* 1. Quick Bag Item: Fishing Rod (Cyan-Sky Glossy Button) */}

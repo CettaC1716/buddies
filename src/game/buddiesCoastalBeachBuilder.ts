@@ -1762,7 +1762,16 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
     coastalTimberTex,
   );
 
-  // Rounded Concrete Pier Footings & Timber Support Piles
+  // Rounded Concrete Pier Footings & Timber Support Piles + Seaward Travertine Retaining Wall down to -1.15m
+  addBeachPart(
+    seBeachGroup,
+    makeRoundedBoxGeo(1.15, 1.65, 56.4, 0.05, 2),
+    '#b8b2a6',
+    [91.55, -0.32, 74.25],
+    [0, 0, 0],
+    0.016,
+    coastalTravertineTex,
+  );
   const pierBaseGeo = makeRoundedBoxGeo(0.78, 0.28, 0.78, 0.06, 2);
   const pierPostGeo = makeRoundedBoxGeo(0.42, 0.48, 0.42, 0.04, 2);
   for (let pz = 46.8; pz <= 101.8; pz += 4.58) {
@@ -1772,33 +1781,49 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
     }
   }
 
-  // 1C. Chamfered Step-Stone Stairs & Sloped Beach Access Ramp
-  const mainStepStoneGeo = makeRoundedBoxGeo(0.86, 0.17, 7.0, 0.03, 2);
-  const mainStepTreadGeo = makeRoundedBoxGeo(0.92, 0.06, 7.08, 0.022, 2);
-  for (let st = 0; st < 5; st++) {
-    const sx = 92.58 + st * 0.78;
-    const sy = BOARDWALK_Y - (st + 1) * 0.155;
-    addBeachPart(seBeachGroup, mainStepStoneGeo, '#c4bfb4', [sx, sy, 73.0], [0, 0, 0], 0.015, coastalTravertineTex);
-    addBeachPart(seBeachGroup, mainStepTreadGeo, '#c89d6c', [sx, sy + 0.095, 73.0], [0, 0, 0], 0.013, coastalTimberTex);
+  // 1C. Chamfered Step-Stone Stairs & Sloped Beach Access Ramp (+0.82m Boardwalk -> -1.00m Box 1 Beach Terrace)
+  const mainStepTreadGeo = makeRoundedBoxGeo(0.68, 0.06, 7.08, 0.022, 2);
+  for (let st = 0; st < 9; st++) {
+    const sx = 92.5 + st * 0.58;
+    const topY = BOARDWALK_Y - (st + 1) * 0.195;
+    const stoneH = Math.max(0.18, topY - -1.12);
+    addBeachPart(
+      seBeachGroup,
+      makeRoundedBoxGeo(0.64, stoneH, 7.0, 0.03, 2),
+      '#c4bfb4',
+      [sx, -1.12 + stoneH * 0.5, 73.0],
+      [0, 0, 0],
+      0.015,
+      coastalTravertineTex,
+    );
+    addBeachPart(seBeachGroup, mainStepTreadGeo, '#c89d6c', [sx, topY + 0.03, 73.0], [0, 0, 0], 0.013, coastalTimberTex);
   }
   addBeachPart(
     seBeachGroup,
-    makeRoundedBoxGeo(4.35, 0.18, 4.0, 0.04, 2),
+    makeRoundedBoxGeo(5.75, 0.22, 4.0, 0.04, 2),
     '#c89d6c',
-    [94.2, 0.42, 67.1],
-    [0, 0, -0.195],
+    [94.9, -0.09, 67.1],
+    [0, 0, -0.325],
     0.016,
     coastalTimberTex,
   );
-  const rampCurbGeo = makeRoundedBoxGeo(4.38, 0.32, 0.22, 0.04, 2);
+  const rampCurbGeo = makeRoundedBoxGeo(5.78, 0.34, 0.22, 0.04, 2);
   for (const rz of [65.15, 69.05]) {
-    addBeachPart(seBeachGroup, rampCurbGeo, '#8f673e', [94.2, 0.52, rz], [0, 0, -0.195], 0.014, coastalTimberTex);
+    addBeachPart(seBeachGroup, rampCurbGeo, '#8f673e', [94.9, 0.01, rz], [0, 0, -0.325], 0.014, coastalTimberTex);
   }
-  const southStepTreadGeo = makeRoundedBoxGeo(0.84, 0.18, 4.8, 0.035, 2);
-  for (let st = 0; st < 4; st++) {
-    const sx = 92.55 + st * 0.82;
-    const sy = BOARDWALK_Y - (st + 1) * 0.185;
-    addBeachPart(seBeachGroup, southStepTreadGeo, '#c89d6c', [sx, sy, 96.6], [0, 0, 0], 0.014, coastalTimberTex);
+  for (let st = 0; st < 9; st++) {
+    const sx = 92.5 + st * 0.58;
+    const topY = BOARDWALK_Y - (st + 1) * 0.195;
+    const stepH = Math.max(0.18, topY - -1.12);
+    addBeachPart(
+      seBeachGroup,
+      makeRoundedBoxGeo(0.64, stepH, 4.8, 0.035, 2),
+      '#c89d6c',
+      [sx, -1.12 + stepH * 0.5, 96.6],
+      [0, 0, 0],
+      0.014,
+      coastalTimberTex,
+    );
   }
 
   // 1D. Continuous Curved Nautical Hemp Ropes & Chamfered Bollard Posts
@@ -2435,7 +2460,7 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
   // =========================================================================
   const lifeguardGrp = new THREE.Group();
   lifeguardGrp.name = 'CoastalLifeguardWatchtower';
-  lifeguardGrp.position.set(100.5, 0.0, 67.5);
+  lifeguardGrp.position.set(116.5, -1.0, 67.5);
   lifeguardGrp.rotation.y = Math.PI / 2;
   lifeguardGrp.scale.setScalar(1.58);
   seBeachGroup.add(lifeguardGrp);
@@ -2493,7 +2518,7 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
 
   const buildTimberSunLounger = (wx: number, wz: number, rotY: number) => {
     const lGrp = new THREE.Group();
-    lGrp.position.set(wx, 0.04, wz);
+    lGrp.position.set(wx, -1.0 + 0.04, wz);
     lGrp.rotation.y = rotY;
     lGrp.scale.setScalar(1.798);
     seBeachGroup.add(lGrp);
@@ -2547,7 +2572,7 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
 
   const buildAdirondackBeachChair = (wx: number, wz: number, rotY: number) => {
     const aGrp = new THREE.Group();
-    aGrp.position.set(wx, 0.04, wz);
+    aGrp.position.set(wx, -1.0 + 0.04, wz);
     aGrp.rotation.y = rotY;
     aGrp.scale.setScalar(1.798);
     seBeachGroup.add(aGrp);
@@ -2598,31 +2623,35 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
     }
   };
 
-  // Placements matching world colliders and seat interaction spots
-  buildTimberSunLounger(100.2, 54.0, Math.PI / 2 - 0.12);
-  buildTimberSunLounger(100.2, 57.2, Math.PI / 2 - 0.08);
-  buildTimberSunLounger(100.2, 60.4, Math.PI / 2 - 0.05);
-  buildTimberSunLounger(101.0, 77.5, Math.PI / 2 + 0.08);
-  buildTimberSunLounger(101.0, 80.8, Math.PI / 2 + 0.12);
-  buildTimberSunLounger(100.2, 91.5, Math.PI / 2 - 0.10);
-  buildTimberSunLounger(100.2, 94.8, Math.PI / 2 - 0.06);
+  // Placements matching world colliders and seat interaction spots (+16m seaward on widened sand)
+  buildTimberSunLounger(116.2, 54.0, Math.PI / 2 - 0.12);
+  buildTimberSunLounger(116.2, 57.2, Math.PI / 2 - 0.08);
+  buildTimberSunLounger(116.2, 60.4, Math.PI / 2 - 0.05);
+  buildTimberSunLounger(117.0, 77.5, Math.PI / 2 + 0.08);
+  buildTimberSunLounger(117.0, 80.8, Math.PI / 2 + 0.12);
+  buildTimberSunLounger(116.2, 91.5, Math.PI / 2 - 0.10);
+  buildTimberSunLounger(116.2, 94.8, Math.PI / 2 - 0.06);
 
-  buildAdirondackBeachChair(96.2, 81.8, Math.PI / 2 + 0.15);
-  buildAdirondackBeachChair(96.2, 85.0, Math.PI / 2 + 0.05);
-  buildAdirondackBeachChair(96.2, 88.2, Math.PI / 2 - 0.10);
-  buildAdirondackBeachChair(97.5, 49.5, Math.PI / 2 - 0.20);
+  buildAdirondackBeachChair(112.2, 81.8, Math.PI / 2 + 0.15);
+  buildAdirondackBeachChair(112.2, 85.0, Math.PI / 2 + 0.05);
+  buildAdirondackBeachChair(112.2, 88.2, Math.PI / 2 - 0.10);
+  buildAdirondackBeachChair(113.5, 49.5, Math.PI / 2 - 0.20);
 
   // =========================================================================
   // 7. BEACHFRONT STILT TIMBER CABIN ("RUMAH PAPAN PANGGUNG TEPI PANTAI" — 1:1 VIDEO 1)
   // =========================================================================
   const stiltCabinGrp = new THREE.Group();
   stiltCabinGrp.name = 'BeachfrontStiltTimberCabin';
-  stiltCabinGrp.position.set(BEACHFRONT_STILT_CABIN_SPEC.centerX, 0.0, BEACHFRONT_STILT_CABIN_SPEC.centerZ);
+  stiltCabinGrp.position.set(
+    BEACHFRONT_STILT_CABIN_SPEC.centerX,
+    BEACHFRONT_STILT_CABIN_SPEC.baseSandY,
+    BEACHFRONT_STILT_CABIN_SPEC.centerZ,
+  );
   seBeachGroup.add(stiltCabinGrp);
 
   {
     const c = BEACHFRONT_STILT_CABIN_SPEC;
-    const deckY = c.deckTopY;
+    const deckY = c.deckTopY - c.baseSandY;
     const dMinX = c.deckMinX - c.centerX; // -3.7
     const dMaxX = c.deckMaxX - c.centerX; // +4.8
     const dMinZ = c.deckMinZ - c.centerZ; // -4.0

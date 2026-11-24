@@ -376,7 +376,7 @@ export const UrbanScooterShowroomModal: React.FC<UrbanScooterShowroomModalProps>
         soundEngine.playUiCancel();
         onClose();
       }}
-      className="fixed inset-0 z-[210] flex items-center justify-center p-2.5 sm:p-5 bg-black/25 backdrop-blur-[2px] pointer-events-auto select-none"
+      className="fixed inset-0 z-[210] flex items-center justify-center p-2.5 sm:p-5 bg-black/25 pointer-events-auto select-none"
     >
       <TabletDeviceMockupShell
         appLabel="SCOOTER SHOWROOM"
@@ -479,7 +479,7 @@ export const UrbanScooterShowroomModal: React.FC<UrbanScooterShowroomModalProps>
                   />
 
                   <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
-                    <span className="pointer-events-none px-3 py-1 rounded-full bg-slate-950/75 backdrop-blur-md border border-white/15 text-[11px] font-medium text-white shadow-xs">
+                    <span className="pointer-events-none px-3 py-1 rounded-full bg-slate-950/80 border border-white/15 text-[11px] font-medium text-white shadow-xs">
                       ‹ drag to turn it around ›
                     </span>
 

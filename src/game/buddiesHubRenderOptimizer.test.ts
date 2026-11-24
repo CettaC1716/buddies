@@ -247,6 +247,62 @@ test('InstancedWorldPropBatchManager collapses repetitive static props and trees
   assert.equal(manager.getBatchDrawCallCount(), 0);
 });
 
+test('InstancedWorldPropBatchManager promotes tree leaves with useOpaqueShadowProxy to low-poly opaque shadow proxies', () => {
+  const manager = new InstancedWorldPropBatchManager('ShadowProxyTest');
+  const trunkGeo = new THREE.CylinderGeometry(0.3, 0.4, 3, 6);
+  const leafGeo = new THREE.PlaneGeometry(1, 1);
+  const mat = new THREE.MeshBasicMaterial();
+
+  const entries: { isPurple: boolean; mesh: THREE.Group; x: number; z: number; alive: boolean }[] = [];
+  for (let i = 0; i < 4; i++) {
+    const grp = new THREE.Group();
+    grp.position.set(i * 6, 0, 0);
+    const trunkContainer = new THREE.Group();
+    trunkContainer.name = 'RealGlbTreeTrunk';
+    const trunk = new THREE.Mesh(trunkGeo, mat);
+    const leaves = new THREE.InstancedMesh(leafGeo, mat, 3);
+    leaves.name = 'RealGlbTreeLeaves';
+    leaves.castShadow = true;
+    leaves.userData.useOpaqueShadowProxy = true;
+    const tmpM = new THREE.Matrix4();
+    for (let li = 0; li < 3; li++) {
+      tmpM.makeTranslation(0, 3 + li, 0);
+      leaves.setMatrixAt(li, tmpM);
+    }
+    trunkContainer.add(trunk, leaves);
+    grp.add(trunkContainer);
+    entries.push({ isPurple: false, mesh: grp, x: grp.position.x, z: 0, alive: true });
+  }
+
+  assert.equal(manager.promoteTreesToInstancedBatches(entries), 4);
+  const binding = entries[0].mesh.userData.__instancedTreeBinding;
+  assert.ok(binding?.leavesInst);
+  // Billboard leaves mesh must NOT cast alpha-tested shadows directly
+  assert.equal(binding.leavesInst.castShadow, false);
+  // Paired opaque shadow proxy must exist, share instanceMatrix, and cast shadows
+  const shadowProxy = manager.batchRootGroup.getObjectByName('InstancedTreeShadowProxy_gold') as
+    | THREE.InstancedMesh
+    | undefined;
+  assert.ok(shadowProxy);
+  assert.equal(shadowProxy.castShadow, true);
+  assert.equal(shadowProxy.count, 12);
+  assert.equal(shadowProxy.instanceMatrix, binding.leavesInst.instanceMatrix);
+
+  // Toggling foliage shadows off disables the shadow proxy cleanly
+  manager.setTreeFoliageShadowsEnabled(false);
+  assert.equal(shadowProxy.castShadow, false);
+  assert.equal(shadowProxy.visible, false);
+
+  manager.setTreeFoliageShadowsEnabled(true);
+  assert.equal(shadowProxy.castShadow, true);
+  assert.equal(shadowProxy.visible, true);
+
+  manager.clear();
+  trunkGeo.dispose();
+  leafGeo.dispose();
+  mat.dispose();
+});
+
 test('PointLight budgeting keeps fixed shader light pool constant and sorts by distance', () => {
   const requests = Array.from({ length: 8 }, (_, idx) => ({
     x: (idx + 1) * 5,

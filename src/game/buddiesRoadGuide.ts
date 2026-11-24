@@ -71,7 +71,7 @@ edge(70, -15, 76.5, -15);
 // Harbor coast leg (concrete apron and beach path) down to Kai's Fish Market.
 chain([
   [76.5, 15],
-  [79.6, 29.5],
+  [78.8, 29.5],
   [82, 46],
   [85.8, 60],
 ]);

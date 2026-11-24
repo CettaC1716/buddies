@@ -2544,7 +2544,7 @@ export function buildCityLightingAndTrafficSystem(
         x: l.x,
         y: l.y + t1Geos.lanternY * TIER1_INSTANCE_SCALE,
         z: l.z,
-        scale: 0.44,
+        scale: 0.56,
       });
       return composePose(l.x, l.y, l.z, l.rotY, TIER1_INSTANCE_SCALE);
     });

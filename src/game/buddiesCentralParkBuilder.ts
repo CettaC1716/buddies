@@ -62,6 +62,7 @@ export interface BuildCentralBotanicalParkOptions {
 export interface CentralBotanicalParkHandle {
   group: THREE.Group;
   update: (timeSec: number, nightFactor01?: number) => void;
+  setCanopyShadowsEnabled: (enabled: boolean) => void;
   dispose: () => void;
   stats: {
     instancedMeshes: number;
@@ -1458,101 +1459,6 @@ function createCanopyBillboardWindMaterial(
   });
   registerPendingLeafMaskMaterial(mat);
   return mat;
-}
-
-function createCanopyBillboardDepthMaterial(
-  leafMaskTex: THREE.Texture,
-  windUniforms: BlitzWindUniforms,
-  leafScale = 1.48,
-): THREE.ShaderMaterial {
-  const depthMat = new THREE.ShaderMaterial({
-    uniforms: {
-      uLeafTex: { value: leafMaskTex },
-      uLeafScale: { value: leafScale * 0.86 },
-      uAlphaThreshold: { value: 0.36 },
-      uWindPhase: windUniforms.uWindPhase,
-      uWindDirection: windUniforms.uWindDirection,
-      uWindStrength: windUniforms.uWindStrength,
-      uWindGust: windUniforms.uWindGust,
-    },
-    vertexShader: /* glsl */ `
-      attribute vec3 aLeafCenter;
-      attribute vec3 aLeafLocalPos;
-      attribute float aLeafPlaneSeed;
-
-      uniform float uLeafScale;
-      uniform float uWindPhase;
-      uniform vec2 uWindDirection;
-      uniform float uWindStrength;
-      uniform float uWindGust;
-
-      varying vec2 vUv;
-      varying float vSeed;
-
-      void main() {
-        vUv = uv;
-        vSeed = aLeafPlaneSeed;
-
-        vec3 treeWorldOrigin = (modelMatrix * instanceMatrix)[3].xyz;
-        float windAmp = max(0.62, uWindStrength);
-        float spatialPhase =
-          dot(treeWorldOrigin.xz, vec2(0.14, 0.11)) + dot(aLeafCenter.xz, vec2(0.28, 0.22));
-        float swayFactor = smoothstep(-0.75, 1.0, aLeafCenter.y);
-
-        float angle =
-          aLeafPlaneSeed * 6.2831853 +
-          sin(uWindPhase * 0.95 + aLeafPlaneSeed * 19.3 + spatialPhase) * 0.22 * windAmp * swayFactor;
-        float s = sin(angle);
-        float c = cos(angle);
-        vec3 scaledLocal = aLeafLocalPos * uLeafScale;
-        float rotX = scaledLocal.x * c - scaledLocal.y * s;
-        float rotY = scaledLocal.x * s + scaledLocal.y * c;
-
-        mat4 mv = viewMatrix * modelMatrix * instanceMatrix;
-        vec3 camRight = normalize(vec3(mv[0][0], mv[1][0], mv[2][0]));
-        vec3 camUp = normalize(vec3(mv[0][1], mv[1][1], mv[2][1]));
-
-        float macroWave =
-          sin(uWindPhase * 0.38 - spatialPhase) * 0.65 +
-          sin(uWindPhase * 0.21 + spatialPhase * 0.55) * 0.35;
-        float crownSway = (macroWave * 0.38 + uWindGust * 0.24) * windAmp * swayFactor;
-        float leafFlutter =
-          sin(uWindPhase * 1.18 + aLeafPlaneSeed * 6.2831853 + aLeafCenter.x * 0.85) *
-          0.14 *
-          windAmp *
-          swayFactor;
-        float sway = crownSway + leafFlutter;
-        float vertBob =
-          (cos(uWindPhase * 0.52 - spatialPhase) * 0.08 +
-            sin(uWindPhase * 1.18 + aLeafPlaneSeed * 6.2831853) * 0.05) *
-          windAmp *
-          swayFactor;
-        vec3 windDisp = vec3(
-          uWindDirection.x * sway - uWindDirection.y * leafFlutter * 0.45,
-          vertBob,
-          uWindDirection.y * sway + uWindDirection.x * leafFlutter * 0.45
-        );
-
-        vec3 localPos = aLeafCenter + camRight * rotX + camUp * rotY + windDisp;
-        gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(localPos, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      #include <packing>
-      uniform sampler2D uLeafTex;
-      uniform float uAlphaThreshold;
-      varying vec2 vUv;
-      varying float vSeed;
-      void main() {
-        if (fract(vSeed * 19.0) > 0.74) discard;
-        if (texture2D(uLeafTex, vUv).r < uAlphaThreshold) discard;
-        gl_FragColor = packDepthToRGBA(gl_FragCoord.z);
-      }
-    `,
-    side: THREE.DoubleSide,
-  });
-  registerPendingLeafMaskMaterial(depthMat);
-  return depthMat;
 }
 
 // ============================================================================
@@ -4081,8 +3987,15 @@ export function buildCentralBotanicalPark3D(
   );
 
   // Billboard wind-swayed canopy clusters for Pink Sakura, Mature Oaks & Organic Boxwood Hedges
+  // Calibrated 34 quads/cluster (down from 52, -35% overdraw) with slightly fuller leafScale for identical lush volume.
   const effectiveLeafMask = leafMaskTexture || getSharedFallbackFoliageMaskTexture();
-  const clusterGeo = registerGeo(createCanopyLeafClusterGeometry(isSoftwareGl ? 36 : 52));
+  const clusterGeo = registerGeo(createCanopyLeafClusterGeometry(isSoftwareGl ? 24 : 34));
+  const canopyShadowProxyGeo = registerGeo(new THREE.IcosahedronGeometry(1.16, 0));
+  const canopyShadowProxyMat = registerMat(
+    new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }),
+  );
+  const canopyShadowProxies: THREE.InstancedMesh[] = [];
+  let canopyShadowsEnabled = !isSoftwareGl;
 
   const spawnCrownClusters = (
     name: string,
@@ -4098,13 +4011,9 @@ export function buildCentralBotanicalPark3D(
     const mat = registerMat(createCanopyBillboardWindMaterial(effectiveLeafMask, windUniforms, shadowHex, midHex, sunHex, leafScale));
     const inst = new THREE.InstancedMesh(clusterGeo, mat, matrices.length);
     inst.name = name;
-    if (castDappledShadow && !isSoftwareGl) {
-      const depthMat = registerMat(createCanopyBillboardDepthMaterial(effectiveLeafMask, windUniforms, leafScale));
-      inst.castShadow = true;
-      inst.customDepthMaterial = depthMat;
-    } else {
-      inst.castShadow = false;
-    }
+    // Never run alpha-tested `discard` leaf cards in the shadow depth pass; use a shared opaque
+    // 20-triangle icosahedron proxy per crown cluster for fast Early-Z shadows instead.
+    inst.castShadow = false;
     inst.receiveShadow = false;
     for (let i = 0; i < matrices.length; i++) {
       inst.setMatrixAt(i, matrices[i]);
@@ -4112,15 +4021,29 @@ export function buildCentralBotanicalPark3D(
     }
     inst.instanceMatrix.needsUpdate = true;
     if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
-    computeInstancedBoundingVolumes(inst, { padding: 1.4, frustumCulled: true });
+    const bounds = computeInstancedBoundingVolumes(inst, { padding: 1.4, frustumCulled: true });
     foliageGroup.add(inst);
     instancedMeshesCount++;
     totalBotanicalInstances += matrices.length;
+
+    if (castDappledShadow && !isSoftwareGl) {
+      const proxyInst = new THREE.InstancedMesh(canopyShadowProxyGeo, canopyShadowProxyMat, matrices.length);
+      proxyInst.name = `${name}ShadowProxy`;
+      proxyInst.instanceMatrix = inst.instanceMatrix;
+      proxyInst.castShadow = canopyShadowsEnabled;
+      proxyInst.visible = canopyShadowsEnabled;
+      proxyInst.receiveShadow = false;
+      proxyInst.boundingBox = bounds.boundingBox.clone();
+      proxyInst.boundingSphere = bounds.boundingSphere.clone();
+      proxyInst.frustumCulled = true;
+      foliageGroup.add(proxyInst);
+      canopyShadowProxies.push(proxyInst);
+    }
   };
 
-  spawnCrownClusters('CentralParkSakuraCanopyInstanced', sakuraCrownClusterMatrices, sakuraCrownClusterColors, '#a34873', '#e67fad', '#ffe0ee', 1.46, true);
-  spawnCrownClusters('CentralParkOakCanopyInstanced', oakCrownClusterMatrices, oakCrownClusterColors, '#335d2e', '#5c943f', '#a6cf52', 1.56, true);
-  spawnCrownClusters('CentralParkHedgeShrubsInstanced', hedgeShrubMatrices, hedgeShrubColors, '#285229', '#4b823c', '#86b84e', 1.48, false);
+  spawnCrownClusters('CentralParkSakuraCanopyInstanced', sakuraCrownClusterMatrices, sakuraCrownClusterColors, '#a34873', '#e67fad', '#ffe0ee', 1.60, true);
+  spawnCrownClusters('CentralParkOakCanopyInstanced', oakCrownClusterMatrices, oakCrownClusterColors, '#335d2e', '#5c943f', '#a6cf52', 1.70, true);
+  spawnCrownClusters('CentralParkHedgeShrubsInstanced', hedgeShrubMatrices, hedgeShrubColors, '#285229', '#4b823c', '#86b84e', 1.62, false);
 
   // Bake ALL static architecture, terrazzo, gold ribbons, stone curbs, fountain, benches, lamps & tree trunks
   bakeStaticGroupMeshes(staticGroup, { minShadowCasterSpan: 0.45 });
@@ -4130,6 +4053,15 @@ export function buildCentralBotanicalPark3D(
     stats: {
       instancedMeshes: instancedMeshesCount,
       totalBotanicalInstances,
+    },
+    setCanopyShadowsEnabled(enabled: boolean) {
+      const next = !isSoftwareGl && enabled;
+      if (canopyShadowsEnabled === next) return;
+      canopyShadowsEnabled = next;
+      for (let i = 0; i < canopyShadowProxies.length; i++) {
+        canopyShadowProxies[i].castShadow = next;
+        canopyShadowProxies[i].visible = next;
+      }
     },
     update(timeSec: number, nightFactor01 = 0) {
       const safeTime = Number.isFinite(timeSec) ? timeSec : 0;

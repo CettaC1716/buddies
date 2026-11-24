@@ -12,7 +12,11 @@ import {
   isPointClearOfPierAndQuay,
 } from './buddiesUnderwaterEcology';
 import type { BlitzWindUniforms } from './buddiesBlitzShadersAndAssets';
-import { evaluateNwLakeSdf, evaluateSeHarborSdf } from './buddiesPlanetCurvature';
+import {
+  EAST_WATER_SURFACE_Y,
+  evaluateNwLakeSdf,
+  evaluateSeHarborSdf,
+} from './buddiesPlanetCurvature';
 
 function createTestWindUniforms(): BlitzWindUniforms {
   return {
@@ -27,29 +31,35 @@ function createTestWindUniforms(): BlitzWindUniforms {
   };
 }
 
-test('evaluateSeabedElevation slopes smoothly on NE & SE sandy beaches and drops steeply at Harbor Quay & Oasis Lake', () => {
+test('evaluateSeabedElevation slopes smoothly along continuous 134m East Coast sandy beaches and drops steeply at N/S seawalls & Oasis Lake', () => {
   // Oasis Lake center (-31, 0) drops to -1.55m
   assert.ok(evaluateSeabedElevation(-31, 0) <= -1.5);
   assert.ok(evaluateWaterDepthAt(-31, 0) >= 1.3);
 
-  // NE Taman Ria beach (z = -75, shoreX = 126.5): shallow crystal slope -> deep -1.65m
-  const neNearShore = evaluateSeabedElevation(131.0, -75.0);
-  const neMidSlope = evaluateSeabedElevation(134.5, -75.0);
-  const neDeepSea = evaluateSeabedElevation(142.0, -75.0);
-  assert.ok(neNearShore < WATER_SURFACE_Y, 'NE shallow seabed at x=131 sits below water surface');
+  // NE Beach (z = -75, shoreX = 134.0): shallow crystal slope -> deep -3.65m
+  const neNearShore = evaluateSeabedElevation(138.5, -75.0);
+  const neMidSlope = evaluateSeabedElevation(142.0, -75.0);
+  const neDeepSea = evaluateSeabedElevation(149.5, -75.0);
+  assert.ok(neNearShore < EAST_WATER_SURFACE_Y, 'NE shallow seabed at x=138.5 sits below water surface');
   assert.ok(neMidSlope < neNearShore && neDeepSea < neMidSlope, 'NE seabed slopes downward seaward');
-  assert.ok(Math.abs(neDeepSea - -1.65) < 0.02);
+  assert.ok(Math.abs(neDeepSea - -3.65) < 0.02);
 
-  // SE Beachfront (z = 75, shoreX = 110.0): shallow crystal slope -> deep -1.65m
-  const seNearShore = evaluateSeabedElevation(114.5, 75.0);
-  const seMidSlope = evaluateSeabedElevation(118.0, 75.0);
-  const seDeepSea = evaluateSeabedElevation(125.0, 75.0);
-  assert.ok(seNearShore < WATER_SURFACE_Y);
+  // Central Beach Club beachfront (z = 0, shoreX = 134.0): continuous sandy slope
+  const centerNearShore = evaluateSeabedElevation(138.5, 0.0);
+  const centerDeepSea = evaluateSeabedElevation(149.5, 0.0);
+  assert.ok(centerNearShore < EAST_WATER_SURFACE_Y);
+  assert.ok(Math.abs(centerDeepSea - -3.65) < 0.02);
+
+  // SE Beachfront (z = 75, shoreX = 134.0): shallow crystal slope -> deep -3.65m
+  const seNearShore = evaluateSeabedElevation(138.5, 75.0);
+  const seMidSlope = evaluateSeabedElevation(142.0, 75.0);
+  const seDeepSea = evaluateSeabedElevation(149.5, 75.0);
+  assert.ok(seNearShore < EAST_WATER_SURFACE_Y);
   assert.ok(seMidSlope < seNearShore && seDeepSea < seMidSlope);
-  assert.ok(Math.abs(seDeepSea - -1.65) < 0.02);
+  assert.ok(Math.abs(seDeepSea - -3.65) < 0.02);
 
-  // Harbor Quay seawall (z = 0, x = 112.0): drops steeply to -1.65m
-  assert.ok(evaluateSeabedElevation(112.0, 0.0) <= -1.6);
+  // Outer N/S seawall tail (z = 120, x = 112.0): drops steeply to -3.65m
+  assert.ok(evaluateSeabedElevation(112.0, 120.0) <= -3.6);
 });
 
 test('buildUnderwaterEcology3D meets <=5 draw-call budget, instanced bounds, fog, zero shadows/outlines, and clean dispose()', () => {
@@ -141,10 +151,14 @@ test('All swimming fish remain strictly inside waterSdf < -0.5 / lakeSdf < -0.5,
     assert.ok(tr.scale >= 1.15, `Fish #${tr.index} scale=${tr.scale} must stay clearly readable`);
     for (const t of sampleTimes) {
       const pose = evaluateFishTrackPose(tr, t);
-      assert.ok(pose.y < -0.2, `Fish #${tr.index} at t=${t} rose too high: y=${pose.y.toFixed(3)}`);
+      const isOcean = tr.zone !== 'oasis_lake';
+      const maxAllowY = isOcean ? -2.2 : -0.2;
+      const minBandY = isOcean ? -2.68 : -0.68;
+      const maxBandY = isOcean ? -2.3 : -0.3;
+      assert.ok(pose.y < maxAllowY, `Fish #${tr.index} at t=${t} rose too high: y=${pose.y.toFixed(3)}`);
       assert.ok(
-        pose.y >= -0.68 && pose.y <= -0.3,
-        `Fish #${tr.index} at t=${t} out of swim band [-0.68..-0.30]: y=${pose.y.toFixed(3)}`,
+        pose.y >= minBandY && pose.y <= maxBandY,
+        `Fish #${tr.index} at t=${t} out of swim band [${minBandY}..${maxBandY}]: y=${pose.y.toFixed(3)}`,
       );
       assert.ok(
         pose.clearanceAboveBed >= 0.159,
@@ -181,15 +195,16 @@ test('Submerged pebbles, corals/kelp, and Oasis lily pads stay properly grounded
   for (const p of handle.pebblePlacements) {
     assert.ok(p.depth >= 0.18 && p.depth <= 1.35, `Pebble depth ${p.depth.toFixed(2)} outside [0.18..1.35]`);
     const maxLocalY = p.variant === 1 ? 0.13 : 0.25;
+    const surfY = p.zone === 'oasis_lake' ? WATER_SURFACE_Y : EAST_WATER_SURFACE_Y;
     assert.ok(
-      p.y + maxLocalY * p.scale < WATER_SURFACE_Y,
-      `Pebble top ${(p.y + maxLocalY * p.scale).toFixed(2)} protrudes above water surface`,
+      p.y + maxLocalY * p.scale < surfY,
+      `Pebble top ${(p.y + maxLocalY * p.scale).toFixed(2)} protrudes above water surface ${surfY}`,
     );
     if (p.zone !== 'oasis_lake') {
-      assert.ok(isPointClearOfPierAndQuay(p.x, p.z, 1.0), `Pebble at (${p.x}, ${p.z}) blocks pier/quay`);
-      assert.ok(p.x >= 112.5, `Pebble at x=${p.x} too close to Harbor Quay x<112.5`);
-      const inPierBox = p.x >= 115 && p.x <= 131 && p.z >= -43 && p.z <= -22;
-      assert.equal(inPierBox, false, 'Pebble must not sit inside Bianglala Overwater Pier footprint');
+      assert.ok(isPointClearOfPierAndQuay(p.x, p.z, 1.0), `Pebble at (${p.x}, ${p.z}) blocks beach/stilt cabin`);
+      assert.ok(p.x >= 136.5, `Pebble at x=${p.x} too close to widened beach shoreline x<136.5`);
+      const inCabinBox = p.x >= 130.5 && p.x <= 137.5 && p.z >= 81.5 && p.z <= 89.0;
+      assert.equal(inCabinBox, false, 'Pebble must not sit inside BeachfrontStiltTimberCabin pilings');
     } else {
       assert.ok(evaluateNwLakeSdf(p.x, p.z) < 0, 'Oasis pebble must sit inside Oasis Lake');
     }
@@ -198,8 +213,8 @@ test('Submerged pebbles, corals/kelp, and Oasis lily pads stay properly grounded
   for (const c of handle.coralPlacements) {
     assert.ok(c.depth >= 0.2 && c.depth <= 1.4, `Coral/kelp depth ${c.depth.toFixed(2)} out of range`);
     if (c.zone !== 'oasis_lake') {
-      assert.ok(isPointClearOfPierAndQuay(c.x, c.z, 1.0), `Coral at (${c.x}, ${c.z}) blocks pier/quay`);
-      assert.ok(c.x >= 112.5, `Coral at x=${c.x} too close to Harbor Quay`);
+      assert.ok(isPointClearOfPierAndQuay(c.x, c.z, 1.0), `Coral at (${c.x}, ${c.z}) blocks beach/stilt cabin`);
+      assert.ok(c.x >= 136.5, `Coral at x=${c.x} too close to widened beach shoreline`);
     } else {
       assert.ok(evaluateNwLakeSdf(c.x, c.z) < -0.25);
     }

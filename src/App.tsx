@@ -122,6 +122,7 @@ import {
   NpcMerchantAndHouseModal,
   HouseInteriorPlacementState,
 } from './components/NpcMerchantAndHouseModal';
+import { DexMarketplaceModal } from './components/DexMarketplaceModal';
 import { ShorelineFishingHudAndShowcase } from './components/ShorelineCatchShowcaseModal';
 import {
   Fish3dPreviewModal,
@@ -1010,6 +1011,7 @@ export default function App() {
     useState<boolean>(false);
   const [realEstateCatalogTab, setRealEstateCatalogTab] =
     useState<RealEstateCatalogTabId>('house');
+  const [isDexModalOpen, setIsDexModalOpen] = useState<boolean>(false);
   const loadOwnedScootersFromStorage = useCallback((acctKey: string): string[] => {
     let stored: string[] = [];
     if (typeof window !== 'undefined') {
@@ -1922,6 +1924,7 @@ export default function App() {
   useEffect(() => {
     if (
       activeSpecialModal === 'npc_merchant' ||
+      isDexModalOpen ||
       isWalletModalVisible ||
       isBagModalVisible ||
       hud.nearWalletConnected
@@ -1930,6 +1933,7 @@ export default function App() {
     }
   }, [
     activeSpecialModal,
+    isDexModalOpen,
     isWalletModalVisible,
     isBagModalVisible,
     hud.nearWalletConnected,
@@ -2224,6 +2228,7 @@ export default function App() {
   useEffect(() => {
     if (
       activeSpecialModal !== 'none' ||
+      isDexModalOpen ||
       isKioskModalOpen ||
       isSocialChatModalOpen ||
       isProfileModalOpen ||
@@ -2234,6 +2239,7 @@ export default function App() {
     }
   }, [
     activeSpecialModal,
+    isDexModalOpen,
     isKioskModalOpen,
     isSocialChatModalOpen,
     isProfileModalOpen,
@@ -2356,6 +2362,7 @@ export default function App() {
       isFashionBoutiqueModalOpen ||
       isWardrobeStudioOpen ||
       isRealEstateCatalogModalOpen ||
+      isDexModalOpen ||
       isGrandCasinoModalOpen ||
       isCitizenDialogueOpen ||
       activeSpecialModal !== 'none' ||
@@ -2395,6 +2402,7 @@ export default function App() {
     isScooterShowroomModalOpen,
     isFashionBoutiqueModalOpen,
     isRealEstateCatalogModalOpen,
+    isDexModalOpen,
     isGrandCasinoModalOpen,
     activeTeleportKioskModal,
     activeCafeModal,
@@ -5178,6 +5186,7 @@ export default function App() {
       setIsGearModalOpen(false);
       setIsDailyMissionsModalOpen(false);
       setIsWardrobeStudioOpen(false);
+      setIsDexModalOpen(false);
       setActiveSpecialModal('none');
       setActiveTeleportKioskModal('none');
       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
@@ -5294,11 +5303,11 @@ export default function App() {
   }, [refreshWalletTransactions, refreshOnChainBalances, refreshOnChainDeedLedger]);
 
   useEffect(() => {
-    if (activeSpecialModal === 'npc_merchant') {
+    if (activeSpecialModal === 'npc_merchant' || isDexModalOpen) {
       void refreshWalletTransactions();
       void refreshOnChainBalances();
     }
-  }, [activeSpecialModal, refreshWalletTransactions, refreshOnChainBalances]);
+  }, [activeSpecialModal, isDexModalOpen, refreshWalletTransactions, refreshOnChainBalances]);
 
   const handleConnectWalletAndEnterLobby = useCallback(
     async (
@@ -6353,6 +6362,14 @@ export default function App() {
         }
         return;
       }
+      if (isDexModalOpen) {
+        if (e.code === 'Escape') {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          setIsDexModalOpen(false);
+        }
+        return;
+      }
       if (activeSpecialModal !== 'none') {
         if (e.code === 'Escape') {
           e.preventDefault();
@@ -6448,6 +6465,7 @@ export default function App() {
     isPreloadComplete,
     gameState,
     activeSpecialModal,
+    isDexModalOpen,
     isCitizenDialogueOpen,
     isSmartphoneOsOpen,
     activeSmartphoneApp,
@@ -6478,6 +6496,7 @@ export default function App() {
     hud.worldMode === 'warzone' || !playerRadarDot
       ? { ...rawWaterZone, canFish: false, zoneId: null, zoneLabel: null }
       : rawWaterZone;
+  const canCastWithEquippedRod = nearbyWaterZone.canFish && isJoranEquipped;
 
   // Kai phone: opening Kai's merchant chat (in person or by phone) counts as
   // having met him today, completes the daily Kai mission, and silences calls.
@@ -6552,8 +6571,17 @@ export default function App() {
       setFishingMinigame(null);
       setFishingHintMessage(null);
       setFishingPhase('idle');
+    } else if (!canCastWithEquippedRod && fishingPhase === 'idle' && fishingHintMessage) {
+      setFishingHintMessage(null);
     }
-  }, [hud.worldMode, isJoranEquipped, fishingPhase, clearFishingCastTimers]);
+  }, [
+    hud.worldMode,
+    isJoranEquipped,
+    canCastWithEquippedRod,
+    fishingPhase,
+    fishingHintMessage,
+    clearFishingCastTimers,
+  ]);
 
   // Sync Shoreline 3D Bobber, 48-Seg Catenary Line, Progressive Rod Bend & Spinning Reel with BuddiesBlitzArena
   useEffect(() => {
@@ -7207,7 +7235,13 @@ export default function App() {
         setLastCaughtFishToast(null);
         return;
       }
-      if (!nearbyWaterZone.canFish) return;
+      if (
+        fishingPhase === 'idle'
+          ? !canCastWithEquippedRod
+          : hud.worldMode === 'warzone' || !isJoranEquipped
+      ) {
+        return;
+      }
       if (e.code === 'KeyF' || (fishingPhase !== 'idle' && e.code === 'Space')) {
         if (e.repeat) return;
         if (fishingPhase === 'fighting') {
@@ -7242,13 +7276,15 @@ export default function App() {
   }, [
     isPreloadComplete,
     caughtFishBucket.length,
+    canCastWithEquippedRod,
     ensureFishingRodEquipped,
     fishingCastPower,
     fishingPhase,
     handleTriggerFishingAction,
+    hud.worldMode,
+    isJoranEquipped,
     lastCaughtFishToast,
     launchShorelineCast,
-    nearbyWaterZone.canFish,
   ]);
 
   const currentAtmosphereViewportTint = evaluateWeatherAndTimeState({
@@ -7755,13 +7791,278 @@ export default function App() {
     return { ok: true, ...onChainBuyReceipt };
   };
 
+  const handleSwapNearAndRespite = async (
+    direction: 'near_to_respite' | 'respite_to_near',
+    inputAmount: number,
+  ) => {
+    const actorAccount = hud.nearWalletId || playerUid;
+    const receipt = await executeNearTestnetAndRespiteSwap({
+      direction,
+      signerAccountId: actorAccount || undefined,
+      inputAmount,
+      networkId: walletNetworkChoice,
+    });
+    if (!receipt || !receipt.txHash) return null;
+    const resolvedActor = receipt.accountId || hudRef.current.nearWalletId || actorAccount;
+    pendingPostClaimFloorRef.current = null;
+    if (direction === 'near_to_respite' && !onboardingSwapDone) {
+      setOnboardingSwapDone(true);
+      const swapAccount = (resolvedActor || '').trim().toLowerCase();
+      if (swapAccount) {
+        try {
+          window.localStorage.setItem(`bb_onboarding_swap_v1:${swapAccount}`, '1');
+        } catch {
+          // ignore storage failures
+        }
+      }
+    }
+
+    let nextNear =
+      direction === 'near_to_respite'
+        ? Math.max(0, Number((nearTestnetBalance - receipt.nearAmount).toFixed(4)))
+        : Number((nearTestnetBalance + receipt.nearAmount).toFixed(4));
+    let nextRespite =
+      direction === 'near_to_respite'
+        ? respiteBalance + receipt.respiteAmount
+        : Math.max(0, respiteBalance - receipt.respiteAmount);
+
+    if (resolvedActor) {
+      const [liveAccountView, liveRespiteStr] = await Promise.all([
+        fetchNearAccountView(resolvedActor, 'optimistic'),
+        fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, resolvedActor, 'optimistic'),
+      ]);
+      if (liveAccountView) {
+        const liveNear = Number(liveAccountView.amount) / 1e24;
+        if (Number.isFinite(liveNear)) {
+          nextNear = Number(liveNear.toFixed(4));
+        }
+      }
+      if (liveRespiteStr !== null) {
+        const parsedRespite = Number(liveRespiteStr);
+        if (Number.isFinite(parsedRespite)) {
+          nextRespite = parsedRespite;
+        }
+      }
+    }
+
+    nearTestnetBalanceRef.current = nextNear;
+    setNearTestnetBalance(nextNear);
+    setRespiteBalance(nextRespite);
+
+    if (resolvedActor) {
+      void syncPlayerBalancesToSupabase({
+        nearAccountId: resolvedActor,
+        lulBalance: hud.gold,
+        cyonBalance,
+        respiteBalance: nextRespite,
+      });
+      void logMarketTransactionToSupabase({
+        merchant_id: merchantLocation,
+        actor_near_account: resolvedActor,
+        action_type: 'exchange',
+        nep245_token_id: receipt.tokenContractId,
+        currency: 'RESPITE',
+        amount: receipt.respiteAmount,
+        unit_price: receipt.nearAmount,
+        reasoning_summary:
+          direction === 'near_to_respite'
+            ? `Swapped ${receipt.nearAmount} NEAR Testnet -> +${receipt.respiteAmount} RESPITE (${receipt.tokenContractId})`
+            : `Swapped ${receipt.respiteAmount} RESPITE -> +${receipt.nearAmount} NEAR Testnet (${receipt.tokenContractId})`,
+        near_tx_hash: receipt.txHash,
+      });
+    }
+    return receipt;
+  };
+
+  const handleListFishNftOnMarket = async (
+    fish: CaughtFishItem,
+    priceRespiteInput: number,
+  ): Promise<boolean> => {
+    if (!fish.isMintedNft || !fish.nftTokenId) return false;
+    const actorAccount = hud.nearWalletId || playerUid;
+    const cleanRespitePrice = Math.max(1, Math.round(priceRespiteInput));
+    const listingId = `listing-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+    const res = await executeMarketContractCallOnChain({
+      signerAccountId: actorAccount || undefined,
+      methodName: 'list_fish_nft',
+      args: {
+        listing_id: listingId,
+        token_id: fish.nftTokenId,
+        price_respite: String(cleanRespitePrice),
+      },
+    });
+    if (!res.ok || !res.txHash) return false;
+    const resolvedActor = res.signerAccountId || hudRef.current.nearWalletId || actorAccount;
+    const newListing: FishNftMarketplaceListing = {
+      listingId,
+      nftTokenId: fish.nftTokenId,
+      speciesId: fish.speciesId,
+      speciesName: fish.speciesName,
+      waterZone: fish.waterZone,
+      waterZoneLabel: fish.waterZoneLabel,
+      rarity: fish.rarity,
+      weightKg: fish.weightKg,
+      lengthCm: fish.lengthCm,
+      isTrophy: fish.isTrophy,
+      colorHex: fish.colorHex,
+      caughtByAccount: fish.caughtByAccount,
+      sellerNearAccount: resolvedActor || fish.caughtByAccount,
+      priceRespite: cleanRespitePrice,
+      priceLul: cleanRespitePrice,
+      nearTxHash: res.txHash,
+      listedAtIso: new Date().toISOString(),
+    };
+    setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
+    setFishMarketListings((prev) => {
+      const next = [newListing, ...prev];
+      if (resolvedActor) {
+        void syncFishMarketplaceListingsToSupabase({
+          listings: next,
+          transaction: {
+            merchant_id: 'beach_house',
+            actor_near_account: resolvedActor,
+            action_type: 'list_fish_nft',
+            item_id: fish.speciesId,
+            nep245_token_id: newListing.nftTokenId,
+            currency: 'RESPITE',
+            amount: newListing.priceRespite,
+            unit_price: newListing.priceRespite,
+            reasoning_summary: `Listed ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) for ${newListing.priceRespite} RESPITE.`,
+            near_tx_hash: newListing.nearTxHash,
+          },
+        });
+      }
+      return next;
+    });
+    void refreshFishMarketplaceFromChainAndDb();
+    return true;
+  };
+
+  const handleBuyFishNftFromMarket = async (
+    listing: FishNftMarketplaceListing,
+  ): Promise<boolean> => {
+    const actorAccount = hud.nearWalletId || playerUid;
+    const isOwnListing =
+      Boolean(actorAccount) &&
+      listing.sellerNearAccount.toLowerCase() === actorAccount.toLowerCase();
+    const listingPriceRespite = Math.max(
+      1,
+      listing.priceRespite ||
+        (listing.priceLul > 200
+          ? Math.round(listing.priceLul / 50)
+          : listing.priceLul),
+    );
+    if (
+      !isOwnListing &&
+      actorAccount &&
+      !isActiveWalletReadOnlyObserver() &&
+      respiteBalance < listingPriceRespite
+    ) {
+      return false;
+    }
+
+    const res = await executeMarketContractCallOnChain({
+      signerAccountId: actorAccount || undefined,
+      methodName: isOwnListing ? 'unlist_fish_nft' : 'buy_fish_nft',
+      args: {
+        listing_id: listing.listingId,
+      },
+    });
+    if (!res.ok || !res.txHash) return false;
+    const resolvedActor = res.signerAccountId || hudRef.current.nearWalletId || actorAccount;
+
+    if (!isOwnListing) {
+      let nextRespite = Math.max(0, respiteBalance - listingPriceRespite);
+      if (resolvedActor) {
+        const liveRespiteStr = await fetchNep141Balance(
+          NEAR_CONFIG.nep141RespiteContractId,
+          resolvedActor,
+        );
+        if (liveRespiteStr !== null) {
+          nextRespite = Math.max(0, Number(liveRespiteStr) || 0);
+        }
+      }
+      setRespiteBalance(nextRespite);
+      void fetchNep141Balance(
+        NEAR_CONFIG.nep141RespiteContractId,
+        listing.sellerNearAccount,
+      ).then((sellerChainBal) => {
+        if (sellerChainBal !== null) {
+          void mirrorRecipientOnChainRespiteCacheInSupabase(
+            listing.sellerNearAccount,
+            Math.max(0, Number(sellerChainBal) || 0),
+          );
+        }
+      });
+      if (resolvedActor) {
+        void syncPlayerBalancesToSupabase({
+          nearAccountId: resolvedActor,
+          lulBalance: hud.gold,
+          cyonBalance,
+          respiteBalance: nextRespite,
+          ownedTokenIds: [...ownedMerchantItemIds, listing.nftTokenId],
+        });
+      }
+    }
+
+    const sellCyonFallback = Math.max(15, Math.round(listingPriceRespite * 2));
+    const reclaimedFish: CaughtFishItem = {
+      id: `fish-nft-${Date.now()}`,
+      speciesId: listing.speciesId,
+      speciesName: listing.speciesName,
+      waterZone: listing.waterZone,
+      waterZoneLabel: listing.waterZoneLabel,
+      rarity: listing.rarity,
+      weightKg: listing.weightKg,
+      sellValueCyon: sellCyonFallback,
+      sellValueLul: sellCyonFallback,
+      mintFeeLul: 0,
+      suggestedRespitePrice: listingPriceRespite,
+      colorHex: listing.colorHex,
+      loreTag: `Acquired on P2P Fish NFT Marketplace (Original Angler: ${listing.caughtByAccount}).`,
+      caughtByAccount: listing.caughtByAccount,
+      caughtAtIso: listing.listedAtIso,
+      isMintedNft: true,
+      nftTokenId: listing.nftTokenId,
+      nearTxHash: res.txHash,
+    };
+
+    setCaughtFishBucket((prev) => [reclaimedFish, ...prev]);
+    setFishMarketListings((prev) => {
+      const next = prev.filter((l) => l.listingId !== listing.listingId);
+      if (resolvedActor) {
+        void syncFishMarketplaceListingsToSupabase({
+          listings: next,
+          removedListingId: listing.listingId,
+          transaction: {
+            merchant_id: 'beach_house',
+            actor_near_account: resolvedActor,
+            action_type: isOwnListing ? 'unlist_fish_nft' : 'buy_fish_nft',
+            item_id: listing.speciesId,
+            nep245_token_id: listing.nftTokenId,
+            currency: 'RESPITE',
+            amount: isOwnListing ? 0 : listingPriceRespite,
+            unit_price: listingPriceRespite,
+            reasoning_summary: isOwnListing
+              ? `${resolvedActor} unlisted ${listing.speciesName} (${listing.weightKg} kg) from Marketplace.`
+              : `${resolvedActor} bought ${listing.speciesName} NFT (${listing.weightKg} kg) from ${listing.sellerNearAccount} for ${listingPriceRespite} RESPITE.`,
+            near_tx_hash: res.txHash,
+          },
+        });
+      }
+      return next;
+    });
+    void refreshFishMarketplaceFromChainAndDb();
+    return true;
+  };
+
   const renderPersonalWalletApp = (embeddedInPhone: boolean) => (
         <div
         data-personal-wallet-modal={embeddedInPhone ? "true" : undefined}
         className={
           embeddedInPhone
             ? "relative w-full h-full flex-1 flex flex-col bg-transparent text-white overflow-hidden min-h-0"
-            : "relative flex-1 flex flex-col rounded-[28px] bg-[#141926]/72 backdrop-blur-2xl border border-white/25 shadow-[0_24px_64px_rgba(0,0,0,0.52)] text-white overflow-hidden min-h-0"
+            : "relative flex-1 flex flex-col rounded-[28px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_64px_rgba(0,0,0,0.58)] text-white overflow-hidden min-h-0"
         }
       >
           <div className={`flex items-center justify-between gap-2 bg-transparent border-b border-white/15 shrink-0 ${embeddedInPhone ? 'px-3.5 py-2.5' : 'px-5 py-3.5'}`}>
@@ -8931,7 +9232,7 @@ export default function App() {
       className={
         embeddedInPhone
           ? 'relative w-full h-full flex-1 flex flex-col bg-transparent p-3 text-white overflow-hidden min-h-0'
-          : 'relative flex-1 flex flex-col rounded-[32px] bg-[#141926]/68 backdrop-blur-2xl border border-white/25 shadow-[0_24px_70px_rgba(0,0,0,0.52)] p-4 text-white overflow-hidden min-h-0'
+          : 'relative flex-1 flex flex-col rounded-[32px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] p-4 text-white overflow-hidden min-h-0'
       }
     >
       {/* Header (matching City Feed) */}
@@ -9199,7 +9500,7 @@ export default function App() {
       className={
         embeddedInPhone
           ? 'relative w-full h-full flex-1 flex flex-col bg-transparent p-3 text-white overflow-hidden min-h-0'
-          : 'relative flex-1 flex flex-col rounded-[32px] bg-[#141926]/68 backdrop-blur-2xl border border-white/25 shadow-[0_24px_70px_rgba(0,0,0,0.52)] p-4 text-white overflow-hidden min-h-0'
+          : 'relative flex-1 flex flex-col rounded-[32px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] p-4 text-white overflow-hidden min-h-0'
       }
     >
       {/* Header (matching City Feed) */}
@@ -11335,7 +11636,7 @@ export default function App() {
                     );
                   }}
                   title="Return to Main World (Central Plaza)"
-                  className="h-8 px-3 rounded-full bg-[#0d1118]/72 hover:bg-white/20 backdrop-blur-xl text-white border border-white/20 hover:border-white/40 shadow-[0_8px_24px_rgba(0,0,0,0.4)] font-medium text-[11px] tracking-tight cursor-pointer transition-all"
+                  className="h-8 px-3 rounded-full bg-[#0d1118]/72 hover:bg-white/20 backdrop-blur-sm text-white border border-white/20 hover:border-white/40 shadow-[0_8px_24px_rgba(0,0,0,0.4)] font-medium text-[11px] tracking-tight cursor-pointer transition-all"
                 >
                   Exit Warzone
                 </button>
@@ -11372,7 +11673,7 @@ export default function App() {
                 >
                   <div
                     data-click-to-walk-pill="true"
-                    className="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#0d1118]/78 backdrop-blur-xl text-white border border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.42)] text-[11px] font-medium max-w-[320px]"
+                    className="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#0d1118]/78 backdrop-blur-sm text-white border border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.42)] text-[11px] font-medium max-w-[320px]"
                   >
                     <Navigation className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
                     <span className="font-mono-tabular truncate text-white/95">
@@ -11400,7 +11701,7 @@ export default function App() {
               data-private-house-walkin-hud="true"
               className="fixed top-3.5 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex flex-col items-center gap-2 select-none"
             >
-              <div className="flex items-center gap-1.5 rounded-full bg-[#0d1118]/72 backdrop-blur-xl text-white border border-white/15 shadow-[0_8px_28px_rgba(0,0,0,0.45)] px-2.5 py-1.5">
+              <div className="flex items-center gap-1.5 rounded-full bg-[#0d1118]/72 backdrop-blur-sm text-white border border-white/15 shadow-[0_8px_28px_rgba(0,0,0,0.45)] px-2.5 py-1.5">
                 <span className="px-2.5 py-0.5 rounded-full bg-emerald-400/20 text-emerald-200 border border-emerald-300/35 text-[10px] font-semibold tracking-tight">
                   {isSampleHouseView ? 'Model House' : 'My Private House'}
                 </span>
@@ -11543,7 +11844,7 @@ export default function App() {
               data-supply-drop-banner="true"
               className="fixed top-16 left-1/2 -translate-x-1/2 z-30 pointer-events-none"
             >
-              <div className="px-4 py-1.5 rounded-full bg-[#0d1118]/82 backdrop-blur-xl text-amber-200 border border-amber-300/40 shadow-[0_10px_28px_rgba(0,0,0,0.48)] font-semibold text-xs tracking-wide uppercase">
+              <div className="px-4 py-1.5 rounded-full bg-[#0d1118]/82 backdrop-blur-sm text-amber-200 border border-amber-300/40 shadow-[0_10px_28px_rgba(0,0,0,0.48)] font-semibold text-xs tracking-wide uppercase">
                 <span>{hud.supplyDropBanner}</span>
               </div>
             </div>
@@ -11566,7 +11867,7 @@ export default function App() {
                     data-warzone-hp-badge="true"
                     data-warzone-lives-badge="true"
                     title={`Health: ${currentHp}/${maxHp} HP | Lives: ${currentLives}/${maxLives}`}
-                    className="relative px-3.5 py-1.5 min-w-[128px] sm:min-w-[140px] h-9 rounded-full bg-[#0d1118]/72 backdrop-blur-xl border border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.42)] overflow-hidden flex items-center justify-center"
+                    className="relative px-3.5 py-1.5 min-w-[128px] sm:min-w-[140px] h-9 rounded-full bg-[#0d1118]/72 backdrop-blur-sm border border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.42)] overflow-hidden flex items-center justify-center"
                   >
                     <div
                       className="absolute inset-y-0 left-0 bg-emerald-400/75 transition-all duration-200 ease-out"
@@ -11719,7 +12020,7 @@ export default function App() {
                           e.currentTarget.blur();
                           dispatchBuddyAction('planeClimbStep');
                         }}
-                        className="px-3 py-1.5 rounded-full bg-[#0d1118]/78 hover:bg-sky-400/25 backdrop-blur-xl text-sky-200 font-semibold text-xs border border-sky-300/45 shadow-[0_6px_20px_rgba(0,0,0,0.4)] cursor-pointer transition-colors"
+                        className="px-3 py-1.5 rounded-full bg-[#0d1118]/78 hover:bg-sky-400/25 backdrop-blur-sm text-sky-200 font-semibold text-xs border border-sky-300/45 shadow-[0_6px_20px_rgba(0,0,0,0.4)] cursor-pointer transition-colors"
                       >
                         [Space] Climb
                       </button>
@@ -11731,13 +12032,13 @@ export default function App() {
                           e.currentTarget.blur();
                           dispatchBuddyAction('planeDescendStep');
                         }}
-                        className="px-3 py-1.5 rounded-full bg-[#0d1118]/78 hover:bg-rose-500/25 backdrop-blur-xl text-rose-200 font-semibold text-xs border border-rose-400/45 shadow-[0_6px_20px_rgba(0,0,0,0.4)] cursor-pointer transition-colors"
+                        className="px-3 py-1.5 rounded-full bg-[#0d1118]/78 hover:bg-rose-500/25 backdrop-blur-sm text-rose-200 font-semibold text-xs border border-rose-400/45 shadow-[0_6px_20px_rgba(0,0,0,0.4)] cursor-pointer transition-colors"
                       >
                         [C] Descend
                       </button>
                     </>
                   )}
-                  <div className="px-3.5 py-1.5 rounded-full bg-emerald-400/20 backdrop-blur-xl text-emerald-100 font-semibold text-xs border border-emerald-300/50 shadow-[0_6px_20px_rgba(0,0,0,0.4)]">
+                  <div className="px-3.5 py-1.5 rounded-full bg-emerald-400/20 backdrop-blur-sm text-emerald-100 font-semibold text-xs border border-emerald-300/50 shadow-[0_6px_20px_rgba(0,0,0,0.4)]">
                     <span className="uppercase">
                       {hud.grabbedPropName || 'Tank'} ({hud.tankStoredCrates}/4 Crates)
                     </span>
@@ -11755,7 +12056,7 @@ export default function App() {
                         e.currentTarget.blur();
                         dispatchBuddyAction(w.actionEvent);
                       }}
-                      className={`px-3 py-1.5 rounded-full backdrop-blur-xl font-semibold text-xs tracking-wide border transition-all cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-full backdrop-blur-sm font-semibold text-xs tracking-wide border transition-all cursor-pointer ${
                         w.isActive
                           ? 'bg-emerald-400/25 text-white border-emerald-300/75 -translate-y-0.5 shadow-[0_8px_24px_rgba(16,185,129,0.28)]'
                           : w.kind === 'tactical'
@@ -11779,7 +12080,8 @@ export default function App() {
           {/* =================================================================
               3E-2. BOTTOM-CENTER: SHORELINE FISHING HUD, NEEDLE GAUGE & 3D CATCH SHOWCASE MODAL
              ================================================================= */}
-          {playMode !== 'editor' && (nearbyWaterZone.canFish || lastCaughtFishToast) && (
+          {playMode !== 'editor' &&
+            (canCastWithEquippedRod || fishingPhase !== 'idle' || Boolean(lastCaughtFishToast)) && (
             <ShorelineFishingHudAndShowcase
               nearbyWaterZone={nearbyWaterZone}
               fishingPhase={fishingPhase}
@@ -11901,7 +12203,7 @@ export default function App() {
                     const senderUser = activePrivateNotificationToast.user;
                     openSmartphoneApp('messages', { privateUser: senderUser });
                   }}
-                  className="max-w-[280px] rounded-2xl bg-[#0d1118]/84 hover:bg-[#151c28]/92 backdrop-blur-xl text-white border border-amber-300/35 shadow-[0_12px_32px_rgba(0,0,0,0.48)] px-3.5 py-2 text-left cursor-pointer transition-all active:scale-[0.99] select-none"
+                  className="max-w-[280px] rounded-2xl bg-[#0d1118]/84 hover:bg-[#151c28]/92 backdrop-blur-sm text-white border border-amber-300/35 shadow-[0_12px_32px_rgba(0,0,0,0.48)] px-3.5 py-2 text-left cursor-pointer transition-all active:scale-[0.99] select-none"
                 >
                   <div className="flex items-center justify-between gap-2 pb-1 mb-1 border-b border-white/10">
                     <span className="px-2 py-0.5 rounded-full bg-amber-300/20 text-amber-200 border border-amber-300/35 text-[9px] font-semibold uppercase tracking-wide">
@@ -11987,7 +12289,7 @@ export default function App() {
                   }
                   setSocialChatText('');
                 }}
-                className="w-full flex items-center gap-1.5 bg-[#0d1118]/65 backdrop-blur-xl border border-white/15 focus-within:border-white/35 shadow-[0_8px_28px_rgba(0,0,0,0.38)] px-2 py-1.5 rounded-full transition-colors"
+                className="w-full flex items-center gap-1.5 bg-[#0d1118]/65 backdrop-blur-sm border border-white/15 focus-within:border-white/35 shadow-[0_8px_28px_rgba(0,0,0,0.38)] px-2 py-1.5 rounded-full transition-colors"
               >
                 {isAnyNpcChatBarMode && (
                   <span
@@ -12138,7 +12440,7 @@ export default function App() {
               data-mission-guide-chip="true"
               className="fixed left-1/2 top-[60px] z-40 -translate-x-1/2 pointer-events-none select-none"
             >
-              <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#0d1118]/78 backdrop-blur-xl text-white border border-white/15 shadow-[0_10px_28px_rgba(0,0,0,0.45)]">
+              <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#0d1118]/78 backdrop-blur-sm text-white border border-white/15 shadow-[0_10px_28px_rgba(0,0,0,0.45)]">
                 <span className="w-2 h-2 rounded-full shrink-0 bg-emerald-400 animate-pulse" />
                 <span className="text-[11px] font-medium tracking-tight whitespace-nowrap text-white/92">
                   {missionGuide.stage === 'to_kiosk'
@@ -12177,7 +12479,7 @@ export default function App() {
           {playMode !== 'editor' &&
             hud.worldMode !== 'warzone' &&
             !isAnyNpcChatBarMode &&
-            !nearbyWaterZone.canFish &&
+            fishingPhase === 'idle' &&
             !lastCaughtFishToast && (() => {
               const activeSelectedTarget =
                 selectedTargetUser &&
@@ -12957,85 +13259,7 @@ export default function App() {
             setIsNearWalletSelectorOpen(true);
           }
         }}
-        onSwapNearAndRespite={async (direction, inputAmount) => {
-          const actorAccount = hud.nearWalletId || playerUid;
-          const receipt = await executeNearTestnetAndRespiteSwap({
-            direction,
-            signerAccountId: actorAccount || undefined,
-            inputAmount,
-            networkId: walletNetworkChoice,
-          });
-          if (!receipt || !receipt.txHash) return null;
-          const resolvedActor = receipt.accountId || hudRef.current.nearWalletId || actorAccount;
-          pendingPostClaimFloorRef.current = null;
-          if (direction === 'near_to_respite' && !onboardingSwapDone) {
-            setOnboardingSwapDone(true);
-            const swapAccount = (resolvedActor || '').trim().toLowerCase();
-            if (swapAccount) {
-              try {
-                window.localStorage.setItem(`bb_onboarding_swap_v1:${swapAccount}`, '1');
-              } catch {
-                // ignore storage failures
-              }
-            }
-          }
-
-          let nextNear =
-            direction === 'near_to_respite'
-              ? Math.max(0, Number((nearTestnetBalance - receipt.nearAmount).toFixed(4)))
-              : Number((nearTestnetBalance + receipt.nearAmount).toFixed(4));
-          let nextRespite =
-            direction === 'near_to_respite'
-              ? respiteBalance + receipt.respiteAmount
-              : Math.max(0, respiteBalance - receipt.respiteAmount);
-
-          if (resolvedActor) {
-            const [liveAccountView, liveRespiteStr] = await Promise.all([
-              fetchNearAccountView(resolvedActor, 'optimistic'),
-              fetchNep141Balance(NEAR_CONFIG.nep141RespiteContractId, resolvedActor, 'optimistic'),
-            ]);
-            if (liveAccountView) {
-              const liveNear = Number(liveAccountView.amount) / 1e24;
-              if (Number.isFinite(liveNear)) {
-                nextNear = Number(liveNear.toFixed(4));
-              }
-            }
-            if (liveRespiteStr !== null) {
-              const parsedRespite = Number(liveRespiteStr);
-              if (Number.isFinite(parsedRespite)) {
-                nextRespite = parsedRespite;
-              }
-            }
-          }
-
-          nearTestnetBalanceRef.current = nextNear;
-          setNearTestnetBalance(nextNear);
-          setRespiteBalance(nextRespite);
-
-          if (resolvedActor) {
-            void syncPlayerBalancesToSupabase({
-              nearAccountId: resolvedActor,
-              lulBalance: hud.gold,
-              cyonBalance,
-              respiteBalance: nextRespite,
-            });
-            void logMarketTransactionToSupabase({
-              merchant_id: merchantLocation,
-              actor_near_account: resolvedActor,
-              action_type: 'exchange',
-              nep245_token_id: receipt.tokenContractId,
-              currency: 'RESPITE',
-              amount: receipt.respiteAmount,
-              unit_price: receipt.nearAmount,
-              reasoning_summary:
-                direction === 'near_to_respite'
-                  ? `Swapped ${receipt.nearAmount} NEAR Testnet -> +${receipt.respiteAmount} RESPITE (${receipt.tokenContractId})`
-                  : `Swapped ${receipt.respiteAmount} RESPITE -> +${receipt.nearAmount} NEAR Testnet (${receipt.tokenContractId})`,
-              near_tx_hash: receipt.txHash,
-            });
-          }
-          return receipt;
-        }}
+        onSwapNearAndRespite={handleSwapNearAndRespite}
         caughtFishBucket={caughtFishBucket}
         fishMarketListings={fishMarketListings}
         fishSalesStats={fishSalesStats}
@@ -13058,184 +13282,8 @@ export default function App() {
           }
         }}
         onMintFishAsNft={handleMintCaughtFishNft}
-        onListFishNftOnMarket={async (
-          fish: CaughtFishItem,
-          priceRespiteInput: number,
-        ): Promise<boolean> => {
-          if (!fish.isMintedNft || !fish.nftTokenId) return false;
-          const actorAccount = hud.nearWalletId || playerUid;
-          const cleanRespitePrice = Math.max(1, Math.round(priceRespiteInput));
-          const listingId = `listing-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
-          const res = await executeMarketContractCallOnChain({
-            signerAccountId: actorAccount || undefined,
-            methodName: 'list_fish_nft',
-            args: {
-              listing_id: listingId,
-              token_id: fish.nftTokenId,
-              price_respite: String(cleanRespitePrice),
-            },
-          });
-          if (!res.ok || !res.txHash) return false;
-          const resolvedActor = res.signerAccountId || hudRef.current.nearWalletId || actorAccount;
-          const newListing: FishNftMarketplaceListing = {
-            listingId,
-            nftTokenId: fish.nftTokenId,
-            speciesId: fish.speciesId,
-            speciesName: fish.speciesName,
-            waterZone: fish.waterZone,
-            waterZoneLabel: fish.waterZoneLabel,
-            rarity: fish.rarity,
-            weightKg: fish.weightKg,
-            lengthCm: fish.lengthCm,
-            isTrophy: fish.isTrophy,
-            colorHex: fish.colorHex,
-            caughtByAccount: fish.caughtByAccount,
-            sellerNearAccount: resolvedActor || fish.caughtByAccount,
-            priceRespite: cleanRespitePrice,
-            priceLul: cleanRespitePrice,
-            nearTxHash: res.txHash,
-            listedAtIso: new Date().toISOString(),
-          };
-          setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fish.id));
-          setFishMarketListings((prev) => {
-            const next = [newListing, ...prev];
-            if (resolvedActor) {
-              void syncFishMarketplaceListingsToSupabase({
-                listings: next,
-                transaction: {
-                  merchant_id: 'beach_house',
-                  actor_near_account: resolvedActor,
-                  action_type: 'list_fish_nft',
-                  item_id: fish.speciesId,
-                  nep245_token_id: newListing.nftTokenId,
-                  currency: 'RESPITE',
-                  amount: newListing.priceRespite,
-                  unit_price: newListing.priceRespite,
-                  reasoning_summary: `Listed ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) for ${newListing.priceRespite} RESPITE.`,
-                  near_tx_hash: newListing.nearTxHash,
-                },
-              });
-            }
-            return next;
-          });
-          void refreshFishMarketplaceFromChainAndDb();
-          return true;
-        }}
-        onBuyFishNftFromMarket={async (listing: FishNftMarketplaceListing): Promise<boolean> => {
-          const actorAccount = hud.nearWalletId || playerUid;
-          const isOwnListing =
-            Boolean(actorAccount) &&
-            listing.sellerNearAccount.toLowerCase() === actorAccount.toLowerCase();
-          const listingPriceRespite = Math.max(
-            1,
-            listing.priceRespite ||
-              (listing.priceLul > 200
-                ? Math.round(listing.priceLul / 50)
-                : listing.priceLul),
-          );
-          if (
-            !isOwnListing &&
-            actorAccount &&
-            !isActiveWalletReadOnlyObserver() &&
-            respiteBalance < listingPriceRespite
-          ) {
-            return false;
-          }
-
-          const res = await executeMarketContractCallOnChain({
-            signerAccountId: actorAccount || undefined,
-            methodName: isOwnListing ? 'unlist_fish_nft' : 'buy_fish_nft',
-            args: {
-              listing_id: listing.listingId,
-            },
-          });
-          if (!res.ok || !res.txHash) return false;
-          const resolvedActor = res.signerAccountId || hudRef.current.nearWalletId || actorAccount;
-
-          if (!isOwnListing) {
-            let nextRespite = Math.max(0, respiteBalance - listingPriceRespite);
-            if (resolvedActor) {
-              const liveRespiteStr = await fetchNep141Balance(
-                NEAR_CONFIG.nep141RespiteContractId,
-                resolvedActor,
-              );
-              if (liveRespiteStr !== null) {
-                nextRespite = Math.max(0, Number(liveRespiteStr) || 0);
-              }
-            }
-            setRespiteBalance(nextRespite);
-            void fetchNep141Balance(
-              NEAR_CONFIG.nep141RespiteContractId,
-              listing.sellerNearAccount,
-            ).then((sellerChainBal) => {
-              if (sellerChainBal !== null) {
-                void mirrorRecipientOnChainRespiteCacheInSupabase(
-                  listing.sellerNearAccount,
-                  Math.max(0, Number(sellerChainBal) || 0),
-                );
-              }
-            });
-            if (resolvedActor) {
-              void syncPlayerBalancesToSupabase({
-                nearAccountId: resolvedActor,
-                lulBalance: hud.gold,
-                cyonBalance,
-                respiteBalance: nextRespite,
-                ownedTokenIds: [...ownedMerchantItemIds, listing.nftTokenId],
-              });
-            }
-          }
-
-          const sellCyonFallback = Math.max(15, Math.round(listingPriceRespite * 2));
-          const reclaimedFish: CaughtFishItem = {
-            id: `fish-nft-${Date.now()}`,
-            speciesId: listing.speciesId,
-            speciesName: listing.speciesName,
-            waterZone: listing.waterZone,
-            waterZoneLabel: listing.waterZoneLabel,
-            rarity: listing.rarity,
-            weightKg: listing.weightKg,
-            sellValueCyon: sellCyonFallback,
-            sellValueLul: sellCyonFallback,
-            mintFeeLul: 0,
-            suggestedRespitePrice: listingPriceRespite,
-            colorHex: listing.colorHex,
-            loreTag: `Acquired on Kai's P2P Fish Marketplace (Original Angler: ${listing.caughtByAccount}).`,
-            caughtByAccount: listing.caughtByAccount,
-            caughtAtIso: listing.listedAtIso,
-            isMintedNft: true,
-            nftTokenId: listing.nftTokenId,
-            nearTxHash: res.txHash,
-          };
-
-          setCaughtFishBucket((prev) => [reclaimedFish, ...prev]);
-          setFishMarketListings((prev) => {
-            const next = prev.filter((l) => l.listingId !== listing.listingId);
-            if (resolvedActor) {
-              void syncFishMarketplaceListingsToSupabase({
-                listings: next,
-                removedListingId: listing.listingId,
-                transaction: {
-                  merchant_id: 'beach_house',
-                  actor_near_account: resolvedActor,
-                  action_type: isOwnListing ? 'unlist_fish_nft' : 'buy_fish_nft',
-                  item_id: listing.speciesId,
-                  nep245_token_id: listing.nftTokenId,
-                  currency: 'RESPITE',
-                  amount: isOwnListing ? 0 : listingPriceRespite,
-                  unit_price: listingPriceRespite,
-                  reasoning_summary: isOwnListing
-                    ? `${resolvedActor} unlisted ${listing.speciesName} (${listing.weightKg} kg) from Kai's Marketplace.`
-                    : `${resolvedActor} bought ${listing.speciesName} NFT (${listing.weightKg} kg) from ${listing.sellerNearAccount} for ${listingPriceRespite} RESPITE.`,
-                  near_tx_hash: res.txHash,
-                },
-              });
-            }
-            return next;
-          });
-          void refreshFishMarketplaceFromChainAndDb();
-          return true;
-        }}
+        onListFishNftOnMarket={handleListFishNftOnMarket}
+        onBuyFishNftFromMarket={handleBuyFishNftFromMarket}
       />
 
       {/* =====================================================================
@@ -13415,15 +13463,11 @@ export default function App() {
         }}
         onOpenShopAndExchange={() => {
           soundEngine.playUiClick();
-          const originStation =
-            activeTeleportKioskModal !== 'none' ? activeTeleportKioskModal : 'central_plaza';
           setActiveTeleportKioskModal('none');
           window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
           setIsKioskModalOpen(false);
           setIsSocialChatModalOpen(false);
-          openMerchantInChatSession(
-            originStation === 'beachfront_harbor' ? 'beach_house' : 'lobby_cafe',
-          );
+          setIsDexModalOpen(true);
         }}
         onEnterGlasshouseCafe={() => {
           soundEngine.playUiConfirm();
@@ -13694,6 +13738,7 @@ export default function App() {
           isFashionBoutiqueModalOpen ||
           isWardrobeStudioOpen ||
           isRealEstateCatalogModalOpen ||
+          isDexModalOpen ||
           isGrandCasinoModalOpen ||
           isCitizenDialogueOpen ||
           isSmartphoneOsOpen ||
@@ -13705,7 +13750,7 @@ export default function App() {
         onTriggerBuddyAction={dispatchBuddyAction}
         forceShowJoystick={showJoystickOnDesktop}
         isWarzoneActive={worldMode === 'warzone' || hud.worldMode === 'warzone'}
-        canFish={nearbyWaterZone.canFish}
+        canFish={canCastWithEquippedRod}
         fishingPhase={fishingPhase}
         fishingCastPower={fishingCastPower}
         fishingBucketFull={caughtFishBucket.length >= 20}
@@ -13947,6 +13992,7 @@ export default function App() {
           isFashionBoutiqueModalOpen ||
           isWardrobeStudioOpen ||
           isRealEstateCatalogModalOpen ||
+          isDexModalOpen ||
           isGrandCasinoModalOpen ||
           isCitizenDialogueOpen ||
           activeSpecialModal !== 'none' ||
@@ -14660,6 +14706,37 @@ export default function App() {
         onCancelPropertyListing={handleCancelPropertyListing}
         onBuyPropertyListing={handleBuyPropertyListing}
         onCompletePropertyTransfer={handleCompletePropertyTransfer}
+      />
+      <DexMarketplaceModal
+        isOpen={isDexModalOpen && hud.worldMode !== 'warzone'}
+        onClose={() => setIsDexModalOpen(false)}
+        walletConnected={Boolean(hud.nearWalletConnected)}
+        playerNearAccount={hud.nearWalletId || playerUid || ''}
+        nearTestnetBalance={nearTestnetBalance}
+        respiteBalance={respiteBalance}
+        marketState={marketState}
+        ownedItemIds={ownedMerchantItemIds}
+        caughtFishBucket={caughtFishBucket}
+        fishMarketListings={fishMarketListings}
+        fishSalesStats={fishSalesStats}
+        onConnectWallet={() => {
+          setIsDexModalOpen(false);
+          if (!hud.nearWalletConnected) {
+            setOnboardingStep('auth_choice');
+          } else {
+            setIsNearWalletSelectorOpen(true);
+          }
+        }}
+        onSwapNearAndRespite={handleSwapNearAndRespite}
+        onBuyMerchantItem={handleBuyCatalogMerchantItem}
+        onMintFishAsNft={handleMintCaughtFishNft}
+        onListFishNftOnMarket={handleListFishNftOnMarket}
+        onBuyFishNftFromMarket={handleBuyFishNftFromMarket}
+        onRefreshMarket={() => {
+          void refreshWalletTransactions();
+          void refreshOnChainBalances();
+          void refreshFishMarketplaceFromChainAndDb();
+        }}
       />
       <CitizenDialogueModal
         isOpen={isCitizenDialogueOpen && hud.worldMode !== 'warzone'}

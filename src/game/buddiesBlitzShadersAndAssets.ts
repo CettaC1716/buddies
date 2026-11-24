@@ -41,7 +41,7 @@ import {
 import type { ScooterRiderRigPose } from './buddiesScooterRidePose';
 import { createOrnateBronzeLampKit } from './buddiesOrnateBronzeLampAsset';
 import { computeCityIlluminationLevels } from './buddiesCityLightingAndTrafficRules';
-import { buildCoastalAmusementPark3D } from './buddiesAmusementParkBuilder';
+import { buildCoastalBeachClub3D } from './buddiesBeachClubBuilder';
 import {
   applySkinnedMeshSafeBoundingSphere,
   computeInstancedBoundingVolumes,
@@ -450,9 +450,13 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     return vec4(t1, t2, t3, t4);
   }
 
+  float getEastCoastalShorelineX(float worldZ) {
+    float beachMask = smoothstep(-105.2, -98.5, worldZ) * (1.0 - smoothstep(98.5, 105.2, worldZ));
+    return 110.0 + 24.0 * beachMask;
+  }
+
   float evaluateOuterEmbankmentSdf(vec2 p) {
-    float neReclaim = smoothstep(-105.5, -96.0, p.y) * (1.0 - smoothstep(-54.0, -45.5, p.y));
-    float shorelineX = 110.0 + 16.5 * neReclaim;
+    float shorelineX = getEastCoastalShorelineX(p.y);
     float baseWalkSdf = max(evalEmbankmentTierOffsets(p).x, p.x - (shorelineX - 0.8));
     vec3 hillRoad = evalCoastalHillRoad(p);
     float hillRoadWalkSdf = hillRoad.x - 4.15;
@@ -540,26 +544,42 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
   }
 
   vec2 evaluateSeHarborSdf(vec2 p) {
-    float dHarborDock = sdRoundedBox2D(p, vec2(93.0, 0.0), vec2(17.0, 46.0), 2.4);
-    float dCoastalWall = sdRoundedBox2D(p, vec2(105.75, 0.0), vec2(4.25, 180.0), 0.8);
-    float concreteSdf = min(dHarborDock, dCoastalWall);
-    float neReclaim = smoothstep(-105.5, -96.0, p.y) * (1.0 - smoothstep(-54.0, -45.5, p.y));
-    float waterSdf = (110.0 + 16.5 * neReclaim) - p.x;
+    float concreteSdf = max(
+      sdRoundedBox2D(p, vec2(105.75, 0.0), vec2(4.25, 180.0), 0.8),
+      104.2 - abs(p.y)
+    );
+    float waterSdf = getEastCoastalShorelineX(p.y) - p.x;
     return vec2(concreteSdf, waterSdf);
   }
 
   float evaluateEastCoastalSandyMask(float z) {
-    float neSandy = smoothstep(-104.2, -101.8, z) * (1.0 - smoothstep(-48.5, -46.2, z));
-    float seSandy = smoothstep(46.2, 48.5, z) * (1.0 - smoothstep(102.0, 104.2, z));
-    return max(neSandy, seSandy);
+    return smoothstep(-105.2, -102.5, z) * (1.0 - smoothstep(102.5, 105.2, z));
   }
 
   float evalHarborSeabedDrop(vec2 p, float waterSdf) {
-    if (waterSdf >= 0.35) return 0.0;
-    float sandySlope = -1.65 * smoothstep(0.35, -14.0, waterSdf);
-    float quayDrop = -1.65 * smoothstep(0.15, -1.2, waterSdf);
+    if (p.x <= 91.2) return 0.0;
     float sandyMask = evaluateEastCoastalSandyMask(p.y);
-    return mix(quayDrop, sandySlope, sandyMask);
+    float kaiBlend = smoothstep(44.8, 45.6, p.y);
+    float box1Start = mix(93.5, 92.2, kaiBlend);
+    float box1End = mix(97.2, 97.6, kaiBlend);
+    float box1Drop = -1.0 * smoothstep(box1Start, box1End, p.x);
+
+    // Extra subsurface basin clearance beneath the built Beach Club terraces & pools (x in [93.5..121.4], z in [-96.5..45.2])
+    // so coarse 2.41m CurvedPlanetGround triangles never poke through the -0.96m / -1.40m pool floors or waterfall wall
+    float clubPoolPit =
+      smoothstep(93.5, 97.2, p.x) *
+      (1.0 - smoothstep(118.8, 121.4, p.x)) *
+      smoothstep(-96.8, -94.5, p.y) *
+      (1.0 - smoothstep(44.2, 45.4, p.y));
+    box1Drop -= 0.85 * clubPoolPit;
+
+    float box2Start = mix(118.8, 119.8, kaiBlend);
+    float box2End = mix(121.4, 122.2, kaiBlend);
+    float box2Drop = -1.0 * smoothstep(box2Start, box2End, p.x);
+    float seaSlope = -1.65 * smoothstep(0.35, -14.0, waterSdf);
+    float sandyTotalDrop = box1Drop + box2Drop + seaSlope;
+    float quayDrop = -3.65 * smoothstep(0.15, -1.2, waterSdf);
+    return mix(quayDrop, sandyTotalDrop, sandyMask);
   }
 
   float evalModelEstateBaseDirtSdf(vec2 p) {
@@ -586,7 +606,6 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
       d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(45.0, 59.5), vec2(2.63, 5.5), 0.0));
     }
     d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(77.5, 15.0), vec2(4.0, 3.93), 0.0));
-    d = max(d, -sdRoundedBox2D(p, vec2(79.675, 29.5), vec2(3.525, 9.3), 0.0));
     d = max(d, -sdRoundedBox2D(p, vec2(85.01, 60.225), vec2(9.99, 14.775), 0.0));
     return d;
   }
@@ -607,6 +626,7 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     d = max(d, -sdRoundedBox2D(p, vec2(-58.9, 4.6), vec2(3.35, 9.2), 0.0));
     d = max(d, -sdRoundedBox2D(p, vec2(3.5, -40.87), vec2(9.2, 3.35), 0.0));
     d = max(d, -sdRoundedBox2D(p, vec2(-36.5, 40.87), vec2(9.2, 3.35), 0.0));
+    d = max(d, -sdRoundedBox2D(p, vec2(58.9, 28.6), vec2(3.35, 9.2), 0.0));
     return d;
   }
 
@@ -614,7 +634,7 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     float dCentral = sdRoundedBox2D(p, vec2(-58.9, 4.6), vec2(3.6, 9.4), 0.4);
     float dNorth = sdRoundedBox2D(p, vec2(3.5, -40.87), vec2(9.4, 3.6), 0.4);
     float dSouth = sdRoundedBox2D(p, vec2(-36.5, 40.87), vec2(9.4, 3.6), 0.4);
-    float dBeach = sdRoundedBox2D(p, vec2(79.63, 29.5), vec2(3.6, 9.4), 0.4);
+    float dBeach = sdRoundedBox2D(p, vec2(58.9, 28.6), vec2(3.6, 9.4), 0.4);
     float dPlazaSidewalk = sdRoundedBox2D(p, vec2(-76.38, 0.0), vec2(2.48, 38.2), 0.2);
     float dTennisClub = sdRoundedBox2D(p, vec2(-89.20, 51.90), vec2(15.20, 13.70), 0.3);
     float dOuterTramSidewalk = evalOuterTramSidewalkSdf(p);
@@ -679,7 +699,8 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
 
     float roadSafe = smoothstep(-0.15, 0.85, roadSdf);
     float lakeSafe = smoothstep(0.2, 1.65, lakeSdf);
-    float harborSafe = smoothstep(-0.2, 1.25, min(harborSdf.x, harborSdf.y));
+    float coastalBeachClubPadSdf = sdRoundedBox2D(p, vec2(106.5, 0.0), vec2(28.2, 104.5), 2.0);
+    float harborSafe = smoothstep(-0.2, 1.25, min(min(harborSdf.x, harborSdf.y), coastalBeachClubPadSdf));
     float westPlantSafe = smoothstep(-0.2, 1.15, westPlantSdf);
 
     float hardPadSdf = min(dModelEstateDirt, dConstructionYardDirt);
@@ -709,7 +730,7 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
       evaluateNwLakeSdf(p),
       evaluateSeHarborSdf(p),
       evaluateWestPowerPlantSdf(p),
-      max(evalEmbankmentTierOffsets(p).x, p.x - 109.2)
+      max(evalEmbankmentTierOffsets(p).x, p.x - (getEastCoastalShorelineX(p.y) - 0.8))
     );
   }
 
@@ -720,15 +741,13 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     vec2 harborSdf = evaluateSeHarborSdf(rawP);
     float harborDrop = evalHarborSeabedDrop(rawP, harborSdf.y);
 
-    float westPlantSdf = evaluateWestPowerPlantSdf(p);
-    // Keep underlying procedural terrain mesh strictly inside the Plaza retaining walls (westPlantSdf < -0.40)
-    // so CurvedPlanetGround NEVER pokes through the +0.09m Roadside Sidewalk ("di trotoar plaza masih ada tanah")
-    float westPlantElev = (1.0 - smoothstep(-0.85, -0.40, westPlantSdf)) * 0.40;
-    if (p.x > -87.70 && p.x < -77.65 && abs(p.y) < 10.05) {
-      float stairCarveX = smoothstep(-87.70, -86.75, p.x);
-      float stairCarveZ = 1.0 - smoothstep(9.60, 10.05, abs(p.y));
-      westPlantElev = mix(westPlantElev, 0.0, stairCarveX * stairCarveZ);
-    }
+    // West Central Plaza (WestLobbyShoppingPlaza3D) is rendered as solid 3D architectural geometry
+    // (Basalt Plinth y=0.00..0.48m + Granite Upper Deck y=0.48..2.50m + Staircase + 0.09m Sidewalk).
+    // Keep CurvedPlanetGround strictly flat (0.0m) across the entire Plaza footprint: because the
+    // terrain mesh has coarse 2.41m-3.07m vertex spacing (540m / 224 or 176), ANY positive vertex
+    // elevation behind the retaining wall interpolates linearly across the wall and emerges above
+    // the +0.09m concrete sidewalk as a diagonal golden-dirt wedge.
+    float westPlantElev = 0.0;
 
     float lakeSdf = evaluateNwLakeSdf(p);
     float lakeBasinDepression = 0.0;
@@ -900,10 +919,19 @@ export interface BlitzWindUniforms {
   sharedWaterUniforms?: UnifiedWaterSurfaceSharedUniforms;
 }
 
+export interface BlitzGrassExclusionBox {
+  x: number;
+  z: number;
+  yaw: number;
+  halfLen: number;
+  halfWidth: number;
+}
+
 let sharedFallbackTerrainAccelTex: THREE.DataTexture | null = null;
 function getFallbackTerrainAccelTexture(): THREE.DataTexture {
   if (!sharedFallbackTerrainAccelTex) {
-    const data = new Uint8Array([0, 0, 0, 0]);
+    // A = 255 (1.0) so grass exclusion allow-factor defaults to fully allowed when accel LUT is inactive
+    const data = new Uint8Array([0, 0, 0, 255]);
     const tex = new THREE.DataTexture(data, 1, 1, THREE.RGBAFormat);
     tex.minFilter = THREE.LinearFilter;
     tex.magFilter = THREE.LinearFilter;
@@ -917,18 +945,22 @@ function getFallbackTerrainAccelTexture(): THREE.DataTexture {
 
 /**
  * Bakes a 1024x1024 RGBA8 GPU spatial-acceleration lookup texture over world XZ [-156..+156]
- * once at scene initialization (~2ms on GPU):
+ * once at scene initialization (~2ms on GPU), with an on-demand dirty-checked GPU OBB exclusion pass:
  * - R: exact evaluateBlitzGrassMask(p) (eliminates ~150 lines of SDF math per grass vertex & ground pixel)
  * - G: broadband road proximity (pixels > 2.5m from roads skip the 28-segment road SDF completely while
  *      pixels near roads still run exact analytic SDFs for razor-sharp curbs & zebra crosswalks)
  * - B: guaranteed flat interior flag (skips 5x finite-diff elevation & hill/lake/plant SDFs on flat city ground)
- * - A: broadband embankment proximity
+ * - A: pre-baked grass exclusion allow-factor (1.0 = grow grass, 0.0 = suppressed under benches/crates/bases/haltes;
+ *      eliminates the 64-box OBB loop across ~95K grass/petal vertices every frame — saving ~6M iterations/frame!)
  */
 export function bakeBlitzTerrainAccelTexture(
   renderer: THREE.WebGLRenderer,
   windUniforms: BlitzWindUniforms,
   resolution = 1024,
-): { dispose: () => void } {
+): {
+  updateExclusions: (items: ReadonlyArray<BlitzGrassExclusionBox>) => boolean;
+  dispose: () => void;
+} {
   const uSculptMap = windUniforms.uSculptMap || { value: getOrCreateSharedSculptTexture() };
   windUniforms.uSculptMap = uSculptMap;
   if (!windUniforms.uTerrainAccelTex) {
@@ -938,7 +970,7 @@ export function bakeBlitzTerrainAccelTexture(
     windUniforms.uHasTerrainAccel = { value: 0.0 };
   }
 
-  const rt = new THREE.WebGLRenderTarget(resolution, resolution, {
+  const rtOpts: THREE.RenderTargetOptions = {
     format: THREE.RGBAFormat,
     type: THREE.UnsignedByteType,
     minFilter: THREE.LinearFilter,
@@ -948,7 +980,9 @@ export function bakeBlitzTerrainAccelTexture(
     depthBuffer: false,
     stencilBuffer: false,
     generateMipmaps: false,
-  });
+  };
+  const baseRt = new THREE.WebGLRenderTarget(resolution, resolution, rtOpts);
+  const rt = new THREE.WebGLRenderTarget(resolution, resolution, rtOpts);
 
   const bakeScene = new THREE.Scene();
   const bakeCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -976,7 +1010,7 @@ export function bakeBlitzTerrainAccelTexture(
         vec2 harborSdf = evaluateSeHarborSdf(p);
         float westPlantSdf = evaluateWestPowerPlantSdf(p);
         vec4 embT = evalEmbankmentTierOffsets(p);
-        float embSdf = max(embT.x, p.x - 109.2);
+        float embSdf = max(embT.x, p.x - (getEastCoastalShorelineX(p.y) - 0.8));
         float grassMask = evaluateBlitzGrassMaskFromSdfs(p, roadSdf, lakeSdf, harborSdf, westPlantSdf, embSdf);
         vec3 hillRoad = evalCoastalHillRoad(p);
         float plateauSdf = evaluateHillVillaPlateauSdf(p);
@@ -987,15 +1021,16 @@ export function bakeBlitzTerrainAccelTexture(
             lakeSdf > 2.2 &&
             westPlantSdf > 1.8 &&
             harborSdf.y > 2.2 &&
+            p.x < 90.0 &&
             hillRoad.x > 8.0 &&
             plateauSdf > 7.5 &&
             abs(p.x) < 152.0 &&
             abs(p.y) < 152.0)
             ? 1.0
             : 0.0;
-        float embBroad = clamp((embT.x + 6.0) / 16.0, 0.0, 1.0);
 
-        gl_FragColor = vec4(grassMask, roadBroad, isFlatInterior, embBroad);
+        // A = 1.0 (grass fully allowed before dynamic OBB exclusion pass multiplies alpha)
+        gl_FragColor = vec4(grassMask, roadBroad, isFlatInterior, 1.0);
       }
     `,
   });
@@ -1004,21 +1039,193 @@ export function bakeBlitzTerrainAccelTexture(
   quadMesh.frustumCulled = false;
   bakeScene.add(quadMesh);
 
+  // Fullscreen copy pass: baseRt -> rt (restores static RGB + A=1.0 before stamping OBB exclusions)
+  const copyScene = new THREE.Scene();
+  const copyMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uBaseTex: { value: baseRt.texture },
+    },
+    depthTest: false,
+    depthWrite: false,
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = vec4(position.xy, 0.0, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D uBaseTex;
+      varying vec2 vUv;
+      void main() {
+        gl_FragColor = texture2D(uBaseTex, vUv);
+      }
+    `,
+  });
+  const copyMesh = new THREE.Mesh(quadGeo, copyMat);
+  copyMesh.frustumCulled = false;
+  copyScene.add(copyMesh);
+
+  // Instanced OBB exclusion pass: multiplies rt.a by smoothstep(0.0, 0.28, boxDist) while leaving rt.rgb untouched!
+  let exclCapacity = 128;
+  let exclCenterExtentsData = new Float32Array(exclCapacity * 4);
+  let exclCosSinData = new Float32Array(exclCapacity * 2);
+  let exclCenterExtentsAttr = new THREE.InstancedBufferAttribute(exclCenterExtentsData, 4);
+  let exclCosSinAttr = new THREE.InstancedBufferAttribute(exclCosSinData, 2);
+  exclCenterExtentsAttr.setUsage(THREE.DynamicDrawUsage);
+  exclCosSinAttr.setUsage(THREE.DynamicDrawUsage);
+
+  const exclGeo = new THREE.InstancedBufferGeometry();
+  exclGeo.index = quadGeo.index;
+  exclGeo.setAttribute('position', quadGeo.getAttribute('position'));
+  exclGeo.setAttribute('aBoxCenterExtents', exclCenterExtentsAttr);
+  exclGeo.setAttribute('aBoxCosSin', exclCosSinAttr);
+  exclGeo.instanceCount = 0;
+
+  const exclMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.CustomBlending,
+    blendEquation: THREE.AddEquation,
+    blendSrc: THREE.ZeroFactor,
+    blendDst: THREE.OneFactor,
+    blendEquationAlpha: THREE.AddEquation,
+    blendSrcAlpha: THREE.ZeroFactor,
+    blendDstAlpha: THREE.SrcAlphaFactor,
+    vertexShader: /* glsl */ `
+      attribute vec4 aBoxCenterExtents;
+      attribute vec2 aBoxCosSin;
+      varying vec2 vLocalPos;
+      varying vec2 vHalfExtents;
+      void main() {
+        vec2 halfExt = aBoxCenterExtents.zw;
+        // Pad quad by 0.65m (> 0.28m feather + 1 texel) so smoothstep reaches 1.0 cleanly inside quad bounds
+        vec2 localPos = position.xy * (halfExt + vec2(0.65));
+        float c = aBoxCosSin.x;
+        float s = aBoxCosSin.y;
+        vec2 worldPos = aBoxCenterExtents.xy + vec2(
+          localPos.x * c + localPos.y * s,
+          -localPos.x * s + localPos.y * c
+        );
+        vLocalPos = localPos;
+        vHalfExtents = halfExt;
+        gl_Position = vec4(worldPos / 156.0, 0.0, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      varying vec2 vLocalPos;
+      varying vec2 vHalfExtents;
+      void main() {
+        vec2 q = abs(vLocalPos) - vHalfExtents;
+        float boxDist = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+        float allow = smoothstep(0.0, 0.28, boxDist);
+        gl_FragColor = vec4(0.0, 0.0, 0.0, allow);
+      }
+    `,
+  });
+  const exclScene = new THREE.Scene();
+  const exclMesh = new THREE.Mesh(exclGeo, exclMat);
+  exclMesh.frustumCulled = false;
+  exclScene.add(exclMesh);
+
+  // Initial static bake: baseRt + clean copy into rt
   const prevTarget = renderer.getRenderTarget();
   const prevAutoClear = renderer.autoClear;
   renderer.autoClear = true;
-  renderer.setRenderTarget(rt);
+  renderer.setRenderTarget(baseRt);
   renderer.render(bakeScene, bakeCam);
+  renderer.setRenderTarget(rt);
+  renderer.render(copyScene, bakeCam);
   renderer.setRenderTarget(prevTarget);
   renderer.autoClear = prevAutoClear;
 
-  quadGeo.dispose();
   bakeMat.dispose();
 
   windUniforms.uTerrainAccelTex.value = rt.texture;
   windUniforms.uHasTerrainAccel.value = 1.0;
 
+  let lastAppliedCount = -1;
+  let lastAppliedSnapshot = new Float32Array(exclCapacity * 5);
+
+  const ensureExclCapacity = (needed: number) => {
+    if (needed <= exclCapacity) return;
+    let nextCap = exclCapacity;
+    while (nextCap < needed) nextCap *= 2;
+    exclCapacity = nextCap;
+    exclCenterExtentsData = new Float32Array(exclCapacity * 4);
+    exclCosSinData = new Float32Array(exclCapacity * 2);
+    exclCenterExtentsAttr = new THREE.InstancedBufferAttribute(exclCenterExtentsData, 4);
+    exclCosSinAttr = new THREE.InstancedBufferAttribute(exclCosSinData, 2);
+    exclCenterExtentsAttr.setUsage(THREE.DynamicDrawUsage);
+    exclCosSinAttr.setUsage(THREE.DynamicDrawUsage);
+    exclGeo.setAttribute('aBoxCenterExtents', exclCenterExtentsAttr);
+    exclGeo.setAttribute('aBoxCosSin', exclCosSinAttr);
+    lastAppliedSnapshot = new Float32Array(exclCapacity * 5);
+    lastAppliedCount = -1;
+  };
+
   return {
+    updateExclusions(items: ReadonlyArray<BlitzGrassExclusionBox>): boolean {
+      const count = items.length;
+      if (count === lastAppliedCount) {
+        let changed = false;
+        for (let i = 0; i < count; i++) {
+          const it = items[i];
+          const base = i * 5;
+          if (
+            Math.abs(lastAppliedSnapshot[base] - it.x) > 1e-3 ||
+            Math.abs(lastAppliedSnapshot[base + 1] - it.z) > 1e-3 ||
+            Math.abs(lastAppliedSnapshot[base + 2] - it.yaw) > 1e-3 ||
+            Math.abs(lastAppliedSnapshot[base + 3] - it.halfLen) > 1e-3 ||
+            Math.abs(lastAppliedSnapshot[base + 4] - it.halfWidth) > 1e-3
+          ) {
+            changed = true;
+            break;
+          }
+        }
+        if (!changed) return false;
+      }
+
+      ensureExclCapacity(count);
+      lastAppliedCount = count;
+      for (let i = 0; i < count; i++) {
+        const it = items[i];
+        const snapBase = i * 5;
+        lastAppliedSnapshot[snapBase] = it.x;
+        lastAppliedSnapshot[snapBase + 1] = it.z;
+        lastAppliedSnapshot[snapBase + 2] = it.yaw;
+        lastAppliedSnapshot[snapBase + 3] = it.halfLen;
+        lastAppliedSnapshot[snapBase + 4] = it.halfWidth;
+
+        const cBase = i * 4;
+        exclCenterExtentsData[cBase] = it.x;
+        exclCenterExtentsData[cBase + 1] = it.z;
+        exclCenterExtentsData[cBase + 2] = it.halfLen;
+        exclCenterExtentsData[cBase + 3] = it.halfWidth;
+
+        const rBase = i * 2;
+        exclCosSinData[rBase] = Math.cos(it.yaw);
+        exclCosSinData[rBase + 1] = Math.sin(it.yaw);
+      }
+      exclCenterExtentsAttr.needsUpdate = true;
+      exclCosSinAttr.needsUpdate = true;
+      exclGeo.instanceCount = count;
+
+      const savedTarget = renderer.getRenderTarget();
+      const savedAutoClear = renderer.autoClear;
+      renderer.setRenderTarget(rt);
+      renderer.autoClear = true;
+      renderer.render(copyScene, bakeCam);
+      if (count > 0) {
+        renderer.autoClear = false;
+        renderer.render(exclScene, bakeCam);
+      }
+      renderer.setRenderTarget(savedTarget);
+      renderer.autoClear = savedAutoClear;
+      return true;
+    },
     dispose() {
       if (windUniforms.uTerrainAccelTex && windUniforms.uTerrainAccelTex.value === rt.texture) {
         windUniforms.uTerrainAccelTex.value = getFallbackTerrainAccelTexture();
@@ -1026,6 +1233,11 @@ export function bakeBlitzTerrainAccelTexture(
       if (windUniforms.uHasTerrainAccel) {
         windUniforms.uHasTerrainAccel.value = 0.0;
       }
+      quadGeo.dispose();
+      copyMat.dispose();
+      exclGeo.dispose();
+      exclMat.dispose();
+      baseRt.dispose();
       rt.dispose();
     },
   };
@@ -1258,7 +1470,7 @@ export function createUnifiedWaterSurfaceMaterial(
         if (uIsOcean > 0.5) {
           harborSdfV = evaluateSeHarborSdf(wp.xz);
           float bedY = evalHarborSeabedDrop(wp.xz, harborSdfV.y);
-          roughDepth = max(0.0, -0.16 - bedY);
+          roughDepth = max(0.0, ${EAST_WATER_SURFACE_Y.toFixed(2)} - bedY);
           float wallDamp = smoothstep(0.0, 1.4, -harborSdfV.y);
           shoreDamp = smoothstep(0.02, 0.55, roughDepth) * wallDamp;
           sandyMaskV = evaluateEastCoastalSandyMask(wp.z);
@@ -1360,7 +1572,7 @@ export function createUnifiedWaterSurfaceMaterial(
           harborSdf = evaluateSeHarborSdf(vWorldXZ);
           if (harborSdf.x <= -0.02 || harborSdf.y > 0.35) discard;
           bedY = evalHarborSeabedDrop(vWorldXZ, harborSdf.y);
-          waterDepth = (-0.16 + vWaveY) - bedY;
+          waterDepth = (${EAST_WATER_SURFACE_Y.toFixed(2)} + vWaveY) - bedY;
           if (waterDepth <= -0.01) discard;
           sandyMask = evaluateEastCoastalSandyMask(vWorldXZ.y);
           shoreFeather = smoothstep(0.0, 0.08, waterDepth);
@@ -2703,23 +2915,23 @@ export function createBlitzInfiniteGrassSystem(
   windUniforms: BlitzWindUniforms,
   isSoftwareGl: boolean,
 ) {
-  // Camera-following 42m x 42m toroidal streaming window around uViewPos for a lush grass carpet with low GPU overdraw
+  // Camera-following 38m x 38m toroidal streaming window around uViewPos for a neat manicured lawn & high FPS
   const isCompact = isSoftwareGl;
   const poolRadiusChunks = 3;
   const poolDiameterChunks = poolRadiusChunks * 2 + 1;
-  // Slightly wider blades (+12%) paired with calibrated 20x18 density maintain the same
-  // lush full carpet while cutting grass vertex & overdraw load by ~35% on hardware GPUs.
-  const chunkColumns = isCompact ? 17 : 20;
-  const chunkRows = isCompact ? 15 : 18;
-  const fieldSize = 42.0;
-  const wrappedJitterFactor = 0.78;
+  // Calibrated 16x14 grid + tapered blades cut grass instance count & overdraw by ~45% for smoother FPS
+  // while keeping a tidy, manicured green park carpet.
+  const chunkColumns = isCompact ? 13 : 16;
+  const chunkRows = isCompact ? 11 : 14;
+  const fieldSize = 38.0;
+  const wrappedJitterFactor = 0.72;
   const fullCircle = Math.PI * 2;
-  const nearScaleMin = 0.45;
-  const nearScaleMax = 1.05;
-  const bladeWidth = 0.27;
-  const bladeHeight = 0.64;
+  const nearScaleMin = 0.55;
+  const nearScaleMax = 0.95;
+  const bladeWidth = 0.16;
+  const bladeHeight = 0.36;
   const bladeFold = 0.5;
-  const bladeKeepRatio = isCompact ? 0.84 : 0.88;
+  const bladeKeepRatio = isCompact ? 0.72 : 0.78;
 
   // Deterministic placement hash from Ni.prototype.getPlacementSeed & randomFromSeed
   const getPlacementSeed = (col: number, row: number, c: number, d: number) => {
@@ -2803,7 +3015,7 @@ export function createBlitzInfiniteGrassSystem(
       const px = (col + 0.5) * stepX + (r0 - 0.5) * stepX * wrappedJitterFactor;
       const pz = baseZ + (r1 - 0.5) * stepZ * wrappedJitterFactor;
       const hScale = THREE.MathUtils.lerp(nearScaleMin, nearScaleMax, r2);
-      const wScale = THREE.MathUtils.lerp(0.65, 1.35, r0);
+      const wScale = THREE.MathUtils.lerp(0.72, 1.15, r0);
       const angle = r0 * fullCircle;
 
       aLocalAnchorArr[count * 2] = px;
@@ -2853,14 +3065,6 @@ export function createBlitzInfiniteGrassSystem(
   const uPlayerTrailPos = { value: new THREE.Vector3(0, 0, 12.5) };
   const uViewPos = { value: new THREE.Vector3(0, 0, 12.5) };
   const uBlastWave = { value: new THREE.Vector4(0, 0, 0.01, 0) };
-  const MAX_GRASS_EXCLUSIONS = 64;
-  const uExclusionCount = { value: 0 };
-  const uExclusionBoxes = {
-    value: Array.from({ length: MAX_GRASS_EXCLUSIONS }, () => new THREE.Vector4(9999, 9999, 0, 0)),
-  };
-  const uExclusionRot = {
-    value: Array.from({ length: MAX_GRASS_EXCLUSIONS }, () => new THREE.Vector2(1, 0)),
-  };
   const MAX_GRASS_TRAMPLERS = 24;
   const uTramplerCount = { value: 0 };
   const uTramplers = {
@@ -2896,9 +3100,6 @@ export function createBlitzInfiniteGrassSystem(
       uPlayerTrailPos,
       uViewPos,
       uBlastWave,
-      uExclusionCount,
-      uExclusionBoxes,
-      uExclusionRot,
       uTramplerCount,
       uTramplers,
       uCurvatureStrength,
@@ -2913,7 +3114,7 @@ export function createBlitzInfiniteGrassSystem(
       uBladeHalfW: { value: bladeWidth * 0.5 },
       uBladeHeight: { value: bladeHeight },
       uBladeFold: { value: bladeFold },
-      uBladeTipWidth: { value: 1.0 },
+      uBladeTipWidth: { value: 0.14 },
       uRobotRadius: { value: 0.46 },
       uBendStrength: { value: 0.35 },
       uWindNoiseTex: { value: windNoiseTex },
@@ -2942,9 +3143,6 @@ export function createBlitzInfiniteGrassSystem(
       uniform vec3 uPlayerTrailPos;
       uniform vec3 uViewPos;
       uniform vec4 uBlastWave;
-      uniform int uExclusionCount;
-      uniform vec4 uExclusionBoxes[64];
-      uniform vec2 uExclusionRot[64];
       uniform int uTramplerCount;
       uniform vec4 uTramplers[24];
       uniform float uCurvatureStrength;
@@ -3014,26 +3212,17 @@ export function createBlitzInfiniteGrassSystem(
         }
 
         // Ground every surviving grass blade onto the true terrain elevation (including +8.50m Hilltop Villa Plateaus!)
-        if (useAccel && accelSample.b > 0.98) {
+        if (useAccel && accelSample.b > 0.98 && wp.x < 90.0) {
           vec2 sculptUv = (wp + 156.0) / 312.0;
           anchor.y = (texture2D(uSculptMap, sculptUv).r * 255.0 - 128.0) * 0.0625;
         } else {
           anchor.y = getRawGroundElevation(wp);
         }
 
-        // Suppress grass blades underneath static Park Benches, Containers, and grounded Crates
-        for (int i = 0; i < 64; i++) {
-          if (i >= uExclusionCount) break;
-          vec4 box = uExclusionBoxes[i];
-          vec2 d = wp - box.xy;
-          float maxReach = max(box.z, box.w) + 1.5;
-          if (abs(d.x) > maxReach || abs(d.y) > maxReach) continue;
-          vec2 rot = uExclusionRot[i];
-          float alongFwd = d.x * rot.x - d.y * rot.y;
-          float alongRight = d.x * rot.y + d.y * rot.x;
-          vec2 q = abs(vec2(alongFwd, alongRight)) - box.zw;
-          float boxDist = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
-          density *= smoothstep(0.0, 0.28, boxDist);
+        // Suppress grass blades underneath Park Benches, Containers, Halte Platforms, Active Bases, and Crates
+        // via the pre-baked uTerrainAccelTex.a exclusion mask (O(1) lookup, zero per-vertex OBB loop!)
+        if (useAccel) {
+          density *= accelSample.a;
         }
         if (density <= 0.001) {
           gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -3105,9 +3294,9 @@ export function createBlitzInfiniteGrassSystem(
 
         float tipWidth = mix(1.0, uBladeTipWidth, g);
         float centerFold = 1.0 - smoothstep(0.0, 0.01, abs(position.x));
-        float localX = (position.x * (uBladeHalfW * 2.0) * tipWidth + g2 * (aRandom.y - 0.5) * 0.4) * wScale;
+        float localX = (position.x * (uBladeHalfW * 2.0) * tipWidth + g2 * (aRandom.y - 0.5) * 0.18) * wScale;
         float localY = position.y * uBladeHeight * hScale * mix(1.0, 0.65, innerCrush);
-        float localZ = (centerFold * (uBladeHalfW * 2.0) * uBladeFold * tipWidth + g2 * (aRandom.x - 0.5) * 0.8) * wScale;
+        float localZ = (centerFold * (uBladeHalfW * 2.0) * uBladeFold * tipWidth + g2 * (aRandom.x - 0.5) * 0.35) * wScale;
 
         float fade = (1.0 - smoothstep(uFieldSize * 0.36, uFieldSize * 0.495, distToView)) * density;
         if (fade <= 0.005) {
@@ -3202,7 +3391,7 @@ export function createBlitzInfiniteGrassSystem(
 
   // Colorful Flower/Petal Specks nestled inside the grass
   // Small crisp diamond/square flower specks (#fff04a, #ffb300, #b366ff, #ff5c8a, #38bdf8) swaying with the wind
-  const petalCount = isCompact ? 520 : 680;
+  const petalCount = isCompact ? 340 : 450;
   const petalGeo = new THREE.PlaneGeometry(1, 1);
   petalGeo.rotateX(-Math.PI / 2);
   const petalAnchorArr = new Float32Array(petalCount * 3);
@@ -3235,14 +3424,11 @@ export function createBlitzInfiniteGrassSystem(
       uPlayerPos,
       uPlayerTrailPos,
       uViewPos,
-      uExclusionCount,
-      uExclusionBoxes,
-      uExclusionRot,
       uSculptMap,
       uTerrainAccelTex,
       uHasTerrainAccel,
       uFieldSize: { value: fieldSize },
-      uPetalSize: { value: 0.30 },
+      uPetalSize: { value: 0.24 },
       uBladeHeight: { value: bladeHeight },
       uRobotRadius: { value: 2.35 },
       uWindNoiseTex: { value: windNoiseTex },
@@ -3264,9 +3450,6 @@ export function createBlitzInfiniteGrassSystem(
       uniform vec3 uPlayerPos;
       uniform vec3 uPlayerTrailPos;
       uniform vec3 uViewPos;
-      uniform int uExclusionCount;
-      uniform vec4 uExclusionBoxes[64];
-      uniform vec2 uExclusionRot[64];
       uniform float uFieldSize;
       uniform float uPetalSize;
       uniform float uBladeHeight;
@@ -3316,24 +3499,14 @@ export function createBlitzInfiniteGrassSystem(
           gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
           return;
         }
-        if (useAccel && accelSample.b > 0.98) {
+        if (useAccel && accelSample.b > 0.98 && anchor.x < 90.0) {
           anchor.y = (texture2D(uSculptMap, (anchor.xz + 156.0) / 312.0).r * 255.0 - 128.0) * 0.0625;
         } else {
           anchor.y = getRawGroundElevation(anchor.xz);
         }
 
-        for (int i = 0; i < 64; i++) {
-          if (i >= uExclusionCount) break;
-          vec4 box = uExclusionBoxes[i];
-          vec2 d = anchor.xz - box.xy;
-          float maxReach = max(box.z, box.w) + 1.5;
-          if (abs(d.x) > maxReach || abs(d.y) > maxReach) continue;
-          vec2 rot = uExclusionRot[i];
-          float alongFwd = d.x * rot.x - d.y * rot.y;
-          float alongRight = d.x * rot.y + d.y * rot.x;
-          vec2 q = abs(vec2(alongFwd, alongRight)) - box.zw;
-          float boxDist = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
-          density *= smoothstep(0.0, 0.28, boxDist);
+        if (useAccel) {
+          density *= accelSample.a;
         }
         if (density <= 0.001) {
           gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -3528,21 +3701,10 @@ export function createBlitzInfiniteGrassSystem(
       // Handled via lightweight GPU uniform (uTramplers & uPlayerTrailPos) to avoid 512x512 Canvas2D redraw & GPU texture upload stalls
     },
     setDynamicExclusions(
-      items: ReadonlyArray<{
-        x: number;
-        z: number;
-        yaw: number;
-        halfLen: number;
-        halfWidth: number;
-      }>,
+      _items: ReadonlyArray<BlitzGrassExclusionBox>,
     ) {
-      const n = Math.min(MAX_GRASS_EXCLUSIONS, items.length);
-      uExclusionCount.value = n;
-      for (let i = 0; i < n; i++) {
-        const it = items[i];
-        uExclusionBoxes.value[i].set(it.x, it.z, it.halfLen, it.halfWidth);
-        uExclusionRot.value[i].set(Math.cos(it.yaw), Math.sin(it.yaw));
-      }
+      // Exclusions are now pre-baked into uTerrainAccelTex.a via bakeBlitzTerrainAccelTexture().updateExclusions()
+      // to eliminate the 64-box per-vertex OBB loop across grass & flower petal shaders.
     },
     dispose() {
       scene.remove(grassMesh);
@@ -3866,7 +4028,7 @@ export function populateRealBlitzTreeFromGlb(
   }
   targetGroup.add(trunkGroup);
 
-  const planesPerCluster = isSoftwareGl ? 48 : 64;
+  const planesPerCluster = isSoftwareGl ? 28 : 36;
   const mergedClusterGeo = getSharedTreeClusterGeometry(planesPerCluster);
 
   let matCache = cachedTreeMaterials.get(windUniforms);
@@ -3887,7 +4049,7 @@ export function populateRealBlitzTreeFromGlb(
         uLeafTex: { value: effectiveLeafMask },
         uColorA: { value: colorA },
         uColorB: { value: colorB },
-        uLeafScale: { value: 1.38 },
+        uLeafScale: { value: 1.56 },
         uAlphaThreshold: { value: 0.28 },
         uLightDirection: windUniforms.uLightDirection,
         uLightColor: windUniforms.uLightColor,
@@ -4101,9 +4263,11 @@ export function populateRealBlitzTreeFromGlb(
   );
   foliageInstanced.name = 'RealGlbTreeLeaves';
   foliageInstanced.frustumCulled = true;
-  foliageInstanced.castShadow = true;
+  foliageInstanced.castShadow = !isSoftwareGl;
   foliageInstanced.receiveShadow = true;
   foliageInstanced.customDepthMaterial = matCache.depthMat;
+  // Signal InstancedWorldPropBatchManager to replace alpha-tested billboard depth pass with a 20-tri opaque proxy
+  foliageInstanced.userData.useOpaqueShadowProxy = true;
 
   markers.forEach((m, idx) => {
     foliageInstanced.setMatrixAt(idx, m);
@@ -22867,6 +23031,17 @@ export interface CurvedPlanetEnvironment {
   roadsGroup: THREE.Group;
   natureGroup: THREE.Group;
   sunbeamGroup: THREE.Group;
+  buildCentralPlazaParkFlowerBatch(
+    spots: ReadonlyArray<{
+      x: number;
+      y: number;
+      z: number;
+      rotY: number;
+      scale: number;
+      seed?: number;
+    }>,
+    meshPrefix?: string,
+  ): { group: THREE.Group; dispose: () => void };
   updateCityTrafficSignals(params: {
     plazaPhase: PlazaTrafficSignalPhase;
     plazaNorthWalkAllowed: boolean;
@@ -22981,7 +23156,7 @@ export function createCurvedPlanetEnvironment(
         bool useAccelV = uHasTerrainAccel > 0.5 && abs(worldPos.x) < 154.0 && abs(worldPos.z) < 154.0;
         vec4 accelV = useAccelV ? texture2D(uTerrainAccelTex, (worldPos.xz + 156.0) / 312.0) : vec4(0.0);
 
-        if (useAccelV && accelV.b > 0.98) {
+        if (useAccelV && accelV.b > 0.98 && worldPos.x < 90.0) {
           vec2 sculptUv = (worldPos.xz + 156.0) / 312.0;
           float rawElev = (texture2D(uSculptMap, sculptUv).r * 255.0 - 128.0) * 0.0625;
           worldPos.y = rawElev;
@@ -23284,11 +23459,11 @@ export function createCurvedPlanetEnvironment(
         float aaRoadSdf = max(fwidth(roadSdf), 0.004);
 
         vec2 harborSdf = evaluateSeHarborSdf(p);
-        bool isFlatFast = useAccelF && accelF.b > 0.98;
+        bool isFlatFast = useAccelF && accelF.b > 0.98 && p.x < 90.0;
         float lakeSdf = isFlatFast ? 20.0 : evaluateNwLakeSdf(p);
         float westPlantSdf = isFlatFast ? 20.0 : evaluateWestPowerPlantSdf(p);
         vec4 embT = isFlatFast ? vec4(-20.0, -26.0, -32.0, -38.0) : evalEmbankmentTierOffsets(p);
-        float embSdf = max(embT.x, p.x - 109.2);
+        float embSdf = max(embT.x, p.x - (getEastCoastalShorelineX(p.y) - 0.8));
         float grassMask = useAccelF
           ? accelF.r
           : evaluateBlitzGrassMaskFromSdfs(p, roadSdf, lakeSdf, harborSdf, westPlantSdf, embSdf);
@@ -23316,13 +23491,12 @@ export function createCurvedPlanetEnvironment(
           surfaceCol = mix(surfaceCol, parkTurfBase, inCentralParkMask);
         }
 
-        // 2. Expanded Right-Side Industrial Harbor Concrete Dock, Coastal Concrete Seawall & Sunlit East Seabed
+        // 2. Continuous East Coast Tropical Beach Club & Kai's Golden Sand Beachfront + Widened Shoreline
         float beachFeather = (soilNoise - 0.5) * 2.2;
-        float seBeachZone = smoothstep(74.4, 77.6, p.x + beachFeather * 0.65) * smoothstep(-3.0, 0.4, harborSdf.y)
-                          * smoothstep(44.2, 47.5, p.y + beachFeather) * (1.0 - smoothstep(102.5, 105.2, p.y + beachFeather));
-        float neBeachZone = smoothstep(74.4, 77.6, p.x + beachFeather * 0.65) * smoothstep(-3.0, 0.4, harborSdf.y)
-                          * smoothstep(-105.2, -102.5, p.y + beachFeather) * (1.0 - smoothstep(-21.5, -18.5, p.y + beachFeather));
-        float coastalBeachZone = max(seBeachZone, neBeachZone);
+        float coastalBeachZone = smoothstep(74.4, 77.6, p.x + beachFeather * 0.65)
+                               * smoothstep(-3.0, 0.4, harborSdf.y)
+                               * smoothstep(-105.2, -102.5, p.y + beachFeather)
+                               * (1.0 - smoothstep(102.5, 105.2, p.y + beachFeather));
         float coastalBeachShoreline = evaluateEastCoastalSandyMask(p.y);
         float concreteMask = (1.0 - smoothstep(-0.35, 0.35, harborSdf.x)) * (1.0 - smoothstep(0.05, 0.45, coastalBeachZone));
         float seaMask = 1.0 - smoothstep(-0.35, 0.35, harborSdf.y);
@@ -23356,7 +23530,7 @@ export function createCurvedPlanetEnvironment(
 
         if (seaMask > 0.001) {
           float seaBedY = evalHarborSeabedDrop(p, harborSdf.y);
-          float seaDepth = max(0.0, -0.16 - seaBedY);
+          float seaDepth = max(0.0, ${EAST_WATER_SURFACE_Y.toFixed(2)} - seaBedY);
 
           float bedRipple = sin(p.x * 2.1 + sin(p.y * 0.42) * 1.6 + n2 * 1.4) * 0.5 + 0.5;
           float bedPebbles = smoothstep(0.68, 0.88, n3);
@@ -23379,15 +23553,10 @@ export function createCurvedPlanetEnvironment(
           vec3 causticTint = mix(vec3(0.74, 0.96, 1.0), uSunColor, 0.55);
           seaBedCol += causticTint * caustics * 0.54 * causticDepthWeight * causticSunScale;
 
-          // Contact AO along concrete Harbor Quay wall (x = 110.0) and under Bianglala pier deck
+          // Contact AO along outer hill concrete seawall tails (|z| > 104.2)
           float quayDist = max(0.0, -harborSdf.y);
           float quayWallAO = (1.0 - smoothstep(0.2, 3.8, quayDist)) * (1.0 - coastalBeachShoreline);
           seaBedCol *= mix(1.0, 0.36, quayWallAO);
-
-          float underPierAO =
-            smoothstep(110.0, 112.5, p.x) * (1.0 - smoothstep(125.0, 130.5, p.x)) *
-            smoothstep(-43.2, -40.5, p.y) * (1.0 - smoothstep(-24.5, -21.8, p.y));
-          seaBedCol *= mix(1.0, 0.56, underPierAO);
 
           surfaceCol = mix(surfaceCol, seaBedCol, seaMask);
         }
@@ -23421,12 +23590,10 @@ export function createCurvedPlanetEnvironment(
           vec3 dryGoldenSand = mix(sandDeep, sandMain, smoothstep(0.18, 0.82, soilNoise));
           dryGoldenSand = mix(dryGoldenSand, sandBright, smoothstep(0.35, 0.92, duneRipple) * 0.44 + warmPatch * 0.22);
 
-          // Soft ambient occlusion shadow beneath the Elevated Timber Boardwalks
+          // Soft ambient occlusion shadow beneath Kai's Elevated Timber Boardwalk
           float underSeBoardwalk = smoothstep(77.4, 79.0, p.x) * (1.0 - smoothstep(92.0, 94.2, p.x))
                                  * smoothstep(45.5, 47.2, p.y) * (1.0 - smoothstep(101.8, 103.5, p.y));
-          float underNeBoardwalk = smoothstep(101.0, 102.6, p.x) * (1.0 - smoothstep(116.2, 117.8, p.x))
-                                 * smoothstep(-75.2, -73.6, p.y) * (1.0 - smoothstep(-22.0, -20.5, p.y));
-          dryGoldenSand *= mix(1.0, 0.68, max(underSeBoardwalk, underNeBoardwalk));
+          dryGoldenSand *= mix(1.0, 0.68, underSeBoardwalk);
 
           // Dry sand covers landward side cleanly, blending seamlessly across shoreline into seaBedCol
           float landSandBlend = coastalBeachZone * (1.0 - seaMask);
@@ -23796,12 +23963,12 @@ export function createCurvedPlanetEnvironment(
   //      and Far South Tail (localX in [-170.0..-104.2], worldZ in [+104.2..+170.0]) so the
   //      South-East Coastal Beachfront (worldZ in [+46.2..+104.2]) opens directly onto the ocean surf!
   const addQuayWallSegment = (segLength: number, centerLocalX: number, tileCountU: number) => {
-    const quayWallGeo = new THREE.BoxGeometry(segLength, 2.15, 1.35);
+    const quayWallGeo = new THREE.BoxGeometry(segLength, 4.15, 1.35);
     const quayWallMesh = new THREE.Mesh(
       quayWallGeo,
       new THREE.MeshStandardMaterial({ color: '#646b75', roughness: 0.85 }),
     );
-    quayWallMesh.position.set(centerLocalX, -0.68, -0.35);
+    quayWallMesh.position.set(centerLocalX, -1.68, -0.35);
     quayWallMesh.castShadow = !isSoftwareGl;
     quayWallMesh.receiveShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(quayWallMesh, windUniforms, '#646b75');
@@ -23835,17 +24002,17 @@ export function createCurvedPlanetEnvironment(
       tidalLedgeGeo,
       new THREE.MeshStandardMaterial({ color: '#3b424d', roughness: 0.9 }),
     );
-    tidalLedgeMesh.position.set(centerLocalX, -0.52, 0.62);
+    tidalLedgeMesh.position.set(centerLocalX, -2.52, 0.62);
     tidalLedgeMesh.castShadow = !isSoftwareGl;
     tidalLedgeMesh.receiveShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(tidalLedgeMesh, windUniforms, '#3b424d');
     quayGroup.add(tidalLedgeMesh);
   };
-  addQuayWallSegment(92.4, 0.0, 30);
+  // Far N/S outer hill seawall tails only (`|z| > 104.2`): industrial central harbor quay removed
   addQuayWallSegment(65.8, 137.1, 22);
   addQuayWallSegment(65.8, -137.1, 22);
 
-  // 4. Heavy Cast-Iron Twin Mooring Bollards + Black Rubber Cylindrical Ship Fenders along the Central/South Harbor Dock (z in [-18..+44])
+  // Heavy Cast-Iron Mooring Bollard helper (retained for far N/S seawall tails)
   const bollardPlinthGeo = new THREE.BoxGeometry(0.95, 0.22, 0.75);
   const bollardPostGeo = new THREE.CylinderGeometry(0.18, 0.22, 0.58, 10);
   const bollardCapGeo = new THREE.CylinderGeometry(0.28, 0.24, 0.14, 10);
@@ -23902,11 +24069,6 @@ export function createCurvedPlanetEnvironment(
       quayGroup.add(bracket);
     }
   };
-
-  for (let i = 0; i < 10; i++) {
-    const bx = -41.6 + i * 6.4;
-    addQuayMooringBollard(bx, i < 9);
-  }
 
   // 5. Far North Tail Coastal Concrete Seawall (worldZ < -105, localX > +105):
   //    Leaves worldZ in [-104.5..-46.0] 100% open for the Golden Sand Taman Ria Beachfront & Surf!
@@ -25047,6 +25209,7 @@ export function createCurvedPlanetEnvironment(
   const createPlazaLeafPetalShrubInstanced = (
     matrices: THREE.Matrix4[],
     meshName: string,
+    options?: { castShadow?: boolean },
   ): THREE.InstancedMesh => {
     const inst = new THREE.InstancedMesh(
       sharedPlazaBushClusterGeo,
@@ -25055,8 +25218,9 @@ export function createCurvedPlanetEnvironment(
     );
     inst.name = meshName;
     inst.frustumCulled = true;
-    inst.castShadow = !isSoftwareGl;
-    inst.receiveShadow = !isSoftwareGl;
+    const allowShadows = options?.castShadow ?? !isSoftwareGl;
+    inst.castShadow = allowShadows;
+    inst.receiveShadow = allowShadows;
     inst.customDepthMaterial = sharedPlazaLeafShrubDepthMat;
     for (let idx = 0; idx < matrices.length; idx++) {
       inst.setMatrixAt(idx, matrices[idx]);
@@ -25103,10 +25267,13 @@ export function createCurvedPlanetEnvironment(
     flowerGeo.setAttribute('aFlowerMainCol', new THREE.InstancedBufferAttribute(mainColArr, 3));
     flowerGeo.setAttribute('aFlowerDepthCol', new THREE.InstancedBufferAttribute(depthColArr, 3));
 
+    const activeLeafMask =
+      cachedLoadedBlitzAssets?.treeFoliageTex || initialPlazaBushLeafMask;
+
     const flowerMat = new THREE.ShaderMaterial({
       uniforms: {
         ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
-        uLeafTex: { value: initialPlazaBushLeafMask },
+        uLeafTex: { value: activeLeafMask },
         uLeafScale: { value: 1.72 },
         uAlphaThreshold: { value: 0.28 },
         uLightDirection: windUniforms.uLightDirection,
@@ -25233,6 +25400,175 @@ export function createCurvedPlanetEnvironment(
       inst.boundingSphere.radius += 2.0;
     }
     return inst;
+  };
+
+  const buildCentralPlazaParkFlowerBatch = (
+    spots: ReadonlyArray<{
+      x: number;
+      y: number;
+      z: number;
+      rotY: number;
+      scale: number;
+      seed?: number;
+    }>,
+    meshPrefix = 'ParkCentralPlazaFlowers',
+  ): { group: THREE.Group; dispose: () => void } => {
+    const batchGroup = new THREE.Group();
+    batchGroup.name = `${meshPrefix}Group`;
+    if (spots.length === 0) {
+      return {
+        group: batchGroup,
+        dispose: () => {
+          batchGroup.removeFromParent();
+        },
+      };
+    }
+
+    const parkPinkPalette: [string, string][] = [
+      ['#f288b6', '#c75b89'],
+      ['#fa9ec6', '#cf6e98'],
+      ['#e673a4', '#b84c7b'],
+    ];
+    const parkLilacPalette: [string, string][] = [
+      ['#a67df0', '#7a51c4'],
+      ['#b894f7', '#8963cc'],
+      ['#9266e0', '#683eb5'],
+    ];
+    const parkLavenderSpirePalette: [string, string][] = [
+      ['#8d5ce0', '#6335b3'],
+      ['#9f72ed', '#7346c2'],
+      ['#7e4fd1', '#562ba3'],
+    ];
+
+    const parkShrubMatrices: THREE.Matrix4[] = [];
+    const parkFlowerSpecs: PlazaFlowerClusterSpec[] = [];
+    const parkPos = new THREE.Vector3();
+    const parkQuat = new THREE.Quaternion();
+    const parkScale = new THREE.Vector3();
+    const upAxis = new THREE.Vector3(0, 1, 0);
+
+    for (let i = 0; i < spots.length; i++) {
+      const spot = spots[i];
+      const s = Math.max(0.65, Math.min(2.2, (spot.scale || 1.32) / 1.32));
+      const baseYaw = spot.rotY || 0;
+      const seed = spot.seed ?? i * 1.618 + Math.abs(spot.x) * 0.13 + Math.abs(spot.z) * 0.19;
+
+      // 1) Central lush serrated green leaf-petal dome nestled into grass
+      parkPos.set(spot.x, spot.y + 0.19 * s, spot.z);
+      parkQuat.setFromAxisAngle(upAxis, baseYaw + (seed % (Math.PI * 2)));
+      parkScale.set(0.255 * s, 0.195 * s, 0.255 * s);
+      parkShrubMatrices.push(new THREE.Matrix4().compose(parkPos, parkQuat, parkScale));
+
+      // 2) Four radial shoulder leaf-petal tufts forming an organic mound
+      for (let t = 0; t < 4; t++) {
+        const ang = baseYaw + (t * Math.PI) / 2 + 0.35 + (seed % 0.6);
+        const rad = (0.31 + (t % 2) * 0.04) * s;
+        parkPos.set(
+          spot.x + Math.cos(ang) * rad,
+          spot.y + 0.125 * s,
+          spot.z + Math.sin(ang) * rad,
+        );
+        parkQuat.setFromAxisAngle(upAxis, ang + 0.85);
+        parkScale.set(0.182 * s, 0.145 * s, 0.182 * s);
+        parkShrubMatrices.push(new THREE.Matrix4().compose(parkPos, parkQuat, parkScale));
+      }
+
+      // 3) Primary & companion Pink / Lilac-Purple blossom clusters crowning the bush
+      const variantIdx = Math.abs(Math.floor(seed * 7 + i)) % 3;
+      const primaryPink = i % 2 === 0;
+      const [mainHex, depthHex] = primaryPink
+        ? parkPinkPalette[variantIdx % parkPinkPalette.length]
+        : parkLilacPalette[variantIdx % parkLilacPalette.length];
+      const [compMainHex, compDepthHex] = primaryPink
+        ? parkLilacPalette[(variantIdx + 1) % parkLilacPalette.length]
+        : parkPinkPalette[(variantIdx + 1) % parkPinkPalette.length];
+
+      const crownAng = baseYaw + 0.45;
+      parkPos.set(
+        spot.x + Math.cos(crownAng) * 0.06 * s,
+        spot.y + 0.355 * s,
+        spot.z + Math.sin(crownAng) * 0.06 * s,
+      );
+      parkQuat.setFromAxisAngle(upAxis, baseYaw + 0.7);
+      parkScale.set(0.152 * s, 0.124 * s, 0.152 * s);
+      parkFlowerSpecs.push({
+        matrix: new THREE.Matrix4().compose(parkPos, parkQuat, parkScale),
+        mainHex,
+        depthHex,
+      });
+
+      for (let c = 0; c < 2; c++) {
+        const sAng = baseYaw + c * Math.PI + 1.15;
+        const sRad = 0.23 * s;
+        parkPos.set(
+          spot.x + Math.cos(sAng) * sRad,
+          spot.y + 0.275 * s,
+          spot.z + Math.sin(sAng) * sRad,
+        );
+        parkQuat.setFromAxisAngle(upAxis, sAng + 0.5);
+        parkScale.set(0.120 * s, 0.098 * s, 0.120 * s);
+        parkFlowerSpecs.push({
+          matrix: new THREE.Matrix4().compose(parkPos, parkQuat, parkScale),
+          mainHex: c === 0 ? compMainHex : mainHex,
+          depthHex: c === 0 ? compDepthHex : depthHex,
+        });
+      }
+
+      // 4) Two upright Purple Lavender Plume Spires rising slightly from the crown
+      for (let sp = 0; sp < 2; sp++) {
+        const spAng = baseYaw + sp * 2.35 + 2.05;
+        const spRad = (sp === 0 ? 0.12 : 0.21) * s;
+        const [lavMain, lavDepth] =
+          parkLavenderSpirePalette[(i + sp) % parkLavenderSpirePalette.length];
+        parkPos.set(
+          spot.x + Math.cos(spAng) * spRad,
+          spot.y + (sp === 0 ? 0.43 : 0.38) * s,
+          spot.z + Math.sin(spAng) * spRad,
+        );
+        parkQuat.setFromAxisAngle(upAxis, spAng + 0.3);
+        const wSc = (sp === 0 ? 0.092 : 0.078) * s;
+        const hSc = (sp === 0 ? 0.205 : 0.175) * s;
+        parkScale.set(wSc, hSc, wSc);
+        parkFlowerSpecs.push({
+          matrix: new THREE.Matrix4().compose(parkPos, parkQuat, parkScale),
+          mainHex: lavMain,
+          depthHex: lavDepth,
+        });
+      }
+    }
+
+    const shrubInst = createPlazaLeafPetalShrubInstanced(
+      parkShrubMatrices,
+      `${meshPrefix}LeafShrubsInstanced`,
+      { castShadow: false },
+    );
+    const flowerInst = createPlazaFlowerPetalClusterInstanced(
+      parkFlowerSpecs,
+      `${meshPrefix}PetalClustersInstanced`,
+    );
+    batchGroup.add(shrubInst, flowerInst);
+
+    return {
+      group: batchGroup,
+      dispose: () => {
+        batchGroup.removeFromParent();
+        const flowerMat = flowerInst.material;
+        if (flowerMat instanceof THREE.ShaderMaterial) {
+          pendingBushLeafMaskMaterials.delete(flowerMat);
+          flowerMat.dispose();
+        }
+        const flowerGeo = flowerInst.geometry;
+        for (const attrKey of Object.keys(flowerGeo.attributes)) {
+          if (attrKey !== 'aFlowerMainCol' && attrKey !== 'aFlowerDepthCol') {
+            flowerGeo.deleteAttribute(attrKey);
+          }
+        }
+        flowerGeo.setIndex(null);
+        flowerGeo.dispose();
+        shrubInst.dispose();
+        flowerInst.dispose();
+      },
+    };
   };
 
   if (staircaseShrubMatrices.length > 0) {
@@ -30061,8 +30397,9 @@ export function createCurvedPlanetEnvironment(
   // Also instantiate Blitz's exact camera-facing TreeLeaves sub-canopy puffs inside each palm crown heart!
   const buildCoastalCoconutPalm = (wx: number, wz: number, leanYaw: number, scale: number) => {
     const palmScale = scale * 1.52;
+    const baseY = getRawGroundElevation(wx, wz);
     const palmGrp = new THREE.Group();
-    palmGrp.position.set(wx, 0.0, wz);
+    palmGrp.position.set(wx, baseY, wz);
     palmGrp.rotation.y = leanYaw;
     palmGrp.scale.setScalar(palmScale);
     seBeachGroup.add(palmGrp);
@@ -30105,7 +30442,7 @@ export function createCurvedPlanetEnvironment(
     crownWorldOffset.applyAxisAngle(yAxisVec, leanYaw);
 
     const crownGeo = sharedPalmCrownFrondsGeo.clone();
-    tmpInstancePos.set(wx + crownWorldOffset.x, crownWorldOffset.y, wz + crownWorldOffset.z);
+    tmpInstancePos.set(wx + crownWorldOffset.x, baseY + crownWorldOffset.y, wz + crownWorldOffset.z);
     tmpInstanceQuat.setFromAxisAngle(yAxisVec, leanYaw);
     tmpInstanceScale.setScalar(palmScale);
     tmpInstanceMatrix.compose(tmpInstancePos, tmpInstanceQuat, tmpInstanceScale);
@@ -30115,7 +30452,8 @@ export function createCurvedPlanetEnvironment(
 
   let sandFlowerCounter = 0;
   const buildSandDuneAndSeaOats = (wx: number, wz: number, scale: number) => {
-    spawnCoastalFlowerBouquetWorld(wx, 0.02, wz, scale * 1.38, sandFlowerCounter++);
+    const baseY = getRawGroundElevation(wx, wz);
+    spawnCoastalFlowerBouquetWorld(wx, baseY + 0.02, wz, scale * 1.38, sandFlowerCounter++);
   };
 
   // Place Coastal Coconut Palms & Tropical Flower & Palm-Fern Clusters around the Beachfront Park & Stilt Cabin
@@ -30210,174 +30548,6 @@ export function createCurvedPlanetEnvironment(
     natureGroup.add(mergedFlowerBouquetsMesh);
   }
 
-  // =========================================================================
-  // 2B. GAME-STYLE CORRUGATED SHIPPING CONTAINERS WITH PROCEDURAL TEXTURE &
-  //     3D STRUCTURAL CORNER CASTINGS, RIBS & CARGO DOORS
-  // =========================================================================
-  const containerTexCache = new Map<string, THREE.CanvasTexture>();
-  const getCorrugatedContainerTexture = (baseHex: string): THREE.CanvasTexture => {
-    const cached = containerTexCache.get(baseHex);
-    if (cached) return cached;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d')!;
-
-    const baseCol = new THREE.Color(baseHex);
-    const lightCol = baseCol.clone().offsetHSL(0, 0.02, 0.09);
-    const shadowCol = baseCol.clone().offsetHSL(0, 0.04, -0.13);
-    const deepFrameCol = baseCol.clone().offsetHSL(0, 0.05, -0.24);
-
-    // Base fill
-    ctx.fillStyle = `#${baseCol.getHexString()}`;
-    ctx.fillRect(0, 0, 512, 256);
-
-    // Crisp vertical corrugated steel ribs (24 corrugations across length)
-    const ribCount = 24;
-    const ribW = 512 / ribCount;
-    for (let i = 0; i < ribCount; i++) {
-      const rx = i * ribW;
-      ctx.fillStyle = `#${lightCol.getHexString()}`;
-      ctx.fillRect(rx + 2, 18, ribW * 0.42, 220);
-      ctx.fillStyle = `#${shadowCol.getHexString()}`;
-      ctx.fillRect(rx + ribW * 0.46, 18, ribW * 0.38, 220);
-    }
-
-    // Top & bottom heavy structural frame rails
-    ctx.fillStyle = `#${deepFrameCol.getHexString()}`;
-    ctx.fillRect(0, 0, 512, 20);
-    ctx.fillRect(0, 236, 512, 20);
-    ctx.fillRect(0, 0, 18, 256);
-    ctx.fillRect(494, 0, 18, 256);
-
-    // Crisp white Blitz-style logistics stencil patch & ISO bars
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.88)';
-    ctx.fillRect(42, 42, 86, 26);
-    ctx.fillRect(42, 76, 54, 10);
-    ctx.fillRect(390, 42, 68, 14);
-    ctx.fillRect(390, 62, 48, 10);
-
-    // Dark stencil stripes inside the white logistics badge
-    ctx.fillStyle = '#181b24';
-    ctx.fillRect(48, 48, 46, 14);
-    ctx.fillRect(102, 48, 20, 14);
-
-    // Yellow/black corner warning chevron badge
-    ctx.fillStyle = '#facc15';
-    ctx.fillRect(42, 188, 64, 18);
-    ctx.fillStyle = '#181b24';
-    for (let sx = 44; sx < 102; sx += 14) {
-      ctx.fillRect(sx, 188, 7, 18);
-    }
-
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.ClampToEdgeWrapping;
-    tex.needsUpdate = true;
-    containerTexCache.set(baseHex, tex);
-    return tex;
-  };
-
-  const containerGeo = new THREE.BoxGeometry(2.56, 2.46, 5.76);
-  const containerCornerPostGeo = new THREE.BoxGeometry(0.24, 2.58, 0.24);
-  const containerLongRailGeo = new THREE.BoxGeometry(0.20, 0.20, 5.88);
-  const containerCrossRailGeo = new THREE.BoxGeometry(2.68, 0.20, 0.20);
-  const containerRoofRibGeo = new THREE.BoxGeometry(2.62, 2.54, 0.24);
-  const containerDoorBarGeo = new THREE.CylinderGeometry(0.045, 0.045, 2.28, 6);
-
-  const CONTAINER_SCALE = 1.28;
-  const addShippingContainer = (
-    x: number,
-    y: number,
-    z: number,
-    rotY: number,
-    colorHex: string,
-  ) => {
-    const grp = new THREE.Group();
-    grp.position.set(x, (y + 1.29) * CONTAINER_SCALE, z);
-    grp.rotation.y = rotY;
-    grp.scale.setScalar(CONTAINER_SCALE);
-
-    const containerTex = getCorrugatedContainerTexture(colorHex);
-    const bodyCol = new THREE.Color(colorHex);
-    const ribHex = `#${bodyCol.clone().offsetHSL(0, 0.02, -0.08).getHexString()}`;
-
-    // 1. Main Corrugated Textured Cargo Body
-    const bodyMesh = new THREE.Mesh(
-      containerGeo,
-      new THREE.MeshStandardMaterial({ color: '#ffffff', map: containerTex, roughness: 0.78 }),
-    );
-    bodyMesh.castShadow = !isSoftwareGl;
-    bodyMesh.receiveShadow = !isSoftwareGl;
-    upgradeMeshToBlitzWorldMaterial(bodyMesh, windUniforms, '#ffffff');
-    grp.add(bodyMesh);
-
-    // 2. 6 Raised 3D Corrugation Ribs wrapping the roof & side walls (gives crisp 3D corrugated profile from top & side!)
-    for (const rz of [-2.1, -1.26, -0.42, 0.42, 1.26, 2.1]) {
-      const rib = new THREE.Mesh(
-        containerRoofRibGeo,
-        new THREE.MeshStandardMaterial({ color: ribHex, roughness: 0.82 }),
-      );
-      rib.position.set(0, 0, rz);
-      rib.castShadow = !isSoftwareGl;
-      rib.receiveShadow = !isSoftwareGl;
-      upgradeMeshToBlitzWorldMaterial(rib, windUniforms, ribHex);
-      grp.add(rib);
-    }
-
-    // 3. Dark Gunmetal Steel ISO Corner Posts & Top/Bottom Structural Frame Rails (#1e2330)
-    const frameColor = '#1e2330';
-    for (const sx of [-1.22, 1.22]) {
-      for (const sz of [-2.82, 2.82]) {
-        const post = new THREE.Mesh(
-          containerCornerPostGeo,
-          new THREE.MeshStandardMaterial({ color: frameColor, roughness: 0.7 }),
-        );
-        post.position.set(sx, 0, sz);
-        post.castShadow = !isSoftwareGl;
-        upgradeMeshToBlitzWorldMaterial(post, windUniforms, frameColor);
-        grp.add(post);
-      }
-      for (const sy of [-1.20, 1.20]) {
-        const lRail = new THREE.Mesh(
-          containerLongRailGeo,
-          new THREE.MeshStandardMaterial({ color: frameColor, roughness: 0.7 }),
-        );
-        lRail.position.set(sx, sy, 0);
-        upgradeMeshToBlitzWorldMaterial(lRail, windUniforms, frameColor);
-        grp.add(lRail);
-      }
-    }
-    for (const sy of [-1.20, 1.20]) {
-      for (const sz of [-2.82, 2.82]) {
-        const cRail = new THREE.Mesh(
-          containerCrossRailGeo,
-          new THREE.MeshStandardMaterial({ color: frameColor, roughness: 0.7 }),
-        );
-        cRail.position.set(0, sy, sz);
-        upgradeMeshToBlitzWorldMaterial(cRail, windUniforms, frameColor);
-        grp.add(cRail);
-      }
-    }
-
-    // 4. Galvanized Steel Vertical Cargo Door Locking Bars on both ends
-    for (const endZ of [-2.91, 2.91]) {
-      for (const bx of [-0.72, -0.26, 0.26, 0.72]) {
-        const bar = new THREE.Mesh(
-          containerDoorBarGeo,
-          new THREE.MeshStandardMaterial({ color: '#cbd5e1', roughness: 0.5 }),
-        );
-        bar.position.set(bx, 0, endZ);
-        upgradeMeshToBlitzWorldMaterial(bar, windUniforms, '#cbd5e1');
-        grp.add(bar);
-      }
-    }
-
-    constructionYardGroup.add(grp);
-  };
-
   // 1B. Translucent 3D Oasis Lake Water Surface Plane (y = -0.16m) over the Sunlit Sandy/Pebble Basin (-1.55m depth)
   //     Uses unified Beer-Lambert optical depth, Fresnel sky reflection, sun/moon glint, rain ripples & Voronoi foam!
   const lakeSegs = isSoftwareGl ? 36 : 48;
@@ -30400,26 +30570,14 @@ export function createCurvedPlanetEnvironment(
   });
   const lakeSurfaceMesh = new THREE.Mesh(lakeSurfaceGeo, lakeSurfaceMat);
   lakeSurfaceMesh.name = 'OasisLakeWaterSurface';
-  lakeSurfaceMesh.position.set(-31.0, EAST_WATER_SURFACE_Y, 0.0);
+  lakeSurfaceMesh.position.set(-31.0, -0.16, 0.0);
   lakeSurfaceMesh.renderOrder = 2;
   lakeSurfaceMesh.frustumCulled = true;
   lakeSurfaceMesh.castShadow = false;
   lakeSurfaceMesh.receiveShadow = false;
   roadsGroup.add(lakeSurfaceMesh);
 
-  // 2. Southern Dermaga Colorful Shipping Container Terminal Stacks (Northern Dermaga claimed by Taman Ria!)
-
-  // South Container Yard Rows shifted East to x = 92.2..96.1 (near the South-East Quay containers) so Halte Beachfront Harbor sits at x = 77.5, z = 29.5
-  addShippingContainer(92.2, 0, 24.5, 0, '#16a34a');
-  addShippingContainer(96.1, 0, 24.5, 0, '#475569');
-  addShippingContainer(94.15, 2.58, 24.5, 0, '#ea580c');
-  addShippingContainer(92.2, 0, 34.5, 0, '#2563eb');
-  addShippingContainer(96.1, 0, 34.5, 0, '#e11d48');
-
-  // South-East Quay Container Stack (near x = 100..104, z = +31..+35)
-  addShippingContainer(101.5, 0, 31.5, Math.PI / 2, '#2563eb');
-  addShippingContainer(101.5, 0, 35.4, Math.PI / 2, '#16a34a');
-  addShippingContainer(101.5, 2.58, 33.45, Math.PI / 2, '#e11d48');
+  // Industrial Harbor Shipping Containers removed — replaced by East Coast Tropical Beach Club!
 
   // =========================================================================
   // 2C. 3D OUTLINED TERRACE SHRUB CLUSTERS & FLAT-TOPPED LIMESTONE BOULDERS ("TANGGUL BUKIT")
@@ -31248,14 +31406,14 @@ export function createCurvedPlanetEnvironment(
     }
   }
 
-  const coastalAmusementPark = buildCoastalAmusementPark3D({
+  const coastalBeachClub = buildCoastalBeachClub3D({
     windUniforms,
     isSoftwareGl,
     upgradeMeshToBlitzWorldMaterial,
     createBlitzStrokeMesh,
     bakeStaticGroupMeshes,
   });
-  roadsGroup.add(coastalAmusementPark.group);
+  roadsGroup.add(coastalBeachClub.group);
 
   const grandCasino = buildGrandCasino3D({
     windUniforms,
@@ -31475,7 +31633,7 @@ export function createCurvedPlanetEnvironment(
       true,
     );
 
-    // 5. East-South Sidewalk + SE Curved Corner framing Beachfront Harbor Halte & SE Beachfront Curb
+    // 5. East-South Sidewalk + SE Curved Corner framing Beach Club Wave Promenade & SE Beachfront Curb
     const seThIn1 = Math.acos(1.93 / 11.93);
     const seThOut0 = Math.acos(1.93 / 16.33);
     const seThOutClip = Math.acos(13.02 / 16.33);
@@ -31487,17 +31645,13 @@ export function createCurvedPlanetEnvironment(
       ...sampleArcXZ(62.0, 44.0, 16.33, seThOut0, seThOutClip, 10).slice(1),
       [75.02, 45.45],
       [78.33, 45.45],
-      [78.33, 38.8],
-      [76.12, 38.8],
-      [76.12, 20.2],
-      [78.33, 20.2],
       [78.33, 18.93],
       [73.93, 18.93],
     ]);
     addSidewalkCurbRun(
       [
-        [76.12, 20.3],
-        [78.23, 20.3],
+        [75.02, 45.35],
+        [78.23, 45.35],
         [78.23, 19.03],
         [74.03, 19.03],
         [74.03, 44.0],
@@ -31507,15 +31661,6 @@ export function createCurvedPlanetEnvironment(
           1,
         ),
         [75.02, seBeachJoinZ - 0.05],
-      ],
-      false,
-    );
-    addSidewalkCurbRun(
-      [
-        [76.12, 38.7],
-        [78.23, 38.7],
-        [78.23, 45.35],
-        [75.02, 45.35],
       ],
       false,
     );
@@ -31602,10 +31747,10 @@ export function createCurvedPlanetEnvironment(
       }
     };
 
-    // 4 L-Corner wings (NW, NE, SE closed at z = ±19.23; SW continuous from Central Halte South ramp z = +13.80 to South Halte West ramp x = -45.70)
+    // 4 L-Corner wings (NW, NE closed at z = -19.23; SE open at Beachfront Harbor Halte South ramp z = +37.80; SW continuous from Central Halte South ramp z = +13.80 to South Halte West ramp x = -45.70)
     addInnerLCornerSidewalk(-1, -1, -22.23, false);
     addInnerLCornerSidewalk(1, -1, 46.23, false);
-    addInnerLCornerSidewalk(1, 1, 46.23, false);
+    addInnerLCornerSidewalk(1, 1, 46.23, false, 37.80, true);
     addInnerLCornerSidewalk(-1, 1, -45.70, true, 13.80, true);
 
     // West Central Halte North apron (open against Halte North ramp at z = -4.60) & East-Central straight block
@@ -31924,6 +32069,7 @@ export function createCurvedPlanetEnvironment(
     roadsGroup,
     natureGroup,
     sunbeamGroup,
+    buildCentralPlazaParkFlowerBatch,
     updateCityTrafficSignals: updateAllSignals,
     updatePlazaTrafficSignals(
       phase: PlazaTrafficSignalPhase,
@@ -32006,22 +32152,22 @@ export function createCurvedPlanetEnvironment(
       const dzWest = Math.max(-42 - pivotZ, 0, pivotZ - 42);
       westPlantGroup.visible = !cullActive || dxWest * dxWest + dzWest * dzWest <= rSq;
 
-      // 2. NE Taman Ria Beachfront Amusement Park (x in [68, 122], z in [-106, -2])
-      const dxPark = Math.max(68 - pivotX, 0, pivotX - 122);
-      const dzPark = Math.max(-106 - pivotZ, 0, pivotZ - -2);
-      const parkVis = !cullActive || dxPark * dxPark + dzPark * dzPark <= rSq;
-      coastalAmusementPark.group.visible = parkVis;
-      if (parkVis) {
-        coastalAmusementPark.update(timeSec);
+      // 2. East Coast Tropical Beach Club (x in [78, 138], z in [-100, +48])
+      const dxClub = Math.max(78 - pivotX, 0, pivotX - 138);
+      const dzClub = Math.max(-100 - pivotZ, 0, pivotZ - 48);
+      const clubVis = !cullActive || dxClub * dxClub + dzClub * dzClub <= rSq;
+      coastalBeachClub.group.visible = clubVis;
+      if (clubVis) {
+        coastalBeachClub.update(timeSec, weatherEnv);
       }
 
-      // 3. SE Beachfront Boardwalk & Kai Fish Market (x in [74, 112], z in [44, 105])
-      const dxSeBeach = Math.max(74 - pivotX, 0, pivotX - 112);
+      // 3. SE Beachfront Boardwalk, Kai Fish Market & Seaward Stilt Cabin (x in [74, 142], z in [44, 105])
+      const dxSeBeach = Math.max(74 - pivotX, 0, pivotX - 142);
       const dzSeBeach = Math.max(44 - pivotZ, 0, pivotZ - 105);
       seBeachGroup.visible = !cullActive || dxSeBeach * dxSeBeach + dzSeBeach * dzSeBeach <= rSq;
 
-      // 4. East Harbor Quay Wall & Containers (x in [90, 114]) & East Ocean Surface (x in [105, 340])
-      const dxQuay = Math.max(90 - pivotX, 0, pivotX - 114);
+      // 4. Far N/S Outer Hill Seawall Tails & East Ocean Surface (x in [105, 340])
+      const dxQuay = Math.max(90 - pivotX, 0, pivotX - 140);
       quayGroup.visible = !cullActive || dxQuay <= chunkCullRadius;
       const dxSea = Math.max(105 - pivotX, 0, pivotX - 340);
       waterMesh.visible = !cullActive || dxSea <= chunkCullRadius;
@@ -32037,7 +32183,7 @@ export function createCurvedPlanetEnvironment(
       grandCasino.group.visible = !cullActive || dxCasino * dxCasino + dzCasino * dzCasino <= rSq;
     },
     dispose() {
-      coastalAmusementPark.dispose();
+      coastalBeachClub.dispose();
       grandCasino.dispose();
       scene.remove(groundMesh);
       scene.remove(waterMesh);
@@ -32051,7 +32197,6 @@ export function createCurvedPlanetEnvironment(
       lakeSurfaceMat.dispose();
       planetCoreMesh.geometry.dispose();
       (planetCoreMesh.material as THREE.Material).dispose();
-      containerGeo.dispose();
     },
   };
 }

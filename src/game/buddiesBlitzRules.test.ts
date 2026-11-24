@@ -5426,10 +5426,11 @@ test('City Transit Kiosks, Rail-Aligned Halte Shelter Rules, and 3D Tram Ride Cu
   assert.equal(centralParkSpec.hasHalteShelter, false);
 
   const beachSpec = getCityTransitDestinationById('beachfront_harbor');
-  assert.equal(beachSpec.shelterX, 77.5);
-  assert.equal(beachSpec.shelterZ, 29.5);
-  assert.equal(beachSpec.spawnX, 77.9);
-  assert.equal(beachSpec.spawnZ, 29.5);
+  assert.equal(beachSpec.shelterX, 61.03);
+  assert.equal(beachSpec.shelterZ, 28.6);
+  assert.equal(beachSpec.shelterRotY, Math.PI / 2);
+  assert.equal(beachSpec.spawnX, 60.5);
+  assert.equal(beachSpec.spawnZ, 28.6);
 
   const northSpec = getCityTransitDestinationById('north_residence');
   assert.equal(northSpec.shelterX, 3.5);
@@ -7079,14 +7080,13 @@ test('Active Plaza & East Harbor Traffic Signal Cycles + Stop Bars + Pedestrian 
   );
 });
 
-test('City View Overview & 8 District Group Spotlights: hash routing, orbital clamps, 3D picking & fly interpolation', () => {
+test('City View Overview & 7 District Group Spotlights: hash routing, orbital clamps, 3D picking & fly interpolation', () => {
   const expectedIds = [
     'plaza',
     'casino',
     'tennis',
     'kai_pantai',
-    'dermaga',
-    'taman_ria',
+    'beach_club',
     'north_residence',
     'south_residence',
   ] as const;
@@ -7123,15 +7123,14 @@ test('City View Overview & 8 District Group Spotlights: hash routing, orbital cl
   assert.equal(parseCityViewHash('#plaza'), 'plaza');
   assert.equal(parseCityViewHash('#toko1'), 'plaza');
   assert.equal(parseCityViewHash('#kai-pantai'), 'kai_pantai');
-  assert.equal(parseCityViewHash('#dermaga'), 'dermaga');
-  assert.equal(parseCityViewHash('#taman-ria'), 'taman_ria');
+  assert.equal(parseCityViewHash('#beach-club'), 'beach_club');
   assert.equal(parseCityViewHash('#north-residence'), 'north_residence');
   assert.equal(parseCityViewHash('#south-residence'), 'south_residence');
   assert.equal(parseCityViewHash('#unknown-xyz'), null);
   assert.equal(getCityViewTargetHash('kota'), '#kota');
   assert.equal(getCityViewTargetHash('kai_pantai'), '#kai-pantai');
 
-  // Prev / Next wrap around cleanly across all 8 groups
+  // Prev / Next wrap around cleanly across all 7 groups
   assert.equal(getAdjacentCityViewDistrictId('kota', 1), 'plaza');
   assert.equal(getAdjacentCityViewDistrictId('kota', -1), 'south_residence');
   assert.equal(getAdjacentCityViewDistrictId('south_residence', 1), 'plaza');

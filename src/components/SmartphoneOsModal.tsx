@@ -325,28 +325,28 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
           onClose();
         }
       }}
-      className={`fixed inset-0 z-50 select-none transition-colors duration-300 ${
+      className={`fixed inset-0 z-50 select-none transition-colors duration-200 ${
         isExpanded
-          ? 'bg-black/35 backdrop-blur-[2px] pointer-events-auto'
+          ? 'bg-black/35 pointer-events-auto'
           : 'bg-transparent pointer-events-none'
       }`}
     >
       {/* Outer Positioning Wrapper: slides in docked on the left by default; expands & centers when toggled */}
       <div
-        className={`fixed pointer-events-auto transition-all duration-300 ease-out ${
+        className={`fixed pointer-events-auto transition-transform duration-200 ease-out ${
           isExpanded
-            ? 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(560px,calc(100vw-2rem))] h-[min(680px,88vh)] opacity-100'
+            ? 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(560px,calc(100vw-2rem))] h-[min(680px,88vh)]'
             : `left-3 sm:left-4 top-14 bottom-[76px] my-auto w-[min(340px,calc(100vw-1.5rem))] sm:w-[356px] max-h-[620px] ${
-                hasEntered ? 'translate-x-0 opacity-100' : '-translate-x-10 opacity-0'
+                hasEntered ? 'translate-x-0' : '-translate-x-8'
               }`
         }`}
       >
         {/* Unified Smartphone OS Frame */}
         <div
-          className={`w-full h-full rounded-[32px] overflow-hidden flex flex-col backdrop-blur-2xl shadow-[0_24px_70px_rgba(0,0,0,0.52)] border transition-colors duration-200 ${
+          className={`w-full h-full rounded-[32px] overflow-hidden flex flex-col border transition-colors duration-200 ${
             isDarkShell
-              ? 'bg-[#141926]/68 border-white/25 text-white'
-              : 'bg-[#f4f6f9]/98 border-white/80 text-slate-900'
+              ? 'bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] text-white'
+              : 'bg-[#f4f6f9]/98 border-white/80 shadow-[0_24px_70px_rgba(0,0,0,0.52)] text-slate-900'
           }`}
         >
           {/* Persistent Phone Status Bar */}
@@ -500,7 +500,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
 
                 {/* Home Screen 4-App Dock (Profile · Missions · Messages · Contacts) */}
                 <div className="mt-auto pt-3">
-                  <div className="grid grid-cols-4 gap-2 px-2 py-2 rounded-2xl bg-white/[0.12] backdrop-blur-md border border-white/15">
+                  <div className="grid grid-cols-4 gap-2 px-2 py-2 rounded-2xl bg-white/[0.12] border border-white/15">
                     <button
                       type="button"
                       data-smartphone-dock="profile"

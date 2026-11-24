@@ -662,13 +662,13 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
       inert={!isOpen || undefined}
       aria-label="Self-Service Tactical Kiosk"
       data-kiosk-drawer="true"
-      className={`fixed left-4 top-16 bottom-20 z-40 w-full max-w-lg flex flex-col transition-all duration-300 ease-out transform ${
+      className={`fixed left-4 top-16 bottom-20 z-40 w-full max-w-lg flex flex-col transition-transform duration-200 ease-out transform ${
         isOpen
-          ? 'translate-x-0 opacity-100 visible pointer-events-auto'
-          : '-translate-x-[120%] opacity-0 invisible pointer-events-none'
+          ? 'translate-x-0 visible pointer-events-auto'
+          : '-translate-x-[120%] invisible pointer-events-none'
       }`}
     >
-      <div className="relative max-h-full overflow-y-auto rounded-[26px] bg-[#0e121b]/88 backdrop-blur-2xl border border-white/15 shadow-[0_24px_70px_rgba(0,0,0,0.62)] text-white">
+      <div className="relative max-h-full overflow-y-auto rounded-[26px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] text-white">
         {/* Top Controls & Header Bar */}
         <div className="px-5 pt-4 pb-3.5 border-b border-white/10 bg-white/[0.03] space-y-3">
           <div className="flex items-center justify-between gap-2">
