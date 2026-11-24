@@ -777,18 +777,37 @@ export function applyBuddyRigFaceCustomization(
   drawUvOverlayLayer(ctx, resolved.underwearOverlay);
   drawUvOverlayLayer(ctx, resolved.corewearOverlay);
 
-  // 0. Skin-layer Makeup (Blush, Eyeshadow, Face Overlay, Face Paint)
+  // 0. Clear baked base facial features FIRST (before any blush/eyeshadow/facepaint)
+  //    so skin-fill clear rects never slice a sharp edge across blush or eyeshadow!
+  const hasCustomEyeOverlay = Boolean(
+    resolved.eyeOverlay && beautyOverlayImageCache.get(resolved.eyeOverlay.url),
+  );
+  const hasCustomBrowOverlay = Boolean(
+    resolved.browOverlay && beautyOverlayImageCache.get(resolved.browOverlay.url),
+  );
+  const hasCustomLipOverlay = Boolean(
+    resolved.lipOverlay && beautyOverlayImageCache.get(resolved.lipOverlay.url),
+  );
+  if (hasCustomEyeOverlay || resolved.eyeStyle) {
+    clearFeatureRegionWithSkin(ctx, uv.eyeClearRect, skinRgb);
+  }
+  if (hasCustomBrowOverlay || resolved.browStyle) {
+    clearFeatureRegionWithSkin(ctx, uv.browClearRect, skinRgb);
+  }
+  if (hasCustomLipOverlay || resolved.lipStyle) {
+    clearFeatureRegionWithSkin(ctx, uv.lipClearRect, skinRgb);
+  }
+
+  // 1. Skin-layer Makeup (Blush, Eyeshadow, Face Overlay, Face Paint) — unclipped & seamless
   drawUvOverlayLayer(ctx, resolved.blushOverlay);
   drawUvOverlayLayer(ctx, resolved.eyeshadowOverlay);
   drawUvOverlayLayer(ctx, resolved.faceoverlayOverlay);
   drawUvOverlayLayer(ctx, resolved.facepaintOverlay);
 
-  // 1. Eyes (Mata) — real UV WebP overlay or procedural vector fallback
-  if (resolved.eyeOverlay && beautyOverlayImageCache.get(resolved.eyeOverlay.url)) {
-    clearFeatureRegionWithSkin(ctx, uv.eyeClearRect, skinRgb);
+  // 2. Eyes (Mata) — real UV WebP overlay or procedural vector fallback
+  if (hasCustomEyeOverlay) {
     drawUvOverlayLayer(ctx, resolved.eyeOverlay);
   } else if (resolved.eyeStyle) {
-    clearFeatureRegionWithSkin(ctx, uv.eyeClearRect, skinRgb);
     for (const side of [-1, 1] as const) {
       ctx.save();
       ctx.translate(uv.centerX + side * uv.eyeOffsetX, uv.eyeCenterY);
@@ -798,12 +817,10 @@ export function applyBuddyRigFaceCustomization(
     }
   }
 
-  // 2. Eyebrows (Alis) — real UV WebP overlay or procedural vector fallback
-  if (resolved.browOverlay && beautyOverlayImageCache.get(resolved.browOverlay.url)) {
-    clearFeatureRegionWithSkin(ctx, uv.browClearRect, skinRgb);
+  // 3. Eyebrows (Alis) — real UV WebP overlay or procedural vector fallback
+  if (hasCustomBrowOverlay) {
     drawUvOverlayLayer(ctx, resolved.browOverlay);
   } else if (resolved.browStyle) {
-    clearFeatureRegionWithSkin(ctx, uv.browClearRect, skinRgb);
     for (const side of [-1, 1] as const) {
       ctx.save();
       ctx.translate(uv.centerX + side * uv.browOffsetX, uv.browCenterY);
@@ -813,12 +830,10 @@ export function applyBuddyRigFaceCustomization(
     }
   }
 
-  // 3. Lips (Bibir) — real UV WebP overlay or procedural vector fallback
-  if (resolved.lipOverlay && beautyOverlayImageCache.get(resolved.lipOverlay.url)) {
-    clearFeatureRegionWithSkin(ctx, uv.lipClearRect, skinRgb);
+  // 4. Lips (Bibir) — real UV WebP overlay or procedural vector fallback
+  if (hasCustomLipOverlay) {
     drawUvOverlayLayer(ctx, resolved.lipOverlay);
   } else if (resolved.lipStyle) {
-    clearFeatureRegionWithSkin(ctx, uv.lipClearRect, skinRgb);
     ctx.save();
     ctx.translate(uv.centerX, uv.lipCenterY);
     ctx.scale(1, -1);
@@ -826,7 +841,7 @@ export function applyBuddyRigFaceCustomization(
     ctx.restore();
   }
 
-  // 4. Beard (Male facial hair overlay)
+  // 5. Beard (Male facial hair overlay)
   drawUvOverlayLayer(ctx, resolved.beardOverlay);
 
   ctx.restore();
