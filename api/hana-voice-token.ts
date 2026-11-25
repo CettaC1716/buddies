@@ -87,6 +87,8 @@ export async function handleHanaVoiceTokenRequest(
           config: {
             sessionResumption: {},
             responseModalities: ['AUDIO'],
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
             systemInstruction: {
               parts: [{ text: instruction }],
             },

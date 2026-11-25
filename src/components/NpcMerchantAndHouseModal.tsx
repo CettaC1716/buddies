@@ -1507,6 +1507,20 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         })),
         catalogSnapshot,
       },
+      onTranscript: (speaker, text) => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        setChatHistory((prev) => [
+          ...prev.slice(-14),
+          {
+            id: `voice-${speaker === 'player' ? 'u' : 'npc'}-${Date.now()}-${Math.random()
+              .toString(36)
+              .slice(2, 6)}`,
+            role: speaker === 'player' ? ('player' as const) : ('npc' as const),
+            text: trimmed,
+          },
+        ]);
+      },
       onStatus: (status) => {
         if (status === 'live') {
           setHanaVoiceState('live');

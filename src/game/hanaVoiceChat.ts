@@ -22,11 +22,12 @@ export interface HanaVoiceChatSession {
 export interface StartHanaVoiceChatOptions {
   liveState?: Record<string, unknown>;
   onStatus?: (status: HanaVoiceChatStatus) => void;
+  onTranscript?: (speaker: 'player' | 'hana', text: string) => void;
 }
 
 const LIVE_MODEL = 'models/gemini-3.8-live';
 const LIVE_WS_URL =
-  'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained';
+  'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained';
 const MIC_SAMPLE_RATE = 16000;
 const PLAYBACK_SAMPLE_RATE = 24000;
 const CONNECT_TIMEOUT_MS = 15000;
@@ -290,9 +291,11 @@ export async function startHanaVoiceChat(
   };
 
   const connect = (isResume: boolean) => {
-    const socket = new WebSocket(`${LIVE_WS_URL}?access_token=${encodeURIComponent(token)}`);
+    const socket = new WebSocket(`${LIVE_WS_URL}?access_token=${token}`);
     ws = socket;
     setupDone = false;
+    let inputTranscriptBuffer = '';
+    let outputTranscriptBuffer = '';
 
     socket.onopen = () => {
       const setup: Record<string, unknown> = {
@@ -319,6 +322,8 @@ export async function startHanaVoiceChat(
         sessionResumptionUpdate?: { newHandle?: string; resumable?: boolean };
         serverContent?: {
           interrupted?: boolean;
+          inputTranscription?: { text?: string; finished?: boolean };
+          outputTranscription?: { text?: string; finished?: boolean };
           modelTurn?: {
             parts?: Array<{ inlineData?: { data?: string; mimeType?: string } }>;
           };
@@ -344,6 +349,22 @@ export async function startHanaVoiceChat(
       }
       const serverContent = msg.serverContent;
       if (serverContent) {
+        if (serverContent.inputTranscription) {
+          inputTranscriptBuffer += serverContent.inputTranscription.text ?? '';
+          if (serverContent.inputTranscription.finished) {
+            const text = inputTranscriptBuffer.trim();
+            inputTranscriptBuffer = '';
+            if (text) options.onTranscript?.('player', text);
+          }
+        }
+        if (serverContent.outputTranscription) {
+          outputTranscriptBuffer += serverContent.outputTranscription.text ?? '';
+          if (serverContent.outputTranscription.finished) {
+            const text = outputTranscriptBuffer.trim();
+            outputTranscriptBuffer = '';
+            if (text) options.onTranscript?.('hana', text);
+          }
+        }
         if (serverContent.interrupted) {
           flushPlayback();
         }
