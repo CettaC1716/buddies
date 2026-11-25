@@ -6261,6 +6261,55 @@ export async function loadAllRealBlitzAssets(
       return pack;
     });
 
+  const loadSplitFourStateNpcAnimPack = <P extends string>(
+    setBaseHash: string,
+    targetPrefix: P,
+    label: string,
+  ): Promise<
+    Record<
+      `${P}_idle.001` | `${P}_walk.001` | `${P}_run.001` | `${P}_sit.001`,
+      THREE.AnimationClip | null
+    >
+  > =>
+    Promise.all([
+      loadAnimationOnlyGlbClip(
+        `/assets/animations/sets/${setBaseHash}__idle_01.glb`,
+        `${targetPrefix}_idle.001`,
+        `${label} (idle)`,
+      ),
+      loadAnimationOnlyGlbClip(
+        `/assets/animations/sets/${setBaseHash}__walk_01.glb`,
+        `${targetPrefix}_walk.001`,
+        `${label} (walk)`,
+      ),
+      loadAnimationOnlyGlbClip(
+        `/assets/animations/sets/${setBaseHash}__run_01.glb`,
+        `${targetPrefix}_run.001`,
+        `${label} (run)`,
+      ),
+      loadAnimationOnlyGlbClip(
+        `/assets/animations/sets/${setBaseHash}__sit_01.glb`,
+        `${targetPrefix}_sit.001`,
+        `${label} (sit)`,
+      ),
+    ]).then(([idleClip, walkClip, runClip, sitClip]) => {
+      const pack = {
+        [`${targetPrefix}_idle.001`]: idleClip,
+        [`${targetPrefix}_walk.001`]: walkClip,
+        [`${targetPrefix}_run.001`]: runClip,
+        [`${targetPrefix}_sit.001`]: sitClip,
+      } as Record<
+        `${P}_idle.001` | `${P}_walk.001` | `${P}_run.001` | `${P}_sit.001`,
+        THREE.AnimationClip | null
+      >;
+      for (const [clipName, clip] of Object.entries<THREE.AnimationClip | null>(pack)) {
+        if (clip) {
+          loadedCustomPelvisClips.set(clipName, clip);
+        }
+      }
+      return pack;
+    });
+
   const jumpClipPromise = loadAnimationOnlyGlbClip(
     '/assets/jump-2-anim.glb',
     'unarmed_jump.001',
@@ -6317,33 +6366,31 @@ export async function loadAllRealBlitzAssets(
     })
     .catch(() => {});
 
-  const hanaIdleClipPromise = loadAnimationOnlyGlbClip(
-    '/assets/hana-idle-anim.glb',
-    'hana_idle.001',
-    'Hana idle clip',
+  // Hana personal 4-state set: Blitz Stylish Runway Catwalk (Women) #11 (6E950D91)
+  const hanaAnimPackPromise = loadSplitFourStateNpcAnimPack(
+    '6E950D91',
+    'hana',
+    'Hana animation set (Stylish Runway Catwalk #11)',
   );
+  const hanaIdleClipPromise = hanaAnimPackPromise.then((pack) => pack['hana_idle.001']);
   hanaIdleClipPromise
     .then((c) => {
       loadedHanaIdleClip = c;
     })
     .catch(() => {});
 
-  // Nadia personal 4-state locomotion & sit set from /assets/nadia-anims.glb (PelvisRoot skeleton,
-  // 5-clip custom pack: Idle / Walk / Run / Sit mapped to nadia_* clip overrides).
-  const nadiaAnimPackPromise = loadFourStateNpcAnimPack(
-    '/assets/nadia-anims.glb',
+  // Nadia personal 4-state set: Blitz Lively & Energetic (Women) #9 (92016F69)
+  const nadiaAnimPackPromise = loadSplitFourStateNpcAnimPack(
+    '92016F69',
     'nadia',
-    'blitz_Tangan_Di_Pinggul_Wanita_14',
-    'Nadia animation pack',
+    'Nadia animation set (Lively & Energetic #9)',
   );
 
-  // Mira personal 4-state locomotion & sit set from /assets/mira-anims.glb (PelvisRoot skeleton,
-  // 5-clip custom pack: Idle / Walk / Run / Sit mapped to mira_* clip overrides).
-  const miraAnimPackPromise = loadFourStateNpcAnimPack(
-    '/assets/mira-anims.glb',
+  // Mira personal 4-state set: Blitz Lively & Energetic (Women) #6 (5A413A8E)
+  const miraAnimPackPromise = loadSplitFourStateNpcAnimPack(
+    '5A413A8E',
     'mira',
-    'blitz_Kasual_Harian_Wanita_1',
-    'Mira animation pack',
+    'Mira animation set (Lively & Energetic #6)',
   );
 
   // Bima personal 4-state locomotion & sit set from /assets/bima-anims.glb (PelvisRoot skeleton,
@@ -6404,8 +6451,18 @@ export async function loadAllRealBlitzAssets(
       return gltf;
     },
   );
-  const hanaCustomGlbPromise = loadOptionalGltf('/assets/avatars/hana.glb');
-  const kaiCustomGlbPromise = loadOptionalGltf('/assets/avatars/kai.glb');
+  const hanaCustomGlbPromise = loadOptionalGltf('/assets/avatars/hana.glb').then((gltf) => {
+    if (gltf?.scene) {
+      gltf.scene.userData.recessBakedOutfitSkinOnSpawn = true;
+    }
+    return gltf;
+  });
+  const kaiCustomGlbPromise = loadOptionalGltf('/assets/avatars/kai.glb').then((gltf) => {
+    if (gltf?.scene) {
+      gltf.scene.userData.recessBakedOutfitSkinOnSpawn = true;
+    }
+    return gltf;
+  });
   const ambientFemaleNpcGlbPromise = loadOptionalGltf('/assets/avatars/blitz-female-01.glb').then(
     (gltf) => {
       if (gltf?.scene) {
@@ -6426,6 +6483,7 @@ export async function loadAllRealBlitzAssets(
     (gltf) => {
       if (gltf?.scene) {
         gltf.scene.userData.useMixamoLocomotionSuite = true;
+        gltf.scene.userData.recessBakedOutfitSkinOnSpawn = true;
       }
       loadedMiraCustomGlb = gltf;
       return gltf;
@@ -6435,6 +6493,7 @@ export async function loadAllRealBlitzAssets(
     (gltf) => {
       if (gltf?.scene) {
         gltf.scene.userData.useMixamoLocomotionSuite = true;
+        gltf.scene.userData.recessBakedOutfitSkinOnSpawn = true;
       }
       loadedTariCustomGlb = gltf;
       return gltf;
@@ -6444,6 +6503,7 @@ export async function loadAllRealBlitzAssets(
     (gltf) => {
       if (gltf?.scene) {
         gltf.scene.userData.useMixamoLocomotionSuite = true;
+        gltf.scene.userData.recessBakedOutfitSkinOnSpawn = true;
       }
       loadedBimaCustomGlb = gltf;
       return gltf;
@@ -6453,6 +6513,7 @@ export async function loadAllRealBlitzAssets(
     (gltf) => {
       if (gltf?.scene) {
         gltf.scene.userData.useMixamoLocomotionSuite = true;
+        gltf.scene.userData.recessBakedOutfitSkinOnSpawn = true;
       }
       loadedKenjiCustomGlb = gltf;
       return gltf;
@@ -6462,6 +6523,7 @@ export async function loadAllRealBlitzAssets(
     (gltf) => {
       if (gltf?.scene) {
         gltf.scene.userData.useMixamoLocomotionSuite = true;
+        gltf.scene.userData.recessBakedOutfitSkinOnSpawn = true;
       }
       loadedNadiaCustomGlb = gltf;
       return gltf;
@@ -13817,6 +13879,10 @@ function syncLoadedPersonalClipsIntoTemplate(
     ['nadia_idle.001', cachedLoadedBlitzAssets?.nadiaIdleClip],
     ['nadia_walk.001', cachedLoadedBlitzAssets?.nadiaWalkClip],
     ['nadia_run.001', cachedLoadedBlitzAssets?.nadiaRunClip],
+    ['hana_idle.001', loadedHanaIdleClip ?? cachedLoadedBlitzAssets?.hanaIdleClip],
+    ['hana_walk.001', undefined],
+    ['hana_run.001', undefined],
+    ['hana_sit.001', undefined],
     ['nadia_sit.001', cachedLoadedBlitzAssets?.nadiaSitClip],
     ['mira_idle.001', cachedLoadedBlitzAssets?.miraIdleClip],
     ['mira_walk.001', cachedLoadedBlitzAssets?.miraWalkClip],
@@ -14723,9 +14789,6 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
       findSharedClip(/^Laying/i) ??
       sitSrc;
 
-    if (nativeIdle) {
-      registerAliasClip(nativeIdle, 'hana_idle.001', true);
-    }
     for (const idleAlias of ['idle.001', 'rifle_idle.001', 'rifle_aiming_idle.001', 'pistol_idle.001', 'fishing_idle.001']) {
       registerAliasClip(idleSrc, idleAlias, Boolean(nativeIdle && idleAlias === 'idle.001'));
     }
@@ -16092,8 +16155,13 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
   if (fishingRodGltf && rig.fishingRodGroup && !rig.fishingRodGroup.userData.hasFishingRodGlb) {
     populateFishingRodFromGlb(rig.fishingRodGroup, fishingRodGltf, Boolean(rig.isSoftwareGlRef));
   }
-  // Fast early return when this rig is already upgraded with the same character GLTF
+  // Fast early return when this rig is already upgraded with the same character GLTF,
+  // while still syncing any newly downloaded personal animation clips into the template.
   if (rig.customGlbController && rig.customGlbController.sourceGltf === gltf) {
+    if (gltf) {
+      const refreshed = getSanitizedCharBuddiesTemplate(gltf);
+      rig.customGlbController.clips = refreshed.clips;
+    }
     return;
   }
   // Proportionally scale handheld weapons so they match the human avatar's hands and shoulder span
@@ -16195,6 +16263,12 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
 
   const glbRoot = SkeletonUtils.clone(gltf.scene) as THREE.Group;
   deduplicateClonedRigSkeletons(glbRoot);
+  // Recess cloned BaseDoll body skin beneath baked-in opaque clothing & footwear on assembled
+  // NPC GLBs (Hana, Nadia, Mira, Tari, Kai, Bima, Kenji) so tight tops never exhibit chest/torso
+  // poke-through and heels/shoes activate Mode A/B/C foot fitting automatically.
+  if (gltf.scene.userData?.recessBakedOutfitSkinOnSpawn) {
+    updateBlitzBaseDollBodySkinTrim(glbRoot, 'feet', { maxGarmentY: 0.25 });
+  }
   glbRoot.name = 'CharBuddiesGlbRoot';
   glbRoot.visible = true;
   glbRoot.rotation.order = 'YXZ';
@@ -18415,6 +18489,33 @@ function updateBlitzBaseDollBodySkinTrim<K extends keyof BlitzBodySkinActiveTrim
         pos.needsUpdate = true;
       }
     }
+  } else if (
+    activeTrims.feet !== null &&
+    hasActiveFootwearMesh &&
+    !hasFullOpenFootSkin &&
+    Number.isFinite(activeFootwearLowZ) &&
+    activeFootwearLowZ >= 0.072
+  ) {
+    // Mode C toe-tip guard: keep BaseDoll toes cleanly inside shorter closed/wedge shoes (e.g. Tari)
+    const maxSafeToeZ = activeFootwearLowZ - 0.004;
+    for (const entry of bodySkinEntries) {
+      const geo = ensurePerRigUniqueSkinGeometry(entry.mesh);
+      const pos = geo.getAttribute('position') as THREE.BufferAttribute | undefined;
+      if (!pos) continue;
+      let changed = false;
+      for (let i = 0; i < pos.count; i++) {
+        const py = pos.getY(i);
+        if (py >= 0.075) continue;
+        const pz = pos.getZ(i);
+        if (pz > maxSafeToeZ) {
+          pos.setZ(i, maxSafeToeZ);
+          changed = true;
+        }
+      }
+      if (changed) {
+        pos.needsUpdate = true;
+      }
+    }
   }
 
   // Pair base skin submeshes with their 1:1 companion outline submeshes
@@ -20243,7 +20344,11 @@ function stepCharBuddiesGlbRigController(
       (rig.runClipOverrideName && !ctrl.clips.has(rig.runClipOverrideName)) ||
       (rig.sitClipOverrideName && !ctrl.clips.has(rig.sitClipOverrideName)))
   ) {
-    syncLoadedPersonalClipsIntoTemplate(ctrl.clips, ctrl.validNodeNames);
+    syncLoadedPersonalClipsIntoTemplate(
+      ctrl.clips,
+      ctrl.validNodeNames,
+      ctrl.sourceGltf?.scene,
+    );
   }
   if (
     targetClip === 'idle.001' &&
@@ -40391,12 +40496,24 @@ function createTramSideElevationTexture(isFrontCar: boolean): THREE.CanvasTextur
     ctx.roundRect(px, py, pw, ph, 14);
     ctx.fill();
 
-    // True alpha cutout so the 3D white-lit interior cabin & opposite windows are visible through clear-white glass
+    // Opaque dark tinted glass pane with subtle glossy reflection
     ctx.save();
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillStyle = '#000000';
+    const glassGrad = ctx.createLinearGradient(px, py + 6, px, py + ph - 6);
+    glassGrad.addColorStop(0.0, '#0f172a');
+    glassGrad.addColorStop(0.55, '#172338');
+    glassGrad.addColorStop(1.0, '#0b1220');
+    ctx.fillStyle = glassGrad;
     ctx.beginPath();
     ctx.roundRect(px + 6, py + 6, pw - 12, ph - 12, 10);
+    ctx.fill();
+    ctx.clip();
+    ctx.fillStyle = 'rgba(226, 238, 255, 0.08)';
+    ctx.beginPath();
+    ctx.moveTo(px + pw * 0.14, py);
+    ctx.lineTo(px + pw * 0.34, py);
+    ctx.lineTo(px + pw * 0.10, py + ph);
+    ctx.lineTo(px - pw * 0.08, py + ph);
+    ctx.closePath();
     ctx.fill();
     ctx.restore();
 
@@ -40456,14 +40573,17 @@ function createTramSideElevationTexture(isFrontCar: boolean): THREE.CanvasTextur
       ctx.roundRect(lx, ly, leafW, lh, 6);
       ctx.fill();
 
-      // Alpha-cutout tall rounded-corner glass opening inside each door leaf
+      // Opaque dark tinted glass pane inside each door leaf
       const gx = lx + 12;
       const gw = leafW - 24;
       const gy = ly + 14;
       const gh = lh - 68;
       ctx.save();
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.fillStyle = '#000000';
+      const doorGlassGrad = ctx.createLinearGradient(gx, gy, gx, gy + gh);
+      doorGlassGrad.addColorStop(0.0, '#0f172a');
+      doorGlassGrad.addColorStop(0.55, '#172338');
+      doorGlassGrad.addColorStop(1.0, '#0b1220');
+      ctx.fillStyle = doorGlassGrad;
       ctx.beginPath();
       ctx.roundRect(gx, gy, gw, gh, 10);
       ctx.fill();
@@ -40496,10 +40616,13 @@ function createTramSideElevationTexture(isFrontCar: boolean): THREE.CanvasTextur
     drawPanoramicWindow(-2.06, -0.96, true); // Middle window with Amber LED Destination Sign!
     drawPanoramicWindow(-3.36, -2.20, false);
 
-    // Driver Cab Side Panoramic Cheek Window (`x = +1.76m..+3.18m`) alpha cutout with dark frame border
+    // Driver Cab Side Panoramic Cheek Window (`x = +1.76m..+3.18m`) opaque dark tinted glass
     ctx.save();
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillStyle = '#000000';
+    const cabGlassGrad = ctx.createLinearGradient(0, toPy(2.82), 0, toPy(1.40));
+    cabGlassGrad.addColorStop(0.0, '#0f172a');
+    cabGlassGrad.addColorStop(0.55, '#172338');
+    cabGlassGrad.addColorStop(1.0, '#0b1220');
+    ctx.fillStyle = cabGlassGrad;
     ctx.beginPath();
     ctx.moveTo(toPx(1.80), toPy(2.82));
     ctx.lineTo(toPx(2.55), toPy(2.76));
@@ -40537,10 +40660,13 @@ function createTramSideElevationTexture(isFrontCar: boolean): THREE.CanvasTextur
     drawPanoramicWindow(0.02, 0.82, false);
     drawDoublePassengerDoor(-0.98);
 
-    // Rear Cab Side Quarter Window (`x = -3.28m..-1.76m`) alpha cutout with dark frame border
+    // Rear Cab Side Quarter Window (`x = -3.28m..-1.76m`) opaque dark tinted glass
     ctx.save();
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillStyle = '#000000';
+    const rearCabGlassGrad = ctx.createLinearGradient(0, toPy(2.82), 0, toPy(1.42));
+    rearCabGlassGrad.addColorStop(0.0, '#0f172a');
+    rearCabGlassGrad.addColorStop(0.55, '#172338');
+    rearCabGlassGrad.addColorStop(1.0, '#0b1220');
+    ctx.fillStyle = rearCabGlassGrad;
     ctx.beginPath();
     ctx.moveTo(toPx(-1.80), toPy(2.82));
     ctx.lineTo(toPx(-2.55), toPy(2.76));
@@ -40782,10 +40908,13 @@ function createTramFrontElevationTexture(): THREE.CanvasTexture {
   ctx.closePath();
   ctx.fill();
 
-  // 3. Panoramic Flush Windshield alpha cutout (glazed by translucent clear-white glass overlay)
+  // 3. Panoramic Flush Windshield opaque dark tinted glass
   ctx.save();
-  ctx.globalCompositeOperation = 'destination-out';
-  ctx.fillStyle = '#000000';
+  const frontGlassGrad = ctx.createLinearGradient(0, toPy(3.16), 0, toPy(1.12));
+  frontGlassGrad.addColorStop(0.0, '#0f172a');
+  frontGlassGrad.addColorStop(0.55, '#172338');
+  frontGlassGrad.addColorStop(1.0, '#0b1220');
+  ctx.fillStyle = frontGlassGrad;
   ctx.beginPath();
   ctx.moveTo(toPx(-0.96), toPy(3.08));
   ctx.quadraticCurveTo(toPx(0), toPy(3.16), toPx(0.96), toPy(3.08));
@@ -41052,10 +41181,13 @@ function createTramRearElevationTexture(): THREE.CanvasTexture {
   ctx.closePath();
   ctx.fill();
 
-  // 3. Rear Car Windshield alpha cutout (glazed by translucent clear-white glass overlay)
+  // 3. Rear Car Windshield opaque dark tinted glass
   ctx.save();
-  ctx.globalCompositeOperation = 'destination-out';
-  ctx.fillStyle = '#000000';
+  const rearGlassGrad = ctx.createLinearGradient(0, toPy(2.96), 0, toPy(1.36));
+  rearGlassGrad.addColorStop(0.0, '#0f172a');
+  rearGlassGrad.addColorStop(0.55, '#172338');
+  rearGlassGrad.addColorStop(1.0, '#0b1220');
+  ctx.fillStyle = rearGlassGrad;
   ctx.beginPath();
   ctx.roundRect(toPx(-0.76), toPy(2.96), toPx(0.76) - toPx(-0.76), toPy(1.36) - toPy(2.96), 22);
   ctx.fill();
@@ -41705,7 +41837,7 @@ export function createProceduralCityTramConsist(
       0,
       0.48,
       isFrontCar ? car1SideTex : car2SideTex,
-      0.5,
+      0.0,
     );
     addTramPart(
       bodyStaticGroup,
@@ -41717,7 +41849,7 @@ export function createProceduralCityTramConsist(
       0,
       0.42,
       isFrontCar ? frontCabTex : rearCabTex,
-      0.5,
+      0.0,
     );
 
     // 1A. 3D Illuminated White-Cabin Metro Interior visible cleanly through the clear-white ('putih bening') windows
