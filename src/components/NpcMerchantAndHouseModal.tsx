@@ -6,6 +6,8 @@ import {
   Home,
   LogIn,
   MapPin,
+  Mic,
+  MicOff,
   Plus,
   ShoppingBag,
   Sofa,
@@ -45,6 +47,10 @@ import {
   type NpcChatTransactionIntent,
 } from '../game/buddiesMerchantPricing';
 import { soundEngine } from '../game/audio';
+import {
+  startHanaVoiceChat,
+  type HanaVoiceChatSession,
+} from '../game/hanaVoiceChat';
 import type {
   CityTransitDestinationSpec,
   CityTransitStationId,
@@ -474,6 +480,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     Array<{ id: string; role: 'player' | 'npc'; text: string }>
   >([]);
   const chatScrollEndRef = useRef<HTMLDivElement | null>(null);
+  // Hana voice chat (Gemini Live test): Hana's chat tab only, never Kai's.
+  const [hanaVoiceState, setHanaVoiceState] = useState<'off' | 'connecting' | 'live'>('off');
+  const [hanaVoiceNote, setHanaVoiceNote] = useState<string | null>(null);
+  const hanaVoiceSessionRef = useRef<HanaVoiceChatSession | null>(null);
+  const hanaVoiceStartCancelledRef = useRef<boolean>(false);
   const [exchangeLulAmountStr, setExchangeLulAmountStr] = useState<string>('0');
   const [cryptoSwapInputStr, setCryptoSwapInputStr] = useState<string>('0.25');
   const [lastCryptoSwapReceipt, setLastCryptoSwapReceipt] =
@@ -1398,6 +1409,129 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   }, [activeModalMode]);
 
   const exchangeQuote = evaluateLulToCyonExchangeQuote(marketState);
+
+  // Hana voice chat (Gemini Live test): stop any live voice session when the
+  // merchant switches away from Hana, and tear it down on unmount.
+  useEffect(() => {
+    if (merchantLocation !== 'lobby_cafe' && hanaVoiceSessionRef.current) {
+      hanaVoiceSessionRef.current.stop();
+      hanaVoiceSessionRef.current = null;
+      setHanaVoiceState('off');
+    }
+  }, [merchantLocation]);
+
+  useEffect(() => {
+    return () => {
+      hanaVoiceStartCancelledRef.current = true;
+      hanaVoiceSessionRef.current?.stop();
+      hanaVoiceSessionRef.current = null;
+    };
+  }, []);
+
+  const stopHanaVoice = () => {
+    hanaVoiceSessionRef.current?.stop();
+    hanaVoiceSessionRef.current = null;
+    setHanaVoiceState('off');
+  };
+
+  const handleToggleHanaVoice = async () => {
+    soundEngine.playUiClick();
+    if (hanaVoiceState !== 'off') {
+      // Stop a live session, or cancel a connection still being set up.
+      hanaVoiceStartCancelledRef.current = true;
+      stopHanaVoice();
+      return;
+    }
+    setHanaVoiceNote(null);
+    setHanaVoiceState('connecting');
+    hanaVoiceStartCancelledRef.current = false;
+    const catalogSnapshot = MERCHANT_CATALOG_ITEMS.map((item) => {
+      const p = evaluateMerchantItemQuote(marketState, item);
+      return {
+        id: item.id,
+        name: item.name,
+        category: item.category,
+        currency: item.currency,
+        buyPrice: p.buyPrice,
+        stock: p.stock,
+      };
+    });
+    const session = await startHanaVoiceChat({
+      liveState: {
+        citizenDisplayName,
+        playerNearAccount,
+        walletConnected,
+        lulBalance,
+        cyonBalance,
+        respiteBalance,
+        nearBalance: nearTestnetBalance,
+        hasHouseOwnership,
+        hanaWelcomeNearClaimed: Boolean(hanaWelcomeNearClaimed || hanaClaimResult?.ok),
+        caughtFishCount: caughtFishBucket.length,
+        recruitedFamilyCount: recruitedFamilyMembers.length,
+        simulatedDay: marketState.dayCounter,
+        shopCyonReserve: marketState.treasuryCyon,
+        isShopBroke: marketState.isShopBroke,
+        lulCostFor10Cyon: exchangeQuote.lulCostFor10Cyon,
+        cyonGranted: exchangeQuote.cyonGranted,
+        investorDiscountActive: marketState.investorDiscountActive,
+        fishSalesStats: fishSalesStats
+          ? {
+              topSale: fishSalesStats.topSale
+                ? {
+                    speciesName: fishSalesStats.topSale.speciesName,
+                    weightKg: fishSalesStats.topSale.weightKg,
+                    priceRespite: fishSalesStats.topSale.priceRespite,
+                    buyerAccount: fishSalesStats.topSale.buyerAccount,
+                    sellerAccount: fishSalesStats.topSale.sellerAccount,
+                  }
+                : null,
+              recentSale: fishSalesStats.recentSale
+                ? {
+                    speciesName: fishSalesStats.recentSale.speciesName,
+                    weightKg: fishSalesStats.recentSale.weightKg,
+                    priceRespite: fishSalesStats.recentSale.priceRespite,
+                    buyerAccount: fishSalesStats.recentSale.buyerAccount,
+                    sellerAccount: fishSalesStats.recentSale.sellerAccount,
+                  }
+                : null,
+              totalSalesCount: fishSalesStats.totalSalesCount,
+            }
+          : null,
+        fishMarketListings: fishMarketListings.slice(0, 8).map((l) => ({
+          speciesName: l.speciesName,
+          rarity: l.rarity,
+          weightKg: l.weightKg,
+          priceRespite: l.priceRespite,
+          sellerNearAccount: l.sellerNearAccount,
+        })),
+        catalogSnapshot,
+      },
+      onStatus: (status) => {
+        if (status === 'live') {
+          setHanaVoiceState('live');
+        } else if (status === 'denied') {
+          setHanaVoiceNote(
+            'Voice is off because the microphone is not available. You can keep typing to Hana here.',
+          );
+          setHanaVoiceState('off');
+        } else if (status === 'error') {
+          hanaVoiceSessionRef.current = null;
+          setHanaVoiceState('off');
+        }
+      },
+    });
+    if (hanaVoiceStartCancelledRef.current) {
+      session?.stop();
+      return;
+    }
+    if (session) {
+      hanaVoiceSessionRef.current = session;
+      setHanaVoiceState('live');
+    } else {
+      setHanaVoiceState('off');
+    }
+  };
 
   if (activeModalMode === 'house_interior') {
     const ownedFurniture = MERCHANT_CATALOG_ITEMS.filter(
@@ -2606,6 +2740,31 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       {prompt}
                     </button>
                   ))}
+                  {merchantLocation === 'lobby_cafe' && (
+                    <button
+                      type="button"
+                      data-hana-voice-btn="true"
+                      onClick={() => void handleToggleHanaVoice()}
+                      className={`px-2.5 py-1 rounded-full border text-[10px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-colors shrink-0 ${
+                        hanaVoiceState === 'live'
+                          ? 'bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-200 border-emerald-400/40'
+                          : 'bg-white/10 hover:bg-white/18 text-white/90 border-white/12'
+                      }`}
+                    >
+                      {hanaVoiceState === 'live' ? (
+                        <MicOff className="w-3 h-3" aria-hidden="true" />
+                      ) : (
+                        <Mic className="w-3 h-3" aria-hidden="true" />
+                      )}
+                      <span>
+                        {hanaVoiceState === 'live'
+                          ? 'Stop voice'
+                          : hanaVoiceState === 'connecting'
+                            ? 'Connecting...'
+                            : 'Voice'}
+                      </span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     data-chat-clear-btn="true"
@@ -2616,6 +2775,16 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     <span>Clear chat</span>
                   </button>
                 </div>
+                {merchantLocation === 'lobby_cafe' && (
+                  <div className="space-y-1">
+                    <p className="text-[10px] leading-snug text-white/60">
+                      Hana needs your microphone so you can talk to her.
+                    </p>
+                    {hanaVoiceNote && (
+                      <p className="text-[10px] leading-snug text-amber-200">{hanaVoiceNote}</p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
