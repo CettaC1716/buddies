@@ -405,6 +405,7 @@ import {
 import { HudAudioVolumeControl } from './components/HudAudioVolumeControl';
 import { HudBottomAvatarDock } from './components/HudBottomAvatarDock';
 import { HudWeatherAndTimeControl } from './components/HudWeatherAndTimeControl';
+import { CitySelfieCameraOverlay } from './components/CitySelfieCameraOverlay';
 import { useAdaptiveViewport } from './lib/useAdaptiveViewport';
 import {
   HudSmartphoneIcon,
@@ -1777,6 +1778,7 @@ export default function App() {
   const isPhoneAppActive = (app: SmartphoneAppId): boolean =>
     isSmartphoneOsOpen && activeSmartphoneApp === app;
   const [isQuickPoseModalOpen, setIsQuickPoseModalOpen] = useState<boolean>(false);
+  const [isSelfieCameraOpen, setIsSelfieCameraOpen] = useState<boolean>(false);
   const [isPersonalWalletModalOpen, setIsPersonalWalletModalOpen] = useState<boolean>(false);
   const [isPersonalBagModalOpen, setIsPersonalBagModalOpen] = useState<boolean>(false);
   const [isGearModalOpen, setIsGearModalOpen] = useState<boolean>(false);
@@ -2153,7 +2155,7 @@ export default function App() {
             mintFeeLul: 0,
             suggestedRespitePrice: suggestedRespite,
             colorHex: spec?.colorHex || '#38bdf8',
-            loreTag: spec?.loreTag || 'Caught in Buddies Blitz Safezone waters.',
+            loreTag: spec?.loreTag || 'Caught in Cerria Safezone waters.',
             caughtByAccount: activeWallet,
             caughtAtIso: new Date().toISOString(),
             isMintedNft: true,
@@ -2761,6 +2763,22 @@ export default function App() {
       exitCityViewMode();
     }
   }, [cityViewActive, exitCityViewMode, gameState, worldMode]);
+
+  useEffect(() => {
+    if (isSelfieCameraOpen && (worldMode === 'warzone' || gameState !== 'playing')) {
+      setIsSelfieCameraOpen(false);
+    }
+  }, [isSelfieCameraOpen, gameState, worldMode]);
+
+  useEffect(() => {
+    const onCloseSelfieCamera = () => {
+      setIsSelfieCameraOpen(false);
+    };
+    window.addEventListener('close-city-selfie-camera', onCloseSelfieCamera);
+    return () => {
+      window.removeEventListener('close-city-selfie-camera', onCloseSelfieCamera);
+    };
+  }, []);
 
   useEffect(() => {
     if (
@@ -5151,6 +5169,8 @@ export default function App() {
       onboardingCompleted: onboardingStep === 'completed',
       characterGender,
       playerDisplayName: playerDisplayName.trim() || 'CITIZEN',
+      characterSelectPreviewName:
+        playerDisplayName.trim() || (characterGender === 'male' ? 'Buddy Male' : 'Buddy Female'),
       nearWalletId: hud.nearWalletConnected ? hud.nearWalletId : null,
       houseOwnerKey: isSampleHouseView
         ? 'sample'
@@ -8183,7 +8203,7 @@ export default function App() {
         title: 'Real Estate Sales Contract — House Deed',
         payload: {
           buyerAccount: resolvedActor,
-          sellerName: 'Buddies Blitz',
+          sellerName: 'Cerria',
           sellerAccount: 'buddiesblitz.testnet',
           itemName: 'House Ownership Certificate',
           assetKind: 'house',
@@ -8887,7 +8907,7 @@ export default function App() {
           args: {
             receiver_id: targetWallet,
             amount: String(amt),
-            memo: "Buddies Blitz P2P RESPITE Transfer",
+            memo: "Cerria P2P RESPITE Transfer",
           },
         });
         if (!res.ok || !res.txHash) {
@@ -9414,7 +9434,7 @@ export default function App() {
       data-adaptive-orientation={adaptiveViewport.orientation}
       className="relative w-full h-[100dvh] overflow-hidden select-none"
     >
-      {/* 1. 60FPS 3D Buddies Blitz Grassland Arena (Persistent Scene Across Transit & World Modes) */}
+      {/* 1. 60FPS 3D Cerria Grassland Arena (Persistent Scene Across Transit & World Modes) */}
       <BuddiesBlitzArena
         key={`arena-${worldTransitionCount}`}
         gameState={gameState}
@@ -9446,7 +9466,7 @@ export default function App() {
         >
           <div className="w-full max-w-sm flex flex-col items-center gap-4">
             <div className="text-xs font-black uppercase tracking-[0.24em] text-white/80">
-              BUDDIES BLITZ
+              CERRIA
             </div>
             <div className="w-full h-2 bg-[#181b26] border border-white/20 overflow-hidden">
               <div
@@ -9554,7 +9574,7 @@ export default function App() {
          ===================================================================== */}
       {isPreloadComplete && gameState === 'title' && (
         <section
-          aria-label="Buddies Blitz Live Landing Page"
+          aria-label="Cerria Live Landing Page"
           data-live-landing="true"
           className="fixed inset-0 z-20 flex flex-col justify-between pointer-events-none select-none"
         >
@@ -9571,7 +9591,7 @@ export default function App() {
           >
             <div className="flex items-center gap-2 sm:gap-2.5 pointer-events-auto">
               <div className="-skew-x-6 px-3 sm:px-3.5 py-1.5 bg-[#b8ff3c] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-[11px] sm:text-xs uppercase tracking-widest">
-                <span className="skew-x-6 inline-block">BUDDIES BLITZ</span>
+                <span className="skew-x-6 inline-block">CERRIA</span>
               </div>
               <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 bg-[#14161d]/90 text-white border-2 border-black shadow-[3px_3px_0_#000] text-[10px] font-black uppercase tracking-widest">
                 <span className="w-2 h-2 rounded-full bg-[#b8ff3c] animate-pulse" />
@@ -9615,7 +9635,7 @@ export default function App() {
                 adaptiveViewport.isCompactHeight ? 'gap-3' : 'gap-5 sm:gap-6'
               }`}
             >
-              {/* Brand-New Custom BUDDIES BLITZ Comic Vector Emblem */}
+              {/* Brand-New Custom CERRIA Comic Vector Emblem */}
               <svg
                 viewBox="0 0 640 250"
                 className={`w-full drop-shadow-[0_14px_24px_rgba(0,0,0,0.6)] ${
@@ -9624,7 +9644,7 @@ export default function App() {
                     : 'max-w-[340px] sm:max-w-[460px] lg:max-w-[540px]'
                 }`}
                 role="img"
-                aria-label="BUDDIES BLITZ"
+                aria-label="CERRIA"
               >
                 <defs>
                   <linearGradient id="bb-lime-grad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -9663,7 +9683,7 @@ export default function App() {
                   </text>
                 </g>
 
-                {/* Upper Plate: BUDDIES (Crisp White + Heavy Comic Drop Block) */}
+                {/* Upper Plate: CERRIA (Crisp White + Heavy Comic Drop Block) */}
                 <g transform="translate(52, 46) skewX(-8)">
                   <rect x="10" y="10" width="530" height="88" fill="#000000" />
                   <rect
@@ -9690,11 +9710,11 @@ export default function App() {
                     strokeWidth="12"
                     paintOrder="stroke fill"
                   >
-                    BUDDIES
+                    CERRIA
                   </text>
                 </g>
 
-                {/* Lower Plate: BLITZ (Neon Lime Power Plate + Twin Lightning Cut) */}
+                {/* Lower Plate: NEAR Chain Badge (Official NEAR Logo Mark + NEAR Wordmark) */}
                 <g transform="translate(116, 134) skewX(-10)">
                   <rect x="10" y="10" width="420" height="82" fill="#000000" />
                   <rect
@@ -9716,28 +9736,38 @@ export default function App() {
                     strokeWidth="2.5"
                     strokeOpacity="0.65"
                   />
-                  <text
-                    x="230"
-                    y="63"
-                    textAnchor="middle"
-                    fontFamily="'Barlow', sans-serif"
-                    fontWeight="900"
-                    fontStyle="italic"
-                    fontSize="66"
-                    letterSpacing="9"
-                    fill="#14161d"
+                  <svg
+                    x="89"
+                    y="15"
+                    width="52"
+                    height="52"
+                    viewBox="106 106 355 355"
+                    aria-hidden="true"
                   >
-                    BLITZ
-                  </text>
-
-                  {/* Left Twin Lightning Emblem */}
-                  <polygon
-                    points="38,14 66,14 52,38 72,38 34,70 46,44 26,44"
-                    fill="#14161d"
-                    stroke="#ffffff"
-                    strokeWidth="2.5"
-                    strokeLinejoin="round"
-                  />
+                    <image
+                      href="/assets/aistudio/Logo_Near_protocol_ed8a7e85.png"
+                      x="0"
+                      y="0"
+                      width="1656"
+                      height="567"
+                    />
+                  </svg>
+                  <svg
+                    x="169"
+                    y="20"
+                    width="161"
+                    height="42"
+                    viewBox="565 155 984 257"
+                    aria-hidden="true"
+                  >
+                    <image
+                      href="/assets/aistudio/Logo_Near_protocol_ed8a7e85.png"
+                      x="0"
+                      y="0"
+                      width="1656"
+                      height="567"
+                    />
+                  </svg>
                 </g>
               </svg>
 
@@ -9767,7 +9797,7 @@ export default function App() {
             style={{ paddingBottom: 'max(0.75rem, var(--safe-bottom))' }}
           >
             <div className="px-3 sm:px-4 py-1 bg-[#14161d]/85 text-slate-300 border-2 border-black shadow-[3px_3px_0_#000] text-[9px] sm:text-[11px] font-black uppercase tracking-[0.12em] sm:tracking-[0.2em] text-center max-w-full">
-              EXPLORE THE CITY &nbsp;•&nbsp; OWN A HOME &nbsp;•&nbsp; MEET PEOPLE &nbsp;•&nbsp; TRADE &amp; GET RICH &nbsp;•&nbsp; NEAR TESTNET
+              EXPLORE THE CITY • MEET THE COMMUNITY • VISIT HOMES • OPEN A SHOP
             </div>
           </footer>
         </section>
@@ -9803,474 +9833,615 @@ export default function App() {
         onboardingStep !== 'completed' &&
         onboardingStep !== 'fly_to_plaza' && (
           <section
-            aria-label="Buddies Blitz Login & Onboarding"
+            aria-label="Cerria Login & Onboarding"
             data-onboarding-step={onboardingStep}
-            className={`fixed inset-0 z-50 flex flex-col ${
+            className={`fixed inset-0 z-50 select-none transition-colors duration-200 ${
               onboardingStep === 'guest_character_select'
-                ? 'justify-end items-center py-3 sm:py-6 px-3 sm:px-4 pointer-events-none'
-                : 'items-center justify-center p-3 sm:p-4 bg-black/70 pointer-events-auto'
-            } select-none`}
+                ? 'bg-transparent pointer-events-none'
+                : 'bg-black/45 pointer-events-auto'
+            }`}
           >
+            {/* Outer Phone Positioning Wrapper:
+                - On >= sm: always centered in the middle of the screen (Male preview left, Female preview right)
+                - On < sm during guest_character_select: bottom sheet so character stays visible above */}
             <div
-              data-start-game-card="true"
-              className="relative pointer-events-auto w-full max-w-sm max-h-[calc(100dvh-1.5rem)] overflow-y-auto bg-[#14161d] text-white border-4 border-black ring-4 ring-white shadow-[8px_8px_0_#000] p-4 sm:p-6 space-y-3.5 sm:space-y-4"
+              className={`fixed pointer-events-auto ${
+                onboardingStep === 'guest_character_select'
+                  ? 'inset-x-0 bottom-0 sm:inset-auto sm:left-1/2 sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-[356px] max-h-[50dvh] sm:h-[min(660px,calc(100dvh-2.5rem))] sm:max-h-[min(660px,calc(100dvh-2.5rem))]'
+                  : 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(356px,calc(100vw-1.5rem))] max-h-[calc(100dvh-2rem)]'
+              }`}
             >
-              {onboardingStep === 'auth_choice' && (
-                <button
-                  type="button"
-                  aria-label="Close login modal"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    document.body.dataset.state = 'title';
-                    setGameState('title');
-                  }}
-                  className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white border border-white/20 cursor-pointer transition-colors"
+              {/* Unified Smartphone-Style Registration Panel */}
+              <div
+                data-start-game-card="true"
+                className={`w-full overflow-hidden flex flex-col border border-white/22 bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] text-white ${
+                  onboardingStep === 'guest_character_select'
+                    ? 'h-full rounded-t-[28px] sm:rounded-[32px] border-b-0 sm:border-b'
+                    : 'max-h-[calc(100dvh-2rem)] rounded-[32px]'
+                }`}
+              >
+                {/* Slim Phone Status Bar */}
+                <div
+                  className="shrink-0 flex items-center justify-between px-5 pt-2.5 pb-1.5 text-[11px] font-semibold text-white/90"
+                  aria-hidden="true"
                 >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-
-              {/* Compact Game Title Header (Always in the Single START GAME Card) */}
-              <div className="text-center space-y-1 border-b border-white/15 pb-3.5">
-                <div className="inline-block -skew-x-12 px-3 py-0.5 bg-[#b8ff3c] text-black border-2 border-black shadow-[2px_2px_0_#000] font-black text-[11px] uppercase tracking-widest">
-                  <span className="skew-x-12 inline-block">BUDDIES BLITZ</span>
-                </div>
-                <h1 className="text-2xl font-black uppercase tracking-wide text-white pt-1">
-                  START GAME
-                </h1>
-                {connectedGoogleEmail && (
-                  <div className="text-[10.5px] font-mono font-bold text-[#38bdf8] truncate">
-                    {connectedGoogleEmail}
+                  <span className="font-mono tabular-nums tracking-tight">9:41</span>
+                  <div className="flex items-center gap-1.5 text-white/85">
+                    {/* Cellular signal bars */}
+                    <svg viewBox="0 0 16 12" className="w-3.5 h-3" fill="currentColor">
+                      <rect x="0.5" y="8" width="2.4" height="3.5" rx="0.6" />
+                      <rect x="4.5" y="5.8" width="2.4" height="5.7" rx="0.6" />
+                      <rect x="8.5" y="3.4" width="2.4" height="8.1" rx="0.6" />
+                      <rect x="12.5" y="1" width="2.4" height="10.5" rx="0.6" />
+                    </svg>
+                    {/* Wi-Fi icon */}
+                    <svg
+                      viewBox="0 0 16 12"
+                      className="w-3.5 h-3"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                    >
+                      <path d="M1.5 4.2C5.2 0.8 10.8 0.8 14.5 4.2" />
+                      <path d="M4.1 6.9C6.3 4.9 9.7 4.9 11.9 6.9" />
+                      <circle cx="8" cy="10" r="1.1" fill="currentColor" stroke="none" />
+                    </svg>
+                    {/* Battery icon */}
+                    <svg viewBox="0 0 24 12" className="w-5 h-3" fill="none">
+                      <rect
+                        x="1"
+                        y="1.5"
+                        width="19"
+                        height="9"
+                        rx="2.2"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeOpacity="0.85"
+                      />
+                      <rect x="3" y="3.5" width="14.5" height="5" rx="1" fill="currentColor" />
+                      <path
+                        d="M21.5 4.2V7.8"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeOpacity="0.7"
+                      />
+                    </svg>
                   </div>
-                )}
-              </div>
+                </div>
 
-              {onboardingStep === 'auth_choice' && (
-                <>
-                  {/* 1. Primary CTAs: Google OAuth & Play as Guest */}
-                  <div className="space-y-3">
-                    {savedWalletSummary &&
-                      savedWalletSummary.walletId !== 'player1.buddiesblitz-master.testnet' &&
-                      savedWalletSummary.walletId !== 'testnet' &&
-                      savedWalletSummary.walletId !== 'testnet.near' && (
-                        <div className="p-2 bg-[#1e293b] border border-[#38bdf8]/50 text-[11px] font-bold text-slate-200 flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="truncate font-black text-[#facc15]">
-                              {savedWalletSummary.displayName}
+                {/* Middle Flexible Phone Screen Content */}
+                <div className="flex-1 min-h-0 flex flex-col overflow-y-auto px-5 pt-1.5 sm:pt-3 pb-2">
+                  {/* Compact Phone Header */}
+                  <div className="relative text-center pb-2.5 sm:pb-3.5 border-b border-white/12 shrink-0">
+                    {onboardingStep === 'guest_character_select' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          setOnboardingStep('auth_choice');
+                        }}
+                        title="Back"
+                        aria-label="Back"
+                        className="absolute top-0 left-0 w-7 h-7 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/20 border border-white/15 text-white/85 hover:text-white cursor-pointer active:scale-90 transition-all"
+                      >
+                        <ArrowLeft className="w-3.5 h-3.5 stroke-[2.4]" />
+                      </button>
+                    )}
+
+                    {onboardingStep === 'auth_choice' && (
+                      <button
+                        type="button"
+                        aria-label="Close login modal"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          document.body.dataset.state = 'title';
+                          setGameState('title');
+                        }}
+                        className="absolute top-0 right-0 w-7 h-7 rounded-full flex items-center justify-center bg-white/10 hover:bg-white/20 border border-white/15 text-white/85 hover:text-white cursor-pointer active:scale-90 transition-all"
+                      >
+                        <X className="w-3.5 h-3.5 stroke-[2.2]" />
+                      </button>
+                    )}
+
+                    <div className="inline-flex items-center justify-center px-3 py-0.5 rounded-full bg-[#b8ff3c] text-[#0b0f17] font-black text-[10.5px] uppercase tracking-[0.18em] shadow-[0_2px_10px_rgba(184,255,60,0.28)]">
+                      CERRIA
+                    </div>
+                    <h1 className="text-xl sm:text-2xl font-black uppercase tracking-wide text-white mt-1.5 sm:mt-2 leading-tight">
+                      START GAME
+                    </h1>
+                    {onboardingStep === 'guest_character_select' && (
+                      <p className="text-[11.5px] font-medium text-white/55 mt-0.5">
+                        Step 1 of 1 · Your citizen card
+                      </p>
+                    )}
+                    {connectedGoogleEmail && (
+                      <div className="text-[10.5px] font-mono font-bold text-[#38bdf8] truncate mt-1">
+                        {connectedGoogleEmail}
+                      </div>
+                    )}
+                  </div>
+
+                  {onboardingStep === 'auth_choice' && (
+                    <div className="flex-1 flex flex-col justify-center space-y-4 py-4">
+                      {/* 1. Primary CTAs: Google OAuth & Play as Guest */}
+                      <div className="space-y-3">
+                        {savedWalletSummary &&
+                          savedWalletSummary.walletId !== 'player1.buddiesblitz-master.testnet' &&
+                          savedWalletSummary.walletId !== 'testnet' &&
+                          savedWalletSummary.walletId !== 'testnet.near' && (
+                            <div className="p-2.5 rounded-2xl bg-white/[0.08] border border-[#38bdf8]/40 text-[11px] font-bold text-slate-200 flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="truncate font-black text-[#facc15]">
+                                  {savedWalletSummary.displayName}
+                                </div>
+                                <div className="truncate font-mono text-[10px] text-[#38bdf8]">
+                                  {savedWalletSummary.walletId}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                data-reconnect-saved-wallet-btn="true"
+                                onClick={() =>
+                                  void handleConnectWalletAndEnterLobby(
+                                    savedWalletSummary.walletId,
+                                    {
+                                      silentRestore: true,
+                                    },
+                                  )
+                                }
+                                className="px-2.5 py-1 rounded-lg bg-[#38bdf8] text-black font-black text-[10px] uppercase cursor-pointer shrink-0"
+                              >
+                                CONTINUE
+                              </button>
                             </div>
-                            <div className="truncate font-mono text-[10px] text-[#38bdf8]">
-                              {savedWalletSummary.walletId}
-                            </div>
-                          </div>
+                          )}
+
+                        <div className="space-y-2.5">
                           <button
                             type="button"
-                            data-reconnect-saved-wallet-btn="true"
-                            onClick={() =>
-                              void handleConnectWalletAndEnterLobby(savedWalletSummary.walletId, {
-                                silentRestore: true,
-                              })
-                            }
-                            className="px-2.5 py-1 bg-[#38bdf8] text-black font-black text-[10px] uppercase border border-black cursor-pointer shrink-0"
+                            data-connect-wallet-enter-btn="true"
+                            disabled={isVerifyingNearWallet || privyOAuthLoading}
+                            onClick={() => void handleStartGoogleLoginAndOpenWalletNaming()}
+                            className="w-full py-3 px-4 rounded-2xl bg-white hover:bg-slate-100 disabled:opacity-60 text-black font-extrabold text-xs sm:text-sm uppercase tracking-wider shadow-[0_8px_20px_rgba(0,0,0,0.28)] cursor-pointer active:scale-[0.985] transition-all"
                           >
-                            CONTINUE
+                            <span className="flex items-center justify-center gap-2.5">
+                              <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" aria-hidden="true">
+                                <path
+                                  fill="#4285F4"
+                                  d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
+                                />
+                                <path
+                                  fill="#34A853"
+                                  d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"
+                                />
+                                <path
+                                  fill="#FBBC05"
+                                  d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"
+                                />
+                                <path
+                                  fill="#EA4335"
+                                  d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
+                                />
+                              </svg>
+                              <span>
+                                {isVerifyingNearWallet || privyOAuthLoading
+                                  ? 'SIGNING IN...'
+                                  : 'CONTINUE WITH GOOGLE'}
+                              </span>
+                            </span>
                           </button>
+
+                          <button
+                            type="button"
+                            data-login-guest-btn="true"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              setWalletConnectError(null);
+                              setConnectedExternalWalletId('');
+                              setOnboardingAuthMode('guest');
+                              setConnectedGoogleEmail('');
+                              setCharacterGender('male');
+                              setIsCustomGuestNameEdited(false);
+                              setPlayerDisplayName('Buddy Male');
+                              dispatchBuddyAction('setCharacterGender:male');
+                              beginPlazaFlyToOnboarding('character_select', 'guest_character_select');
+                            }}
+                            className="w-full py-3 px-4 rounded-2xl bg-[#b8ff3c] hover:bg-[#c9ff66] text-[#0b0f17] font-black text-xs sm:text-sm uppercase tracking-wider shadow-[0_8px_24px_rgba(184,255,60,0.28)] cursor-pointer active:scale-[0.985] transition-all"
+                          >
+                            PLAY AS GUEST
+                          </button>
+                        </div>
+
+                        {walletConnectError && (
+                          <div
+                            data-wallet-connect-error="true"
+                            className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-400/40 text-rose-200 text-[11px] font-medium space-y-2"
+                          >
+                            <div>{walletConnectError}</div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                setWalletConnectError(null);
+                                setConnectedExternalWalletId('');
+                                setOnboardingAuthMode('wallet');
+                                beginPlazaFlyToOnboarding(
+                                  'character_select',
+                                  'guest_character_select',
+                                );
+                              }}
+                              className="w-full py-1.5 px-2 rounded-lg bg-[#b8ff3c] text-[#0b0f17] font-black uppercase text-[10px] cursor-pointer"
+                            >
+                              CHOOSE CHARACTER &amp; PLAY
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Divider */}
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 h-px bg-white/12" />
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-white/45">
+                          OR
+                        </span>
+                        <div className="flex-1 h-px bg-white/12" />
+                      </div>
+
+                      {/* 2. External Account Link */}
+                      <div className="pt-0.5 pb-1 text-center">
+                        <button
+                          type="button"
+                          data-open-near-wallet-selector-start-btn="true"
+                          disabled={isVerifyingNearWallet || privyOAuthLoading}
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            setWalletConnectError(null);
+                            setIsNearWalletSelectorOpen(true);
+                          }}
+                          className="inline-flex items-center justify-center gap-2 text-xs font-semibold text-white/80 hover:text-white disabled:opacity-60 cursor-pointer transition-colors"
+                        >
+                          <Wallet className="w-4 h-4 text-white/70 shrink-0" aria-hidden="true" />
+                          <span className="underline underline-offset-4">
+                            Have a NEAR wallet? Connect it here
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {onboardingStep === 'guest_character_select' && (
+                    <div className="flex-1 flex flex-col pt-3 sm:pt-5 gap-3 sm:gap-5">
+                      {/* 4–6. CHARACTER section: pager + Male/Female segmented control */}
+                      <div className="space-y-2 sm:space-y-2.5">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-white/50">
+                          CHARACTER
+                        </div>
+
+                        {/* 5. Character pager row */}
+                        <div className="flex items-center justify-between gap-2 rounded-2xl bg-white/[0.06] border border-white/12 px-2 py-1.5">
+                          <button
+                            type="button"
+                            data-char-select-prev="true"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              const nextGender: 'male' | 'female' =
+                                characterGender === 'male' ? 'female' : 'male';
+                              setCharacterGender(nextGender);
+                              dispatchBuddyAction(`setCharacterGender:${nextGender}`);
+                              if (!isCustomGuestNameEdited) {
+                                setPlayerDisplayName(
+                                  nextGender === 'male' ? 'Buddy Male' : 'Buddy Female',
+                                );
+                              }
+                            }}
+                            aria-label="Previous Character"
+                            className="w-9 h-9 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] border border-white/12 flex items-center justify-center text-white hover:text-[#b8ff3c] cursor-pointer active:scale-90 transition-all"
+                          >
+                            <ChevronLeft className="w-5 h-5 stroke-[2.5]" />
+                          </button>
+
+                          <div className="text-sm font-bold font-mono tabular-nums tracking-wider text-white select-none">
+                            {characterGender === 'male' ? '1 / 2' : '2 / 2'}
+                          </div>
+
+                          <button
+                            type="button"
+                            data-char-select-next="true"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              const nextGender: 'male' | 'female' =
+                                characterGender === 'male' ? 'female' : 'male';
+                              setCharacterGender(nextGender);
+                              dispatchBuddyAction(`setCharacterGender:${nextGender}`);
+                              if (!isCustomGuestNameEdited) {
+                                setPlayerDisplayName(
+                                  nextGender === 'male' ? 'Buddy Male' : 'Buddy Female',
+                                );
+                              }
+                            }}
+                            aria-label="Next Character"
+                            className="w-9 h-9 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] border border-white/12 flex items-center justify-center text-white hover:text-[#b8ff3c] cursor-pointer active:scale-90 transition-all"
+                          >
+                            <ChevronRight className="w-5 h-5 stroke-[2.5]" />
+                          </button>
+                        </div>
+
+                        {/* 6. Gender segmented control: Male | Female */}
+                        <div
+                          role="group"
+                          aria-label="Character gender"
+                          className="grid grid-cols-2 gap-1 p-1 rounded-full bg-white/[0.07] border border-white/12"
+                        >
+                          <button
+                            type="button"
+                            aria-pressed={characterGender === 'male'}
+                            onClick={() => {
+                              if (characterGender === 'male') return;
+                              soundEngine.playUiClick();
+                              setCharacterGender('male');
+                              dispatchBuddyAction('setCharacterGender:male');
+                              if (!isCustomGuestNameEdited) {
+                                setPlayerDisplayName('Buddy Male');
+                              }
+                            }}
+                            className={`py-1.5 sm:py-2 rounded-full text-xs tracking-wide transition-all cursor-pointer ${
+                              characterGender === 'male'
+                                ? 'bg-[#b8ff3c] text-[#0b0f17] font-extrabold shadow-[0_2px_12px_rgba(184,255,60,0.3)]'
+                                : 'text-white/70 hover:text-white font-semibold'
+                            }`}
+                          >
+                            Male
+                          </button>
+                          <button
+                            type="button"
+                            aria-pressed={characterGender === 'female'}
+                            onClick={() => {
+                              if (characterGender === 'female') return;
+                              soundEngine.playUiClick();
+                              setCharacterGender('female');
+                              dispatchBuddyAction('setCharacterGender:female');
+                              if (!isCustomGuestNameEdited) {
+                                setPlayerDisplayName('Buddy Female');
+                              }
+                            }}
+                            className={`py-1.5 sm:py-2 rounded-full text-xs tracking-wide transition-all cursor-pointer ${
+                              characterGender === 'female'
+                                ? 'bg-[#b8ff3c] text-[#0b0f17] font-extrabold shadow-[0_2px_12px_rgba(184,255,60,0.3)]'
+                                : 'text-white/70 hover:text-white font-semibold'
+                            }`}
+                          >
+                            Female
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 7–9. DISPLAY NAME section */}
+                      <div className="space-y-1.5">
+                        <label
+                          htmlFor="guest-display-name-input"
+                          className="block text-[10px] font-bold uppercase tracking-[0.16em] text-white/50"
+                        >
+                          DISPLAY NAME
+                        </label>
+                        <input
+                          ref={guestNameInputRef}
+                          id="guest-display-name-input"
+                          type="text"
+                          maxLength={20}
+                          data-guest-username-input="true"
+                          value={playerDisplayName}
+                          onChange={(e) => {
+                            setIsCustomGuestNameEdited(true);
+                            setPlayerDisplayName(e.target.value);
+                          }}
+                          placeholder={characterGender === 'male' ? 'Buddy Male' : 'Buddy Female'}
+                          className="w-full rounded-xl bg-white/[0.08] border border-white/18 px-3.5 py-2.5 text-sm font-semibold text-white placeholder:text-white/35 focus:outline-none focus:border-[#b8ff3c] focus:ring-2 focus:ring-[#b8ff3c]/55 transition-all"
+                        />
+                        <p className="text-[11px] text-white/50">
+                          This name floats above your avatar
+                        </p>
+                      </div>
+
+                      {walletConnectError && (
+                        <div
+                          data-character-select-error="true"
+                          className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-400/40 text-rose-200 text-[11px] font-medium"
+                        >
+                          {walletConnectError}
                         </div>
                       )}
 
-                    <div className="space-y-3">
-                      <button
-                        type="button"
-                        data-connect-wallet-enter-btn="true"
-                        disabled={isVerifyingNearWallet || privyOAuthLoading}
-                        onClick={() => void handleStartGoogleLoginAndOpenWalletNaming()}
-                        className="-skew-x-6 w-full py-3 px-4 bg-white hover:bg-slate-100 disabled:opacity-60 text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
-                      >
-                        <span className="skew-x-6 flex items-center justify-center gap-2.5">
-                          <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" aria-hidden="true">
-                            <path
-                              fill="#4285F4"
-                              d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
-                            />
-                            <path
-                              fill="#34A853"
-                              d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"
-                            />
-                            <path
-                              fill="#FBBC05"
-                              d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"
-                            />
-                            <path
-                              fill="#EA4335"
-                              d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
-                            />
-                          </svg>
-                          <span>
-                            {isVerifyingNearWallet || privyOAuthLoading
-                              ? 'SIGNING IN...'
-                              : 'CONTINUE WITH GOOGLE'}
-                          </span>
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        data-login-guest-btn="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          setWalletConnectError(null);
-                          setConnectedExternalWalletId('');
-                          setOnboardingAuthMode('guest');
-                          setConnectedGoogleEmail('');
-                          setCharacterGender('male');
-                          setIsCustomGuestNameEdited(false);
-                          setPlayerDisplayName('Buddy Male');
-                          dispatchBuddyAction('setCharacterGender:male');
-                          beginPlazaFlyToOnboarding('character_select', 'guest_character_select');
-                        }}
-                        className="-skew-x-6 w-full py-3 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-3 border-black shadow-[4px_4px_0_#000] font-black text-xs sm:text-sm uppercase tracking-wider cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
-                      >
-                        <span className="skew-x-6 inline-block">PLAY AS GUEST</span>
-                      </button>
+                      {/* 10–11. Primary PLAY button pinned toward bottom + footer note */}
+                      <div className="mt-auto pt-2 sm:pt-4 space-y-2">
+                        <button
+                          type="button"
+                          data-confirm-guest-character-btn="true"
+                          onClick={handleConfirmGuestCharacterAndEnterLobby}
+                          className="w-full py-3 sm:py-3.5 rounded-2xl bg-[#b8ff3c] hover:bg-[#c9ff66] active:scale-[0.985] text-[#0b0f17] font-black text-sm uppercase tracking-[0.14em] shadow-[0_8px_24px_rgba(184,255,60,0.28)] cursor-pointer transition-all"
+                        >
+                          PLAY
+                        </button>
+                        <p className="text-[11px] text-white/45 text-center leading-snug">
+                          No wallet needed. Sign in later to unlock trading.
+                        </p>
+                      </div>
                     </div>
+                  )}
 
-                    {walletConnectError && (
-                      <div
-                        data-wallet-connect-error="true"
-                        className="p-2.5 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold space-y-2"
-                      >
-                        <div>{walletConnectError}</div>
+                  {onboardingStep === 'subwallet_naming' && (
+                    <div className="flex-1 flex flex-col justify-center space-y-3.5 py-4">
+                      <div className="text-center space-y-0.5">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-[#38bdf8]">
+                          CREATE WALLET
+                        </div>
+                        <div className="text-[11px] font-medium text-white/70">
+                          Choose a unique wallet username.
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="block text-[10px] font-bold uppercase tracking-[0.16em] text-white/50">
+                          USERNAME
+                        </label>
+                        <div className="flex items-stretch rounded-xl border border-white/20 bg-white/[0.08] overflow-hidden focus-within:border-[#b8ff3c] focus-within:ring-2 focus-within:ring-[#b8ff3c]/50">
+                          <input
+                            type="text"
+                            maxLength={24}
+                            data-subwallet-prefix-input="true"
+                            value={subWalletHandleDraft}
+                            onChange={(e) => {
+                              const sanitized = e.target.value
+                                .toLowerCase()
+                                .replace(/[^a-z0-9_-]/g, '');
+                              setSubWalletHandleDraft(sanitized);
+                              setWalletConnectError(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (
+                                e.key === 'Enter' &&
+                                subWalletAvailability.validFormat &&
+                                subWalletAvailability.available &&
+                                !subWalletAvailability.checking
+                              ) {
+                                void handleProvisionSubWalletAndShowWelcome();
+                              }
+                            }}
+                            placeholder="username"
+                            className="w-full min-w-0 px-3 py-2.5 bg-transparent text-white placeholder:text-white/35 font-mono font-bold text-sm focus:outline-none"
+                          />
+                          <div className="px-2.5 py-2 bg-white/[0.08] text-white/70 border-l border-white/15 font-mono font-semibold text-[10.5px] flex items-center shrink-0">
+                            .{NEAR_CONFIG.masterAccountId}
+                          </div>
+                        </div>
+
+                        <div className="p-2.5 rounded-xl bg-white/[0.05] border border-white/12 space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[9.5px] font-bold uppercase text-white/50">
+                              YOUR WALLET
+                            </span>
+                            <span className="text-[10px] font-semibold">
+                              {subWalletAvailability.checking ? (
+                                <span className="text-[#facc15]">Checking...</span>
+                              ) : subWalletAvailability.validFormat &&
+                                subWalletAvailability.available ? (
+                                <span className="text-[#b8ff3c]">
+                                  {subWalletAvailability.ownedByCurrentDevice
+                                    ? 'Restoring your wallet'
+                                    : 'Available'}
+                                </span>
+                              ) : (
+                                <span className="text-rose-300">
+                                  {subWalletAvailability.reason || 'Min 2 characters'}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                          <div
+                            data-subwallet-full-preview="true"
+                            className="font-mono text-xs font-bold text-[#38bdf8] break-all"
+                          >
+                            {(subWalletHandleDraft.trim() || 'username') +
+                              `.${NEAR_CONFIG.masterAccountId}`}
+                          </div>
+                        </div>
+
+                        {walletConnectError && (
+                          <div className="p-2 rounded-xl bg-rose-500/15 border border-rose-400/40 text-rose-200 text-[10.5px] font-medium">
+                            {walletConnectError}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-2">
                         <button
                           type="button"
                           onClick={() => {
                             soundEngine.playUiClick();
                             setWalletConnectError(null);
-                            setConnectedExternalWalletId('');
-                            setOnboardingAuthMode('wallet');
-                            beginPlazaFlyToOnboarding('character_select', 'guest_character_select');
+                            setOnboardingStep('guest_character_select');
                           }}
-                          className="w-full py-1.5 px-2 bg-[#b8ff3c] text-black border border-black font-black uppercase text-[10px] cursor-pointer"
+                          className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/15 text-[11px] font-bold uppercase cursor-pointer"
                         >
-                          CHOOSE CHARACTER &amp; PLAY
+                          BACK
+                        </button>
+
+                        <button
+                          type="button"
+                          data-create-subwallet-btn="true"
+                          disabled={
+                            subWalletAvailability.checking ||
+                            !subWalletAvailability.validFormat ||
+                            !subWalletAvailability.available
+                          }
+                          onClick={() => void handleProvisionSubWalletAndShowWelcome()}
+                          className="flex-1 py-2.5 px-4 rounded-xl bg-[#b8ff3c] hover:bg-[#c9ff66] disabled:opacity-50 disabled:cursor-not-allowed text-[#0b0f17] font-black text-xs uppercase tracking-wider cursor-pointer transition-all"
+                        >
+                          CREATE WALLET
                         </button>
                       </div>
-                    )}
-                  </div>
-
-                  {/* Divider */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 h-px bg-white/15" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      OR
-                    </span>
-                    <div className="flex-1 h-px bg-white/15" />
-                  </div>
-
-                  {/* 2. External NEAR Wallet Link */}
-                  <div className="pt-0.5 pb-1 text-center">
-                    <button
-                      type="button"
-                      data-open-near-wallet-selector-start-btn="true"
-                      disabled={isVerifyingNearWallet || privyOAuthLoading}
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setWalletConnectError(null);
-                        setIsNearWalletSelectorOpen(true);
-                      }}
-                      className="inline-flex items-center justify-center gap-2 text-xs font-bold text-slate-200 hover:text-white disabled:opacity-60 cursor-pointer transition-colors"
-                    >
-                      <Wallet className="w-4 h-4 text-slate-300 shrink-0" aria-hidden="true" />
-                      <span className="underline underline-offset-4">
-                        Have a NEAR wallet? Connect it here
-                      </span>
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {onboardingStep === 'guest_character_select' && (
-                <div className="space-y-3.5">
-                  <div className="text-center space-y-0.5">
-                    <div className="text-[10px] font-black uppercase tracking-widest text-[#b8ff3c]">
-                      CHOOSE CHARACTER
-                    </div>
-                    <div className="text-[10.5px] font-bold text-slate-300">
-                      {onboardingAuthMode === 'wallet'
-                        ? connectedExternalWalletId
-                          ? 'Pick your character and display name.'
-                          : 'Pick your character and display name — your account sets up automatically.'
-                        : 'Explore freely. Sign in later to unlock trading.'}
-                    </div>
-                  </div>
-
-                  {walletConnectError && (
-                    <div
-                      data-character-select-error="true"
-                      className="p-2 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold"
-                    >
-                      {walletConnectError}
                     </div>
                   )}
 
-                  {/* Row 1: Direct Citizen / Guest Name Input */}
-                  <div className="space-y-1">
-                    <label className="block text-[9.5px] font-black uppercase tracking-wider text-slate-300">
-                      DISPLAY NAME
-                    </label>
-                    <input
-                      ref={guestNameInputRef}
-                      type="text"
-                      maxLength={20}
-                      data-guest-username-input="true"
-                      value={playerDisplayName}
-                      onChange={(e) => {
-                        setIsCustomGuestNameEdited(true);
-                        setPlayerDisplayName(e.target.value);
-                      }}
-                      placeholder="Enter your name..."
-                      className="w-full px-3 py-2 bg-white text-black font-black text-sm border-2 border-[#b8ff3c] shadow-[2px_2px_0_#000] focus:outline-none"
-                    />
-                  </div>
-
-                  {/* Row 2: Back Button, < 1/2 > Gender Switcher, and Next / Enter Button */}
-                  <div className="flex items-center justify-between gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setOnboardingStep('auth_choice');
-                      }}
-                      title="Back"
-                      aria-label="Back"
-                      className="w-10 h-10 bg-white/10 hover:bg-white/20 text-white border border-white/25 flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
+                  {onboardingStep === 'provisioning_subwallet' && (
+                    <div
+                      data-provisioning-subwallet-state="true"
+                      className="flex-1 flex flex-col items-center justify-center gap-3 text-center py-4"
                     >
-                      <ArrowLeft className="w-5 h-5 stroke-[2.5]" />
-                    </button>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        data-char-select-prev="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          const nextGender: 'male' | 'female' =
-                            characterGender === 'male' ? 'female' : 'male';
-                          setCharacterGender(nextGender);
-                          dispatchBuddyAction(`setCharacterGender:${nextGender}`);
-                          if (!isCustomGuestNameEdited) {
-                            setPlayerDisplayName(
-                              nextGender === 'male' ? 'Buddy Male' : 'Buddy Female',
-                            );
-                          }
-                        }}
-                        aria-label="Previous Character"
-                        className="w-8 h-8 flex items-center justify-center text-white hover:text-[#b8ff3c] cursor-pointer active:scale-90 transition-transform"
-                      >
-                        <ChevronLeft className="w-6 h-6 stroke-[2.8]" />
-                      </button>
-
-                      <div className="text-center min-w-[72px]">
-                        <div className="text-sm font-bold tracking-wider text-white">
-                          {characterGender === 'male' ? '1/2' : '2/2'}
-                        </div>
-                        <div className="text-[10px] font-black uppercase tracking-widest text-[#b8ff3c]">
-                          {characterGender === 'male' ? 'MALE' : 'FEMALE'}
-                        </div>
+                      <div className="px-4 py-1.5 rounded-full bg-[#38bdf8] text-[#0b0f17] font-black text-xs tracking-widest uppercase">
+                        SETTING UP ACCOUNT...
                       </div>
 
-                      <button
-                        type="button"
-                        data-char-select-next="true"
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          const nextGender: 'male' | 'female' =
-                            characterGender === 'male' ? 'female' : 'male';
-                          setCharacterGender(nextGender);
-                          dispatchBuddyAction(`setCharacterGender:${nextGender}`);
-                          if (!isCustomGuestNameEdited) {
-                            setPlayerDisplayName(
-                              nextGender === 'male' ? 'Buddy Male' : 'Buddy Female',
-                            );
-                          }
-                        }}
-                        aria-label="Next Character"
-                        className="w-8 h-8 flex items-center justify-center text-white hover:text-[#b8ff3c] cursor-pointer active:scale-90 transition-transform"
-                      >
-                        <ChevronRight className="w-6 h-6 stroke-[2.8]" />
-                      </button>
-                    </div>
+                      <div className="w-full p-2.5 rounded-xl bg-white/[0.06] border border-white/15 font-mono text-xs font-bold text-[#b8ff3c] break-all">
+                        {subWalletHandleDraft
+                          ? `${subWalletHandleDraft}.${NEAR_CONFIG.masterAccountId}`
+                          : playerDisplayName.trim() || 'Preparing your player ID...'}
+                      </div>
 
-                    <button
-                      type="button"
-                      data-confirm-guest-character-btn="true"
-                      onClick={handleConfirmGuestCharacterAndEnterLobby}
-                      className="-skew-x-6 px-4 py-2.5 bg-[#b8ff3c] hover:bg-[#d9f99d] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-[11px] uppercase tracking-wider cursor-pointer active:scale-95 transition-all"
-                    >
-                      <span className="skew-x-6 inline-block">PLAY</span>
-                    </button>
-                  </div>
+                      <div className="text-[11px] font-semibold text-white/80">
+                        {subWalletProvisionStageLabel}
+                      </div>
+
+                      <div className="w-full h-2.5 rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-[#b8ff3c] transition-all duration-200"
+                          style={{ width: `${onboardingLoadingProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {onboardingStep === 'entering_lobby' && (
+                    <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center py-4">
+                      <div className="px-5 py-1.5 rounded-full bg-[#b8ff3c] text-[#0b0f17] font-black text-sm tracking-widest uppercase">
+                        LOADING...
+                      </div>
+
+                      <div className="text-[11px] font-bold tracking-widest uppercase text-[#38bdf8]">
+                        {onboardingAuthMode === 'wallet'
+                          ? hud.nearWalletId || walletConnectInput || connectedGoogleEmail
+                          : playerDisplayName.toUpperCase()}
+                      </div>
+
+                      <div className="w-full h-2.5 rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-[#b8ff3c] transition-all duration-150"
+                          style={{ width: `${onboardingLoadingProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
 
-              {onboardingStep === 'subwallet_naming' && (
-                <div className="space-y-3.5">
-                  <div className="text-center space-y-0.5">
-                    <div className="text-[10px] font-black uppercase tracking-widest text-[#38bdf8]">
-                      CREATE WALLET
-                    </div>
-                    <div className="text-[10.5px] font-bold text-slate-300">
-                      Choose a unique wallet username.
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="block text-[9.5px] font-black uppercase tracking-wider text-slate-300">
-                      USERNAME
-                    </label>
-                    <div className="flex items-stretch border-2 border-black shadow-[3px_3px_0_#000] bg-white overflow-hidden">
-                      <input
-                        type="text"
-                        maxLength={24}
-                        data-subwallet-prefix-input="true"
-                        value={subWalletHandleDraft}
-                        onChange={(e) => {
-                          const sanitized = e.target.value
-                            .toLowerCase()
-                            .replace(/[^a-z0-9_-]/g, '');
-                          setSubWalletHandleDraft(sanitized);
-                          setWalletConnectError(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (
-                            e.key === 'Enter' &&
-                            subWalletAvailability.validFormat &&
-                            subWalletAvailability.available &&
-                            !subWalletAvailability.checking
-                          ) {
-                            void handleProvisionSubWalletAndShowWelcome();
-                          }
-                        }}
-                        placeholder="username"
-                        className="w-full min-w-0 px-2.5 py-2 bg-white text-black font-mono font-black text-sm focus:outline-none"
-                      />
-                      <div className="px-2 py-2 bg-[#e2e8f0] text-slate-800 border-l-2 border-black font-mono font-black text-[10.5px] flex items-center shrink-0">
-                        .{NEAR_CONFIG.masterAccountId}
-                      </div>
-                    </div>
-
-                    <div className="p-2.5 bg-[#0f172a] border border-white/20 space-y-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[9.5px] font-black uppercase text-slate-400">
-                          YOUR WALLET
-                        </span>
-                        <span className="text-[10px] font-bold">
-                          {subWalletAvailability.checking ? (
-                            <span className="text-[#facc15]">Checking...</span>
-                          ) : subWalletAvailability.validFormat && subWalletAvailability.available ? (
-                            <span className="text-[#b8ff3c]">
-                              {subWalletAvailability.ownedByCurrentDevice
-                                ? 'Restoring your wallet'
-                                : 'Available'}
-                            </span>
-                          ) : (
-                            <span className="text-[#fca5a5]">
-                              {subWalletAvailability.reason || 'Min 2 characters'}
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                      <div
-                        data-subwallet-full-preview="true"
-                        className="font-mono text-xs font-black text-[#38bdf8] break-all"
-                      >
-                        {(subWalletHandleDraft.trim() || 'username') + `.${NEAR_CONFIG.masterAccountId}`}
-                      </div>
-                    </div>
-
-                    {walletConnectError && (
-                      <div className="p-2 bg-[#ff3b30]/20 border border-[#ff3b30] text-[#fca5a5] text-[10.5px] font-bold">
-                        {walletConnectError}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundEngine.playUiClick();
-                        setWalletConnectError(null);
-                        setOnboardingStep('guest_character_select');
-                      }}
-                      className="px-3 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/25 text-[11px] font-black uppercase cursor-pointer"
-                    >
-                      BACK
-                    </button>
-
-                    <button
-                      type="button"
-                      data-create-subwallet-btn="true"
-                      disabled={
-                        subWalletAvailability.checking ||
-                        !subWalletAvailability.validFormat ||
-                        !subWalletAvailability.available
-                      }
-                      onClick={() => void handleProvisionSubWalletAndShowWelcome()}
-                      className="-skew-x-6 flex-1 py-2.5 px-4 bg-[#b8ff3c] hover:bg-[#d9f99d] disabled:opacity-50 disabled:cursor-not-allowed text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs uppercase tracking-wider cursor-pointer transition-all"
-                    >
-                      <span className="skew-x-6 inline-block">CREATE WALLET</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {onboardingStep === 'provisioning_subwallet' && (
+                {/* Centered Phone Home Indicator Bar */}
                 <div
-                  data-provisioning-subwallet-state="true"
-                  className="flex flex-col items-center gap-3 text-center py-3"
+                  className="shrink-0 pt-1.5 pb-2.5 flex items-center justify-center"
+                  aria-hidden="true"
                 >
-                  <div className="-skew-x-12 px-4 py-1.5 bg-[#38bdf8] text-black border-2 border-black shadow-[3px_3px_0_#000] font-black text-xs tracking-widest uppercase">
-                    <span className="skew-x-12 inline-block">SETTING UP ACCOUNT...</span>
-                  </div>
-
-                  <div className="w-full p-2.5 bg-[#0f172a] border border-white/20 font-mono text-xs font-bold text-[#b8ff3c] break-all">
-                    {subWalletHandleDraft
-                      ? `${subWalletHandleDraft}.${NEAR_CONFIG.masterAccountId}`
-                      : playerDisplayName.trim() || 'Preparing your player ID...'}
-                  </div>
-
-                  <div className="text-[11px] font-bold text-slate-200">
-                    {subWalletProvisionStageLabel}
-                  </div>
-
-                  <div className="w-full h-3 bg-[#0b0e16] border-2 border-white/50 overflow-hidden">
-                    <div
-                      className="h-full bg-[#b8ff3c] transition-all duration-200"
-                      style={{ width: `${onboardingLoadingProgress}%` }}
-                    />
-                  </div>
+                  <div className="w-28 h-1 rounded-full bg-white/35" />
                 </div>
-              )}
-
-              {onboardingStep === 'entering_lobby' && (
-                <div className="flex flex-col items-center gap-3 text-center py-2">
-                  <div className="-skew-x-12 px-5 py-2 bg-[#b8ff3c] text-[#0d0f12] border-2 border-[#0d0f12] shadow-[3px_3px_0_#000] font-black text-base tracking-widest uppercase">
-                    <span className="skew-x-12 inline-block">LOADING...</span>
-                  </div>
-
-                  <div className="text-[11px] font-black tracking-widest uppercase text-[#38bdf8]">
-                    {onboardingAuthMode === 'wallet'
-                      ? hud.nearWalletId || walletConnectInput || connectedGoogleEmail
-                      : playerDisplayName.toUpperCase()}
-                  </div>
-
-                  <div className="w-full h-2.5 bg-[#0b0e16] border border-white/50 overflow-hidden">
-                    <div
-                      className="h-full bg-[#b8ff3c] transition-all duration-150"
-                      style={{ width: `${onboardingLoadingProgress}%` }}
-                    />
-                  </div>
-                </div>
-              )}
+              </div>
             </div>
           </section>
         )}
@@ -10282,6 +10453,7 @@ export default function App() {
         onboardingStep === 'completed' &&
         tutorialStage === 'go_to_hana' &&
         !cityViewActive &&
+        !isSelfieCameraOpen &&
         !isInsideGrandCasino &&
         !isInsideBeautySalon &&
         !isInsideGlasshouseCafe &&
@@ -10293,7 +10465,7 @@ export default function App() {
             data-tutorial-objective-hud="true"
             className="fixed top-3.5 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-md pointer-events-auto select-none"
           >
-            <div className="rounded-full bg-[#0d1118]/78 backdrop-blur-xl text-white border border-white/15 shadow-[0_12px_32px_rgba(0,0,0,0.48)] px-3.5 py-1.5 flex items-center justify-between gap-3">
+            <div className="rounded-full bg-[#111622]/86 text-white border border-white/22 shadow-[0_12px_32px_rgba(0,0,0,0.48)] px-3.5 py-1.5 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="px-2 py-0.5 rounded-full text-[9.5px] font-semibold uppercase tracking-wide shrink-0 bg-emerald-400/90 text-slate-950">
                   Hana
@@ -10361,6 +10533,7 @@ export default function App() {
         gameState === 'playing' &&
         !isFullMapOverview &&
         !cityViewActive &&
+        !isSelfieCameraOpen &&
         onboardingStep === 'completed' &&
         !tramRideCutsceneUi?.active && (
         <div className="fixed inset-0 z-20 pointer-events-none">
@@ -10396,14 +10569,14 @@ export default function App() {
                   {fp.iconType === 'hand' ? (
                     <span
                       aria-hidden="true"
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#0d1118]/78 hover:bg-[#151c28]/90 backdrop-blur-md text-white border border-white/25 hover:border-white/55 shadow-[0_6px_18px_rgba(0,0,0,0.45)] text-[10px] font-semibold tracking-wide leading-none transition-all"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#111622]/86 hover:bg-[#192133]/92 text-white border border-white/22 hover:border-white/55 shadow-[0_6px_18px_rgba(0,0,0,0.45)] text-[10px] font-semibold tracking-wide leading-none transition-all"
                     >
                       <span>Grab</span>
                     </span>
                   ) : (
                     <span
                       aria-hidden="true"
-                      className="group/fp inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#0d1118]/72 hover:bg-[#141a26]/88 backdrop-blur-md border border-white/25 hover:border-white/60 shadow-[0_6px_18px_rgba(0,0,0,0.45)] text-white transition-all hover:scale-105 active:scale-95"
+                      className="group/fp inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#111622]/86 hover:bg-[#192133]/92 border border-white/22 hover:border-white/60 shadow-[0_6px_18px_rgba(0,0,0,0.45)] text-white transition-all hover:scale-105 active:scale-95"
                     >
                       <span className="w-4 h-4 rounded-full bg-white/15 border border-white/35 flex items-center justify-center text-[9px] font-semibold text-white leading-none">
                         {fp.keyLabel}
@@ -10472,10 +10645,10 @@ export default function App() {
                       disabled
                       data-radar-level={radarSpec.level}
                       data-radar-active="true"
-                      className="pointer-events-auto relative block p-0 text-left appearance-none w-24 h-24 sm:w-28 sm:h-28 md:w-32 md:h-32 bg-[#0d1118]/75 border border-white/20 rounded-2xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.48)] shrink-0 transition-all"
+                      className="pointer-events-auto relative block p-0 text-left appearance-none w-24 h-24 sm:w-28 sm:h-28 md:w-32 md:h-32 bg-[#111622]/86 border border-white/22 rounded-2xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.48)] shrink-0 transition-all"
                     >
                       {/* 1:1 Orthographic Top-Down Map of the Current 3-Part Mirrored Arena ([-125, +125]) */}
-                      <span className="absolute top-1.5 left-1.5 z-40 px-1.5 py-0.5 bg-[#0d1118]/70 backdrop-blur-md border border-white/15 rounded-full text-[8px] font-medium tracking-wide text-white/90 pointer-events-none">
+                      <span className="absolute top-1.5 left-1.5 z-40 px-1.5 py-0.5 bg-[#111622]/86 border border-white/22 rounded-full text-[8px] font-medium tracking-wide text-white/90 pointer-events-none">
                         {worldMode === 'warzone' ? 'Warzone' : 'City Map'}
                       </span>
                       {worldMode === 'warzone' ? (
@@ -10801,10 +10974,10 @@ export default function App() {
                     dispatchBuddyAction('spawnContractHarvester');
                   }}
                   title="AI Pure Harvester Status (Max 2/Base)"
-                  className={`px-3 py-1 rounded-full backdrop-blur-xl border shadow-[0_6px_18px_rgba(0,0,0,0.35)] font-semibold text-[10px] cursor-pointer transition-all active:scale-95 ${
+                  className={`px-3 py-1 rounded-full border shadow-[0_6px_18px_rgba(0,0,0,0.35)] font-semibold text-[10px] cursor-pointer transition-all active:scale-95 ${
                     hud.harvesterContractStage === 'CONTRACT_ACTIVE'
                       ? 'bg-emerald-400/90 text-slate-950 border-emerald-200'
-                      : 'bg-[#0d1118]/72 text-amber-200 border-white/15 hover:border-white/35'
+                      : 'bg-[#111622]/86 text-amber-200 border-white/22 hover:border-white/35'
                   }`}
                 >
                   Harvester: {hud.harvesterContractLabel ?? 'Standby (Wait Contract)'}
@@ -10817,7 +10990,7 @@ export default function App() {
               <div
                 aria-label="Live Map Preview Controls"
                 data-map-preview-banner="true"
-                className="pointer-events-auto flex flex-col gap-1.5 bg-[#0d1118]/82 backdrop-blur-xl text-white border border-sky-300/35 shadow-[0_14px_38px_rgba(0,0,0,0.5)] px-3.5 py-2.5 rounded-2xl"
+                className="pointer-events-auto flex flex-col gap-1.5 bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 text-white border border-sky-300/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_14px_38px_rgba(0,0,0,0.52)] px-3.5 py-2.5 rounded-2xl"
               >
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-sky-300">
                   Map Preview (Live Free Camera)
@@ -10847,7 +11020,7 @@ export default function App() {
               style={{ top: 'max(0.65rem, var(--safe-top))' }}
               className="fixed left-1/2 -translate-x-1/2 z-30 pointer-events-auto flex items-center gap-1.5 sm:gap-2 max-w-[calc(100vw-1rem)]"
             >
-              <div className="flex items-center p-1 rounded-full bg-[#0d1118]/72 backdrop-blur-xl border border-white/15 shadow-[0_8px_28px_rgba(0,0,0,0.42)]">
+              <div className="flex items-center p-1 rounded-full bg-[#111622]/86 border border-white/22 shadow-[0_8px_28px_rgba(0,0,0,0.45)]">
                 {/* Blue Team Online Population Bar */}
                 <div className="relative w-24 sm:w-40 h-6 rounded-l-full bg-white/[0.06] overflow-hidden flex items-center justify-start px-2 sm:px-3">
                   <div
@@ -10922,7 +11095,7 @@ export default function App() {
                     );
                   }}
                   title="Return to Main World (Central Plaza)"
-                  className="h-8 px-3 rounded-full bg-[#0d1118]/72 hover:bg-white/20 backdrop-blur-sm text-white border border-white/20 hover:border-white/40 shadow-[0_8px_24px_rgba(0,0,0,0.4)] font-medium text-[11px] tracking-tight cursor-pointer transition-all"
+                  className="h-8 px-3 rounded-full bg-[#111622]/86 hover:bg-[#192133]/92 text-white border border-white/22 hover:border-white/40 shadow-[0_8px_24px_rgba(0,0,0,0.42)] font-medium text-[11px] tracking-tight cursor-pointer transition-all"
                 >
                   Exit Warzone
                 </button>
@@ -10959,7 +11132,7 @@ export default function App() {
                 >
                   <div
                     data-click-to-walk-pill="true"
-                    className="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#0d1118]/78 backdrop-blur-sm text-white border border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.42)] text-[11px] font-medium max-w-[320px]"
+                    className="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#111622]/86 text-white border border-white/22 shadow-[0_8px_24px_rgba(0,0,0,0.45)] text-[11px] font-medium max-w-[320px]"
                   >
                     <Navigation className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
                     <span className="font-mono-tabular truncate text-white/95">
@@ -10988,7 +11161,7 @@ export default function App() {
               style={{ top: 'max(0.65rem, var(--safe-top))' }}
               className="fixed left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex flex-col items-center gap-2 select-none max-w-[calc(100vw-1rem)]"
             >
-              <div className="flex flex-wrap items-center justify-center gap-1 sm:gap-1.5 rounded-2xl sm:rounded-full bg-[#0d1118]/72 backdrop-blur-sm text-white border border-white/15 shadow-[0_8px_28px_rgba(0,0,0,0.45)] px-2 sm:px-2.5 py-1.5">
+              <div className="flex flex-wrap items-center justify-center gap-1 sm:gap-1.5 rounded-2xl sm:rounded-full bg-[#111622]/86 text-white border border-white/22 shadow-[0_8px_28px_rgba(0,0,0,0.45)] px-2 sm:px-2.5 py-1.5">
                 <span className="px-2.5 py-0.5 rounded-full bg-emerald-400/20 text-emerald-200 border border-emerald-300/35 text-[10px] font-semibold tracking-tight">
                   {isSampleHouseView ? 'Model House' : 'My Private House'}
                 </span>
@@ -11211,7 +11384,7 @@ export default function App() {
                     data-warzone-hp-badge="true"
                     data-warzone-lives-badge="true"
                     title={`Health: ${currentHp}/${maxHp} HP | Lives: ${currentLives}/${maxLives}`}
-                    className="relative px-3.5 py-1.5 min-w-[128px] sm:min-w-[140px] h-9 rounded-full bg-[#0d1118]/72 backdrop-blur-sm border border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.42)] overflow-hidden flex items-center justify-center"
+                    className="relative px-3.5 py-1.5 min-w-[128px] sm:min-w-[140px] h-9 rounded-full bg-[#111622]/86 border border-white/22 shadow-[0_8px_24px_rgba(0,0,0,0.45)] overflow-hidden flex items-center justify-center"
                   >
                     <div
                       className="absolute inset-y-0 left-0 bg-emerald-400/75 transition-all duration-200 ease-out"
@@ -11404,8 +11577,8 @@ export default function App() {
                         w.isActive
                           ? 'bg-emerald-400/25 text-white border-emerald-300/75 -translate-y-0.5 shadow-[0_8px_24px_rgba(16,185,129,0.28)]'
                           : w.kind === 'tactical'
-                            ? 'bg-[#0d1118]/72 hover:bg-amber-300/18 text-amber-100 border-amber-300/35 shadow-[0_6px_18px_rgba(0,0,0,0.35)]'
-                            : 'bg-[#0d1118]/72 hover:bg-white/15 text-white/90 border-white/15 hover:border-white/35 shadow-[0_6px_18px_rgba(0,0,0,0.35)]'
+                            ? 'bg-[#111622]/86 hover:bg-amber-300/18 text-amber-100 border-amber-300/35 shadow-[0_6px_18px_rgba(0,0,0,0.4)]'
+                            : 'bg-[#111622]/86 hover:bg-[#192133]/92 text-white/90 border-white/22 hover:border-white/35 shadow-[0_6px_18px_rgba(0,0,0,0.4)]'
                       }`}
                     >
                       <span className="flex items-center gap-1.5">
@@ -11650,7 +11823,7 @@ export default function App() {
                   }
                   setSocialChatText('');
                 }}
-                className="w-full flex items-center gap-1.5 bg-[#0d1118]/65 backdrop-blur-sm border border-white/15 focus-within:border-white/35 shadow-[0_8px_28px_rgba(0,0,0,0.38)] px-2 py-1.5 rounded-full transition-colors"
+                className="w-full flex items-center gap-1.5 bg-[#111622]/86 border border-white/22 focus-within:border-white/35 shadow-[0_8px_28px_rgba(0,0,0,0.45)] px-2 py-1.5 rounded-full transition-colors"
               >
                 {isAnyNpcChatBarMode && (
                   <span
@@ -11770,9 +11943,9 @@ export default function App() {
                         ? 'Close Messages'
                         : isSmartphoneOsOpen
                           ? 'Close Smartphone'
-                          : 'Open Buddies Smartphone (Messages, Map, Missions & Apps)'
+                          : 'Open Cerria Smartphone (Messages, Map, Missions & Apps)'
                     }
-                    aria-label="Open Buddies Smartphone"
+                    aria-label="Open Cerria Smartphone"
                   >
                     {isSocialChatModalOpen ? (
                       <X className="w-3.5 h-3.5" aria-hidden="true" />
@@ -11805,7 +11978,7 @@ export default function App() {
               data-mission-guide-chip="true"
               className="fixed left-1/2 top-[60px] z-40 -translate-x-1/2 pointer-events-none select-none"
             >
-              <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#0d1118]/78 backdrop-blur-sm text-white border border-white/15 shadow-[0_10px_28px_rgba(0,0,0,0.45)]">
+              <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#111622]/86 text-white border border-white/22 shadow-[0_10px_28px_rgba(0,0,0,0.45)]">
                 <span className="w-2 h-2 rounded-full shrink-0 bg-emerald-400 animate-pulse" />
                 <span className="text-[11px] font-medium tracking-tight whitespace-nowrap text-white/92">
                   {missionGuide.stage === 'to_kiosk'
@@ -12064,6 +12237,23 @@ export default function App() {
                       dispatchBuddyAction(`equipScooter:${kind}`);
                     }
                   }}
+                  isSelfieCameraOpen={isSelfieCameraOpen}
+                  onOpenSelfieCamera={() => {
+                    closeSmartphone();
+                    setIsQuickPoseModalOpen(false);
+                    setIsKioskModalOpen(false);
+                    setIsProfileModalOpen(false);
+                    setIsSocialChatModalOpen(false);
+                    setIsPersonalWalletModalOpen(false);
+                    setIsPersonalBagModalOpen(false);
+                    setIsPinTargetPopupOpen(false);
+                    setIsTargetMenuExpanded(false);
+                    setPairedInteractTarget(null);
+                    setActiveSpecialModal('none');
+                    setActiveTeleportKioskModal('none');
+                    window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                    setIsSelfieCameraOpen(true);
+                  }}
                 />
               );
             })()}
@@ -12118,7 +12308,7 @@ export default function App() {
           aria-labelledby="pause-modal-title"
           className="fixed inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/55 backdrop-blur-md pointer-events-auto"
         >
-          <div className="w-full max-w-md rounded-[28px] bg-[#0d1118]/86 backdrop-blur-2xl border border-white/15 shadow-[0_24px_64px_rgba(0,0,0,0.55)] p-6 text-center text-white space-y-5">
+          <div className="w-full max-w-md rounded-[28px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] p-6 text-center text-white space-y-5">
             <div className="space-y-1">
               <div className="inline-block px-3 py-0.5 rounded-full bg-white/10 text-slate-300 text-[11px] font-medium tracking-wide">
                 Paused
@@ -13059,6 +13249,7 @@ export default function App() {
           !isCitizenDialogueOpen &&
           !isWardrobeStudioOpen &&
           !cityViewActive &&
+          !isSelfieCameraOpen &&
           activeSpecialModal === 'none'
         }
         onClose={() => setIsQuickPoseModalOpen(false)}
@@ -13082,12 +13273,60 @@ export default function App() {
         }}
       />
 
+      <CitySelfieCameraOverlay
+        isOpen={
+          isSelfieCameraOpen &&
+          isPreloadComplete &&
+          gameState === 'playing' &&
+          worldMode !== 'warzone' &&
+          !cityViewActive &&
+          !isWardrobeStudioOpen &&
+          activeSpecialModal === 'none'
+        }
+        locationLabel={
+          isInsidePrivateHouse
+            ? isSampleHouseView
+              ? 'Model House'
+              : 'Private House'
+            : isInsideGlasshouseCafe
+              ? 'Glasshouse Cafe'
+              : isInsideGrandCasino
+                ? 'Grand Casino'
+                : isInsideBeautySalon
+                  ? 'Glow Studio Salon'
+                  : 'Central Plaza'
+        }
+        playerDisplayName={playerDisplayName || 'Buddy'}
+        characterGender={characterGender}
+        nearAccountId={hud.nearWalletId ?? null}
+        quickPoseItems={ownedQuickPoseItems}
+        activeQuickPoseId={activeQuickPoseId}
+        onTriggerQuickPose={(item) => {
+          const glbUrl = item.dancePose?.animGlbUrl ?? null;
+          if (!glbUrl) return;
+          dispatchBuddyAction(
+            `playQuickPose:${JSON.stringify({ id: item.id, name: item.name, glbUrl })}`,
+          );
+        }}
+        onStopQuickPose={() => {
+          dispatchBuddyAction('stopQuickPose');
+        }}
+        onTriggerEmote={(emoteId) => {
+          dispatchBuddyAction(`playEmote:${emoteId}`);
+        }}
+        onStopEmote={() => {
+          dispatchBuddyAction('clearEmote');
+        }}
+        onClose={() => setIsSelfieCameraOpen(false)}
+      />
+
       <MobileResponsiveControls
         isGameplayActive={
           isPreloadComplete &&
           gameState === 'playing' &&
           !isFullMapOverview &&
           !cityViewActive &&
+          !isSelfieCameraOpen &&
           onboardingStep === 'completed' &&
           playMode !== 'editor'
         }
@@ -13104,8 +13343,14 @@ export default function App() {
           isDexModalOpen ||
           isGrandCasinoModalOpen ||
           isCitizenDialogueOpen ||
+          isSocialChatModalOpen ||
+          isDailyMissionsModalOpen ||
+          isGearModalOpen ||
+          isHouseFriendInviteOpen ||
+          isPinTargetPopupOpen ||
           isSmartphoneOsOpen ||
           isQuickPoseModalOpen ||
+          isSelfieCameraOpen ||
           Boolean(pairedInteractTarget) ||
           activeSpecialModal !== 'none' ||
           activeTeleportKioskModal !== 'none'
@@ -14253,7 +14498,7 @@ export default function App() {
                   className="mt-0.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#b8ff3c] hover:bg-[#a3e635] text-[#0f131c] border border-[#14161d] text-[10px] font-black tracking-wide shadow-xs cursor-pointer transition-transform active:scale-95"
                 >
                   <Navigation className="w-2.5 h-2.5" />
-                  <span>Walk here</span>
+                  <span>{equippedScooterKind ? 'Ride here' : 'Walk here'}</span>
                 </button>
               </div>
             )}
@@ -14377,9 +14622,13 @@ export default function App() {
               className="pointer-events-none fixed left-3 sm:left-1/2 sm:-translate-x-1/2 max-w-[calc(100vw-11rem)] sm:max-w-[90vw] px-3 py-1.5 rounded-full bg-[#0f131c]/90 text-white/90 border border-white/20 shadow-[0_8px_22px_rgba(0,0,0,0.35)] text-[10.5px] sm:text-[11px] font-semibold tracking-wide truncate"
             >
               <span className="hidden sm:inline">
-                Click anywhere on the 3D map to walk there · Drag to pan the camera
+                {equippedScooterKind
+                  ? 'Click anywhere on the 3D map to ride there · Drag to pan the camera'
+                  : 'Click anywhere on the 3D map to walk there · Drag to pan the camera'}
               </span>
-              <span className="sm:hidden">Tap map to walk · Drag to pan</span>
+              <span className="sm:hidden">
+                {equippedScooterKind ? 'Tap map to ride · Drag to pan' : 'Tap map to walk · Drag to pan'}
+              </span>
             </div>
 
             {/* Bottom-Right Weather & Time Pill inside City View */}

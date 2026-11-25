@@ -43,25 +43,16 @@ const RAIL_CATEGORIES: ReadonlyArray<{
   { id: 'emotes', label: 'Emotes', headerLabel: 'Emotes', Icon: Smile },
 ];
 
+const EXCLUDED_QUICK_EMOTE_IDS = new Set(['wave', 'cheer', 'dance']);
+
+const VISIBLE_SOCIAL_EMOTES = SOCIAL_EMOTE_QUICK_LIST.filter(
+  (emote) => !EXCLUDED_QUICK_EMOTE_IDS.has(emote.id),
+);
+
 const EMOTE_ORB_STYLES: Record<
   string,
   { gradient: readonly [string, string]; tag: string; subtitle: string }
 > = {
-  wave: {
-    gradient: ['#38bdf8', '#2563eb'],
-    tag: 'WAVE',
-    subtitle: 'Quick Emote',
-  },
-  cheer: {
-    gradient: ['#f472b6', '#db2777'],
-    tag: 'CHEER',
-    subtitle: 'Quick Emote',
-  },
-  dance: {
-    gradient: ['#34d399', '#059669'],
-    tag: 'GROOVE',
-    subtitle: 'Quick Emote',
-  },
   salute: {
     gradient: ['#fbbf24', '#d97706'],
     tag: 'SALUTE',
@@ -109,7 +100,7 @@ export const QuickPoseStyleModal: React.FC<QuickPoseStyleModalProps> = ({
       style_pose: 0,
       style_dance: 0,
       style_action: 0,
-      emotes: SOCIAL_EMOTE_QUICK_LIST.length,
+      emotes: VISIBLE_SOCIAL_EMOTES.length,
     };
     for (const item of quickPoseItems) {
       if (item.slot === 'style_pose') counts.style_pose += 1;
@@ -160,7 +151,7 @@ export const QuickPoseStyleModal: React.FC<QuickPoseStyleModalProps> = ({
         hasEntered ? 'translate-x-0 opacity-100' : '-translate-x-8 opacity-0'
       }`}
     >
-      <div className="w-full h-full rounded-[32px] overflow-hidden flex flex-col bg-[#141926]/68 backdrop-blur-2xl border border-white/25 shadow-[0_24px_70px_rgba(0,0,0,0.52)] text-white">
+      <div className="w-full h-full rounded-[32px] overflow-hidden flex flex-col bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] text-white">
         {/* Top Header matching Wardrobe Style · Animation Set */}
         <div className="shrink-0 px-4 py-3.5 border-b border-white/[0.12] flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -272,7 +263,7 @@ export const QuickPoseStyleModal: React.FC<QuickPoseStyleModalProps> = ({
               <span aria-hidden="true">·</span>
               <span className="tabular-nums">
                 {activeCategory === 'emotes'
-                  ? SOCIAL_EMOTE_QUICK_LIST.length
+                  ? VISIBLE_SOCIAL_EMOTES.length
                   : filteredItems.length}
               </span>
             </div>
@@ -280,7 +271,7 @@ export const QuickPoseStyleModal: React.FC<QuickPoseStyleModalProps> = ({
             {/* 3-Column Circular Orb Grid */}
             {activeCategory === 'emotes' ? (
               <div className="grid grid-cols-3 gap-x-2 gap-y-3.5 pb-2">
-                {SOCIAL_EMOTE_QUICK_LIST.map((emote) => {
+                {VISIBLE_SOCIAL_EMOTES.map((emote) => {
                   const styleSpec = EMOTE_ORB_STYLES[emote.id] ?? {
                     gradient: ['#60a5fa', '#2563eb'] as const,
                     tag: emote.label.toUpperCase(),

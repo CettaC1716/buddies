@@ -1001,7 +1001,7 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
       >
         {/* Top transient toast pill if line snapped or early nibble */}
         {fishingHintMessage && (
-          <div className="flex items-center gap-2.5 px-4 py-2 rounded-full bg-[#0d1118]/78 backdrop-blur-xl border border-white/15 shadow-[0_12px_32px_rgba(0,0,0,0.4)] text-[13px] font-medium text-slate-100">
+          <div className="flex items-center gap-2.5 px-4 py-2 rounded-full bg-[#111622]/86 border border-white/22 shadow-[0_12px_32px_rgba(0,0,0,0.45)] text-[13px] font-medium text-slate-100">
             <span
               style={{
                 background: '#5fe3d4',
@@ -1025,7 +1025,7 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
               right: 'max(0.75rem, var(--safe-right))',
               bottom: 'calc(162px + var(--safe-bottom))',
             }}
-            className="fixed z-40 pointer-events-none select-none flex flex-col items-center gap-1.5 sm:gap-2 w-[78px] sm:w-[84px] px-2 py-2.5 sm:py-3 rounded-2xl bg-[#0d1118]/78 backdrop-blur-xl border border-white/15 shadow-[0_12px_32px_rgba(0,0,0,0.42)]"
+            className="fixed z-40 pointer-events-none select-none flex flex-col items-center gap-1.5 sm:gap-2 w-[78px] sm:w-[84px] px-2 py-2.5 sm:py-3 rounded-2xl bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_12px_32px_rgba(0,0,0,0.52)]"
           >
             {fishingPhase === 'fighting' && fishingMinigame && (
               <div className="flex flex-col items-center gap-0.5 text-center">
@@ -1125,7 +1125,7 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
           data-caught-fish-toast="true"
           className="fixed inset-0 z-[120] flex items-center justify-center p-4 sm:p-6 bg-slate-950/65 backdrop-blur-md pointer-events-auto select-none"
         >
-          <div className="w-full max-w-2xl rounded-[24px] bg-[#0d1118]/88 backdrop-blur-2xl border border-white/15 shadow-[0_24px_64px_rgba(0,0,0,0.55)] px-5 py-6 sm:px-7 sm:py-7 flex flex-col items-center text-center text-white">
+          <div className="w-full max-w-2xl rounded-[24px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] px-5 py-6 sm:px-7 sm:py-7 flex flex-col items-center text-center text-white">
             {/* Header & Rarity Pill */}
             <div className="flex flex-col items-center">
               <div className="flex items-center justify-center gap-2 mb-2.5">

@@ -15,7 +15,7 @@ export const SCOOTER_RIDE_MODEL_SCALE = 2.0;
  * Kept alongside `SCOOTER_RIDE_MODEL_SCALE` until `BuddiesBlitzArena.tsx` switches riders by kind in Phase 2B.
  */
 export const SCOOTER_RIDE_MODEL_SCALE_BY_KIND: Record<UrbanScooterKind, number> = {
-  electric_scooter_bike: 1.48,
+  electric_scooter_bike: 1.86,
   push_kick_scooter: 2.0,
 };
 
@@ -30,21 +30,21 @@ export const SCOOTER_RIDER_LIFT_M: Record<UrbanScooterKind, number> = {
 };
 
 export const SCOOTER_RIDER_LIFT_BY_KIND_M: Record<UrbanScooterKind, number> = {
-  electric_scooter_bike: 0.25,
+  electric_scooter_bike: 0.57,
   push_kick_scooter: 0.23,
 };
 
 /**
  * Rider body local-Z offset (world units along forward heading) while riding.
- * Negative shifts the hips back onto the bike's rear saddle.
+ * Negative shifts the hips back onto the bike's contoured rider saddle bucket.
  */
 export const SCOOTER_RIDER_BACK_OFFSET_M: Record<UrbanScooterKind, number> = {
-  electric_scooter_bike: -0.37,
+  electric_scooter_bike: -0.44,
   push_kick_scooter: 0,
 };
 
 export const SCOOTER_RIDER_BACK_OFFSET_BY_KIND_M: Record<UrbanScooterKind, number> = {
-  electric_scooter_bike: -0.27,
+  electric_scooter_bike: -0.44,
   push_kick_scooter: 0,
 };
 

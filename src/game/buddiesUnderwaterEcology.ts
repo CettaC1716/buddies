@@ -161,12 +161,12 @@ export function isPointClearOfPierAndQuay(
   if (worldX < shoreX + 2.5 + paddingM) {
     return false;
   }
-  // Keep clear of SE Beachfront Stilt Timber Cabin piling footprint `[130.5..137.5] x [81.5..89.0]`
+  // Keep clear of SE Beachfront Stilt Timber Cabin piling footprint `[127.6..135.6] x [91.5..100.0]`
   if (
-    worldX >= 130.5 - paddingM &&
-    worldX <= 137.5 + paddingM &&
-    worldZ >= 81.5 - paddingM &&
-    worldZ <= 89.0 + paddingM
+    worldX >= 127.6 - paddingM &&
+    worldX <= 135.6 + paddingM &&
+    worldZ >= 91.5 - paddingM &&
+    worldZ <= 100.0 + paddingM
   ) {
     return false;
   }

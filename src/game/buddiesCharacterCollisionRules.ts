@@ -95,8 +95,8 @@ export const WORLD_STAIRCASE_CORRIDORS: readonly StaircaseChannelRect[] = [
   { id: 'se_beach_stair_2', minX: 92.0, maxX: 97.8, minZ: 94.32, maxZ: 98.88, axis: 'x' },
   // SE Beachfront West Travertine Boardwalk Access Steps
   { id: 'se_beach_west_steps', minX: 76.6, maxX: 79.4, minZ: 46.6, maxZ: 101.8, axis: 'x', openSides: true },
-  // Stilt Cabin Wooden Entry Steps (+24m East on widened coastline)
-  { id: 'se_stilt_cabin_stairs', minX: 127.5, maxX: 128.82, minZ: 83.24, maxZ: 85.56, axis: 'x' },
+  // Stilt Cabin Wooden Entry Steps (North-facing entry on South Kai's Beach shoreline)
+  { id: 'se_stilt_cabin_stairs', minX: 131.24, maxX: 133.56, minZ: 90.3, maxZ: 91.62, axis: 'z' },
   // East Coastal Beach Club multi-tiered terrace staircases (synced 1:1 with getBeachClubStairCorridors)
   ...getBeachClubStairCorridors().map(
     (sf): StaircaseChannelRect => ({

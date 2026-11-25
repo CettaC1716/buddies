@@ -15,7 +15,7 @@ import {
 } from './buddiesBeautySalonRules';
 import { CAFE_INTERIOR_BOUNDS, CAFE_INTERIOR_SEAT_SPOTS } from './buddiesCafeRules';
 import { CASINO_INTERIOR_BOUNDS, CASINO_INTERIOR_SEAT_SPOTS } from './buddiesGrandCasinoRules';
-import { evaluateNwLakeSdf } from './buddiesPlanetCurvature';
+import { evaluateNwLakeSdf, evaluateRoadNetworkSdf } from './buddiesPlanetCurvature';
 import {
   CITY_MINIMAP_POIS,
   CITY_NAV_MAX_COORD,
@@ -637,4 +637,93 @@ test('Click-to-Walk routes cleanly into, across, and out of Beach Club terraces,
       `${r.name} violated Beach Club clearance/elevation: ${clr.violationReason}`,
     );
   }
+});
+
+test('scooter mode routes along the shortest asphalt road network to the road point closest to destination', () => {
+  const scooterNav = buildCityNavGrid({ mode: 'scooter', worldMode: 'safezone' });
+
+  // Measure fraction of route distance spent on asphalt roads (`evaluateRoadNetworkSdf <= 0.6`)
+  const measureAsphaltFraction = (
+    startX: number,
+    startZ: number,
+    waypoints: ReadonlyArray<{ x: number; z: number }>,
+  ): number => {
+    const pts = [{ x: startX, z: startZ }, ...waypoints];
+    let totalLen = 0;
+    let asphaltLen = 0;
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const dx = pts[i + 1].x - pts[i].x;
+      const dz = pts[i + 1].z - pts[i].z;
+      const segLen = Math.hypot(dx, dz);
+      const steps = Math.max(1, Math.ceil(segLen / 1.0));
+      const stepLen = segLen / steps;
+      for (let s = 0; s < steps; s++) {
+        const t = (s + 0.5) / steps;
+        const sx = pts[i].x + dx * t;
+        const sz = pts[i].z + dz * t;
+        totalLen += stepLen;
+        if (evaluateRoadNetworkSdf(sx, sz) <= 0.6) {
+          asphaltLen += stepLen;
+        }
+      }
+    }
+    return totalLen > 0 ? asphaltLen / totalLen : 0;
+  };
+
+  // 1. Cross-city ride on asphalt road from West ring road (-70, 0) to East ring road (70, 0)
+  const crossRoadPlan = planCityClickToWalkRoute(scooterNav, -70, 0, 70, 0);
+  assert.equal(crossRoadPlan.reachable, true);
+  const crossAsphaltFrac = measureAsphaltFraction(
+    crossRoadPlan.startX,
+    crossRoadPlan.startZ,
+    crossRoadPlan.waypoints,
+  );
+  assert.ok(
+    crossAsphaltFrac >= 0.90,
+    `Expected scooter cross-city route to stay >= 90% on asphalt roads, got ${(crossAsphaltFrac * 100).toFixed(1)}%`,
+  );
+  const crossClr = verifyRouteClearOfStructures(
+    scooterNav,
+    crossRoadPlan.waypoints,
+    crossRoadPlan.startX,
+    crossRoadPlan.startZ,
+  );
+  assert.equal(crossClr.clear, true, crossClr.violationReason ?? undefined);
+
+  // 2. Central Plaza (-90, 0) -> South Residence yard (-15, 92): joins asphalt road and exits nearest destination
+  const plazaToSouthPlan = planCityClickToWalkRoute(scooterNav, -90, 0, -15, 92);
+  assert.equal(plazaToSouthPlan.reachable, true);
+  const plazaToSouthFrac = measureAsphaltFraction(
+    plazaToSouthPlan.startX,
+    plazaToSouthPlan.startZ,
+    plazaToSouthPlan.waypoints,
+  );
+  assert.ok(
+    plazaToSouthFrac >= 0.65,
+    `Expected Plaza -> South Residence scooter route to ride asphalt roads (>= 65%), got ${(plazaToSouthFrac * 100).toFixed(1)}%`,
+  );
+  // Confirm shorter southern asphalt collector (z > 0) is chosen over northern collector (z < 0)
+  const maxNegativeZ = Math.min(...plazaToSouthPlan.waypoints.map((w) => w.z));
+  assert.ok(
+    maxNegativeZ > -10,
+    `Expected shortest southern asphalt route (z > -10), but routed north to z=${maxNegativeZ.toFixed(1)}`,
+  );
+  const southClr = verifyRouteClearOfStructures(
+    scooterNav,
+    plazaToSouthPlan.waypoints,
+    plazaToSouthPlan.startX,
+    plazaToSouthPlan.startZ,
+  );
+  assert.equal(southClr.clear, true, southClr.violationReason ?? undefined);
+
+  // 3. West-North road (-70, -40) -> East-North road (70, -40): chooses shorter North collector vs South loop
+  const northRoadPlan = planCityClickToWalkRoute(scooterNav, -70, -40, 70, -40);
+  assert.equal(northRoadPlan.reachable, true);
+  assert.ok(
+    northRoadPlan.waypoints.every((w) => w.z <= 0),
+    'Expected shortest North asphalt corridor (z <= 0) between (-70,-40) and (70,-40)',
+  );
+  assert.ok(
+    measureAsphaltFraction(northRoadPlan.startX, northRoadPlan.startZ, northRoadPlan.waypoints) >= 0.90,
+  );
 });

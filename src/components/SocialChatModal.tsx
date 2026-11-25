@@ -528,7 +528,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
       kind: 'message',
       title: formatReplySubject(openLetter.title),
       payload: {
-        senderName: simplifyDisplayName(playerName) || 'Buddies Citizen',
+        senderName: simplifyDisplayName(playerName) || 'Cerria Citizen',
         senderAccount,
         body: trimmedBody,
         replyToLetterId: openLetter.id,
@@ -942,7 +942,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
       <div
         className={
           isStandaloneGlassChat
-            ? 'relative h-full rounded-[32px] bg-[#141926]/68 backdrop-blur-2xl border border-white/25 shadow-[0_24px_70px_rgba(0,0,0,0.52)] text-white flex flex-col overflow-hidden'
+            ? 'relative h-full rounded-[32px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] text-white flex flex-col overflow-hidden'
             : isPhoneGlassMode
               ? 'relative w-full h-full bg-transparent text-white flex flex-col overflow-hidden'
               : embeddedInPhone
@@ -956,7 +956,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
             <div className="shrink-0 flex items-center justify-between text-[10.5px] font-medium px-4 pt-3 pb-1.5 text-white/90">
               <div className="flex items-center gap-1.5">
                 <Wifi className="w-3 h-3 text-white/85" aria-hidden="true" />
-                <span className="tracking-wide font-semibold">BLITZ OS</span>
+                <span className="tracking-wide font-semibold">CERRIA OS</span>
               </div>
               <button
                 type="button"
@@ -1145,7 +1145,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                 data-letter-certificate={openLetter.kind === 'certificate' ? 'true' : undefined}
                 data-letter-kind={openLetter.kind}
                 className={`absolute inset-0 z-20 flex flex-col px-4 py-3.5 overflow-y-auto ${
-                  isPhoneGlassMode ? 'bg-[#141926]/88 backdrop-blur-xl' : 'bg-[#fbfaf7]'
+                  isPhoneGlassMode ? 'bg-[#111622]/86' : 'bg-[#fbfaf7]'
                 }`}
               >
                 <button

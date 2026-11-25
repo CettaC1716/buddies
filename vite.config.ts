@@ -242,6 +242,7 @@ export default defineConfig(({ command, mode }) => {
       chunkSizeWarningLimit: 1800,
       rolldownOptions: {
         output: {
+          chunkFileNames: 'assets/chunk-[hash].js',
           manualChunks(id) {
             if (id.includes('node_modules/three')) return 'vendor-three';
             if (id.includes('node_modules/@supabase')) return 'vendor-supabase';

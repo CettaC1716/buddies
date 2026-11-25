@@ -215,16 +215,16 @@ test('resolveExtendedWaterMarginGuard2D blocks NW Lake, SE Sea & Beach Club Pool
   assert.ok(ocean.x < 142.0);
   assert.equal(ocean.vx, 0);
 
-  // On Beachfront Stilt Cabin deck over ocean (134.5, 85.2) -> must NOT push off deck!
+  // On Beachfront Stilt Cabin deck over ocean (134.8, 98.8) -> must NOT push off deck!
   const stiltDeck = resolveExtendedWaterMarginGuard2D({
-    x: 134.5,
-    z: 85.2,
+    x: 134.8,
+    z: 98.8,
     vx: 1.5,
     vz: 0,
     radius: PLAYER_FOOT_CAPSULE_RADIUS,
   });
   assert.equal(stiltDeck.hitWater, false);
-  assert.equal(stiltDeck.x, 134.5);
+  assert.equal(stiltDeck.x, 134.8);
 
   // On Beach Club Crossing Bridge (95.8, -14.3) above West flanking pool -> must stay walkable!
   const bridgeDeck = resolveExtendedWaterMarginGuard2D({
@@ -614,15 +614,15 @@ test('computeLocalPedestrianAvoidance2D steers smoothly around Halte poles & cha
   // 4. Direct segment check catches thin pole obstruction for distToFinal <= 3.8 guard
   assert.equal(
     isSegmentClearOfAuditedStaticObstacles2D({
-      fromX: -58.2,
-      fromZ: -2.8,
-      toX: -54.8,
-      toZ: -2.8,
+      fromX: -61.84,
+      fromZ: -4.2,
+      toX: -61.84,
+      toZ: -1.4,
       radius: AMBIENT_NPC_CAPSULE_RADIUS,
       audited,
     }),
     false,
-    'Segment crossing sign_halte_plaza (-56.25, -2.8) must report blocked',
+    'Segment crossing sign_halte_plaza (-61.84, -2.98) must report blocked',
   );
 
   // 5. Boxed-in NPC between windbreak wall, pole, and immovable characters yields cleanly (speedScale=0)
@@ -954,17 +954,17 @@ test('stepCityAmbientNpcSchedule guards <=3.8m direct target behind pole and rep
   const poleRoutePreset: CityAmbientNpcPreset = {
     ...baseMira,
     waypoints: [
-      { x: -58.5, z: -2.8, yaw: 0, activity: 'sightseeing', durationSec: 10 },
-      { x: -54.9, z: -2.8, yaw: 0, activity: 'sightseeing', durationSec: 10 },
+      { x: -61.84, z: -4.6, yaw: 0, activity: 'sightseeing', durationSec: 10 },
+      { x: -61.84, z: -1.2, yaw: 0, activity: 'sightseeing', durationSec: 10 },
     ],
   };
 
-  // 1. Even with distToFinal = 3.6 <= 3.8m, direct segment through sign_halte_plaza (-56.25, -2.8)
-  // must NOT cut straight along z=-2.8; A* + local avoidance steers laterally around the pole.
+  // 1. Even with distToFinal = 3.4 <= 3.8m, direct segment through sign_halte_plaza (-61.84, -2.98)
+  // must NOT cut straight along x=-61.84; A* + local avoidance steers laterally around the pole.
   const firstStep = stepCityAmbientNpcSchedule({
     preset: poleRoutePreset,
-    x: -58.5,
-    z: -2.8,
+    x: -61.84,
+    z: -4.6,
     yaw: 0,
     waypointIdx: 1,
     pauseTimer: 0,
@@ -1000,28 +1000,28 @@ test('stepCityAmbientNpcSchedule guards <=3.8m direct target behind pole and rep
       }),
   });
   assert.ok(
-    Math.abs(firstStep.z - -2.8) > 0.02,
-    `Expected lateral detour off z=-2.8 around sign_halte_plaza, got z=${firstStep.z.toFixed(4)}`,
+    Math.abs(firstStep.x - -61.84) > 0.02,
+    `Expected lateral detour off x=-61.84 around sign_halte_plaza, got x=${firstStep.x.toFixed(4)}`,
   );
 
   // 2. When position fails to advance > 0.35m for > 0.6s, replan triggers cleanly and flips avoidSide
   let replannedAtStall = false;
   const stalledStep = stepCityAmbientNpcSchedule({
     preset: poleRoutePreset,
-    x: -58.5,
-    z: -2.8,
+    x: -61.84,
+    z: -4.6,
     yaw: 0,
     waypointIdx: 1,
     pauseTimer: 0,
     elapsedSec: 0.7,
     dt: 0.1,
     navGrid: pedestrianGrid,
-    navPath: [{ x: -55.75, z: -4.25 }, { x: -54.9, z: -2.8 }],
+    navPath: [{ x: -60.5, z: -3.0 }, { x: -61.84, z: -1.2 }],
     navWaypointIndex: 0,
-    navPathGoalKey: '1:-54.9,-2.8',
+    navPathGoalKey: '1:-61.84,-1.2',
     stuckTimer: 0.58,
-    lastProgressX: -58.5,
-    lastProgressZ: -2.8,
+    lastProgressX: -61.84,
+    lastProgressZ: -4.6,
     avoidSide: 1,
     avoidTimer: 0.3,
     canReplan: true,

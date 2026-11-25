@@ -6545,7 +6545,7 @@ export const CITY_TRAFFIC_SIGN_SPECS: readonly CityTrafficSignSpec[] = [
   { id: 'sign_tram_south_e', kind: 'tram_lane_only', x: 48.0, y: 0.085, z: 43.72, rotY: Math.PI / 2 },
 
   // Halte Boarding Info (exactly 1 sign per Halte, clear of boarding ramps, shelters & walkways)
-  { id: 'sign_halte_plaza', kind: 'halte_stop', x: -56.25, y: 0.26, z: -2.8, rotY: -Math.PI / 2 },
+  { id: 'sign_halte_plaza', kind: 'halte_stop', x: -61.84, y: 0.26, z: -2.98, rotY: -Math.PI / 2 },
   { id: 'sign_halte_north_res', kind: 'halte_stop', x: -6.35, y: 0.085, z: -43.72, rotY: 0 },
   { id: 'sign_halte_south_res', kind: 'halte_stop', x: -46.30, y: 0.085, z: 43.72, rotY: Math.PI },
   { id: 'sign_halte_harbor', kind: 'halte_stop', x: 56.25, y: 0.26, z: 21.0, rotY: Math.PI / 2 },
@@ -13630,6 +13630,10 @@ export function clampNpcDialoguePortraitOrbit(input: {
   orbitYawOffsetRad?: number;
   orbitPitchOffsetRad?: number;
   portraitDistanceScale?: number;
+  minYawOffsetRad?: number;
+  maxYawOffsetRad?: number;
+  minDistanceScale?: number;
+  maxDistanceScale?: number;
 }): {
   orbitYawOffsetRad: number;
   orbitPitchOffsetRad: number;
@@ -13639,12 +13643,13 @@ export function clampNpcDialoguePortraitOrbit(input: {
   const rawPitch = input.orbitPitchOffsetRad ?? 0;
   const rawDistScale =
     input.portraitDistanceScale ?? NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale;
+  const minYaw = input.minYawOffsetRad ?? NPC_DIALOGUE_ORBIT_BOUNDS.minYawOffsetRad;
+  const maxYaw = input.maxYawOffsetRad ?? NPC_DIALOGUE_ORBIT_BOUNDS.maxYawOffsetRad;
+  const minDist = input.minDistanceScale ?? NPC_DIALOGUE_ORBIT_BOUNDS.minDistanceScale;
+  const maxDist = input.maxDistanceScale ?? NPC_DIALOGUE_ORBIT_BOUNDS.maxDistanceScale;
   return {
     orbitYawOffsetRad: Number.isFinite(rawYaw)
-      ? Math.max(
-          NPC_DIALOGUE_ORBIT_BOUNDS.minYawOffsetRad,
-          Math.min(NPC_DIALOGUE_ORBIT_BOUNDS.maxYawOffsetRad, rawYaw),
-        )
+      ? Math.max(minYaw, Math.min(maxYaw, rawYaw))
       : 0,
     orbitPitchOffsetRad: Number.isFinite(rawPitch)
       ? Math.max(
@@ -13653,10 +13658,7 @@ export function clampNpcDialoguePortraitOrbit(input: {
         )
       : 0,
     portraitDistanceScale: Number.isFinite(rawDistScale)
-      ? Math.max(
-          NPC_DIALOGUE_ORBIT_BOUNDS.minDistanceScale,
-          Math.min(NPC_DIALOGUE_ORBIT_BOUNDS.maxDistanceScale, rawDistScale),
-        )
+      ? Math.max(minDist, Math.min(maxDist, rawDistScale))
       : NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale,
   };
 }
@@ -13682,6 +13684,12 @@ export interface NpcDialoguePortraitPoseInput {
   orbitYawOffsetRad?: number;
   orbitPitchOffsetRad?: number;
   portraitDistanceScale?: number;
+  /** Horizontal screen offset factor (default 0.44 for left-drawer dialogues; 0 for centered City Selfie camera). */
+  horizontalOffsetFactor?: number;
+  minYawOffsetRad?: number;
+  maxYawOffsetRad?: number;
+  minDistanceScale?: number;
+  maxDistanceScale?: number;
 }
 
 export interface NpcDialoguePortraitPoseResult {
@@ -13713,9 +13721,13 @@ export function computeNpcDialoguePortraitPose(
     typeof input.boneDropY === 'number' && Number.isFinite(input.boneDropY)
       ? Math.max(staticSitDrop, input.boneDropY)
       : staticSitDrop;
+  const horizOffsetFactor =
+    typeof input.horizontalOffsetFactor === 'number' && Number.isFinite(input.horizontalOffsetFactor)
+      ? input.horizontalOffsetFactor
+      : 0.44;
 
   // Keep NPC facing anchored to the base viewer direction so orbiting lets the user inspect side angles.
-  const baseLateralShift = 0.44 * baseDist * halfFovTan * activeAspect;
+  const baseLateralShift = horizOffsetFactor * baseDist * halfFovTan * activeAspect;
   const baseLookAtX = input.npcX - fz * baseLateralShift;
   const baseLookAtZ = input.npcZ + fx * baseLateralShift;
   const baseCamX = baseLookAtX + fx * baseDist;
@@ -13726,6 +13738,10 @@ export function computeNpcDialoguePortraitPose(
     orbitYawOffsetRad: input.orbitYawOffsetRad,
     orbitPitchOffsetRad: input.orbitPitchOffsetRad,
     portraitDistanceScale: input.portraitDistanceScale,
+    minYawOffsetRad: input.minYawOffsetRad,
+    maxYawOffsetRad: input.maxYawOffsetRad,
+    minDistanceScale: input.minDistanceScale,
+    maxDistanceScale: input.maxDistanceScale,
   });
   const cosYaw = Math.cos(clampedOrbit.orbitYawOffsetRad);
   const sinYaw = Math.sin(clampedOrbit.orbitYawOffsetRad);
@@ -13736,15 +13752,15 @@ export function computeNpcDialoguePortraitPose(
   const cosPitch = Math.cos(clampedOrbit.orbitPitchOffsetRad);
   const sinPitch = Math.sin(clampedOrbit.orbitPitchOffsetRad);
   const horizDist = cosPitch * npcCamDist;
-  const lateralShift = 0.44 * npcCamDist * halfFovTan * activeAspect;
+  const lateralShift = horizOffsetFactor * npcCamDist * halfFovTan * activeAspect;
 
   // Camera looks along (-vx, 0, -vz); screen-left horizontal axis is (-vz, +vx),
-  // keeping the NPC framed around ndc.x ~ +0.44 even while rotating/zooming.
+  // keeping the subject at ndc.x ~ +horizOffsetFactor even while rotating/zooming.
   const lookAtX = input.npcX - vz * lateralShift;
   const lookAtZ = input.npcZ + vx * lateralShift;
-  const zoomOutSpan =
-    NPC_DIALOGUE_ORBIT_BOUNDS.maxDistanceScale -
-    NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale;
+  const maxDistBound = input.maxDistanceScale ?? NPC_DIALOGUE_ORBIT_BOUNDS.maxDistanceScale;
+  const minDistBound = input.minDistanceScale ?? NPC_DIALOGUE_ORBIT_BOUNDS.minDistanceScale;
+  const zoomOutSpan = maxDistBound - NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale;
   const zoomOutT =
     zoomOutSpan > 1e-4
       ? Math.max(
@@ -13757,8 +13773,24 @@ export function computeNpcDialoguePortraitPose(
           ),
         )
       : 0;
+  // When in centered Selfie close-up (< 1.0), gently raise target Y toward the face/eyes.
+  const isCenteredSelfie = horizOffsetFactor === 0;
+  const zoomInSpan = NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale - minDistBound;
+  const zoomInT =
+    isCenteredSelfie && zoomInSpan > 1e-4
+      ? Math.max(
+          0,
+          Math.min(
+            1,
+            (NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale -
+              clampedOrbit.portraitDistanceScale) /
+              zoomInSpan,
+          ),
+        )
+      : 0;
   // As the player zooms out, lower target Y toward mid-body so full head-to-toe outfit stays in view.
-  const targetCenterOffset = 2.70 + (1.72 - 2.70) * zoomOutT;
+  const targetCenterOffset =
+    2.70 + (1.72 - 2.70) * zoomOutT + (2.98 - 2.70) * zoomInT;
   const effectiveSitDrop = sitDrop * (1.0 - 0.45 * zoomOutT);
   const lookAtY = input.npcY + targetCenterOffset * scale - effectiveSitDrop;
   const camX = lookAtX + vx * horizDist;

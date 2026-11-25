@@ -528,7 +528,7 @@ export function buildCityNavGrid(options: CityNavGridOptions = {}): CityNavGridH
   const elevations = new Float32Array(totalCells);
   const stairMask = new Uint8Array(totalCells);
   const cellCosts = new Float32Array(totalCells);
-  const minCost = mode === 'scooter' ? 0.65 : 0.72;
+  const minCost = mode === 'scooter' ? 0.28 : 0.72;
 
   for (let row = 0; row < grid.rows; row++) {
     const wz = grid.minZ + (row + 0.5) * grid.cellSize;
@@ -556,19 +556,22 @@ export function buildCityNavGrid(options: CityNavGridOptions = {}): CityNavGridH
       const onCrosswalk = isPointOnPedestrianCrosswalkCorridor(wx, wz);
       const beachClubSurface = classifyBeachClubSurface(wx, wz);
       if (mode === 'scooter') {
-        if (roadSdf <= 0.25 || onCrosswalk) {
-          cellCosts[idx] = 0.65;
+        if (roadSdf <= 0.15) {
+          cellCosts[idx] = roadSdf <= -0.9 ? 0.28 : 0.32;
+        } else if (onCrosswalk || roadSdf <= 0.85) {
+          cellCosts[idx] = 0.55;
         } else if (
           evaluateHaltePlatformSdf(wx, wz) <= 0.65 ||
           evaluateGrandCasinoPavedPlatformSdf(wx, wz) <= 0.55 ||
           isPointInsideCentralIslandEnvelope(wx, wz) ||
           (wx <= -74.0 && wx >= -110.75 && Math.abs(wz) <= 44.5) ||
+          evaluateSeHarborSdf(wx, wz).concreteSdf <= 0.55 ||
           beachClubSurface === 'stone_road' ||
           beachClubSurface === 'wood'
         ) {
-          cellCosts[idx] = 0.85;
+          cellCosts[idx] = 1.45;
         } else {
-          cellCosts[idx] = 1.25;
+          cellCosts[idx] = 2.45;
         }
       } else {
         if (onCrosswalk) {
@@ -1222,18 +1225,44 @@ export function smoothCityWaypoints(
       })
     : null;
 
+  const isScooterAsphaltBoundary = nav.mode === 'scooter' && nodeCosts !== null;
+  const ASPHALT_COST_THRESHOLD = 0.42;
+
   const smoothed: Array<{ x: number; z: number }> = [];
   let anchor = 0;
   const passingCands: number[] = [];
   while (anchor < pts.length - 1) {
     passingCands.length = 0;
-    let spanMaxCost = nodeCosts ? nodeCosts[anchor] : 1.0;
+    const anchorCost = nodeCosts ? nodeCosts[anchor] : 1.0;
+    const anchorOnAsphalt = anchorCost <= ASPHALT_COST_THRESHOLD;
+    const nextOnAsphalt = nodeCosts ? nodeCosts[anchor + 1] <= ASPHALT_COST_THRESHOLD : false;
+    let spanMaxCost = anchorCost;
     for (let cand = anchor + 2; cand < pts.length; cand++) {
       if (nodeCosts) {
         spanMaxCost = Math.max(spanMaxCost, nodeCosts[cand - 1]);
       }
-      const endCost = nodeCosts ? Math.max(spanMaxCost, nodeCosts[cand]) : 1.0;
-      const maxAllowed = endCost * 1.15 + 0.15;
+      const candCost = nodeCosts ? nodeCosts[cand] : 1.0;
+      if (isScooterAsphaltBoundary && nodeCosts) {
+        if (anchorOnAsphalt && nextOnAsphalt) {
+          if (candCost > ASPHALT_COST_THRESHOLD || spanMaxCost > ASPHALT_COST_THRESHOLD) {
+            break;
+          }
+        } else if (!anchorOnAsphalt) {
+          if (nodeCosts[cand - 1] <= ASPHALT_COST_THRESHOLD) {
+            break;
+          }
+        } else if (anchorOnAsphalt && !nextOnAsphalt && candCost <= ASPHALT_COST_THRESHOLD) {
+          break;
+        }
+      }
+      const endCost =
+        isScooterAsphaltBoundary && anchorOnAsphalt && nextOnAsphalt
+          ? ASPHALT_COST_THRESHOLD
+          : Math.max(spanMaxCost, candCost);
+      const maxAllowed =
+        isScooterAsphaltBoundary && anchorOnAsphalt && nextOnAsphalt
+          ? ASPHALT_COST_THRESHOLD
+          : endCost * 1.15 + 0.15;
       if (
         checkCitySegmentGridFast(
           nav,

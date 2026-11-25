@@ -121,6 +121,17 @@ export interface BeachClubStairCorridorSpec {
   axis: 'x' | 'z';
 }
 
+export interface BeachClubSeatSpotSpec {
+  id: string;
+  x: number;
+  z: number;
+  yaw: number;
+  seatLiftY: number;
+  indicatorHeightY: number;
+  standUpX: number;
+  standUpZ: number;
+}
+
 export const BEACH_CLUB_Z_MIN = -98.0;
 export const BEACH_CLUB_Z_MAX = 46.2;
 
@@ -177,7 +188,7 @@ export const BEACH_CLUB_MASTERPLAN = {
     { id: 'stair_prom_vip_north', minX: 89.2, maxX: 91.2, minZ: -95.5, maxZ: -92.6, axis: 'x', fromElevY: 0.02, toElevY: 0.82, steps: 5 },
     { id: 'stair_prom_vip_n', minX: 89.2, maxX: 91.2, minZ: -67.6, maxZ: -63.8, axis: 'x', fromElevY: 0.02, toElevY: 0.64, steps: 4 },
     { id: 'stair_prom_vip_c', minX: 89.2, maxX: 91.2, minZ: -17.0, maxZ: -12.0, axis: 'x', fromElevY: 0.02, toElevY: 0.64, steps: 4 },
-    { id: 'stair_prom_vip_s', minX: 89.2, maxX: 91.2, minZ: 32.5, maxZ: 38.5, axis: 'x', fromElevY: 0.02, toElevY: 0.64, steps: 4 },
+    { id: 'stair_prom_vip_s', minX: 89.2, maxX: 91.2, minZ: 25.4, maxZ: 30.6, axis: 'x', fromElevY: 0.02, toElevY: 0.64, steps: 4 },
     // North Cascade & North VIP Steps (+0.82m -> +0.64m / +0.36m dry pergola, and +0.64m -> -0.56m North Crosswalk Spine)
     { id: 'stair_cascade_w1', minX: 93.0, maxX: 99.0, minZ: -89.0, maxZ: -87.0, axis: 'z', fromElevY: 0.82, toElevY: 0.64, steps: 2 },
     { id: 'stair_cascade_e1', minX: 99.6, maxX: 101.6, minZ: -96.2, maxZ: -94.1, axis: 'x', fromElevY: 0.82, toElevY: 0.36, steps: 4 },
@@ -186,16 +197,17 @@ export const BEACH_CLUB_MASTERPLAN = {
     { id: 'stair_vip_mid_n', minX: 96.4, maxX: 100.2, minZ: -49.4, maxZ: -45.6, axis: 'x', fromElevY: 0.64, toElevY: -0.48, steps: 6 },
     { id: 'stair_vip_mid_c', minX: 99.6, maxX: 103.2, minZ: -16.2, maxZ: -12.4, axis: 'x', fromElevY: 0.72, toElevY: -0.56, steps: 6 },
     { id: 'stair_vip_mid_s', minX: 96.4, maxX: 100.2, minZ: 7.5, maxZ: 13.8, axis: 'x', fromElevY: 0.64, toElevY: -0.56, steps: 6 },
-    { id: 'stair_vip_bar_s', minX: 96.4, maxX: 100.2, minZ: 30.2, maxZ: 35.4, axis: 'x', fromElevY: 0.64, toElevY: -0.56, steps: 6 },
+    // Shifted North (-Z, to the right of the enlarged Cocktail Bar podium) so the grand bar & stools have full room
+    { id: 'stair_vip_bar_s', minX: 96.4, maxX: 100.2, minZ: 25.4, maxZ: 30.6, axis: 'x', fromElevY: 0.64, toElevY: -0.56, steps: 6 },
     // Box 1 Mid Lagoon & South Lounge (-0.56m) -> Box 1 Oceanfront Infinity Terrace (-0.96m / -1.00m)
     { id: 'stair_mid_ocean_north', minX: 112.0, maxX: 113.6, minZ: -77.8, maxZ: -75.0, axis: 'x', fromElevY: -0.56, toElevY: -0.96, steps: 3 },
     { id: 'stair_mid_ocean_n', minX: 110.8, maxX: 112.4, minZ: -17.4, maxZ: -11.2, axis: 'x', fromElevY: -0.56, toElevY: -0.96, steps: 3 },
-    { id: 'stair_mid_ocean_s', minX: 105.2, maxX: 106.4, minZ: 7.4, maxZ: 45.2, axis: 'x', fromElevY: -0.56, toElevY: -1.0, steps: 3 },
+    { id: 'stair_mid_ocean_s', minX: 105.2, maxX: 106.4, minZ: 7.4, maxZ: 44.8, axis: 'x', fromElevY: -0.56, toElevY: -1.0, steps: 3 },
     // Box 1 Seaward Terrace (-0.96m / -1.00m) -> Box 2 Golden Sunset Beach Sand (-2.00m, 1.0m grand beach stairs!)
     { id: 'stair_beach_n', minX: 120.6, maxX: 123.6, minZ: -77.8, maxZ: -74.8, axis: 'x', fromElevY: -0.96, toElevY: -2.0, steps: 6 },
     { id: 'stair_beach_c', minX: 120.6, maxX: 123.6, minZ: -17.2, maxZ: -11.4, axis: 'x', fromElevY: -0.96, toElevY: -2.0, steps: 6 },
     { id: 'stair_beach_cs', minX: 120.8, maxX: 123.8, minZ: 4.2, maxZ: 7.4, axis: 'x', fromElevY: -0.96, toElevY: -2.0, steps: 6 },
-    { id: 'stair_beach_s', minX: 120.8, maxX: 123.8, minZ: 42.8, maxZ: 45.2, axis: 'x', fromElevY: -1.0, toElevY: -2.0, steps: 6 },
+    { id: 'stair_beach_s', minX: 120.8, maxX: 123.8, minZ: 42.6, maxZ: 44.8, axis: 'x', fromElevY: -1.0, toElevY: -2.0, steps: 6 },
   ] as readonly BeachClubStairFlightSpec[],
 
   // 4. Elevated Crossing Timber Bridge over West Flanking Pool (VIP Mezzanine +0.64m -> Stair Landing +0.72m)
@@ -237,18 +249,36 @@ export const BEACH_CLUB_MASTERPLAN = {
     speakerHeightM: 2.95,
   },
 
-  // 7. Modern Luxury Cocktail Bar (ZERO WOOD: fluted white stone, Calacatta marble, brass, ivory terrazzo pad on +0.68m upper cliff!)
-  // Oriented East (+X, rotY = +PI/2) facing the beach & ocean, scaled proportionally to the 3.31m avatar height.
+  // 7. Enlarged Modern Luxury Cocktail Bar (ZERO WOOD: fluted white stone, Calacatta marble, brass, ivory terrazzo pad on +0.68m upper cliff!)
+  // Oriented East (+X, rotY = +PI/2) facing the beach & ocean, enlarged so avatars can comfortably walk up and sit on its 8 luxury barstools.
   cocktailBar: {
-    cx: 95.6,
-    cz: 40.4,
+    cx: 96.2,
+    cz: 38.2,
     rotY: Math.PI / 2,
-    padRadiusM: 4.95,
+    padRadiusM: 6.45,
     padElevY: 0.68,
-    barWidthM: 7.2,
-    barDepthM: 4.8,
-    barHeightM: 4.55,
-    counterHeightM: 1.76,
+    barWidthM: 9.6,
+    barDepthM: 6.4,
+    barHeightM: 5.35,
+    counterHeightM: 1.82,
+    uRadiusM: 3.55,
+    uCenterZM: -0.24,
+    stoolRadiusM: 4.73,
+    stoolCount: 8,
+  },
+
+  // 7B. Tall, Thick White Calacatta Marble Dividing Wall between Kai's Beach (z > 45.2) and the Beach Club (z <= 45.2)
+  // Spans the full arrow length from the East edge of Kai's boardwalk (x = 91.2) to the beachfront stair foot (x = 123.8).
+  southBoundaryWall: {
+    id: 'beach_club_south_marble_boundary_wall',
+    minX: 91.2,
+    maxX: 123.8,
+    cz: 45.52,
+    thicknessZ: 0.92,
+    baseY: -2.15,
+    upperTopY: 3.35,
+    lowerTopY: 2.55,
+    stepX: 106.4,
   },
 
   // 8. Stepped Cascade Water Terraces + Lowered Box 1 Resort Infinity Lagoons
@@ -371,8 +401,8 @@ export const BEACH_CLUB_MASTERPLAN = {
     { id: 'festoon_s_1', ax: 92.4, ay: 4.5, az: 10.5, bx: 121.8, by: 3.35, bz: 17.5, sagM: 1.0, bulbCount: 16 },
     { id: 'festoon_s_2', ax: 121.8, ay: 3.35, az: 10.5, bx: 92.4, by: 4.5, bz: 22.0, sagM: 1.05, bulbCount: 16 },
     { id: 'festoon_s_3', ax: 92.4, ay: 4.5, az: 22.0, bx: 121.8, by: 3.35, bz: 32.0, sagM: 1.0, bulbCount: 16 },
-    { id: 'festoon_s_4', ax: 121.8, ay: 3.35, az: 25.0, bx: 92.4, by: 4.5, bz: 31.5, sagM: 1.0, bulbCount: 16 },
-    { id: 'festoon_s_5', ax: 92.4, ay: 4.5, az: 36.2, bx: 121.8, by: 3.35, bz: 41.5, sagM: 0.95, bulbCount: 15 },
+    { id: 'festoon_s_4', ax: 121.8, ay: 3.35, az: 25.0, bx: 92.4, by: 4.5, bz: 31.2, sagM: 1.0, bulbCount: 16 },
+    { id: 'festoon_s_5', ax: 92.4, ay: 4.5, az: 31.2, bx: 121.8, by: 3.35, bz: 41.5, sagM: 0.95, bulbCount: 15 },
     // North Sunbed Peninsula festoon canopy: West poles in VIP breezeways (x=95.8), East poles on dry Sunbed Peninsula (x=111.8)!
     { id: 'festoon_n_1', ax: 95.8, ay: 4.5, az: -22.0, bx: 111.8, by: 3.4, bz: -18.5, sagM: 0.95, bulbCount: 16 },
     { id: 'festoon_n_2', ax: 95.8, ay: 4.5, az: -36.8, bx: 111.8, by: 3.4, bz: -30.5, sagM: 0.95, bulbCount: 16 },
@@ -396,7 +426,7 @@ export const BEACH_CLUB_MASTERPLAN = {
         rotY: idx * 1.15,
       });
     });
-    const eastZs = [-90, -82, -72, -62, -52, -42, -32, -22, -10, 0, 10, 20, 30, 41];
+    const eastZs = [-90, -82, -72, -62, -52, -42, -32, -22, -10, 0, 10, 20, 34, 41];
     eastZs.forEach((z, idx) => {
       list.push({
         id: `bc_palm_e_${idx}`,
@@ -411,9 +441,9 @@ export const BEACH_CLUB_MASTERPLAN = {
     });
     // Accent island palms on tiered decks (clear of all stair landings and northJettyBridge!)
     list.push(
-      { id: 'bc_palm_island_s1', x: 102.0, z: 27.0, baseY: -0.56, scale: 1.16, leanX: 0.08, leanZ: 0.05, rotY: 0.4 },
-      { id: 'bc_palm_island_s2', x: 102.0, z: 18.0, baseY: -0.56, scale: 1.1, leanX: -0.05, leanZ: -0.06, rotY: 2.1 },
-      { id: 'bc_palm_bar_1', x: 92.2, z: 30.8, baseY: 0.64, scale: 1.12, leanX: 0.06, leanZ: 0.04, rotY: 1.4 },
+      { id: 'bc_palm_island_s1', x: 102.6, z: 22.8, baseY: -0.56, scale: 1.16, leanX: 0.08, leanZ: 0.05, rotY: 0.4 },
+      { id: 'bc_palm_island_s2', x: 102.0, z: 16.8, baseY: -0.56, scale: 1.1, leanX: -0.05, leanZ: -0.06, rotY: 2.1 },
+      { id: 'bc_palm_bar_1', x: 93.2, z: 23.2, baseY: 0.64, scale: 1.12, leanX: 0.06, leanZ: 0.04, rotY: 1.4 },
       { id: 'bc_palm_pen_1', x: 108.6, z: -50.4, baseY: -0.54, scale: 1.14, leanX: 0.04, leanZ: 0.05, rotY: 2.5 },
       { id: 'bc_palm_n_courtyard', x: 95.6, z: -83.2, baseY: 0.64, scale: 1.2, leanX: 0.04, leanZ: -0.05, rotY: 3.1 },
     );
@@ -424,7 +454,7 @@ export const BEACH_CLUB_MASTERPLAN = {
   planters: [
     { id: 'bc_planter_prom_n', cx: 91.4, cz: -81.0, widthX: 0.65, lengthZ: 22.0, baseY: 0.64, topY: 1.23 },
     { id: 'bc_planter_prom_c', cx: 91.4, cz: -39.0, widthX: 0.65, lengthZ: 36.0, baseY: 0.64, topY: 1.23 },
-    { id: 'bc_planter_prom_s', cx: 91.4, cz: 8.5, widthX: 0.65, lengthZ: 35.0, baseY: 0.64, topY: 1.23 },
+    { id: 'bc_planter_prom_s', cx: 91.4, cz: 7.0, widthX: 0.65, lengthZ: 32.0, baseY: 0.64, topY: 1.23 },
     { id: 'bc_planter_mid_w', cx: 99.8, cz: -32.0, widthX: 0.55, lengthZ: 22.0, baseY: -0.56, topY: -0.03 },
   ] as readonly BeachClubPlanterSpec[],
 } as const;
@@ -712,6 +742,40 @@ export function classifyBeachClubSurface(
 }
 
 /**
+ * Interactive sittable barstool spots around the enlarged Modern Luxury Cocktail Bar horseshoe counter.
+ * Each spot faces inward toward the Calacatta marble bar counter and steps outward onto the +0.68m terrazzo podium on stand-up.
+ */
+export const BEACH_CLUB_COCKTAIL_BAR_SEAT_SPOTS: readonly BeachClubSeatSpotSpec[] = (() => {
+  const bar = BEACH_CLUB_MASTERPLAN.cocktailBar;
+  const bc = Math.cos(bar.rotY);
+  const bs = Math.sin(bar.rotY);
+  const spots: BeachClubSeatSpotSpec[] = [];
+  const n = bar.stoolCount;
+  for (let s = 0; s < n; s++) {
+    const a = 0.14 + (s / (n - 1)) * (Math.PI - 0.28);
+    const lx = Math.cos(a) * bar.stoolRadiusM;
+    const lz = Math.sin(a) * bar.stoolRadiusM + bar.uCenterZM;
+    const wx = bar.cx + lx * bc + lz * bs;
+    const wz = bar.cz - lx * bs + lz * bc;
+    const fwdX = -Math.cos(a) * bc - Math.sin(a) * bs;
+    const fwdZ = Math.cos(a) * bs - Math.sin(a) * bc;
+    const yaw = Math.atan2(-fwdZ, fwdX);
+    const standOutDist = 0.92;
+    spots.push({
+      id: `beach_club_bar_stool_${s + 1}`,
+      x: Number(wx.toFixed(2)),
+      z: Number(wz.toFixed(2)),
+      yaw: Number(yaw.toFixed(4)),
+      seatLiftY: 0.34,
+      indicatorHeightY: 1.58,
+      standUpX: Number((wx - fwdX * standOutDist).toFixed(2)),
+      standUpZ: Number((wz - fwdZ * standOutDist).toFixed(2)),
+    });
+  }
+  return spots;
+})();
+
+/**
  * Exports all Beach Club staircase footprints for staircase corridor physics & A* routing.
  */
 export function getBeachClubStairCorridors(): BeachClubStairCorridorSpec[] {
@@ -728,7 +792,7 @@ export function getBeachClubStairCorridors(): BeachClubStairCorridorSpec[] {
 /**
  * Audited static 2D OBB colliders for Beach Club architectural structures, speaker stacks,
  * DJ booth, Aqua Glass Box walls, Cocktail Bar counter/backwall, Cabana beds, loungers,
- * tropical foliage planters, height-aware retaining/infinity weir walls, and palms.
+ * tropical foliage planters, height-aware retaining/infinity weir walls, south marble dividing wall, and palms.
  * All `heightY` values are true world-space top elevations (m) for terrace-aware collision.
  */
 export function getBeachClubObstacles(): StaticWorldStructureObb[] {
@@ -796,7 +860,8 @@ export function getBeachClubObstacles(): StaticWorldStructureObb[] {
     mat: 'metal',
   });
 
-  // 2. Modern Luxury Cocktail Bar (fluted white stone counter horseshoe + Calacatta marble bottle wall)
+  // 2. Enlarged Modern Luxury Cocktail Bar (fluted white stone counter horseshoe + Calacatta marble bottle wall)
+  //    Counter collider stays strictly inside the 4.73m barstool ring so avatars can walk up and sit on all 8 stools.
   const bar = BEACH_CLUB_MASTERPLAN.cocktailBar;
   const bc = Math.cos(bar.rotY);
   const bs = Math.sin(bar.rotY);
@@ -804,30 +869,44 @@ export function getBeachClubObstacles(): StaticWorldStructureObb[] {
     bar.cx + lx * bc + lz * bs,
     bar.cz - lx * bs + lz * bc,
   ];
-  const [bcntX, bcntZ] = toWorldBar(0, 1.62);
+  const [bcntX, bcntZ] = toWorldBar(0, 1.45);
   obstacles.push({
     id: 'beach_club_bar_counter',
     x: bcntX,
     z: bcntZ,
-    halfX: 3.05,
-    halfZ: 1.1,
+    halfX: 3.45,
+    halfZ: 1.38,
     rotY: bar.rotY,
-    heightY: bar.padElevY + 1.78,
+    heightY: bar.padElevY + bar.counterHeightM,
     mat: 'concrete',
   });
-  const [bwallX, bwallZ] = toWorldBar(0, -1.68);
+  const [bwallX, bwallZ] = toWorldBar(0, -2.25);
   obstacles.push({
     id: 'beach_club_bar_backwall',
     x: bwallX,
     z: bwallZ,
-    halfX: 2.75,
-    halfZ: 0.62,
+    halfX: 3.65,
+    halfZ: 0.72,
     rotY: bar.rotY,
-    heightY: bar.padElevY + 4.18,
+    heightY: bar.padElevY + 4.88,
     mat: 'concrete',
   });
 
-  // 3. 9 VIP Cabanas: plush king daybed collider inside each cabana (matched 1:1 to 1.78 x 2.02m daybed)
+  // 2B. Tall, Thick White Calacatta Marble Dividing Wall between Kai's Beach and the Beach Club
+  const sw = BEACH_CLUB_MASTERPLAN.southBoundaryWall;
+  const swColMinX = 91.42;
+  obstacles.push({
+    id: sw.id,
+    x: (swColMinX + sw.maxX) * 0.5,
+    z: sw.cz,
+    halfX: (sw.maxX - swColMinX) * 0.5,
+    halfZ: sw.thicknessZ * 0.5,
+    rotY: 0,
+    heightY: sw.upperTopY,
+    mat: 'concrete',
+  });
+
+  // 3. 5 VIP Cabanas: plush king daybed collider inside each cabana (matched 1:1 to 1.78 x 2.02m daybed)
   for (const cab of BEACH_CLUB_MASTERPLAN.cabanas) {
     obstacles.push({
       id: `${cab.id}_bed`,
@@ -889,9 +968,9 @@ export function getBeachClubObstacles(): StaticWorldStructureObb[] {
     {
       id: 'beach_club_retaining_vip_south_mid',
       x: 96.4,
-      z: 22.0,
+      z: 19.6,
       halfX: 0.16,
-      halfZ: 7.8,
+      halfZ: 5.4,
       rotY: 0,
       heightY: 0.56, // < +0.64m VIP Mezzanine, > -0.56m South Inner Lounge
       mat: 'concrete',
@@ -922,9 +1001,9 @@ export function getBeachClubObstacles(): StaticWorldStructureObb[] {
     {
       id: 'beach_club_retaining_weir_s',
       x: 120.6,
-      z: 25.4,
+      z: 25.3,
       halfX: 0.18,
-      halfZ: 17.0,
+      halfZ: 16.9,
       rotY: 0,
       heightY: -1.06, // < -1.00m South Ocean Terrace, > -2.00m Golden Sand
       mat: 'concrete',

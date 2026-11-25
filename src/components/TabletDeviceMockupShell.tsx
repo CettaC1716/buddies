@@ -61,7 +61,7 @@ export const TabletDeviceMockupShell: React.FC<TabletDeviceMockupShellProps> = (
       <div className="shrink-0 flex items-center justify-between gap-2 sm:gap-3 px-3.5 sm:px-5 pt-2 sm:pt-3 pb-1.5 sm:pb-2 border-b border-white/[0.12] text-[10px] sm:text-[10.5px] font-medium text-white/90">
         <div className="flex items-center gap-1.5 min-w-0">
           <Wifi className="w-3 h-3 text-white/85 shrink-0" aria-hidden="true" />
-          <span className="tracking-wider font-semibold text-white">BLITZ PAD</span>
+          <span className="tracking-wider font-semibold text-white">CERRIA PAD</span>
           <span className="text-white/40" aria-hidden="true">·</span>
           <span className="uppercase tracking-wider text-white/70 truncate">{appLabel}</span>
         </div>

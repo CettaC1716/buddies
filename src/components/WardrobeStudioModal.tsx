@@ -62,7 +62,6 @@ import {
   EMPTY_WARDROBE_DRAFT,
   WARDROBE_CLOTHING_TINT_SWATCHES,
   WARDROBE_STUDIO_ITEMS,
-  WARDROBE_STUDIO_POSES,
   applyItemSelectionToDraft,
   collectUnownedItemsInDraft,
   createSavedPresetFromDraft,
@@ -106,6 +105,7 @@ import {
   getCachedWardrobeItemThumbnail,
   renderWardrobeItemThumbnail,
 } from './wardrobe3dThumbnailRasterizer';
+import { PROFILE_IDENTITY_UPDATED_EVENT } from './CharacterProfileModal';
 
 const AVATAR_PHOTO_STORAGE_KEY = 'bb_player_avatar_photo_v1';
 
@@ -424,7 +424,6 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
   isOpen,
   accountKey,
   characterGender,
-  lulBalance,
   ownedApparelIds,
   initialDraft,
   onChangeGender,
@@ -442,13 +441,15 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
   const [filterMode, setFilterMode] = useState<WardrobeFilterMode>('all');
   const [sortMode, setSortMode] = useState<WardrobeSortMode>('featured');
   const [cameraFraming, setCameraFraming] = useState<WardrobeCameraFraming>('upper');
-  const [activePoseId, setActivePoseId] = useState<WardrobePoseId>('runway');
+  const activePoseId: WardrobePoseId = 'runway';
   const [glassPreference, setGlassPreference] = useState<WardrobeGlassPreference>('auto');
   const [isSoftwareGlDetected, setIsSoftwareGlDetected] = useState<boolean>(false);
   const [studioFrameMs, setStudioFrameMs] = useState<number>(16.6);
   const [savedPresets, setSavedPresets] = useState<WardrobeSavedPreset[]>([]);
   const [thumbMap, setThumbMap] = useState<Record<string, string>>({});
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
+  const [capturedSelfiePreviewUrl, setCapturedSelfiePreviewUrl] = useState<string | null>(null);
+  const [selfieFlashActive, setSelfieFlashActive] = useState<boolean>(false);
   const [externalCatalogRevision, setExternalCatalogRevision] = useState<number>(() =>
     getExternalWardrobeCatalogCount(),
   );
@@ -493,7 +494,9 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
   }, [isOpen, studioLayout.isPortraitSheet]);
 
   const stageHostRef = useRef<HTMLDivElement | null>(null);
+  const backdropImgRef = useRef<HTMLImageElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const captureSelfieFaceRef = useRef<(() => string | null) | null>(null);
   const rigRef = useRef<BuddyCharacterRig | null>(null);
   const activePoseActionRef = useRef<THREE.AnimationAction | null>(null);
   const framingRef = useRef<WardrobeCameraFraming>('upper');
@@ -532,24 +535,28 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     [glassPreference, isSoftwareGlDetected, studioFrameMs],
   );
 
-  // Smoked Pseudo-Glass (0% FPS overhead) vs lightweight Frosted Blur on fast hardware GPUs
+  // Unified dark glass surface matching Environment & Audio modal opacity
   const glassSurfaceClass =
     resolvedGlassMode === 'frosted_blur'
-      ? 'bg-[#1a1418]/66 backdrop-blur-md border border-white/[0.18] shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_20px_48px_rgba(0,0,0,0.42)]'
-      : 'bg-gradient-to-b from-[#211a1e]/86 via-[#171216]/82 to-[#120e12]/88 border border-white/[0.16] shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_20px_48px_rgba(0,0,0,0.48)]';
+      ? 'bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)]'
+      : 'bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)]';
 
   const glassPillClass =
     resolvedGlassMode === 'frosted_blur'
-      ? 'bg-[#1a1418]/64 backdrop-blur-md border border-white/[0.18] shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_28px_rgba(0,0,0,0.36)]'
-      : 'bg-gradient-to-b from-[#231c20]/88 to-[#161115]/88 border border-white/[0.16] shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_28px_rgba(0,0,0,0.40)]';
+      ? 'bg-[#111622]/86 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_28px_rgba(0,0,0,0.45)]'
+      : 'bg-[#111622]/86 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_28px_rgba(0,0,0,0.45)]';
 
-  const showNotice = useCallback((msg: string) => {
+  const showNotice = useCallback((msg: string, previewUrl?: string | null) => {
+    setCapturedSelfiePreviewUrl(previewUrl ?? null);
     setStatusNotice(msg);
   }, []);
 
   useEffect(() => {
     if (!statusNotice) return;
-    const t = window.setTimeout(() => setStatusNotice(null), 3200);
+    const t = window.setTimeout(() => {
+      setStatusNotice(null);
+      setCapturedSelfiePreviewUrl(null);
+    }, 3200);
     return () => window.clearTimeout(t);
   }, [statusNotice]);
 
@@ -1152,8 +1159,122 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     };
     rafId = window.requestAnimationFrame(tick);
 
+    captureSelfieFaceRef.current = () => {
+      if (disposed) return null;
+      try {
+        turntable.updateWorldMatrix(true, true);
+        const headBone = studioRig.customGlbController?.bones.get('Head') ?? null;
+        const headPos = new THREE.Vector3(0, CAMERA_FRAMING_SPECS.face.targetY - 0.14, 0);
+        if (headBone) {
+          headBone.getWorldPosition(headPos);
+        }
+        const faceCenterX = THREE.MathUtils.clamp(headPos.x, -0.45, 0.45);
+        const faceCenterY = THREE.MathUtils.clamp(
+          headPos.y + 0.14,
+          2.7,
+          3.45,
+        );
+        const faceCenterZ = THREE.MathUtils.clamp(headPos.z, -0.45, 0.45);
+
+        const selfieCam = new THREE.PerspectiveCamera(27, 1, 0.1, 40);
+        selfieCam.position.set(faceCenterX, faceCenterY + 0.02, faceCenterZ + 1.9);
+        selfieCam.lookAt(faceCenterX, faceCenterY, faceCenterZ);
+        selfieCam.updateMatrixWorld();
+
+        const cssSquare = Math.max(128, Math.floor(Math.min(stageWidth, stageHeight, 440)));
+        const actualDpr = renderer.getPixelRatio();
+        const snapPx = Math.min(canvas.width, canvas.height, Math.round(cssSquare * actualDpr));
+        if (snapPx < 32) return null;
+
+        setBlitzStylizedCharViewportSize(cssSquare, cssSquare);
+        renderer.setViewport(0, 0, cssSquare, cssSquare);
+        renderer.setScissor(0, 0, cssSquare, cssSquare);
+        renderer.setScissorTest(true);
+        renderer.clear();
+        renderer.render(scene, selfieCam);
+
+        const outSize = 320;
+        const out = document.createElement('canvas');
+        out.width = outSize;
+        out.height = outSize;
+        const ctx = out.getContext('2d');
+        let dataUrl: string | null = null;
+
+        if (ctx) {
+          // Warm dressing-room portrait gradient backing
+          const bg = ctx.createRadialGradient(
+            outSize * 0.35,
+            outSize * 0.3,
+            outSize * 0.08,
+            outSize * 0.5,
+            outSize * 0.5,
+            outSize * 0.78,
+          );
+          bg.addColorStop(0, '#4f373f');
+          bg.addColorStop(0.58, '#2d1f26');
+          bg.addColorStop(1, '#181115');
+          ctx.fillStyle = bg;
+          ctx.fillRect(0, 0, outSize, outSize);
+
+          // Softly blend the cozy studio backdrop behind the avatar if readable
+          const backdropEl = backdropImgRef.current;
+          if (backdropEl && backdropEl.complete && backdropEl.naturalWidth > 0) {
+            try {
+              ctx.save();
+              ctx.globalAlpha = 0.62;
+              const bw = backdropEl.naturalWidth;
+              const bh = backdropEl.naturalHeight;
+              const cropSide = Math.min(bw, bh) * 0.72;
+              const bx = Math.max(0, bw * 0.35 - cropSide * 0.5);
+              const by = Math.max(0, bh * 0.14);
+              ctx.drawImage(backdropEl, bx, by, cropSide, cropSide, 0, 0, outSize, outSize);
+              ctx.restore();
+
+              // Soft portrait vignette over backdrop so the face pops cleanly
+              const vig = ctx.createRadialGradient(
+                outSize * 0.5,
+                outSize * 0.48,
+                outSize * 0.25,
+                outSize * 0.5,
+                outSize * 0.5,
+                outSize * 0.72,
+              );
+              vig.addColorStop(0, 'rgba(20, 14, 18, 0.05)');
+              vig.addColorStop(1, 'rgba(14, 10, 14, 0.45)');
+              ctx.fillStyle = vig;
+              ctx.fillRect(0, 0, outSize, outSize);
+            } catch {
+              // Ignore cross-origin canvas taint fallback; warm gradient remains
+            }
+          }
+
+          // WebGL bottom-left (0, 0) maps to 2D canvas bottom-left (0, canvas.height - snapPx)
+          const srcY = Math.max(0, canvas.height - snapPx);
+          ctx.drawImage(canvas, 0, srcY, snapPx, snapPx, 0, 0, outSize, outSize);
+          dataUrl = out.toDataURL('image/jpeg', 0.9);
+        }
+
+        // Restore live viewport immediately so there is zero visible flicker
+        renderer.setScissorTest(false);
+        renderer.setViewport(0, 0, stageWidth, stageHeight);
+        setBlitzStylizedCharViewportSize(stageWidth, stageHeight);
+        renderer.clear();
+        renderer.render(scene, camera);
+
+        return dataUrl;
+      } catch {
+        renderer.setScissorTest(false);
+        renderer.setViewport(0, 0, stageWidth, stageHeight);
+        setBlitzStylizedCharViewportSize(stageWidth, stageHeight);
+        renderer.clear();
+        renderer.render(scene, camera);
+        return null;
+      }
+    };
+
     return () => {
       disposed = true;
+      captureSelfieFaceRef.current = null;
       window.cancelAnimationFrame(rafId);
       window.removeEventListener('resize', onResize);
       window.removeEventListener('orientationchange', onResize);
@@ -1426,13 +1547,10 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     showNotice('Reset outfit to Starter Essentials');
   }, [showNotice]);
 
-  const handleCyclePose = useCallback(() => {
-    soundEngine.playUiClick();
-    const idx = WARDROBE_STUDIO_POSES.findIndex((p) => p.id === activePoseId);
-    const nextPose = WARDROBE_STUDIO_POSES[(idx + 1) % WARDROBE_STUDIO_POSES.length];
-    setActivePoseId(nextPose.id);
-    showNotice(`Pose: ${nextPose.label}`);
-  }, [activePoseId, showNotice]);
+  const triggerSelfieShutterFlash = useCallback(() => {
+    setSelfieFlashActive(true);
+    window.setTimeout(() => setSelfieFlashActive(false), 180);
+  }, []);
 
   const handleCaptureProfileSnapshot = useCallback(() => {
     const glCanvas = canvasRef.current;
@@ -1461,11 +1579,37 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
 
       const dataUrl = out.toDataURL('image/jpeg', 0.88);
       window.localStorage.setItem(AVATAR_PHOTO_STORAGE_KEY, dataUrl);
-      showNotice('Photo saved to your Profile Avatar');
+      window.dispatchEvent(new CustomEvent(PROFILE_IDENTITY_UPDATED_EVENT));
+      triggerSelfieShutterFlash();
+      showNotice('Photo saved to your Profile Avatar', dataUrl);
     } catch {
       showNotice('Could not save snapshot on this browser');
     }
-  }, [showNotice]);
+  }, [showNotice, triggerSelfieShutterFlash]);
+
+  const handleCaptureFaceSelfie = useCallback(() => {
+    setCameraFraming('face');
+    const captureFn = captureSelfieFaceRef.current;
+    if (!captureFn) {
+      soundEngine.playUiClick();
+      showNotice('Avatar preview is still loading');
+      return;
+    }
+    const dataUrl = captureFn();
+    if (!dataUrl) {
+      showNotice('Could not capture face selfie on this browser');
+      return;
+    }
+    soundEngine.playUiConfirm();
+    try {
+      window.localStorage.setItem(AVATAR_PHOTO_STORAGE_KEY, dataUrl);
+      window.dispatchEvent(new CustomEvent(PROFILE_IDENTITY_UPDATED_EVENT));
+      triggerSelfieShutterFlash();
+      showNotice('Face selfie saved as Profile Photo', dataUrl);
+    } catch {
+      showNotice('Could not save face selfie on this browser');
+    }
+  }, [showNotice, triggerSelfieShutterFlash]);
 
   const handleBuyPreviewItem = useCallback(
     (item: WardrobeCatalogItem) => {
@@ -2040,15 +2184,6 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     >
       <button
         type="button"
-        onClick={handleCyclePose}
-        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white/85 hover:text-white hover:bg-white/12 transition-colors cursor-pointer shrink-0"
-        title={`Switch Pose (${WARDROBE_STUDIO_POSES.find((p) => p.id === activePoseId)?.label})`}
-        aria-label="Switch Pose"
-      >
-        <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-      </button>
-      <button
-        type="button"
         onClick={handleCaptureProfileSnapshot}
         className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white/85 hover:text-white hover:bg-white/12 transition-colors cursor-pointer shrink-0"
         title="Capture Snapshot to Profile Avatar"
@@ -2061,17 +2196,15 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
 
       <button
         type="button"
-        onClick={() => {
-          soundEngine.playUiClick();
-          setCameraFraming('face');
-        }}
+        data-wardrobe-selfie-btn="true"
+        onClick={handleCaptureFaceSelfie}
         className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
           cameraFraming === 'face'
             ? 'bg-white text-slate-950'
             : 'text-white/85 hover:text-white hover:bg-white/12'
         }`}
-        title="Face Close-Up"
-        aria-label="Face Close-Up"
+        title="Take Face Selfie for Profile Photo"
+        aria-label="Take Face Selfie for Profile Photo"
       >
         <ScanFace className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
       </button>
@@ -2155,12 +2288,6 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
 
   const studioBalanceAndClose = (
     <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-      <div
-        className={`h-8 sm:h-9 px-2.5 sm:px-3.5 rounded-full flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-semibold tabular-nums ${glassPillClass}`}
-      >
-        <span className="text-amber-300">{Math.floor(lulBalance).toLocaleString()}</span>
-        <span className="text-white/65">$LUL</span>
-      </div>
       <button
         type="button"
         data-wardrobe-close-btn="true"
@@ -2202,6 +2329,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       {/* 1. Dedicated Cozy Warm Dressing Room Studio Backdrop */}
       <div className="absolute inset-0 bg-[#1a1316]">
         <img
+          ref={backdropImgRef}
           src={studioBackdropUrl}
           alt="Wardrobe Dressing Room"
           referrerPolicy="no-referrer"
@@ -2255,6 +2383,11 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
         </>
       )}
 
+      {/* Brief camera shutter flash when capturing face selfie */}
+      {selfieFlashActive && (
+        <div className="pointer-events-none absolute inset-0 z-[18] bg-white/30 transition-opacity duration-150" />
+      )}
+
       {/* Subtle status toast under top toolbar */}
       {statusNotice && (
         <div
@@ -2264,8 +2397,17 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
               : 'top-[62px] md:left-[35%]'
           }`}
         >
-          <div className={`px-3.5 py-1.5 rounded-full text-xs font-medium text-white/95 truncate ${glassPillClass}`}>
-            {statusNotice}
+          <div
+            className={`px-3.5 py-1.5 rounded-full text-xs font-medium text-white/95 flex items-center gap-2 ${glassPillClass}`}
+          >
+            {capturedSelfiePreviewUrl && (
+              <img
+                src={capturedSelfiePreviewUrl}
+                alt="Profile photo preview"
+                className="w-6 h-6 rounded-full object-cover border border-white/40 shrink-0"
+              />
+            )}
+            <span className="truncate">{statusNotice}</span>
           </div>
         </div>
       )}
@@ -2607,7 +2749,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                     <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5">
                       <div className="flex items-center gap-2">
                         <LipGlyphIcon className="w-4 h-4 text-[#8ad8ff]" />
-                        <span className="text-xs font-semibold text-white/90">Lips (Bibir)</span>
+                        <span className="text-xs font-semibold text-white/90">Lips</span>
                       </div>
                       <span className="text-[10px] text-white/50">Size & Height</span>
                     </div>
@@ -2691,7 +2833,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                     <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5">
                       <div className="flex items-center gap-2">
                         <Eye className="w-4 h-4 text-[#8ad8ff]" />
-                        <span className="text-xs font-semibold text-white/90">Eyes (Mata)</span>
+                        <span className="text-xs font-semibold text-white/90">Eyes</span>
                       </div>
                       <span className="text-[10px] text-white/50">Spacing, Tilt, Size</span>
                     </div>
@@ -2813,7 +2955,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                     <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5">
                       <div className="flex items-center gap-2">
                         <BrowGlyphIcon className="w-4 h-4 text-[#8ad8ff]" />
-                        <span className="text-xs font-semibold text-white/90">Eyebrows (Alis)</span>
+                        <span className="text-xs font-semibold text-white/90">Eyebrows</span>
                       </div>
                       <span className="text-[10px] text-white/50">Height & Angle</span>
                     </div>

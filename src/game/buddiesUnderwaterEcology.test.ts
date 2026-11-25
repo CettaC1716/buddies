@@ -203,7 +203,7 @@ test('Submerged pebbles, corals/kelp, and Oasis lily pads stay properly grounded
     if (p.zone !== 'oasis_lake') {
       assert.ok(isPointClearOfPierAndQuay(p.x, p.z, 1.0), `Pebble at (${p.x}, ${p.z}) blocks beach/stilt cabin`);
       assert.ok(p.x >= 136.5, `Pebble at x=${p.x} too close to widened beach shoreline x<136.5`);
-      const inCabinBox = p.x >= 130.5 && p.x <= 137.5 && p.z >= 81.5 && p.z <= 89.0;
+      const inCabinBox = p.x >= 127.6 && p.x <= 135.6 && p.z >= 91.5 && p.z <= 100.0;
       assert.equal(inCabinBox, false, 'Pebble must not sit inside BeachfrontStiltTimberCabin pilings');
     } else {
       assert.ok(evaluateNwLakeSdf(p.x, p.z) < 0, 'Oasis pebble must sit inside Oasis Lake');

@@ -1761,8 +1761,64 @@ const ANIM_CAT_PALETTE: Record<string, { grad: [string, string]; accent: string;
   paired: { grad: ['#fb7185', '#9f1239'], accent: '#f43f5e', col: 'Studio Motion · Paired', tag: 'Duo' },
 };
 
+const EXCLUDED_UGLY_POSE_LABELS = new Set([
+  'line',
+  'diva pose1',
+  'diva pose 1',
+  'wave',
+  'cheer',
+  'dance',
+  'friendly wave',
+  'victory cheer',
+]);
+
+const EXCLUDED_UGLY_POSE_IDS = new Set([
+  'style_dance_wave',
+  'style_dance_cheer',
+]);
+
+const EXCLUDED_UGLY_POSE_ID_PATTERN = /(^|[_-])(line|diva[_-]?pose[_-]?1)$/;
+
+/**
+ * Excludes low-quality / unwanted poses (Wave, Cheer, Dance, Line, Diva Pose1)
+ * from the Pose catalog, Quick Pose modal, and City Selfie Camera.
+ */
+export function isExcludedUglyPoseItem(item: {
+  id?: string | null;
+  name?: string | null;
+  label?: string | null;
+  slot?: string | null;
+  category?: string | null;
+}): boolean {
+  const slotOrCat = (item.slot ?? item.category ?? '').trim().toLowerCase();
+  const isPoseLike =
+    !slotOrCat ||
+    slotOrCat === 'pose' ||
+    slotOrCat === 'action' ||
+    slotOrCat === 'dance' ||
+    slotOrCat === 'style_pose' ||
+    slotOrCat === 'style_action' ||
+    slotOrCat === 'style_dance';
+  if (!isPoseLike) return false;
+
+  const normalizedId = (item.id ?? '').trim().toLowerCase();
+  if (
+    normalizedId &&
+    (EXCLUDED_UGLY_POSE_IDS.has(normalizedId) || EXCLUDED_UGLY_POSE_ID_PATTERN.test(normalizedId))
+  ) {
+    return true;
+  }
+
+  const normalizedLabel = (item.name ?? item.label ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  return Boolean(normalizedLabel && EXCLUDED_UGLY_POSE_LABELS.has(normalizedLabel));
+}
+
 function registerExternalWardrobeItems(items: readonly WardrobeCatalogItem[]): void {
   for (const item of items) {
+    if (isExcludedUglyPoseItem(item)) continue;
     if (!dynamicExternalItemsById.has(item.id)) {
       dynamicExternalItemsById.set(item.id, item);
       dynamicExternalWardrobeItems.push(item);
@@ -1963,6 +2019,9 @@ export function loadExternalWardrobeCatalogs(): Promise<number> {
             accentHex: grad[0],
           });
         } else if (a.category === 'dance' || a.category === 'pose' || a.category === 'action') {
+          if (isExcludedUglyPoseItem({ id: a.id, label: a.label, category: a.category })) {
+            continue;
+          }
           const slot: 'style_dance' | 'style_pose' | 'style_action' =
             a.category === 'dance'
               ? 'style_dance'
@@ -2510,7 +2569,8 @@ export function getOwnedQuickPoseActionItems(
     );
     for (const item of part.owned) {
       if (item.isStarterDefault) continue;
-      if (!item.dancePose?.animGlbUrl && item.dancePose?.danceKind === 'none') continue;
+      if (isExcludedUglyPoseItem(item)) continue;
+      if (!item.dancePose?.animGlbUrl) continue;
       out.push(item);
     }
   }

@@ -32,6 +32,11 @@ import {
 import { CafeMenuItemArtwork } from './GlasshouseCafeMenuArtwork';
 import { type NearbyEntityUser } from './SocialChatModal';
 import { soundEngine } from '../game/audio';
+import {
+  resolveNpcCitizenIdFromEntity,
+  resolveNpcPhotoUrl,
+  useNpcPortraitVersion,
+} from '../game/npcPortraitRegistry';
 
 export interface PlayerLevelXpBadgeProps {
   levelProgress: PlayerLevelProgress;
@@ -824,6 +829,7 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
   onLeaveShiftQueue,
   onOpenAtmModal,
 }) => {
+  useNpcPortraitVersion();
   // Dock to the measured right edge of the world chat bar on desktop —
   // the same shared bottom-bar slot the in-world prompt buttons use.
   const [dockLeftPx, setDockLeftPx] = useState<number | null>(null);
@@ -1115,21 +1121,37 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
         >
           <div className="flex items-center justify-between gap-2.5 w-full min-w-0">
             <span className="w-7 h-7 bg-sky-400/20 text-sky-300 border border-white/15 rounded-full flex items-center justify-center overflow-hidden shrink-0 font-bold text-xs">
-              {isFemaleNpcPortrait ? (
-                <img
-                  src="/assets/avatar_nadia.jpg"
-                  alt={cleanEntityName}
-                  className="w-full h-full object-cover"
-                />
-              ) : nearbyEntity.isNpc ? (
-                <img
-                  src="/assets/avatar_hiro.jpg"
-                  alt={cleanEntityName}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <span>{cleanEntityName.slice(0, 1).toUpperCase()}</span>
-              )}
+              {(() => {
+                const npcCid = resolveNpcCitizenIdFromEntity(nearbyEntity);
+                if (npcCid) {
+                  return (
+                    <img
+                      src={resolveNpcPhotoUrl(npcCid, 'avatar')}
+                      alt={cleanEntityName}
+                      className="w-full h-full object-cover object-center"
+                    />
+                  );
+                }
+                if (isFemaleNpcPortrait) {
+                  return (
+                    <img
+                      src="/assets/avatar_nadia.jpg"
+                      alt={cleanEntityName}
+                      className="w-full h-full object-cover"
+                    />
+                  );
+                }
+                if (nearbyEntity.isNpc) {
+                  return (
+                    <img
+                      src="/assets/avatar_hiro.jpg"
+                      alt={cleanEntityName}
+                      className="w-full h-full object-cover"
+                    />
+                  );
+                }
+                return <span>{cleanEntityName.slice(0, 1).toUpperCase()}</span>;
+              })()}
             </span>
 
             <span className="flex-1 text-center font-bold text-[13px] tracking-wide uppercase text-white truncate whitespace-nowrap px-1">

@@ -204,6 +204,10 @@ const Garment3DPreviewCanvas: React.FC<{
       clonedRoot.traverse((node) => {
         if ((node as THREE.Mesh).isMesh) {
           const m = node as THREE.Mesh;
+          if ((m.name || '').toLowerCase().includes('outline')) {
+            m.visible = false;
+            return;
+          }
           m.geometry = m.geometry.clone();
           clonedGeometries.push(m.geometry);
           m.frustumCulled = false;

@@ -35,11 +35,13 @@ import {
   buildOfflineChatTransactionAck,
   createInitialMerchantMarketState,
   createInitialPlacedHouseFurniture,
+  detectHousingPromptLang,
   formatHouseDeedBadgeLabel,
   formatWalletHistoryActionLabel,
   formatWalletHistoryAmountDisplay,
   generateNpcMerchantReply,
   getHouseStyleDisplaySpec,
+  isHanaHousingTopicQuery,
   mergeOwnedCatalogWithChainNep245,
   parseNpcChatTransactionIntent,
   resolveTutorialFurnitureTarget,
@@ -416,7 +418,7 @@ test('Hana and Kai live chat concierge answers Fish NFT sales records, locations
     state,
     balances,
   );
-  assert.match(whatGameReply, /Buddies Blitz/i);
+  assert.match(whatGameReply, /Cerria/i);
   assert.match(whatGameReply, /NEAR/i);
 
   const whatDoReply = generateNpcMerchantReply(
@@ -1282,6 +1284,15 @@ test('parseNpcChatTransactionIntent and buildOfflineChatTransactionAck detect In
     type: 'teleport_places',
     focusStationId: null,
   });
+
+  // In-bubble Hana housing offer detection (ID & EN)
+  assert.equal(isHanaHousingTopicQuery('gimana soal rumah di kota ini?'), true);
+  assert.equal(isHanaHousingTopicQuery('aku mau lihat model house'), true);
+  assert.equal(isHanaHousingTopicQuery('Tell me about buying a house'), true);
+  assert.equal(isHanaHousingTopicQuery('What is this game?'), false);
+  assert.equal(isHanaHousingTopicQuery('How do currencies work?'), false);
+  assert.equal(detectHousingPromptLang('gimana cara beli rumah?'), 'id');
+  assert.equal(detectHousingPromptLang('Tell me about buying a house'), 'en');
 });
 
 test('extractHouseStyleFromNftMetadata and verifyNep171GamepassOwnership resolve explicit house_style without locking legacy deeds', async () => {

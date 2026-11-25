@@ -964,7 +964,7 @@ export async function verifyNep171GamepassOwnership(accountId: string): Promise<
         token: {
           tokenId: String(deedToken.token_id || 'house-deed-0001'),
           ownerId: cleanId,
-          title: String(deedToken?.metadata?.title || 'Buddies Blitz Citizen Deed'),
+          title: String(deedToken?.metadata?.title || 'Cerria Citizen Deed'),
           description: String(
             deedToken?.metadata?.description ||
               'NEP-171 Base Commander Ownership & Safezone Plot Pass',
@@ -1422,7 +1422,7 @@ export async function connectNearWalletSelector(
             const nonce = new Uint8Array(32);
             crypto.getRandomValues(nonce);
             const signed = await provider.signMessage({
-              message: `Authenticate Citizen ${cleanExtId} for Buddies Blitz (${new Date().toISOString()})`,
+              message: `Authenticate Citizen ${cleanExtId} for Cerria (${new Date().toISOString()})`,
               recipient: NEAR_CONFIG.marketContractId,
               nonce,
             });
@@ -1488,7 +1488,7 @@ export async function connectNearWalletSelector(
  */
 export const RESPITE_NEP141_METADATA = {
   spec: 'ft-1.0.0',
-  name: 'Buddies Blitz Respite',
+  name: 'Cerria Respite',
   symbol: 'RESPITE',
   decimals: 0,
   contractId: NEAR_CONFIG.nep141RespiteContractId,

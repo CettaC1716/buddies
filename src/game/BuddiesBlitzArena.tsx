@@ -6,6 +6,13 @@ import {
 } from './buddiesFaceCompositor';
 import { computeAdaptiveWorldCameraFov } from './buddiesAdaptiveViewportRules';
 import {
+  NPC_PORTRAIT_REQUEST_EVENT,
+  hasNpcPortraitPair,
+  setNpcPortraitPair,
+} from './npcPortraitRegistry';
+import { createNpcPortraitStudio } from './npcPortraitStudio';
+import type { CitizenId } from './buddiesCitizenRoles';
+import {
   isPlayerRoleBadgeId,
   readStoredProfileIdentity,
   readStoredRoleBadge,
@@ -275,7 +282,6 @@ import {
   computeBuildBoxAudioGain,
 } from './audio';
 import {
-  classifyFootstepSurface,
   resolveFootstepHalfCycleIndex,
   type AmbientEnvironmentMode,
 } from './buddiesAmbientAudioRules';
@@ -436,7 +442,9 @@ import {
   type UrbanScooterKind,
 } from './buddiesUrbanScooterRules';
 import {
+  computePushKickScooterAccelRate,
   computeScooterRiderRigPose,
+  kickScooterStrideLengthM,
   type ScooterRiderRigPose,
 } from './buddiesScooterRidePose';
 import {
@@ -617,6 +625,7 @@ import {
   CENTRAL_PARK_SEAT_SPOTS,
   getCentralParkGrassExclusionBoxes,
 } from './buddiesCentralParkRules';
+import { BEACH_CLUB_COCKTAIL_BAR_SEAT_SPOTS } from './buddiesBeachClubRules';
 import { buildUnderwaterEcology3D } from './buddiesUnderwaterEcology';
 import {
   AMBIENT_NPC_CAPSULE_RADIUS,
@@ -801,6 +810,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     renderer.shadowMap.autoUpdate = false;
     renderer.shadowMap.needsUpdate = initialGraphicsProfile.shadowsEnabled;
 
+    renderer.domElement.dataset.cityArenaCanvas = 'true';
     renderer.domElement.style.display = 'block';
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
@@ -1210,6 +1220,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       scooterPushDistanceM: number;
       scooterMountBlend: number;
       scooterPushActivity: number;
+      scooterPushCruising: boolean;
       scooterPose: ScooterRiderRigPose | null;
       lastLabelKey: string;
       lastBubbleText: string | null;
@@ -1786,6 +1797,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       { id: 'beach_chair_3', x: 112.2, z: 88.2, yaw: -0.1, seatLiftY: 0, indicatorHeightY: 1.2, sitVariant: 'chair_casual' },
       { id: 'beach_chair_4', x: 113.5, z: 49.5, yaw: -0.2, seatLiftY: 0, indicatorHeightY: 1.2, sitVariant: 'chair_casual' },
       ...CENTRAL_PARK_SEAT_SPOTS,
+      ...BEACH_CLUB_COCKTAIL_BAR_SEAT_SPOTS,
     ];
 
     // Bed sleep spots for the private-house bedroom (static zone bed at interior
@@ -2350,7 +2362,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       if (ridingTramCarIdx !== null) disembarkFromCityTram();
       if (playerUnit?.isSitting && activeSeatedSpot) standUpFromLobbySeat();
       cityTramDistance = origSpec.tramTrackDistance;
-      soundEngine.playPickup();
+      soundEngine.playTramBell(2, 1.0);
       activeTramRideCutscene = {
         active: true,
         startedAtMs: performance.now(),
@@ -2392,6 +2404,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                 onboardingCompleted?: boolean;
                 characterGender?: CharacterGender;
                 playerDisplayName?: string;
+                characterSelectPreviewName?: string;
                 nearWalletId?: string | null;
                 houseOwnerKey?: string;
               };
@@ -2403,6 +2416,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       initialMpAppSync?.playerDisplayName?.trim() ||
       (typeof window !== 'undefined' && window.localStorage.getItem('bb_active_display_name')) ||
       'CITIZEN';
+    let characterSelectPreviewName =
+      initialMpAppSync?.characterSelectPreviewName?.trim() ||
+      (initialMpAppSync?.characterGender === 'female' ? 'Buddy Female' : 'Buddy Male');
+    let lastCharacterSelectNameplateText = '';
+    let wasInCharacterSelectShowcase = false;
+    const characterSelectViewOffsetState = {
+      active: false,
+      vw: 0,
+      vh: 0,
+      ox: 0,
+      oy: 0,
+    };
     let playerRoleBadge: PlayerRoleBadgeId = readStoredRoleBadge();
 
     // Listen for select-character-by-id event to synchronize 3D selection ring and nameplate from React HUD
@@ -2631,7 +2656,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     socialSpeechBubblePillEl.style.fontSize = '12px';
     socialSpeechBubblePillEl.style.borderRadius = '9999px';
     socialSpeechBubblePillEl.style.border = '1px solid rgba(255, 255, 255, 0.94)';
-    socialSpeechBubblePillEl.style.backdropFilter = 'blur(12px)';
     socialSpeechBubblePillEl.style.boxShadow = '0 6px 20px rgba(15, 23, 42, 0.22)';
     socialSpeechBubblePillEl.style.maxWidth = '238px';
     socialSpeechBubblePillEl.style.textAlign = 'left';
@@ -2726,6 +2750,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     } | null = null;
     let poseModalInspectOpen = false;
     let pairedModalInspectTargetId: string | null = null;
+    let citySelfieCameraOpen = false;
+    let citySelfieDesiredDistScale = 0.88;
     let posePortraitState: {
       mode: 'solo' | 'paired';
       targetKey: string;
@@ -2771,6 +2797,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     ) => {
       const clampedScale = clampNpcDialoguePortraitOrbit({
         portraitDistanceScale: defaultDistanceScale,
+        minDistanceScale: citySelfieCameraOpen ? 0.56 : undefined,
+        minYawOffsetRad: citySelfieCameraOpen ? -Math.PI : undefined,
+        maxYawOffsetRad: citySelfieCameraOpen ? Math.PI : undefined,
       }).portraitDistanceScale;
       npcPortraitOrbitYaw = 0;
       npcPortraitOrbitPitch = 0;
@@ -4425,8 +4454,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       // Cara 1 Lock-Step World Scaling: 0.98 (0.845x of 1.16) makes the entire World +18.4% larger relative to the avatar
       bodyGroup.scale.setScalar(0.98);
       if (isPlayer) {
-        bodyGroup.userData.enableAvatarCastShadow = !isSoftwareGl;
+        bodyGroup.userData.enableAvatarCastShadow = false;
       }
+      bodyGroup.userData.disableNpcOutline = true;
       root.add(bodyGroup);
 
       const rig = buildProceduralBuddyAvatar(
@@ -4641,6 +4671,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       bodyGrp.rotation.order = 'YXZ';
       // 1:1 identical scale (0.98) with playerUnit.bodyGroup so Hana & Kai stand at the exact same height as the player character
       bodyGrp.scale.setScalar(0.98);
+      bodyGrp.userData.disableNpcOutline = true;
       npcGrp.add(bodyGrp);
 
       const npcRig = buildProceduralBuddyAvatar(
@@ -4889,7 +4920,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         bodyGroup.rotation.order = 'YXZ';
         bodyGroup.scale.setScalar(0.98);
         bodyGroup.rotation.set(0, initYaw + Math.PI / 2, 0);
-        bodyGroup.userData.enableAvatarCastShadow = !isSoftwareGl;
+        bodyGroup.userData.enableAvatarCastShadow = false;
+        bodyGroup.userData.disableNpcOutline = true;
         root.add(bodyGroup);
 
         const rig = buildProceduralBuddyAvatar(
@@ -5161,6 +5193,99 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         };
       }
       return true;
+    };
+
+    const npcPortraitStudio = createNpcPortraitStudio();
+    const prioritizedNpcPortraitIds = new Set<CitizenId>();
+    const ALL_PORTRAIT_CITIZEN_IDS: readonly CitizenId[] = [
+      'npc_hana',
+      'npc_kai',
+      'city_plaza_nadia',
+      'citizen_mira',
+      'citizen_tari',
+      'city_plaza_raka',
+      'citizen_bima',
+      'citizen_kenji',
+    ];
+    let lastNpcPortraitCaptureMs = 0;
+
+    const handleNpcPortraitRequestEvent = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ citizenId?: CitizenId }>).detail;
+      const cid = detail?.citizenId;
+      if (cid && !hasNpcPortraitPair(cid)) {
+        prioritizedNpcPortraitIds.add(cid);
+      }
+    };
+    window.addEventListener(NPC_PORTRAIT_REQUEST_EVENT, handleNpcPortraitRequestEvent);
+
+    const isNpcRigReadyForStudioCapture = (
+      rig: ReturnType<typeof buildProceduralBuddyAvatar>,
+      bodyGroup: THREE.Group,
+    ): boolean => {
+      if (!rig.customGlbController?.glbRoot) return false;
+      if (bodyGroup.userData?.desiredModularOutfit) {
+        const seq = bodyGroup.userData.modularOutfitSeq as number | undefined;
+        const doneSeq = bodyGroup.userData.modularOutfitCompletedSeq as number | undefined;
+        if (!seq || doneSeq !== seq) return false;
+      }
+      return true;
+    };
+
+    const stepNpcPortraitCaptureQueue = (nowMs: number) => {
+      if (worldModeRef.current === 'warzone') return;
+      const hasPriority = prioritizedNpcPortraitIds.size > 0;
+      if (!hasPriority && nowMs - lastNpcPortraitCaptureMs < 220) return;
+
+      const candidateOrder: CitizenId[] = hasPriority
+        ? [...prioritizedNpcPortraitIds]
+        : [...ALL_PORTRAIT_CITIZEN_IDS];
+
+      for (const cid of candidateOrder) {
+        if (hasNpcPortraitPair(cid)) {
+          prioritizedNpcPortraitIds.delete(cid);
+          continue;
+        }
+        let targetRig: ReturnType<typeof buildProceduralBuddyAvatar> | null = null;
+        let targetBody: THREE.Group | null = null;
+
+        if (cid === 'npc_hana') {
+          targetRig = lobbyCafeNpc.npcRig;
+          targetBody = lobbyCafeNpc.bodyGrp;
+        } else if (cid === 'npc_kai') {
+          targetRig = beachHouseNpc.npcRig;
+          targetBody = beachHouseNpc.bodyGrp;
+        } else {
+          const ambient = cityAmbientNpcs.find((n) => n.preset.id === cid);
+          if (ambient) {
+            if (!ambient.glbUpgraded) {
+              upgradeAmbientNpcRigIfNeeded(ambient);
+            }
+            targetRig = ambient.rig;
+            targetBody = ambient.bodyGroup;
+          }
+        }
+
+        if (!targetRig || !targetBody) continue;
+        if (!isNpcRigReadyForStudioCapture(targetRig, targetBody)) continue;
+
+        const vpW = container.clientWidth || window.innerWidth;
+        const vpH = container.clientHeight || window.innerHeight;
+        const captured = npcPortraitStudio.captureNpcPhotos(
+          renderer,
+          cid,
+          targetRig,
+          targetBody,
+          vpW,
+          vpH,
+        );
+        if (captured) {
+          setNpcPortraitPair(cid, captured);
+          prioritizedNpcPortraitIds.delete(cid);
+          lastNpcPortraitCaptureMs = nowMs;
+        }
+        // Capture at most one NPC per frame to keep frame pacing silky smooth
+        break;
+      }
     };
 
     const updateCityAmbientNpcsFrame = (
@@ -5909,7 +6034,28 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
         npc.nameplate.sprite.visible = false;
 
-        if (distFromFocus <= 52.0) {
+        if (distFromFocus <= 44.0 || isTalkingWithPlayer || isPairedNpcNow) {
+          if (!hasSecondaryLodFrustum) {
+            syncSecondaryLodFrustum();
+          }
+          secondaryLodSphereScratch.center.set(
+            npc.root.position.x,
+            npc.root.position.y + 0.95,
+            npc.root.position.z,
+          );
+          secondaryLodSphereScratch.radius = 2.8;
+          const isNpcInFrustum =
+            isTalkingWithPlayer ||
+            isPairedNpcNow ||
+            secondaryLodFrustum.intersectsSphere(secondaryLodSphereScratch);
+
+          if (!isNpcInFrustum && !upgradedThisFrame) {
+            if (npc.rig.customGlbController) {
+              npc.rig.customGlbController.lastStepTimeMs = nowMs;
+            }
+            continue;
+          }
+
           const isCurrentlyFishing =
             npc.activeActivity === 'fishing' && !isTalkingWithPlayer && !isPairedNpcNow;
           let castRecoil = 0;
@@ -5919,18 +6065,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               npc.nextFishCastSec = timeSec + 11.5 + ((i * 2.17) % 5.5);
             }
           }
-          const shouldStepDetail = shouldStepCharacterDetailThisFrame(
-            distFromFocus * distFromFocus,
-            npcAnimLodTick,
-            i,
-            false,
+          const shouldStepDetail =
             isTalkingWithPlayer ||
-              isPairedNpcNow ||
-              npc.isSitting ||
-              effectiveIsMoving ||
-              wasMoving ||
-              castRecoil > 0,
-          );
+            isPairedNpcNow ||
+            shouldStepCharacterDetailThisFrame(
+              distFromFocus * distFromFocus,
+              npcAnimLodTick,
+              i,
+              false,
+              effectiveIsMoving || wasMoving || castRecoil > 0,
+            );
           if (shouldStepDetail || upgradedThisFrame) {
             const stanceWeaponId = isCurrentlyFishing ? 'fishing_rod' : 'unarmed';
             const npcSecondaryLod = resolveRigSecondaryPhysicsLod(npc.root.position, false, 3.0);
@@ -6060,6 +6204,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       createBlitzStrokeMesh,
       bakeStaticGroupMeshes,
     });
+    centralPark.setCanopyShadowsEnabled(activeFoliageShadowsEnabled);
     scene.add(centralPark.group);
 
     const CAFE_MIRA_INTERIOR_X = -3.15;
@@ -6121,6 +6266,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       const cafeCustomerBodyGroup = new THREE.Group();
       cafeCustomerBodyGroup.rotation.y = Math.PI; // face -Z toward barista counter
       cafeCustomerBodyGroup.scale.setScalar(0.98);
+      cafeCustomerBodyGroup.userData.disableNpcOutline = true;
       custRoot.add(cafeCustomerBodyGroup);
       const custRig = buildProceduralBuddyAvatar(
         cafeCustomerBodyGroup,
@@ -6172,6 +6318,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         miraBodyGroup.userData.desiredTorsoAssetUrl = null;
         miraBodyGroup.userData.citizenClothingTintHex = null;
       }
+      miraBodyGroup.userData.disableNpcOutline = true;
       miraRoot.add(miraBodyGroup);
 
       const miraRig = buildProceduralBuddyAvatar(
@@ -6285,6 +6432,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         staffBodyGroup.rotation.order = 'YXZ';
         staffBodyGroup.rotation.set(0, placement.rotY, 0);
         staffBodyGroup.scale.setScalar(0.98);
+        staffBodyGroup.userData.disableNpcOutline = true;
         staffRoot.add(staffBodyGroup);
 
         const staffRig = buildProceduralBuddyAvatar(
@@ -9183,6 +9331,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           onboardingCompleted?: boolean;
           characterGender?: CharacterGender;
           playerDisplayName?: string;
+          characterSelectPreviewName?: string;
           nearWalletId?: string | null;
           houseOwnerKey?: string;
           daylightHour?: number;
@@ -9222,6 +9371,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       if (typeof detail.playerDisplayName === 'string' && detail.playerDisplayName.trim()) {
         playerCustomDisplayName = detail.playerDisplayName.trim();
       }
+      if (
+        typeof detail.characterSelectPreviewName === 'string' &&
+        detail.characterSelectPreviewName.trim()
+      ) {
+        characterSelectPreviewName = detail.characterSelectPreviewName.trim();
+      } else if (detail.characterGender === 'male' || detail.characterGender === 'female') {
+        characterSelectPreviewName =
+          detail.characterGender === 'female' ? 'Buddy Female' : 'Buddy Male';
+      }
       if (typeof detail.isWorkingCafeShift === 'boolean') {
         const wasWorkingShift = cafeWorkShiftActive;
         cafeWorkShiftActive = detail.isWorkingCafeShift;
@@ -9259,12 +9417,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       }
       syncCafeCustomerWorkShiftVisuals();
       if (playerUnit?.nameplate?.updatePlate) {
+        const effectivePlateName =
+          npcCameraMode === 'character_select'
+            ? characterSelectPreviewName
+            : playerCustomDisplayName;
         playerUnit.nameplate.updatePlate(
-          playerCustomDisplayName,
+          effectivePlateName,
           cafeWorkShiftActive ? 'CAFE SERVER' : '',
           'player_rookie',
           playerRoleBadge,
         );
+        if (npcCameraMode === 'character_select') {
+          lastCharacterSelectNameplateText = effectivePlateName;
+        }
       }
       if (typeof detail.isSampleHouse === 'boolean') {
         mpIsSampleHouse = detail.isSampleHouse;
@@ -10231,6 +10396,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       tankRiderAvatar.position.set(-0.12, -1.02, 0);
       tankRiderAvatar.rotation.y = Math.PI / 2;
       tankRiderAvatar.scale.setScalar(1.06 / VEHICLE_BODY_SCALE);
+      tankRiderAvatar.userData.disableNpcOutline = true;
       riderGroup.add(tankRiderAvatar);
       riderGroup.userData.riderRig = buildProceduralBuddyAvatar(
         tankRiderAvatar,
@@ -10331,6 +10497,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       planeRiderAvatar.position.set(-0.08, -0.52, 0);
       planeRiderAvatar.rotation.y = Math.PI / 2;
       planeRiderAvatar.scale.setScalar(1.42 / FIGHTER_JET_BODY_SCALE);
+      planeRiderAvatar.userData.disableNpcOutline = true;
       riderGroup.add(planeRiderAvatar);
       riderGroup.userData.riderRig = buildProceduralBuddyAvatar(
         planeRiderAvatar,
@@ -10682,8 +10849,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       pushDistanceM: number;
       mountBlend: number;
       pushActivity: number;
+      isCruisingCoast: boolean;
       isThrottleActive: boolean;
       isBraking: boolean;
+      groundY: number;
+      slopePitchX: number;
       pose: ScooterRiderRigPose | null;
     }
     const buildScooterSpecInput = (kind: UrbanScooterKind) => ({
@@ -10706,14 +10876,25 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         handle.leanGroup.rotation.z = leanRollZ;
       }
     };
-    const computeTerrainSlopePitchX = (x: number, z: number, yaw: number): number => {
+    const computeScooterTerrainContact = (
+      x: number,
+      z: number,
+      yaw: number,
+      kind: UrbanScooterKind = 'electric_scooter_bike',
+    ): { groundY: number; slopePitchX: number } => {
       const fwdX = Math.cos(yaw);
       const fwdZ = -Math.sin(yaw);
-      const sampleHalfM = 0.55;
-      const yFwd = getTerrainElevation(x + fwdX * sampleHalfM, z + fwdZ * sampleHalfM);
-      const yBack = getTerrainElevation(x - fwdX * sampleHalfM, z - fwdZ * sampleHalfM);
-      const rawPitch = -Math.atan2(yFwd - yBack, sampleHalfM * 2.0);
-      return Math.max(-0.34, Math.min(0.34, rawPitch));
+      const wheelHalfSpan = kind === 'electric_scooter_bike' ? 1.08 : 0.62;
+      const yCenter = getTerrainElevation(x, z);
+      const yFwd = getTerrainElevation(x + fwdX * wheelHalfSpan, z + fwdZ * wheelHalfSpan);
+      const yBack = getTerrainElevation(x - fwdX * wheelHalfSpan, z - fwdZ * wheelHalfSpan);
+      const chordMidY = 0.5 * (yFwd + yBack);
+      const groundY = Math.max(yCenter, chordMidY * 0.75 + yCenter * 0.25);
+      const rawPitch = -Math.atan2(yFwd - yBack, wheelHalfSpan * 2.0);
+      return {
+        groundY,
+        slopePitchX: Math.max(-0.36, Math.min(0.36, rawPitch)),
+      };
     };
     const applyScooterBodyTransform = (
       bodyGroup: THREE.Group,
@@ -10724,17 +10905,30 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     ) => {
       const cosR = Math.cos(pose.leanRollZ);
       const sinR = Math.sin(pose.leanRollZ);
-      const localX = -pose.seatLiftY * sinR;
-      const localY = pose.seatLiftY * cosR;
-      const localZ = pose.seatBackOffsetZ;
+      const cosP = Math.cos(slopePitchX);
+      const sinP = Math.sin(slopePitchX);
+      // Transform chassis-local seat offset (0, seatLiftY, seatBackOffsetZ) through
+      // Z-roll (leanRollZ) -> X-pitch (slopePitchX) -> Y-yaw (yaw + PI/2) so rider & scooter share one rigid frame.
+      const rx = -pose.seatLiftY * sinR;
+      const ry = pose.seatLiftY * cosR;
+      const rz = pose.seatBackOffsetZ;
+      const px = rx;
+      const py = ry * cosP - rz * sinP;
+      const pz = ry * sinP + rz * cosP;
       bodyGroup.position.set(
-        localX * -Math.sin(yaw) + localZ * Math.cos(yaw),
-        baseY + localY,
-        localX * -Math.cos(yaw) - localZ * Math.sin(yaw),
+        px * -Math.sin(yaw) + pz * Math.cos(yaw),
+        baseY + py,
+        -px * Math.cos(yaw) - pz * Math.sin(yaw),
       );
       bodyGroup.rotation.set(slopePitchX, yaw + Math.PI / 2, pose.leanRollZ, 'YXZ');
     };
     let scooterRideState: ScooterRideState | null = null;
+    let prevScooterPushStrokeCycle = -1;
+    let prevScooterSeamIdx = -1;
+    let prevScooterCruisingCoast = false;
+    let prevTramSpeedForAudio: number = CITY_TRAM_SPEC.cruiseSpeed;
+    let prevTramClackIdx = Math.floor(cityTramDistance / 11.5);
+    let wasTramMovingForBell = true;
     let crateSpawnTimer = 0;
     let superCrateSpawnTimer = 0;
     let legendCrateSpawnTimer = 0;
@@ -11757,6 +11951,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       const bodyGroup = new THREE.Group();
       bodyGroup.rotation.order = 'YXZ';
       bodyGroup.scale.setScalar(0.98);
+      bodyGroup.userData.disableNpcOutline = true;
       root.add(bodyGroup);
 
       const rig = buildProceduralBuddyAvatar(
@@ -11872,6 +12067,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         scooterPushDistanceM: 0,
         scooterMountBlend: 0,
         scooterPushActivity: 0,
+        scooterPushCruising: false,
         scooterPose: null,
       };
     };
@@ -15255,6 +15451,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       const chosenExit = isRightSafe ? rightExit : leftExit;
       soundEngine.playUiClick();
       soundEngine.updateVehicleMovementLoop(0, false, false);
+      soundEngine.updateElectricScooterLoop(0, false, false, false);
+      soundEngine.updatePushScooterLoop(0, false);
       playerUnit.x = wrapPlanetCoord(chosenExit.x);
       playerUnit.z = wrapPlanetCoord(chosenExit.z);
       playerUnit.vx = 0;
@@ -15747,7 +15945,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           cityArenaMode === 'safezone' ? 6.2 : 3.4,
         );
         if (tramCheck.canBoard) {
-          soundEngine.playPickup();
+          soundEngine.playTramBell(2, 1.0);
           ridingTramCarIdx = tramCheck.carIndex;
           playerUnit.vx = 0;
           playerUnit.vz = 0;
@@ -15842,7 +16040,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       }
 
       if (tramBoard.canBoard && (!nearestTank || tramBoard.distanceMeters < bestDist)) {
-        soundEngine.playPickup();
+        soundEngine.playTramBell(2, 1.0);
         cancelClickToWalk();
         ridingTramCarIdx = tramBoard.carIndex;
         playerUnit.vx = 0;
@@ -16287,6 +16485,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     const dismountScooter = () => {
       if (!scooterRideState) return;
       cancelClickToWalk();
+      soundEngine.updateElectricScooterLoop(0, false, false, false);
+      soundEngine.updatePushScooterLoop(0, false);
+      prevScooterPushStrokeCycle = -1;
+      prevScooterSeamIdx = -1;
+      prevScooterCruisingCoast = false;
       scene.remove(scooterRideState.handle.root);
       scooterRideState = null;
       if (playerUnit) {
@@ -16325,6 +16528,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         pushActivity: 0,
         spec: buildScooterSpecInput(kind),
       });
+      const initContact = computeScooterTerrainContact(
+        playerUnit.x,
+        playerUnit.z,
+        playerUnit.yaw,
+        kind,
+      );
       scooterRideState = {
         kind,
         handle,
@@ -16334,16 +16543,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         pushDistanceM: 0,
         mountBlend: 0,
         pushActivity: 0,
+        isCruisingCoast: false,
         isThrottleActive: false,
         isBraking: false,
+        groundY: initContact.groundY,
+        slopePitchX: initContact.slopePitchX,
         pose: initialPose,
       };
-      handle.root.position.set(
-        playerUnit.x,
-        getTerrainElevation(playerUnit.x, playerUnit.z),
-        playerUnit.z,
-      );
-      handle.root.rotation.set(0, playerUnit.yaw + Math.PI / 2, 0);
+      handle.root.position.set(playerUnit.x, initContact.groundY, playerUnit.z);
+      handle.root.rotation.order = 'YXZ';
+      handle.root.rotation.set(initContact.slopePitchX, playerUnit.yaw + Math.PI / 2, 0);
+      if (kind === 'electric_scooter_bike') {
+        soundEngine.playElectricScooterMountChime();
+      } else {
+        soundEngine.playPushScooterMountBell();
+      }
       window.dispatchEvent(
         new CustomEvent('scooter-mounted', { detail: { kind } }),
       );
@@ -16510,7 +16724,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       if (mountedTank) handleToggleMountTank();
       if (ridingTramCarIdx !== null) disembarkFromCityTram();
       if (kind === 'tram') {
-        soundEngine.playPickup();
+        soundEngine.playTramBell(2, 1.0);
         ridingTramCarIdx = 0;
         playerUnit.vx = 0;
         playerUnit.vz = 0;
@@ -17457,7 +17671,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             8.5,
           );
           if (tramBoard.canBoard) {
-            soundEngine.playPickup();
+            soundEngine.playTramBell(2, 1.0);
             ridingTramCarIdx = tramBoard.carIndex;
             playerUnit.vx = 0;
             playerUnit.vz = 0;
@@ -17956,6 +18170,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           orbitYawOffsetRad: npcPortraitOrbitDragStart.yaw - dx * 0.0075,
           orbitPitchOffsetRad: npcPortraitOrbitDragStart.pitch + dy * 0.0058,
           portraitDistanceScale: npcPortraitDistanceScale,
+          minYawOffsetRad: citySelfieCameraOpen ? -Math.PI : undefined,
+          maxYawOffsetRad: citySelfieCameraOpen ? Math.PI : undefined,
+          minDistanceScale: citySelfieCameraOpen ? 0.56 : undefined,
         });
         npcPortraitOrbitYaw = clamped.orbitYawOffsetRad;
         npcPortraitOrbitPitch = clamped.orbitPitchOffsetRad;
@@ -18666,6 +18883,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           orbitYawOffsetRad: npcPortraitOrbitYaw,
           orbitPitchOffsetRad: npcPortraitOrbitPitch,
           portraitDistanceScale: npcPortraitDistanceScale + wheelStep,
+          minYawOffsetRad: citySelfieCameraOpen ? -Math.PI : undefined,
+          maxYawOffsetRad: citySelfieCameraOpen ? Math.PI : undefined,
+          minDistanceScale: citySelfieCameraOpen ? 0.56 : undefined,
         }).portraitDistanceScale;
         return;
       }
@@ -18797,19 +19017,31 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         const nextName = act.slice('setPlayerDisplayName:'.length).trim() || 'YOU';
         playerCustomDisplayName = nextName;
         if (playerUnit?.nameplate?.updatePlate) {
-          playerUnit.nameplate.updatePlate(nextName, '', 'player_rookie', playerRoleBadge);
+          const plateLabel =
+            npcCameraMode === 'character_select' ? characterSelectPreviewName : nextName;
+          playerUnit.nameplate.updatePlate(plateLabel, '', 'player_rookie', playerRoleBadge);
+          if (npcCameraMode === 'character_select') {
+            lastCharacterSelectNameplateText = plateLabel;
+          }
         }
       } else if (act.startsWith('setPlayerRoleBadge:')) {
         const candidateRole = act.slice('setPlayerRoleBadge:'.length).trim();
         if (isPlayerRoleBadgeId(candidateRole)) {
           playerRoleBadge = candidateRole;
           if (playerUnit?.nameplate?.updatePlate) {
+            const plateLabel =
+              npcCameraMode === 'character_select'
+                ? characterSelectPreviewName
+                : playerCustomDisplayName;
             playerUnit.nameplate.updatePlate(
-              playerCustomDisplayName,
+              plateLabel,
               cafeWorkShiftActive ? 'CAFE SERVER' : '',
               'player_rookie',
               playerRoleBadge,
             );
+            if (npcCameraMode === 'character_select') {
+              lastCharacterSelectNameplateText = plateLabel;
+            }
           }
         }
       } else if (act === 'toggleCharacterGender')
@@ -19322,7 +19554,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             cityTram.getState(),
             8.5,
           );
-          soundEngine.playPickup();
+          soundEngine.playTramBell(2, 1.0);
           ridingTramCarIdx = tramBoard.canBoard ? tramBoard.carIndex : 0;
           playerUnit.vx = 0;
           playerUnit.vz = 0;
@@ -22836,6 +23068,54 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           fov: desiredPlayFov,
         };
       })();
+      const charSelectVpW = renderer.domElement.clientWidth || window.innerWidth || 1280;
+      const charSelectVpH = renderer.domElement.clientHeight || window.innerHeight || 720;
+      const isNarrowCharSelectViewport = charSelectVpW < 640;
+      const isMaleCharSelect = mpLocalGender === 'male';
+      const charSelectCamDist = isNarrowCharSelectViewport ? 11.8 : 6.3;
+      const charSelectCamYOffset = isNarrowCharSelectViewport ? 2.02 : 2.02;
+      const charSelectLookYOffset = isNarrowCharSelectViewport ? 1.72 : 1.84;
+      const charSelectFov = isNarrowCharSelectViewport ? 40 : 39.6;
+      // Stand cleanly on the open flat plaza lane north/south of the z=0 center stair handrail
+      // so the handrail never obstructs the avatar's legs.
+      const charSelectShowcaseX = devRealEstateCamSpawn ? plazaSpawnX : plazaSpawnX - 1.35;
+      const charSelectShowcaseZ = devRealEstateCamSpawn
+        ? plazaSpawnZ
+        : plazaSpawnZ + (isMaleCharSelect ? 3.8 : -3.8);
+      const charSelectShowcaseY = getTerrainElevation(charSelectShowcaseX, charSelectShowcaseZ);
+      // Centered phone is 356px wide at vw*0.5. Place Male in the left free space and Female in the right free space.
+      const sideFreeSpaceW = Math.max(0, charSelectVpW * 0.5 - 178);
+      const targetDesktopCharCenterX = isMaleCharSelect
+        ? Math.round(Math.max(76, sideFreeSpaceW * 0.54))
+        : Math.round(Math.min(charSelectVpW - 76, charSelectVpW - sideFreeSpaceW * 0.54));
+      const charSelectOffsetX = isNarrowCharSelectViewport
+        ? 0
+        : Math.round(charSelectVpW * 0.5 - targetDesktopCharCenterX);
+      const charSelectOffsetY = isNarrowCharSelectViewport ? Math.round(charSelectVpH * 0.24) : 0;
+      if (
+        characterSelectViewOffsetState.active &&
+        npcCameraMode !== 'character_select' &&
+        !(npcCameraMode === 'fly_to_plaza' && flyTargetMode === 'character_select')
+      ) {
+        camera.clearViewOffset();
+        characterSelectViewOffsetState.active = false;
+      }
+      if (
+        wasInCharacterSelectShowcase &&
+        npcCameraMode !== 'character_select' &&
+        !(npcCameraMode === 'fly_to_plaza' && flyTargetMode === 'character_select')
+      ) {
+        wasInCharacterSelectShowcase = false;
+        if (playerUnit && !devRealEstateCamSpawn && npcCameraMode === 'none') {
+          playerUnit.x = plazaSpawnX;
+          playerUnit.z = plazaSpawnZ;
+          playerUnit.vx = 0;
+          playerUnit.vz = 0;
+          camFollowPos = { x: plazaSpawnX, y: plazaSpawnY + 1.0, z: plazaSpawnZ };
+          camFollowVel = { x: 0, y: 0, z: 0 };
+        }
+      }
+
       const activeFlyPose =
         npcCameraMode === 'fly_to_plaza'
           ? computePlazaFlyToPose({
@@ -22844,14 +23124,24 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               startFov: flyStartFov,
               targetCamPos:
                 flyTargetMode === 'character_select'
-                  ? { x: plazaSpawnX + 6.35, y: plazaSpawnY + 2.32, z: plazaSpawnZ }
+                  ? {
+                      x: charSelectShowcaseX + charSelectCamDist,
+                      y: charSelectShowcaseY + charSelectCamYOffset,
+                      z: charSelectShowcaseZ,
+                    }
                   : plazaGameplayCamTarget.camPos,
               targetLookAtPos:
                 flyTargetMode === 'character_select'
-                  ? { x: plazaSpawnX, y: plazaSpawnY + 1.82, z: plazaSpawnZ }
+                  ? {
+                      x: charSelectShowcaseX,
+                      y: charSelectShowcaseY + charSelectLookYOffset,
+                      z: charSelectShowcaseZ,
+                    }
                   : plazaGameplayCamTarget.lookAtPos,
               targetFov:
-                flyTargetMode === 'character_select' ? 38 : plazaGameplayCamTarget.fov,
+                flyTargetMode === 'character_select'
+                  ? charSelectFov
+                  : plazaGameplayCamTarget.fov,
               progress01: flyProgress01,
             })
           : null;
@@ -23144,6 +23434,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                   cameraPosX: refCamX,
                   cameraPosZ: refCamZ,
                 };
+          } else if (citySelfieCameraOpen) {
+            desiredPoseMode = 'solo';
+            desiredPoseTargetKey = 'selfie';
+            desiredPoseAnchorInput = {
+              mode: 'solo',
+              playerX: playerUnit.x,
+              playerZ: playerUnit.z,
+              playerYaw: playerUnit.yaw,
+              cameraPosX: refCamX,
+              cameraPosZ: refCamZ,
+            };
           } else if (activeQuickPoseState || poseModalInspectOpen) {
             desiredPoseMode = 'solo';
             desiredPoseTargetKey = 'solo';
@@ -23235,7 +23536,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               ? { ...lastRenderedCamPos }
               : { x: camera.position.x, y: camera.position.y, z: camera.position.z };
             citizenReturnBlend01 = 0;
-            resetNpcPortraitInspectCamera(framed.defaultDistanceScale);
+            resetNpcPortraitInspectCamera(
+              desiredPoseTargetKey === 'selfie'
+                ? citySelfieDesiredDistScale
+                : framed.defaultDistanceScale,
+            );
+            if (desiredPoseTargetKey === 'selfie') {
+              npcPortraitOrbitPitch = 0.04;
+              npcPortraitSmoothedPitch = 0.04;
+            }
             posePortraitState = {
               mode: desiredPoseMode,
               targetKey: desiredPoseTargetKey,
@@ -23260,9 +23569,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             posePortraitState.curBoneDropY +=
               (liveBoneDropY - posePortraitState.curBoneDropY) * centerLerp;
             const justStartedOrChangedAnim =
-              (!posePortraitState.hasActiveSession && hasActiveSessionNow) ||
-              posePortraitState.activeAnimId !== currentAnimId ||
-              (activePairedSession !== null && Date.now() - activePairedSession.startedAtMs < 450);
+              !citySelfieCameraOpen &&
+              ((!posePortraitState.hasActiveSession && hasActiveSessionNow) ||
+                posePortraitState.activeAnimId !== currentAnimId ||
+                (activePairedSession !== null && Date.now() - activePairedSession.startedAtMs < 450));
             if (justStartedOrChangedAnim) {
               posePortraitState.frontDirX = liveFrontDirX;
               posePortraitState.frontDirZ = liveFrontDirZ;
@@ -23512,6 +23822,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
       if (state !== 'playing' || currentPlayMode === 'editor') {
         soundEngine.updateVehicleMovementLoop(0, false, false);
+        soundEngine.updateElectricScooterLoop(0, false, false, false);
+        soundEngine.updatePushScooterLoop(0, false);
       }
 
       if (state === 'playing') {
@@ -24346,9 +24658,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           }
 
           // Scooter riding cannot continue indoors, in the Warzone, on a tram, or mid-cast
+          // (viewing the 3D City Map keeps the player mounted on their scooter).
           if (
             scooterRideState &&
-            (npcCameraMode !== 'none' ||
+            ((npcCameraMode !== 'none' && npcCameraMode !== 'city_view') ||
               worldModeRef.current === 'warzone' ||
               ridingTramCarIdx !== null ||
               shorelineFishingSync.phase !== 'idle' ||
@@ -24365,12 +24678,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               npcCameraMode === 'casino_interior' ||
               npcCameraMode === 'salon_interior' ||
               npcCameraMode === 'house_visit';
-            const isExitingCityView =
-              npcCameraMode === 'city_view' && cityViewExitingToPlayer;
             const expectedModeMatch =
               (npcCameraMode === clickToWalkStartedMode &&
                 (npcCameraMode === 'none' || isIndoorClickRoom)) ||
-              (clickToWalkStartedMode === 'none' && isExitingCityView);
+              (clickToWalkStartedMode === 'none' && npcCameraMode === 'city_view');
             const manualConflict = hasManualMovementConflict({
               moveX,
               moveZ,
@@ -24438,11 +24749,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               waypointReachRadius: isIndoorClickRoom
                 ? 0.42
                 : isRidingScooterNow
-                  ? 1.95
+                  ? 2.15
                   : 1.05,
-              maxStuckSec: isIndoorClickRoom ? 3.2 : 2.6,
+              maxStuckSec: isIndoorClickRoom ? 3.2 : isRidingScooterNow ? 3.4 : 2.6,
               audited:
-                npcCameraMode === 'none'
+                npcCameraMode === 'none' || npcCameraMode === 'city_view'
                   ? getCityClickNavGrid(isRidingScooterNow).audited
                   : undefined,
               characterCapsules: liveOutdoorCapsules,
@@ -24512,6 +24823,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           }
 
           if (mountedTank) {
+            soundEngine.updateElectricScooterLoop(0, false, false, false);
+            soundEngine.updatePushScooterLoop(0, false);
             // =================================================================
             // A. DRIVING BLITZ TANK / DUMP TRUCK OR FLYING BLITZ PLANE MODE
             // =================================================================
@@ -25016,8 +25329,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             const activeCar = ridingTramCarIdx === 0 ? tramStateNow.car1 : tramStateNow.car2;
             playerUnit.x = wrapPlanetCoord(activeCar.x);
             playerUnit.z = wrapPlanetCoord(activeCar.z);
-            playerUnit.vx = activeCar.forwardX * CITY_TRAM_SPEC.cruiseSpeed;
-            playerUnit.vz = activeCar.forwardZ * CITY_TRAM_SPEC.cruiseSpeed;
+            playerUnit.vx = activeCar.forwardX * cityTramCurrentSpeedMps;
+            playerUnit.vz = activeCar.forwardZ * cityTramCurrentSpeedMps;
             playerUnit.yaw = activeCar.yaw;
             const tramFloorY = getTerrainElevation(playerUnit.x, playerUnit.z) + 0.45;
             playerUnit.root.position.set(playerUnit.x, tramFloorY, playerUnit.z);
@@ -25027,15 +25340,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             if (playerUnit.hp < playerUnit.maxHp) {
               playerUnit.hp = Math.min(playerUnit.maxHp, playerUnit.hp + dt * 8.5);
             }
-            activeSpeed = CITY_TRAM_SPEC.cruiseSpeed;
-            soundEngine.updateVehicleMovementLoop(activeSpeed * 0.65, false, false);
+            activeSpeed = cityTramCurrentSpeedMps;
+            soundEngine.updateVehicleMovementLoop(0, false, false);
+            soundEngine.updateElectricScooterLoop(0, false, false, false);
+            soundEngine.updatePushScooterLoop(0, false);
           } else if (scooterRideState && playerUnit.alive) {
             // =================================================================
             // A3. RIDING URBAN SCOOTER MODE (owned GEAR vehicles, outdoor city only)
             // =================================================================
             const st = scooterRideState;
             const isBikeRide = st.kind === 'electric_scooter_bike';
-            soundEngine.updateVehicleMovementLoop(Math.abs(st.speed) * 0.35, false, false);
+            soundEngine.updateVehicleMovementLoop(0, false, false);
             const rideInputLen = Math.hypot(moveX, moveZ);
             const rideMaxSpeed = isBikeRide
               ? isBoosting
@@ -25050,16 +25365,33 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               let dYaw = desiredYaw - st.yaw;
               while (dYaw > Math.PI) dYaw -= Math.PI * 2;
               while (dYaw < -Math.PI) dYaw += Math.PI * 2;
-              const turnRate = isBikeRide ? 3.1 : 4.4;
+              const baseTurnRate = isBikeRide ? 3.1 : 4.4;
+              const turnRate = clickToWalkActiveThisFrame ? baseTurnRate * 1.35 : baseTurnRate;
               st.yaw += Math.max(-turnRate * dt, Math.min(turnRate * dt, dYaw));
               st.steer = Math.max(-0.5, Math.min(0.5, dYaw));
               if (Math.abs(dYaw) < Math.PI / 2) {
-                rideTarget = rideMaxSpeed * Math.min(1, rideInputLen);
+                const autoCornerFactor =
+                  clickToWalkActiveThisFrame && Math.abs(dYaw) > 0.48
+                    ? Math.max(0.45, 1 - (Math.abs(dYaw) - 0.48) * 0.55)
+                    : 1.0;
+                rideTarget = rideMaxSpeed * Math.min(1, rideInputLen) * autoCornerFactor;
               }
             } else {
               st.steer *= Math.pow(0.001, dt);
             }
-            const rideRate = rideTarget > st.speed ? (isBikeRide ? 9 : 6.5) : 17;
+            const rideRate = isBikeRide
+              ? rideTarget > st.speed
+                ? 9
+                : 17
+              : computePushKickScooterAccelRate({
+                  speedMps: st.speed,
+                  rideTargetMps: rideTarget,
+                  rideMaxSpeedMps: rideMaxSpeed,
+                  pushDistanceM: st.pushDistanceM,
+                  isCruisingCoast: st.isCruisingCoast,
+                  isBoosting,
+                  hasDirectionalInput: rideInputLen > 0.01,
+                });
             st.speed += Math.max(
               -rideRate * dt,
               Math.min(rideRate * dt, rideTarget - st.speed),
@@ -25070,17 +25402,68 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             st.mountBlend = Math.min(1, st.mountBlend + dt / 0.25);
             st.isThrottleActive = rideTarget > 0.05;
             st.isBraking = rideTarget < -0.05;
-            const targetPushAct =
-              st.kind === 'push_kick_scooter' &&
-              !st.isBraking &&
-              (st.isThrottleActive || (st.speed > 0.22 && st.speed < 1.15))
-                ? 1
-                : 0;
+            let targetPushAct = 0;
+            if (st.kind === 'push_kick_scooter') {
+              if (st.isBraking || !st.isThrottleActive) {
+                st.isCruisingCoast = st.speed > 2.6;
+                targetPushAct = 0;
+              } else {
+                const stride = kickScooterStrideLengthM(Math.max(1.0, Math.abs(st.speed)));
+                const pushPhase = (((st.pushDistanceM % stride) + stride) % stride) / stride;
+                if (
+                  !st.isCruisingCoast &&
+                  st.speed >= 5.3 &&
+                  (st.pushActivity < 0.1 || pushPhase >= 0.42)
+                ) {
+                  st.isCruisingCoast = true;
+                } else if (st.isCruisingCoast && st.speed < 3.3) {
+                  st.isCruisingCoast = false;
+                }
+                targetPushAct = !st.isCruisingCoast && st.speed > 0.08 ? 1 : 0;
+              }
+            }
             const actRate = targetPushAct > st.pushActivity ? dt / 0.14 : dt / 0.26;
             if (targetPushAct > st.pushActivity) {
               st.pushActivity = Math.min(1, st.pushActivity + actRate);
             } else {
               st.pushActivity = Math.max(0, st.pushActivity - actRate);
+            }
+            const isScooterDecelBraking = st.isBraking || rideTarget < st.speed - 0.6;
+            if (isBikeRide) {
+              soundEngine.updatePushScooterLoop(0, false);
+              soundEngine.updateElectricScooterLoop(
+                st.speed,
+                st.isThrottleActive,
+                isScooterDecelBraking,
+                true,
+              );
+            } else {
+              soundEngine.updateElectricScooterLoop(0, false, false, false);
+              soundEngine.updatePushScooterLoop(st.speed, true);
+              const audioStride = kickScooterStrideLengthM(Math.max(1.0, Math.abs(st.speed)));
+              const cycleIdx = Math.floor(st.pushDistanceM / audioStride);
+              const cyclePhase =
+                (((st.pushDistanceM % audioStride) + audioStride) % audioStride) / audioStride;
+              if (
+                !st.isCruisingCoast &&
+                st.pushActivity > 0.35 &&
+                st.speed > 0.35 &&
+                cycleIdx !== prevScooterPushStrokeCycle &&
+                cyclePhase >= 0.04 &&
+                cyclePhase <= 0.38
+              ) {
+                prevScooterPushStrokeCycle = cycleIdx;
+                soundEngine.playPushScooterKickStroke(clamp(Math.abs(st.speed) / 6.5, 0, 1));
+              }
+              if (st.isCruisingCoast && !prevScooterCruisingCoast && st.speed > 2.2) {
+                soundEngine.playPushScooterDeckStep();
+              }
+              prevScooterCruisingCoast = st.isCruisingCoast;
+              const seamIdx = Math.floor(st.pushDistanceM / 3.2);
+              if (seamIdx !== prevScooterSeamIdx && Math.abs(st.speed) > 1.4) {
+                prevScooterSeamIdx = seamIdx;
+                soundEngine.playPushScooterSeamTick(clamp(Math.abs(st.speed) / 8.5, 0, 1));
+              }
             }
             playerUnit.x = wrapPlanetCoord(playerUnit.x + Math.cos(st.yaw) * rideDist);
             playerUnit.z = wrapPlanetCoord(playerUnit.z - Math.sin(st.yaw) * rideDist);
@@ -25090,18 +25473,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             playerUnit.jumpOffset = 0;
             playerUnit.isSitting = isBikeRide;
             resolveMoverWorldCollisions(playerUnit, 'player_foot', false, 0.72, 2.2, timeSec, true);
-            st.handle.root.position.set(
-              playerUnit.x,
-              getTerrainElevation(playerUnit.x, playerUnit.z),
-              playerUnit.z,
-            );
-            const scooterSlopePitchX = computeTerrainSlopePitchX(
+            const scooterContact = computeScooterTerrainContact(
               playerUnit.x,
               playerUnit.z,
               st.yaw,
+              st.kind,
             );
+            st.groundY = scooterContact.groundY;
+            st.slopePitchX = scooterContact.slopePitchX;
+            st.handle.root.position.set(playerUnit.x, st.groundY, playerUnit.z);
             st.handle.root.rotation.order = 'YXZ';
-            st.handle.root.rotation.set(scooterSlopePitchX, st.yaw + Math.PI / 2, 0);
+            st.handle.root.rotation.set(st.slopePitchX, st.yaw + Math.PI / 2, 0);
             st.pose = computeScooterRiderRigPose({
               kind: st.kind,
               distanceM: st.pushDistanceM,
@@ -25131,6 +25513,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             // B. ON-FOOT CHIBI BUDDY CHARACTER MODE + OBJECT COLLISION RESOLUTION
             // =================================================================
             soundEngine.updateVehicleMovementLoop(0, false, false);
+            soundEngine.updateElectricScooterLoop(0, false, false, false);
+            soundEngine.updatePushScooterLoop(0, false);
             const spec = BUDDY_CLASSES[playerUnit.classId];
             const playerRoadBoost = evaluateRoadSurfaceSpeedBoost(playerUnit.x, playerUnit.z);
             const isIndoorFootRoom =
@@ -25280,6 +25664,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                 poseModalInspectOpen = false;
                 pairedModalInspectTargetId = null;
                 window.dispatchEvent(new CustomEvent('close-pose-style-modals'));
+              }
+              if (citySelfieCameraOpen) {
+                citySelfieCameraOpen = false;
+                window.dispatchEvent(new CustomEvent('close-city-selfie-camera'));
               }
               if (activeCafeSeatedSpot) {
                 const standPos = computeCafeSeatStandUpPosition(
@@ -26794,6 +27182,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior');
             const isPlayerInCafeNow = b.isPlayer && npcCameraMode === 'cafe_interior';
             const isPlayerInSalonNow = b.isPlayer && npcCameraMode === 'salon_interior';
+            const effectiveUnitY =
+              b.isPlayer && scooterRideState ? scooterRideState.groundY : terrainY;
             b.root.position.set(
               b.x,
               isPlayerInCafeNow
@@ -26802,7 +27192,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                   ? SALON_ORIGIN_Y + salonCurrentFloorY
                   : isPlayerInHouseNow
                     ? HOUSE_ORIGIN_Y
-                    : terrainY,
+                    : effectiveUnitY,
               b.z,
             );
             if (b.isPlayer) {
@@ -26842,10 +27232,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             if (scooterPose) {
               applyScooterBodyTransform(
                 b.bodyGroup,
-                floatY + b.jumpOffset + hitPose.hopY,
+                0,
                 b.visualYaw,
                 scooterPose,
-                b.isPlayer ? computeTerrainSlopePitchX(b.x, b.z, b.visualYaw) : 0,
+                b.isPlayer && scooterRideState ? scooterRideState.slopePitchX : 0,
               );
             } else {
               const seatLift =
@@ -26884,22 +27274,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                 !b.isSleeping
               ) {
                 blitzGrassSystem.stampFootstep(b.x, b.z, 0.32);
-                const footEnvMode: AmbientEnvironmentMode =
-                  npcCameraMode === 'cafe_interior'
-                    ? 'cafe_interior'
-                    : npcCameraMode === 'casino_interior'
-                      ? 'casino_interior'
-                      : npcCameraMode === 'salon_interior'
-                        ? 'salon_interior'
-                        : isPlayerInHouseNow
-                          ? 'house_interior'
-                          : 'outdoor';
-                const footSurface = classifyFootstepSurface(b.x, b.z, footEnvMode);
-                soundEngine.playSurfaceFootstep(
-                  footSurface,
-                  clamp(speedMag / 8.0, 0.45, 1.0),
-                  nextStepIdx & 1,
-                );
               }
             } else if (isMoving && b.jumpOffset < 0.25 && Math.random() < 0.35) {
               blitzGrassSystem.stampFootstep(b.x, b.z, 0.32);
@@ -29229,17 +29603,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         camera.updateMatrixWorld();
       } else if (npcCameraMode === 'fly_to_plaza' && activeFlyPose) {
         if (playerUnit) {
-          playerUnit.x = plazaSpawnX;
-          playerUnit.z = plazaSpawnZ;
-          playerUnit.vx = 0;
-          playerUnit.vz = 0;
-          playerUnit.root.visible = flyProgress01 >= 0.72;
           if (flyTargetMode === 'character_select') {
+            wasInCharacterSelectShowcase = true;
+            playerUnit.x = charSelectShowcaseX;
+            playerUnit.z = charSelectShowcaseZ;
             playerUnit.yaw = 0;
             playerUnit.bodyGroup.rotation.set(0, Math.PI / 2, 0);
             updateCharacterWeaponStance(playerUnit.rig, 'unarmed', 0, false, false, 0, 0);
             playerUnit.rig.weaponRigGroup.visible = false;
+          } else {
+            playerUnit.x = plazaSpawnX;
+            playerUnit.z = plazaSpawnZ;
           }
+          playerUnit.vx = 0;
+          playerUnit.vz = 0;
+          playerUnit.root.visible = flyProgress01 >= 0.72;
           if (playerUnit.nameplate?.sprite) {
             playerUnit.nameplate.sprite.visible = false;
           }
@@ -29247,6 +29625,28 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         if (Math.abs(camera.fov - activeFlyPose.fov) > 0.05) {
           camera.fov = activeFlyPose.fov;
           camera.updateProjectionMatrix();
+        }
+        if (flyTargetMode === 'character_select') {
+          const easedOffsetT = 1 - Math.pow(1 - Math.max(0, Math.min(1, flyProgress01)), 3);
+          const ox = Math.round(charSelectOffsetX * easedOffsetT);
+          const oy = Math.round(charSelectOffsetY * easedOffsetT);
+          if (
+            !characterSelectViewOffsetState.active ||
+            characterSelectViewOffsetState.vw !== charSelectVpW ||
+            characterSelectViewOffsetState.vh !== charSelectVpH ||
+            characterSelectViewOffsetState.ox !== ox ||
+            characterSelectViewOffsetState.oy !== oy
+          ) {
+            camera.setViewOffset(charSelectVpW, charSelectVpH, ox, oy, charSelectVpW, charSelectVpH);
+            characterSelectViewOffsetState.active = true;
+            characterSelectViewOffsetState.vw = charSelectVpW;
+            characterSelectViewOffsetState.vh = charSelectVpH;
+            characterSelectViewOffsetState.ox = ox;
+            characterSelectViewOffsetState.oy = oy;
+          }
+        } else if (characterSelectViewOffsetState.active) {
+          camera.clearViewOffset();
+          characterSelectViewOffsetState.active = false;
         }
         camera.up.set(0, 1, 0);
         camera.position.set(
@@ -29274,24 +29674,66 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           );
         }
       } else if (npcCameraMode === 'character_select') {
+        wasInCharacterSelectShowcase = true;
         if (playerUnit) {
           playerUnit.root.visible = true;
+          playerUnit.x = charSelectShowcaseX;
+          playerUnit.z = charSelectShowcaseZ;
+          playerUnit.vx = 0;
+          playerUnit.vz = 0;
           playerUnit.yaw = 0;
           playerUnit.bodyGroup.rotation.set(0, Math.PI / 2, 0);
           updateCharacterWeaponStance(playerUnit.rig, 'unarmed', 0, false, false, 0, 0);
           playerUnit.rig.weaponRigGroup.visible = false;
+          if (
+            playerUnit.nameplate?.updatePlate &&
+            lastCharacterSelectNameplateText !== characterSelectPreviewName
+          ) {
+            playerUnit.nameplate.updatePlate(
+              characterSelectPreviewName,
+              '',
+              'player_rookie',
+              playerRoleBadge,
+            );
+            lastCharacterSelectNameplateText = characterSelectPreviewName;
+          }
         }
-        const targetSelectFov = 38;
-        if (camera.fov !== targetSelectFov) {
-          camera.fov = targetSelectFov;
+        if (camera.fov !== charSelectFov) {
+          camera.fov = charSelectFov;
           camera.updateProjectionMatrix();
         }
-        const px = playerUnit ? playerUnit.x : LOBBY_SAFEZONE_BOUNDS.spawnX;
-        const pz = playerUnit ? playerUnit.z : LOBBY_SAFEZONE_BOUNDS.spawnZ;
-        const py = getTerrainElevation(px, pz);
+        if (
+          !characterSelectViewOffsetState.active ||
+          characterSelectViewOffsetState.vw !== charSelectVpW ||
+          characterSelectViewOffsetState.vh !== charSelectVpH ||
+          characterSelectViewOffsetState.ox !== charSelectOffsetX ||
+          characterSelectViewOffsetState.oy !== charSelectOffsetY
+        ) {
+          camera.setViewOffset(
+            charSelectVpW,
+            charSelectVpH,
+            charSelectOffsetX,
+            charSelectOffsetY,
+            charSelectVpW,
+            charSelectVpH,
+          );
+          characterSelectViewOffsetState.active = true;
+          characterSelectViewOffsetState.vw = charSelectVpW;
+          characterSelectViewOffsetState.vh = charSelectVpH;
+          characterSelectViewOffsetState.ox = charSelectOffsetX;
+          characterSelectViewOffsetState.oy = charSelectOffsetY;
+        }
         camera.up.set(0, 1, 0);
-        camera.position.set(px + 6.35, py + 2.32, pz);
-        camera.lookAt(px, py + 1.82, pz);
+        camera.position.set(
+          charSelectShowcaseX + charSelectCamDist,
+          charSelectShowcaseY + charSelectCamYOffset,
+          charSelectShowcaseZ,
+        );
+        camera.lookAt(
+          charSelectShowcaseX,
+          charSelectShowcaseY + charSelectLookYOffset,
+          charSelectShowcaseZ,
+        );
         camera.updateMatrixWorld();
       } else if (npcCameraMode === 'house_interior' || npcCameraMode === 'house_visit') {
         if (playerUnit) {
@@ -29364,6 +29806,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               orbitYawOffsetRad: npcPortraitSmoothedYaw,
               orbitPitchOffsetRad: npcPortraitSmoothedPitch,
               portraitDistanceScale: npcPortraitSmoothedDistScale,
+              horizontalOffsetFactor: citySelfieCameraOpen ? 0 : 0.44,
+              minYawOffsetRad: citySelfieCameraOpen ? -Math.PI : undefined,
+              maxYawOffsetRad: citySelfieCameraOpen ? Math.PI : undefined,
+              minDistanceScale: citySelfieCameraOpen ? 0.56 : undefined,
             });
             const t = 1 - Math.pow(1 - posePortraitState.blend01, 3);
             const curFov = THREE.MathUtils.lerp(posePortraitState.startFov, targetPose.fovDeg, t);
@@ -29748,6 +30194,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               orbitYawOffsetRad: npcPortraitSmoothedYaw,
               orbitPitchOffsetRad: npcPortraitSmoothedPitch,
               portraitDistanceScale: npcPortraitSmoothedDistScale,
+              horizontalOffsetFactor: citySelfieCameraOpen ? 0 : 0.44,
+              minYawOffsetRad: citySelfieCameraOpen ? -Math.PI : undefined,
+              maxYawOffsetRad: citySelfieCameraOpen ? Math.PI : undefined,
+              minDistanceScale: citySelfieCameraOpen ? 0.56 : undefined,
             });
             const t = 1 - Math.pow(1 - posePortraitState.blend01, 3);
             const curFov = THREE.MathUtils.lerp(posePortraitState.startFov, targetPose.fovDeg, t);
@@ -29857,6 +30307,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               orbitYawOffsetRad: npcPortraitSmoothedYaw,
               orbitPitchOffsetRad: npcPortraitSmoothedPitch,
               portraitDistanceScale: npcPortraitSmoothedDistScale,
+              horizontalOffsetFactor: citySelfieCameraOpen ? 0 : 0.44,
+              minYawOffsetRad: citySelfieCameraOpen ? -Math.PI : undefined,
+              maxYawOffsetRad: citySelfieCameraOpen ? Math.PI : undefined,
+              minDistanceScale: citySelfieCameraOpen ? 0.56 : undefined,
             });
             const t = 1 - Math.pow(1 - posePortraitState.blend01, 3);
             const curFov = THREE.MathUtils.lerp(posePortraitState.startFov, targetPose.fovDeg, t);
@@ -29957,6 +30411,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               orbitYawOffsetRad: npcPortraitSmoothedYaw,
               orbitPitchOffsetRad: npcPortraitSmoothedPitch,
               portraitDistanceScale: npcPortraitSmoothedDistScale,
+              horizontalOffsetFactor: citySelfieCameraOpen ? 0 : 0.44,
+              minYawOffsetRad: citySelfieCameraOpen ? -Math.PI : undefined,
+              maxYawOffsetRad: citySelfieCameraOpen ? Math.PI : undefined,
+              minDistanceScale: citySelfieCameraOpen ? 0.56 : undefined,
             });
             const t = 1 - Math.pow(1 - posePortraitState.blend01, 3);
             const curFov = THREE.MathUtils.lerp(posePortraitState.startFov, targetPose.fovDeg, t);
@@ -30381,6 +30839,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             orbitYawOffsetRad: npcPortraitSmoothedYaw,
             orbitPitchOffsetRad: npcPortraitSmoothedPitch,
             portraitDistanceScale: npcPortraitSmoothedDistScale,
+            horizontalOffsetFactor: citySelfieCameraOpen ? 0 : 0.44,
+            minYawOffsetRad: citySelfieCameraOpen ? -Math.PI : undefined,
+            maxYawOffsetRad: citySelfieCameraOpen ? Math.PI : undefined,
+            minDistanceScale: citySelfieCameraOpen ? 0.56 : undefined,
           });
           const t = 1 - Math.pow(1 - posePortraitState.blend01, 3);
           const curFov = THREE.MathUtils.lerp(posePortraitState.startFov, targetPose.fovDeg, t);
@@ -30828,11 +31290,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               av.scooterPushDistanceM = 0;
               av.scooterMountBlend = 0;
               av.scooterPushActivity = 0;
+              av.scooterPushCruising = false;
               av.scooterPose = null;
             } else {
               av.scooterPose = null;
               av.scooterMountBlend = 0;
               av.scooterPushActivity = 0;
+              av.scooterPushCruising = false;
               av.scooterSteerEst = 0;
               av.scooterSpeedEst = 0;
               av.bodyGroup.position.set(0, 0, 0);
@@ -31023,8 +31487,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             av.scooterSpeedEst += (peerSpeed - av.scooterSpeedEst) * Math.min(1, dt * 8);
             av.scooterPushDistanceM += Math.max(0, av.scooterSpeedEst) * dt;
             av.scooterMountBlend = Math.min(1, av.scooterMountBlend + dt / 0.25);
-            const peerPushTarget =
-              peer.scooterKind === 'push_kick_scooter' && av.scooterSpeedEst > 0.28 ? 1 : 0;
+            let peerPushTarget = 0;
+            if (peer.scooterKind === 'push_kick_scooter') {
+              if (!av.scooterPushCruising && av.scooterSpeedEst >= 5.3) {
+                av.scooterPushCruising = true;
+              } else if (av.scooterPushCruising && av.scooterSpeedEst < 3.3) {
+                av.scooterPushCruising = false;
+              }
+              peerPushTarget = !av.scooterPushCruising && av.scooterSpeedEst > 0.28 ? 1 : 0;
+            } else {
+              av.scooterPushCruising = false;
+            }
             const peerActStep = peerPushTarget > av.scooterPushActivity ? dt / 0.15 : dt / 0.26;
             if (peerPushTarget > av.scooterPushActivity) {
               av.scooterPushActivity = Math.min(1, av.scooterPushActivity + peerActStep);
@@ -31046,7 +31519,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             av.rig.leftLegPivot.rotation.x = -pose.supportHipX * pose.blend;
             av.rig.rightLegPivot.rotation.x = -pose.pushHipX * pose.blend;
             av.bodyGroup.rotation.order = 'YXZ';
-            applyScooterBodyTransform(av.bodyGroup, av.renderJumpOffset, av.renderYaw, pose);
+            const avEarlyContact = computeScooterTerrainContact(
+              av.renderX,
+              av.renderZ,
+              av.renderYaw,
+              peer.scooterKind,
+            );
+            applyScooterBodyTransform(
+              av.bodyGroup,
+              0,
+              av.renderYaw,
+              pose,
+              avEarlyContact.slopePitchX,
+            );
             if (av.scooterHandle) {
               applyScooterHandleLeanAndSteer(
                 av.scooterHandle,
@@ -31092,7 +31577,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                 : activeEmoteClip === 'cafe:serve'
                   ? 'serve'
                   : 'idle';
-          if (distToPeer <= 52.0) {
+          if (distToPeer <= 44.0) {
             const peerSeed =
               peer.sessionId.length > 0
                 ? peer.sessionId.charCodeAt(0) + peer.sessionId.charCodeAt(peer.sessionId.length - 1)
@@ -31214,9 +31699,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         cachedCityTransitNetworkGroup.visible = showHalteOutdoor;
       }
 
-      // Always keep all floating 3D nametag billboards hidden; names surface cleanly in the unified bottom HUD bar when approaching.
+      // Keep floating 3D nametag billboards hidden during gameplay, except live preview nameplate in character_select.
+      const showCharacterSelectNameplate =
+        npcCameraMode === 'character_select' && !citySelfieCameraOpen;
       if (playerUnit?.nameplate?.sprite) {
-        playerUnit.nameplate.sprite.visible = false;
+        playerUnit.nameplate.sprite.visible = showCharacterSelectNameplate;
       }
       if (lobbyCafeNpc?.npcNameplate?.sprite) {
         lobbyCafeNpc.npcNameplate.sprite.visible = false;
@@ -31227,7 +31714,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       for (let i = 0; i < buddyUnits.length; i++) {
         const bu = buddyUnits[i];
         if (bu.nameplate?.sprite) {
-          bu.nameplate.sprite.visible = false;
+          bu.nameplate.sprite.visible = bu === playerUnit && showCharacterSelectNameplate;
         }
       }
 
@@ -31298,13 +31785,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         );
       }
 
-      // Dynamic 24h Time-of-Day & GPU Weather Cycle (center particles on visible camera frustum & scale span to zoom)
+      // Dynamic 24h Time-of-Day & GPU Weather Cycle (center particles on visible camera frustum & scale span to zoom/height)
       const isWeatherCenterZero =
         isFlatIndoorRoomMode ||
         isFullMapOverview ||
         Boolean(planeViewMode || skyshieldViewMode || buildingViewMode);
-      const weatherLookCamBiasX = clamp((camera.position.x - finalLookX) * 0.22, -26, 26);
-      const weatherLookCamBiasZ = clamp((camera.position.z - finalLookZ) * 0.22, -26, 26);
+      const weatherLookCamBiasX = clamp((camera.position.x - finalLookX) * 0.28, -34, 34);
+      const weatherLookCamBiasZ = clamp((camera.position.z - finalLookZ) * 0.28, -34, 34);
       const weatherPivotX = isWeatherCenterZero
         ? 0
         : npcCameraMode === 'city_view'
@@ -31315,15 +31802,30 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         : npcCameraMode === 'city_view'
           ? finalLookZ + weatherLookCamBiasZ
           : wrapPlanetCoord(finalLookZ + weatherLookCamBiasZ);
+      const weatherBaseY =
+        npcCameraMode === 'city_view' && cityViewPoseNow
+          ? cityViewPoseNow.lookAtPos.y
+          : activeTerrainY;
+      const weatherPivotY = isWeatherCenterZero
+        ? 12.0
+        : weatherBaseY + clamp((camera.position.y - weatherBaseY) * 0.42, 4.0, 26.0);
       const weatherSpanScale =
         npcCameraMode === 'city_view'
           ? 1.78
-          : clamp(zoomMult * 0.95 * (currentPlayMode === 'editor' ? editorZoom : 1.0), 1.0, 1.32);
+          : clamp(zoomMult * 0.95 * (currentPlayMode === 'editor' ? editorZoom : 1.0), 1.0, 1.38);
+      const weatherSpanY =
+        npcCameraMode === 'city_view'
+          ? clamp((camera.position.y - weatherBaseY) * 0.72 + 22.0, 38.0, 66.0)
+          : clamp((camera.position.y - weatherBaseY) * 1.15 + 16.0, 28.0, 48.0);
       const currentWeatherEnv = weatherSystem.update({
         dt: state === 'paused' ? 0 : dt,
         timeSec,
         pivotX: weatherPivotX,
+        pivotY: weatherPivotY,
         pivotZ: weatherPivotZ,
+        spanY: weatherSpanY,
+        viewportHeightPx: renderer.domElement.height || window.innerHeight,
+        pixelRatio: currentAdaptiveDpr,
         windUniforms,
         isFlatIndoorRoomMode,
         isShowcaseMode: Boolean(buildingViewMode || skyshieldViewMode || planeViewMode),
@@ -31454,6 +31956,76 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         planetPivotZ,
         kCurve,
       );
+
+      // Update dedicated City Tram traction motor, rail-joint clacks, brake hiss & departure gong
+      if (activeTramRideCutscene?.active) {
+        soundEngine.updateTramMovementLoop(14.0, true, false, 1.0, true);
+        const cutClackIdx = Math.floor(cityTramDistance / 11.5);
+        if (cutClackIdx !== prevTramClackIdx) {
+          prevTramClackIdx = cutClackIdx;
+          soundEngine.playTramRailClack(0.92, 1.0);
+        }
+      } else if (
+        state === 'playing' &&
+        !isFlatIndoorRoomMode &&
+        npcCameraMode === 'none' &&
+        currentPlayMode !== 'editor' &&
+        (ridingTramCarIdx !== null || cityTram.rootGroup.visible)
+      ) {
+        const isTramAboard = ridingTramCarIdx !== null && Boolean(playerUnit?.alive);
+        const listenerX = playerUnit?.x ?? finalLookX;
+        const listenerZ = playerUnit?.z ?? finalLookZ;
+        const dCar1 = getPlanetShortestDistance(
+          listenerX,
+          listenerZ,
+          liveTramState.car1.x,
+          liveTramState.car1.z,
+        );
+        const dCar2 = getPlanetShortestDistance(
+          listenerX,
+          listenerZ,
+          liveTramState.car2.x,
+          liveTramState.car2.z,
+        );
+        const nearestCar = dCar1 <= dCar2 ? liveTramState.car1 : liveTramState.car2;
+        const tramSpatialGain = isTramAboard
+          ? 1.0
+          : computeSpatialAudioGain(listenerX, listenerZ, nearestCar.x, nearestCar.z, 28, 5.5);
+        const isTramBraking =
+          cityTramCurrentSpeedMps <
+          prevTramSpeedForAudio - 0.35 * Math.max(0.008, tramMotionDt);
+        prevTramSpeedForAudio = cityTramCurrentSpeedMps;
+        if (
+          !wasTramMovingForBell &&
+          cityTramCurrentSpeedMps >= 0.45 &&
+          (isTramAboard || tramSpatialGain > 0.14)
+        ) {
+          soundEngine.playTramBell(2, tramSpatialGain);
+        }
+        wasTramMovingForBell = cityTramCurrentSpeedMps >= 0.35;
+        const tramClackIdx = Math.floor(cityTramDistance / 11.5);
+        if (
+          tramClackIdx !== prevTramClackIdx &&
+          cityTramCurrentSpeedMps > 1.2 &&
+          (isTramAboard || tramSpatialGain > 0.08)
+        ) {
+          prevTramClackIdx = tramClackIdx;
+          soundEngine.playTramRailClack(
+            clamp(cityTramCurrentSpeedMps / CITY_TRAM_SPEC.cruiseSpeed, 0.2, 1.0),
+            tramSpatialGain,
+          );
+        }
+        soundEngine.updateTramMovementLoop(
+          cityTramCurrentSpeedMps,
+          isTramAboard,
+          isTramBraking,
+          tramSpatialGain,
+          isTramAboard || tramSpatialGain > 0.02,
+        );
+      } else {
+        soundEngine.updateTramMovementLoop(0, false, false, 0, false);
+      }
+
       underwaterEcology.update(timeSec, windUniforms.uTime.value);
       const liveCityIllum = cityLightingAndTraffic.update({
         dt: tramMotionDt,
@@ -32337,9 +32909,33 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         if (b.isPlayer && scooterRideState?.pose) {
           applyScooterBodyTransform(
             b.bodyGroup,
-            floatY + b.jumpOffset + bHitPose.hopY,
+            0,
             scooterRideState.yaw,
             scooterRideState.pose,
+            scooterRideState.slopePitchX,
+          );
+          applyPlanetCurvatureToObject(
+            b.root,
+            b.x,
+            scooterRideState.groundY,
+            b.z,
+            planetPivotX,
+            planetPivotZ,
+            0,
+            kCurve,
+          );
+          applyPlanetCurvatureToObject(
+            scooterRideState.handle.root,
+            b.x,
+            scooterRideState.groundY,
+            b.z,
+            planetPivotX,
+            planetPivotZ,
+            scooterRideState.yaw + Math.PI / 2,
+            kCurve,
+            0.85,
+            scooterRideState.slopePitchX,
+            0,
           );
         } else {
           const seatLift =
@@ -32347,8 +32943,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               ? resolveOutdoorSeatLiftY(activeSeatedSpot)
               : 0;
           b.bodyGroup.position.set(0, floatY + b.jumpOffset + bHitPose.hopY + seatLift, 0);
+          applyPlanetCurvatureToObject(b.root, b.x, localY, b.z, planetPivotX, planetPivotZ, 0, kCurve);
         }
-        applyPlanetCurvatureToObject(b.root, b.x, localY, b.z, planetPivotX, planetPivotZ, 0, kCurve);
       }
 
       // Align Real-Time Online Remote Player Avatars onto Curved Planet Surface (or House/Cafe/Casino Floor)
@@ -32393,12 +32989,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           av.root.scale.setScalar(0.55);
         } else {
           const avTerrainY = getTerrainElevation(av.renderX, av.renderZ);
-          if (av.peer.scooterKind && av.scooterPose) {
+          const avScooterContact =
+            av.peer.scooterKind && av.scooterPose
+              ? computeScooterTerrainContact(
+                  av.renderX,
+                  av.renderZ,
+                  av.renderYaw,
+                  av.peer.scooterKind,
+                )
+              : null;
+          if (av.peer.scooterKind && av.scooterPose && avScooterContact) {
             applyScooterBodyTransform(
               av.bodyGroup,
-              av.renderJumpOffset,
+              0,
               av.renderYaw,
               av.scooterPose,
+              avScooterContact.slopePitchX,
             );
           } else {
             const peerSeatLiftY = av.peer.isSitting
@@ -32410,8 +33016,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           }
           if (av.scooterHandle) {
             av.scooterHandle.root.visible = true;
-            av.scooterHandle.root.position.set(av.renderX, avTerrainY, av.renderZ);
-            av.scooterHandle.root.rotation.set(0, av.renderYaw + Math.PI / 2, 0);
+            const peerScooterY = avScooterContact ? avScooterContact.groundY : avTerrainY;
+            const peerScooterPitch = avScooterContact ? avScooterContact.slopePitchX : 0;
+            applyPlanetCurvatureToObject(
+              av.scooterHandle.root,
+              av.renderX,
+              peerScooterY,
+              av.renderZ,
+              planetPivotX,
+              planetPivotZ,
+              av.renderYaw + Math.PI / 2,
+              kCurve,
+              0.85,
+              peerScooterPitch,
+              0,
+            );
             const fwdDot =
               (av.renderX - av.scooterLastX) * Math.cos(av.renderYaw) +
               (av.renderZ - av.scooterLastZ) * -Math.sin(av.renderYaw);
@@ -32426,7 +33045,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           applyPlanetCurvatureToObject(
             av.root,
             av.renderX,
-            avTerrainY,
+            avScooterContact ? avScooterContact.groundY : avTerrainY,
             av.renderZ,
             planetPivotX,
             planetPivotZ,
@@ -33887,12 +34506,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             bu.nameplate.sprite.position.y = bu.isSitting
               ? NAMEPLATE_SCREEN_SPEC.sittingHeadAnchorLocalY
               : NAMEPLATE_SCREEN_SPEC.standingHeadAnchorLocalY;
+            const isNarrowCharSelectPlate =
+              npcCameraMode === 'character_select' &&
+              (renderer.domElement.clientWidth || window.innerWidth || 1280) < 640;
             syncScreenSpaceBillboardQuad(
               bu.nameplate.sprite,
               camera,
               vpH,
-              NAMEPLATE_SCREEN_SPEC.playerAndPeerWidthPx,
-              NAMEPLATE_SCREEN_SPEC.playerAndPeerHeightPx,
+              isNarrowCharSelectPlate ? 132 : NAMEPLATE_SCREEN_SPEC.playerAndPeerWidthPx,
+              isNarrowCharSelectPlate ? 30 : NAMEPLATE_SCREEN_SPEC.playerAndPeerHeightPx,
             );
           }
           if (bu.saluteSign?.sprite?.visible) {
@@ -34029,6 +34651,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           debugOrthoCam.updateProjectionMatrix();
           renderer.render(scene, debugOrthoCam);
         } else {
+          stepNpcPortraitCaptureQueue(now);
           renderer.render(scene, camera);
         }
       }
@@ -34076,13 +34699,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           clearCharacterSelection();
           window.dispatchEvent(new CustomEvent('character-deselected'));
           window.dispatchEvent(new CustomEvent('close-character-profile-modal'));
-        } else if (npcCameraMode === 'none') {
+        } else if (npcCameraMode === 'none' && !citySelfieCameraOpen) {
           const groundY = getTerrainElevation(rootPos.x, rootPos.z);
           characterSelectionRing.position.set(rootPos.x, groundY + 0.04, rootPos.z);
           characterSelectionRing.rotation.z += dt * 1.5;
           characterSelectionRing.visible = true;
         } else {
           characterSelectionRing.visible = false;
+        }
+      }
+      if (citySelfieCameraOpen) {
+        characterSelectionRing.visible = false;
+        if (playerUnit?.nameplate?.sprite) {
+          playerUnit.nameplate.sprite.visible = false;
         }
       }
 
@@ -38187,6 +38816,144 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       captureKioskCardThumbnails();
     };
     window.addEventListener('request-kiosk-thumbnails', onRequestKioskThumbnails);
+
+    const onCitySelfieCameraState = (ev: Event) => {
+      const detail = (
+        ev as CustomEvent<{
+          isOpen?: boolean;
+          distanceScale?: number;
+          resetOrbit?: boolean;
+          turnPlayerDeltaRad?: number;
+        }>
+      ).detail;
+      if (!detail) return;
+      if (typeof detail.isOpen === 'boolean') {
+        const wasOpen = citySelfieCameraOpen;
+        citySelfieCameraOpen = detail.isOpen;
+        if (detail.isOpen && !wasOpen) {
+          if (typeof detail.distanceScale === 'number' && Number.isFinite(detail.distanceScale)) {
+            citySelfieDesiredDistScale = detail.distanceScale;
+          }
+          clearCharacterSelection();
+          characterSelectionRing.visible = false;
+        }
+      }
+      if (
+        citySelfieCameraOpen &&
+        typeof detail.distanceScale === 'number' &&
+        Number.isFinite(detail.distanceScale)
+      ) {
+        citySelfieDesiredDistScale = detail.distanceScale;
+        npcPortraitDistanceScale = clampNpcDialoguePortraitOrbit({
+          orbitYawOffsetRad: npcPortraitOrbitYaw,
+          orbitPitchOffsetRad: npcPortraitOrbitPitch,
+          portraitDistanceScale: detail.distanceScale,
+          minYawOffsetRad: -Math.PI,
+          maxYawOffsetRad: Math.PI,
+          minDistanceScale: 0.56,
+        }).portraitDistanceScale;
+      }
+      if (citySelfieCameraOpen && detail.resetOrbit) {
+        npcPortraitOrbitYaw = 0;
+        npcPortraitOrbitPitch = 0.04;
+      }
+      if (
+        citySelfieCameraOpen &&
+        typeof detail.turnPlayerDeltaRad === 'number' &&
+        Number.isFinite(detail.turnPlayerDeltaRad) &&
+        detail.turnPlayerDeltaRad !== 0 &&
+        playerUnit
+      ) {
+        playerUnit.yaw += detail.turnPlayerDeltaRad;
+        if (posePortraitState && posePortraitState.targetKey === 'selfie') {
+          posePortraitState.frontDirX = Math.cos(playerUnit.yaw);
+          posePortraitState.frontDirZ = -Math.sin(playerUnit.yaw);
+        }
+      }
+    };
+    window.addEventListener('city-selfie-camera-state', onCitySelfieCameraState);
+
+    const onCitySelfieCaptureRequest = (ev: Event) => {
+      const detail = (
+        ev as CustomEvent<{
+          aspect?: '1:1' | '4:5' | '16:9';
+          cssFilter?: string;
+          onCaptured?: (dataUrl: string | null) => void;
+        }>
+      ).detail;
+      if (!detail?.onCaptured) return;
+      try {
+        const prevSelRing = characterSelectionRing.visible;
+        const prevPlayerPlate = playerUnit?.nameplate?.sprite?.visible ?? false;
+        const prevRemotePlates: Array<{ sprite: THREE.Object3D; vis: boolean }> = [];
+        characterSelectionRing.visible = false;
+        if (playerUnit?.nameplate?.sprite) {
+          playerUnit.nameplate.sprite.visible = false;
+        }
+        for (const av of remotePlayerAvatars.values()) {
+          if (av.nameplate?.sprite) {
+            prevRemotePlates.push({
+              sprite: av.nameplate.sprite,
+              vis: av.nameplate.sprite.visible,
+            });
+            av.nameplate.sprite.visible = false;
+          }
+        }
+
+        // Render a fresh frame right before reading the drawing buffer
+        renderer.render(scene, camera);
+
+        const src = renderer.domElement;
+        const srcW = src.width;
+        const srcH = src.height;
+        const aspectRatio =
+          detail.aspect === '1:1' ? 1 : detail.aspect === '4:5' ? 0.8 : 16 / 9;
+
+        let cropW = srcW;
+        let cropH = srcH;
+        if (srcW / srcH > aspectRatio) {
+          cropH = srcH;
+          cropW = Math.round(srcH * aspectRatio);
+        } else {
+          cropW = srcW;
+          cropH = Math.round(srcW / aspectRatio);
+        }
+        const sx = Math.max(0, Math.floor((srcW - cropW) * 0.5));
+        const sy = Math.max(0, Math.floor((srcH - cropH) * 0.5));
+
+        const maxEdge = detail.aspect === '16:9' ? 1280 : 960;
+        const outW = aspectRatio >= 1 ? maxEdge : Math.round(maxEdge * aspectRatio);
+        const outH = aspectRatio >= 1 ? Math.round(maxEdge / aspectRatio) : maxEdge;
+
+        const out = document.createElement('canvas');
+        out.width = outW;
+        out.height = outH;
+        const ctx = out.getContext('2d');
+        let dataUrl: string | null = null;
+        if (ctx) {
+          if (detail.cssFilter && detail.cssFilter !== 'none') {
+            ctx.filter = detail.cssFilter;
+          }
+          ctx.drawImage(src, sx, sy, cropW, cropH, 0, 0, outW, outH);
+          ctx.filter = 'none';
+          dataUrl = out.toDataURL('image/jpeg', 0.91);
+        }
+
+        characterSelectionRing.visible = prevSelRing;
+        if (playerUnit?.nameplate?.sprite) {
+          playerUnit.nameplate.sprite.visible = prevPlayerPlate;
+        }
+        for (const item of prevRemotePlates) {
+          item.sprite.visible = item.vis;
+        }
+
+        detail.onCaptured(dataUrl);
+      } catch {
+        detail.onCaptured(null);
+      }
+    };
+    window.addEventListener('city-selfie-capture-request', onCitySelfieCaptureRequest);
+
     const kioskThumbTimerId = window.setTimeout(() => {
       captureKioskCardThumbnails();
     }, 220);
@@ -38201,6 +38968,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       window.clearTimeout(softwareGlTimerId);
       window.clearTimeout(kioskThumbTimerId);
       window.removeEventListener('request-kiosk-thumbnails', onRequestKioskThumbnails);
+      window.removeEventListener('city-selfie-camera-state', onCitySelfieCameraState);
+      window.removeEventListener('city-selfie-capture-request', onCitySelfieCaptureRequest);
       worldMultiplayer.unsubscribe();
       for (const av of remotePlayerAvatars.values()) {
         disposeRemotePlayerAvatar3D(av);
@@ -38325,6 +39094,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       cityLightingAndTraffic.dispose();
       blitzGrassSystem.dispose();
       blitzExplosionSystem.dispose();
+      window.removeEventListener(NPC_PORTRAIT_REQUEST_EVENT, handleNpcPortraitRequestEvent);
+      npcPortraitStudio.dispose();
 
       // Dispose per-mount procedural geometries & materials while preserving cached GLTF prototypes
       const sharedCachedResources = new Set<unknown>();

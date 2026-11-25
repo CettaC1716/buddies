@@ -17,6 +17,10 @@ import {
   pickCitizenContextualDialogue,
 } from '../game/buddiesCitizenRoles';
 import type { CaughtFishItem } from '../game/buddiesFishingMarket';
+import {
+  resolveNpcPhotoUrl,
+  useNpcPortraitVersion,
+} from '../game/npcPortraitRegistry';
 
 export interface CitizenGiftOutcome {
   accepted: boolean;
@@ -80,6 +84,7 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   onGiveFishGift,
   onVisitDirectoryCitizen,
 }) => {
+  useNpcPortraitVersion();
   const [activeTab, setActiveTab] = useState<CitizenChatTab>('sesi_chat');
   const [chatHistory, setChatHistory] = useState<CitizenChatEntry[]>([]);
   const [npcFullText, setNpcFullText] = useState<string>('');
@@ -236,12 +241,12 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
       }`}
     >
       {profile && (
-        <div className="relative flex-1 flex flex-col rounded-[32px] bg-[#141926]/68 backdrop-blur-2xl border border-white/25 shadow-[0_24px_70px_rgba(0,0,0,0.52)] text-white overflow-hidden min-h-0">
+        <div className="relative flex-1 flex flex-col rounded-[32px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] text-white overflow-hidden min-h-0">
           {/* Top Status Strip: BLITZ OS + Close Icon (replaces expand button) */}
           <div className="shrink-0 flex items-center justify-between text-[10.5px] font-medium px-4 pt-3 pb-1.5 text-white/90">
             <div className="flex items-center gap-1.5">
               <Wifi className="w-3 h-3 text-white/85" aria-hidden="true" />
-              <span className="tracking-wide font-semibold">BLITZ OS</span>
+              <span className="tracking-wide font-semibold">CERRIA OS</span>
             </div>
             <button
               type="button"
@@ -261,13 +266,12 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
           {/* Active Chat Person Header */}
           <div className="shrink-0 flex items-center justify-between gap-2.5 px-3.5 py-2 border-b border-white/12">
             <div className="flex items-center gap-2.5 min-w-0">
-              <span
-                className="w-8 h-8 rounded-xl shadow-sm flex items-center justify-center text-sm shrink-0 border border-white/20"
-                style={{ backgroundColor: profile.accentColor }}
-                aria-hidden="true"
-              >
-                {profile.portraitEmoji}
-              </span>
+              <img
+                src={resolveNpcPhotoUrl(profile.id, 'avatar')}
+                alt={profile.name}
+                draggable={false}
+                className="w-9 h-9 rounded-full object-cover object-center shadow-sm shrink-0 ring-1 ring-white/25"
+              />
               <div className="min-w-0">
                 <div className="text-xs font-bold text-white leading-tight truncate">
                   {profile.name}
@@ -581,8 +585,13 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-sm">{entry.profile.portraitEmoji}</span>
+                            <div className="flex items-center gap-2">
+                              <img
+                                src={resolveNpcPhotoUrl(entry.profile.id, 'avatar')}
+                                alt={entry.profile.name}
+                                draggable={false}
+                                className="w-7 h-7 rounded-full object-cover object-center ring-1 ring-white/25 shrink-0"
+                              />
                               <span className="text-xs font-semibold text-white truncate">
                                 {entry.profile.name}
                               </span>

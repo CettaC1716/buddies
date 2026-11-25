@@ -55,30 +55,30 @@ export const PLANET_BRIDGES: readonly PlanetBridgeSpec[] = [];
  * ocean barrier, OBB colliders, and underwater ecology exclusions.
  */
 export const BEACHFRONT_STILT_CABIN_SPEC = {
-  centerX: 132.4,
-  centerZ: 85.2,
+  centerX: 131.6,
+  centerZ: 95.2,
   baseSandY: -2.0,
   deckTopY: -1.04,
-  deckMinX: 128.7,
-  deckMaxX: 137.2,
-  deckMinZ: 81.2,
-  deckMaxZ: 89.2,
-  stairMinX: 127.5,
-  stairMaxX: 128.7,
-  stairMinZ: 83.2,
-  stairMaxZ: 85.6,
-  cabinBodyMinX: 130.8,
-  cabinBodyMaxX: 134.9,
-  cabinBodyMinZ: 82.0,
-  cabinBodyMaxZ: 86.8,
+  deckMinX: 127.6,
+  deckMaxX: 135.6,
+  deckMinZ: 91.5,
+  deckMaxZ: 100.0,
+  stairMinX: 131.2,
+  stairMaxX: 133.6,
+  stairMinZ: 90.3,
+  stairMaxZ: 91.5,
+  cabinBodyMinX: 130.0,
+  cabinBodyMaxX: 134.8,
+  cabinBodyMinZ: 93.6,
+  cabinBodyMaxZ: 97.7,
 } as const;
 
 export function isPointOnBeachfrontStiltCabinDeck(worldX: number, worldZ: number): boolean {
   const c = BEACHFRONT_STILT_CABIN_SPEC;
   return (
-    worldX >= c.deckMinX &&
+    worldX >= c.deckMinX + 0.35 &&
     worldX <= c.deckMaxX - 0.35 &&
-    worldZ >= c.deckMinZ + 0.35 &&
+    worldZ >= c.deckMinZ &&
     worldZ <= c.deckMaxZ - 0.35
   );
 }
@@ -99,7 +99,7 @@ export function evaluateBeachfrontStiltCabinElevation(worldX: number, worldZ: nu
     worldZ >= c.stairMinZ &&
     worldZ <= c.stairMaxZ
   ) {
-    const t = Math.max(0, Math.min(1, (worldX - c.stairMinX) / (c.stairMaxX - c.stairMinX)));
+    const t = Math.max(0, Math.min(1, (worldZ - c.stairMinZ) / (c.stairMaxZ - c.stairMinZ)));
     return c.baseSandY + (c.deckTopY - c.baseSandY) * t;
   }
   return -Infinity;

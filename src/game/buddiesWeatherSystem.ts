@@ -14,6 +14,7 @@ import {
   type BlitzWindUniforms,
 } from './buddiesBlitzShadersAndAssets';
 import { SHARED_PBR_WOOD_LIGHTING_UNIFORM } from './buddiesCoastalBeachBuilder';
+import { createGpuRainSystem, type DynamicRainController } from './buddiesRainSystem';
 
 /**
  * Shared dynamic atmosphere contract published every frame to `scene.userData.weatherEnvState`
@@ -139,11 +140,17 @@ export interface EvaluatedAtmosphereState {
 
 export interface WeatherSystem3DHandle {
   rootGroup: THREE.Group;
-  rainMesh: THREE.InstancedMesh;
+  rainMesh: THREE.Points;
+  rainController: DynamicRainController;
   splashMesh: THREE.InstancedMesh;
   leafMesh: THREE.InstancedMesh;
   getWeatherEnvState(): WeatherEnvState;
-  getDrawCallCounts(): { totalInstancedMeshes: number; activeDrawCalls: number; pointLights: number };
+  getDrawCallCounts(): {
+    totalInstancedMeshes: number;
+    totalWeatherMeshes: number;
+    activeDrawCalls: number;
+    pointLights: number;
+  };
   setTimePhaseImmediate(preset: LightingPresetKey, windUniforms?: BlitzWindUniforms | null): void;
   syncExternalPresetProp(preset: LightingPresetKey, windUniforms?: BlitzWindUniforms | null): void;
   update(params: {
@@ -151,6 +158,10 @@ export interface WeatherSystem3DHandle {
     timeSec: number;
     pivotX: number;
     pivotZ: number;
+    pivotY?: number;
+    spanY?: number;
+    viewportHeightPx?: number;
+    pixelRatio?: number;
     windUniforms?: BlitzWindUniforms | null;
     isFlatIndoorRoomMode: boolean;
     isShowcaseMode: boolean;
@@ -652,7 +663,7 @@ function createInitialRuntimeState(config: WeatherControlConfig): WeatherRuntime
     rainFactor01: preset.rainRate01 * rainScale,
     fogFactor01:
       config.weatherCondition === 'hujan'
-        ? (config.rainIntensityTier === 'ringan' ? 0.32 : 0.58)
+        ? (config.rainIntensityTier === 'ringan' ? 0.14 : 0.28)
         : config.weatherCondition === 'kabut'
           ? 1.0
           : 0.0,
@@ -705,7 +716,7 @@ export function stepWeatherRuntimeState(
     config.weatherCondition === 'kabut'
       ? 1.0
       : config.weatherCondition === 'hujan'
-        ? (isLightRain ? 0.34 : 0.6)
+        ? (isLightRain ? 0.14 : 0.28)
         : 0.0;
   const targetWind =
     config.weatherCondition === 'hujan'
@@ -828,12 +839,12 @@ export function createReusableEvaluatedAtmosphereState(): EvaluatedAtmosphereSta
   };
 }
 
-const _stormZenithDay = new THREE.Color('#4d6078');
-const _stormMidDay = new THREE.Color('#6a7e96');
-const _stormHorizonDay = new THREE.Color('#95a6ba');
-const _stormCloudLitDay = new THREE.Color('#b4c2d1');
-const _stormCloudMidDay = new THREE.Color('#7f90a6');
-const _stormCloudShadowDay = new THREE.Color('#536378');
+const _stormZenithDay = new THREE.Color('#42566e');
+const _stormMidDay = new THREE.Color('#5a708a');
+const _stormHorizonDay = new THREE.Color('#6a8199');
+const _stormCloudLitDay = new THREE.Color('#a8b8c9');
+const _stormCloudMidDay = new THREE.Color('#74869c');
+const _stormCloudShadowDay = new THREE.Color('#4d5e73');
 
 const _stormZenithNight = new THREE.Color('#09101f');
 const _stormMidNight = new THREE.Color('#142038');
@@ -842,9 +853,9 @@ const _stormCloudLitNight = new THREE.Color('#4c6082');
 const _stormCloudMidNight = new THREE.Color('#2f405e');
 const _stormCloudShadowNight = new THREE.Color('#19243b');
 
-const _fogColorDay = new THREE.Color('#cad8e6');
+const _fogColorDay = new THREE.Color('#8da5bd');
 const _fogColorNight = new THREE.Color('#1e2c45');
-const _fogSkyDay = new THREE.Color('#b2c3d6');
+const _fogSkyDay = new THREE.Color('#839bb3');
 const _fogSkyNight = new THREE.Color('#141f36');
 const _overcastLightDay = new THREE.Color('#b0c4db');
 const _overcastLightNight = new THREE.Color('#5870a8');
@@ -852,6 +863,10 @@ const _tmpColorA = new THREE.Color();
 const _tmpColorB = new THREE.Color();
 const _tmpColorC = new THREE.Color();
 const _fogDisplayColor = new THREE.Color();
+const _rainShadowDay = new THREE.Color('#4e6782');
+const _rainShadowDusk = new THREE.Color('#7d6b85');
+const _rainShadowNight = new THREE.Color('#3b5178');
+const _rainShadowColor = new THREE.Color('#4e6782');
 const _indoorCharLightDir = getBlitzDefaultLightDirection();
 const _indoorCharLightColor = new THREE.Color('#fff4dc');
 const _showcaseCharLightColor = new THREE.Color('#fff2c8');
@@ -859,6 +874,7 @@ const _showcaseCharLightColor = new THREE.Color('#fff2c8');
 /**
  * Computes Linear `THREE.Fog` near/far bounds by composing the camera-mode clear baseline
  * (from `@env-horizon-optimizer` or defaults) with dynamic storm/fog haze compression.
+ * Separates rain haze from thick `kabut` mist so nearby grass stays crisp and vibrant during rain.
  */
 export function evaluateLinearFogParams(params: {
   baseNear?: number;
@@ -870,11 +886,19 @@ export function evaluateLinearFogParams(params: {
   const isCityView = Boolean(params.isCityView);
   const baseNear = params.baseNear ?? (isCityView ? 210 : 105);
   const baseFar = params.baseFar ?? (isCityView ? 360 : 215);
-  const hazeCompression01 = clamp01(Math.max(params.fogFactor01, params.rainFactor01 * 0.72));
-  const targetNear = isCityView ? 42 : 12;
-  const targetFar = isCityView ? 195 : 72;
-  const near = lerpScalar(baseNear, targetNear, hazeCompression01);
-  const far = Math.max(near + 12, lerpScalar(baseFar, targetFar, hazeCompression01));
+  const rainT = clamp01(params.rainFactor01);
+  const mistT = clamp01(params.fogFactor01);
+  const rainTargetNear = isCityView ? 128 : 54;
+  const rainTargetFar = isCityView ? 248 : 122;
+  const mistTargetNear = isCityView ? 52 : 14;
+  const mistTargetFar = isCityView ? 195 : 74;
+
+  const extraMist = clamp01((mistT - rainT * 0.28) / Math.max(0.01, 1.0 - rainT * 0.28));
+  const afterRainNear = lerpScalar(baseNear, rainTargetNear, rainT * 0.92);
+  const afterRainFar = lerpScalar(baseFar, rainTargetFar, rainT * 0.95);
+  const near = lerpScalar(afterRainNear, mistTargetNear, extraMist);
+  const far = Math.max(near + 12, lerpScalar(afterRainFar, mistTargetFar, extraMist));
+  const hazeCompression01 = clamp01(Math.max(extraMist, rainT * 0.45));
   return { near, far, hazeCompression01 };
 }
 
@@ -912,7 +936,7 @@ export function evaluateWeatherAndTimeState(
   const isLightRain = weatherCondition === 'hujan' && rainIntensityTier === 'ringan';
   const defaultRain01 = weatherCondition === 'hujan' ? (isLightRain ? 0.58 : 1.0) : 0.0;
   const defaultFog01 =
-    weatherCondition === 'kabut' ? 1.0 : weatherCondition === 'hujan' ? (isLightRain ? 0.34 : 0.6) : 0.0;
+    weatherCondition === 'kabut' ? 1.0 : weatherCondition === 'hujan' ? (isLightRain ? 0.14 : 0.28) : 0.0;
   const defaultWind =
     weatherCondition === 'hujan' ? (isLightRain ? 0.68 : 1.18) : preset.windStrength;
   const defaultOvercast =
@@ -1078,23 +1102,23 @@ export function evaluateWeatherAndTimeState(
   out.fog.far = linearFog.far;
   out.fog.hazeCompression01 = linearFog.hazeCompression01;
 
-  // 4. Terrain & Grass Tinting (0 extra draw calls — drives existing ground/grass uniforms)
+  // 4. Terrain & Grass Tinting (0 extra draw calls — keep grass rich and crisp in rain/fog)
   lerpColorHex(out.terrain.tintColor, a.groundTintHex, b.groundTintHex, t);
   const baseGroundScale = lerpScalar(a.groundTintScale, b.groundTintScale, t);
-  const wetnessDarken = wetness01 * 0.16;
-  const overcastDarken = overcast01 * 0.14 * (1 - dayNightBlend * 0.7);
-  out.terrain.tintScale = clampRange(baseGroundScale * (1 - wetnessDarken - overcastDarken), 0.28, 1.0);
+  const wetnessDarken = wetness01 * 0.10;
+  const overcastDarken = overcast01 * 0.09 * (1 - dayNightBlend * 0.7);
+  out.terrain.tintScale = clampRange(baseGroundScale * (1 - wetnessDarken - overcastDarken), 0.32, 1.0);
   out.terrain.wetnessDarken = wetnessDarken;
-  out.terrain.fogDesat = clamp01(fogFactor01 * 0.38);
+  out.terrain.fogDesat = clamp01((fogFactor01 - rainFactor01 * 0.5) * 0.08);
 
   // 5. GPU Particle Intensities & Colors
   out.particles.rainIntensity01 = rainFactor01;
   out.particles.splashIntensity01 = clamp01(rainFactor01 * 0.95 + wetness01 * 0.08 * (rainFactor01 > 0.02 ? 1 : 0));
   out.particles.leafIntensity01 = petalDrift01;
   out.particles.rainColor
-    .set('#dbeafe')
+    .set('#e2f1ff')
     .lerp(getCachedColor('#ffd9c4'), duskDawnFactor01 * 0.55)
-    .lerp(getCachedColor('#8cb0eb'), dayNightBlend * 0.65);
+    .lerp(getCachedColor('#94b8ef'), dayNightBlend * 0.62);
   out.particles.splashColor
     .set('#eef6ff')
     .lerp(getCachedColor('#ffe2cc'), duskDawnFactor01 * 0.45)
@@ -1381,118 +1405,20 @@ export function buildDynamicWeatherSystem3D(params: {
   const rng = createDeterministicRng(20261118);
 
   // --------------------------------------------------------------------------
-  // 1. GPU Instanced Rain Streaks (1 Draw Call — gentle density, uniform frustum coverage)
+  // 1. GPU-Driven Rain Particles (THREE.Points + ShaderMaterial, 1 Draw Call)
   // --------------------------------------------------------------------------
-  const rainCount = isSoftwareGl ? 840 : 1680;
-  const rainBaseSpanXZ = 82.0;
-  const rainHeightY = 26.0;
-  const rainGeo: THREE.BufferGeometry = new THREE.PlaneGeometry(1, 1, 1, 1);
-
-  const rainAnchors = new Float32Array(rainCount * 3);
-  const rainSeeds = new Float32Array(rainCount * 3);
-  for (let i = 0; i < rainCount; i++) {
-    // Store normalized XZ in [-0.5, +0.5] so dynamic uSpanXZ expands/contracts uniformly without clustering
-    rainAnchors[i * 3] = rng() - 0.5;
-    rainAnchors[i * 3 + 1] = rng() * rainHeightY;
-    rainAnchors[i * 3 + 2] = rng() - 0.5;
-    rainSeeds[i * 3] = rng(); // speed variance
-    rainSeeds[i * 3 + 1] = 0.75 + rng() * 0.65; // length scale
-    rainSeeds[i * 3 + 2] = 0.55 + rng() * 0.45; // alpha variance
-  }
-  rainGeo.setAttribute('aRainAnchor', new THREE.InstancedBufferAttribute(rainAnchors, 3));
-  rainGeo.setAttribute('aRainSeed', new THREE.InstancedBufferAttribute(rainSeeds, 3));
-
-  const uRainSpanXZ = { value: rainBaseSpanXZ };
-  const rainMat = new THREE.ShaderMaterial({
-    uniforms: {
-      uTime: uWeatherTime,
-      uPlanetPivot: uWeatherPivot,
-      uWindDirection: uWeatherWindDir,
-      uWindStrength: uWeatherWindStrength,
-      uWindGust: uWeatherWindGust,
-      uRainIntensity: uRainIntensity,
-      uRainColor: uRainColor,
-      uSpanXZ: uRainSpanXZ,
-      uHeightY: { value: rainHeightY },
-    },
-    vertexShader: /* glsl */ `
-      attribute vec3 aRainAnchor;
-      attribute vec3 aRainSeed;
-
-      uniform float uTime;
-      uniform vec3 uPlanetPivot;
-      uniform vec2 uWindDirection;
-      uniform float uWindStrength;
-      uniform float uWindGust;
-      uniform float uRainIntensity;
-      uniform float uSpanXZ;
-      uniform float uHeightY;
-
-      varying vec2 vUv;
-      varying float vFade;
-
-      void main() {
-        vUv = uv;
-        float halfSpan = uSpanXZ * 0.5;
-        float fallSpeed = (21.0 + aRainSeed.x * 9.0) * (0.85 + uRainIntensity * 0.35);
-        float windHorizSpeed = (uWindStrength + uWindGust * 0.55) * 4.6;
-        vec2 windDir = normalize(uWindDirection + vec2(0.0001));
-
-        float rawX = aRainAnchor.x * uSpanXZ + windDir.x * windHorizSpeed * uTime * 1.15;
-        float rawZ = aRainAnchor.z * uSpanXZ + windDir.y * windHorizSpeed * uTime * 1.15;
-        float wx = mod(rawX - uPlanetPivot.x + halfSpan, uSpanXZ) - halfSpan + uPlanetPivot.x;
-        float wz = mod(rawZ - uPlanetPivot.z + halfSpan, uSpanXZ) - halfSpan + uPlanetPivot.z;
-        float wy = mod(aRainAnchor.y - fallSpeed * uTime, uHeightY);
-
-        vec3 center = vec3(wx, wy, wz);
-        vec3 velDir = normalize(vec3(windDir.x * windHorizSpeed, -fallSpeed, windDir.y * windHorizSpeed));
-        vec3 toCam = cameraPosition - center;
-        float camLen = max(length(toCam), 0.001);
-        vec3 viewDir = toCam / camLen;
-        vec3 right = cross(velDir, viewDir);
-        float rightLen = length(right);
-        right = rightLen > 0.001 ? (right / rightLen) : vec3(1.0, 0.0, 0.0);
-
-        float streakW = 0.026 + uRainIntensity * 0.014;
-        float streakL = (0.98 + uRainIntensity * 0.65) * aRainSeed.y;
-        vec3 worldPos = center + right * (position.x * streakW) + velDir * (position.y * streakL);
-
-        float distXZ = length(center.xz - uPlanetPivot.xz);
-        float radialFade = 1.0 - smoothstep(halfSpan * 0.78, halfSpan * 0.99, distXZ);
-        float vertFade = smoothstep(0.15, 0.95, wy) * (1.0 - smoothstep(uHeightY - 4.0, uHeightY, wy));
-        vFade = radialFade * vertFade * aRainSeed.z;
-
-        gl_Position = projectionMatrix * viewMatrix * vec4(worldPos, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      uniform float uRainIntensity;
-      uniform vec3 uRainColor;
-
-      varying vec2 vUv;
-      varying float vFade;
-
-      void main() {
-        float edgeX = 1.0 - abs(vUv.x - 0.5) * 2.0;
-        float coreX = smoothstep(0.0, 0.85, edgeX);
-        float taperY = smoothstep(0.0, 0.28, vUv.y) * (1.0 - smoothstep(0.72, 1.0, vUv.y));
-        float alpha = coreX * taperY * vFade * uRainIntensity * 0.50;
-        if (alpha <= 0.005) discard;
-        gl_FragColor = vec4(uRainColor, alpha);
-      }
-    `,
-    transparent: true,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    toneMapped: false,
+  const rainBaseSpanXZ = 88.0;
+  const rainBaseSpanY = 30.0;
+  const rainController = createGpuRainSystem({
+    isSoftwareGl,
+    particleCount: isSoftwareGl ? 1600 : 2800,
+    baseSpanXZ: rainBaseSpanXZ,
+    baseSpanY: rainBaseSpanY,
+    initialIntensity: 0.0,
+    initialWindX: 0.0,
+    initialWindZ: 0.0,
   });
-
-  const rainMesh = new THREE.InstancedMesh(rainGeo, rainMat, rainCount);
-  rainMesh.name = 'WeatherRainStreaksInstanced';
-  rainMesh.frustumCulled = false;
-  rainMesh.renderOrder = 12;
-  rainMesh.visible = false;
-  initIdentityMatrices(rainMesh);
+  const rainMesh = rainController.points;
   rootGroup.add(rainMesh);
 
   // --------------------------------------------------------------------------
@@ -1900,14 +1826,20 @@ export function buildDynamicWeatherSystem3D(params: {
   const applyEvaluatedToScene = (
     state: EvaluatedAtmosphereState,
     opts: {
+      dt: number;
       windUniforms?: BlitzWindUniforms | null;
       isFlatIndoorRoomMode: boolean;
       isShowcaseMode: boolean;
       isFullMapOverview: boolean;
       isCityView: boolean;
       spanScale?: number;
+      spanY?: number;
+      viewportHeightPx?: number;
+      pixelRatio?: number;
+      immediateRain?: boolean;
       timeSec: number;
       pivotX: number;
+      pivotY?: number;
       pivotZ: number;
     },
   ) => {
@@ -1920,9 +1852,41 @@ export function buildDynamicWeatherSystem3D(params: {
       0.62 * (1.0 - state.envState.nightFactor01 * 0.88) * (1.0 - state.envState.rainFactor01 * 0.25),
     );
 
-    // 1. Update GPU weather particles (adaptive span fills full camera viewport in gameplay & City View)
+    const hideWeatherMeshes =
+      opts.isFlatIndoorRoomMode || opts.isShowcaseMode || opts.isFullMapOverview;
     const activeSpanScale = clampRange(opts.spanScale ?? (opts.isCityView ? 1.78 : 1.0), 1.0, 1.85);
-    uRainSpanXZ.value = rainBaseSpanXZ * activeSpanScale;
+    const rainSpanXZ = rainBaseSpanXZ * activeSpanScale;
+    const rainSpanY = opts.spanY ?? (opts.isCityView ? 52.0 : rainBaseSpanY * clampRange(activeSpanScale, 1.0, 1.45));
+    const rainWindHorizSpeed = (state.envState.windStrength + state.envState.windGust * 0.55) * 4.4;
+    const targetRainWindX = state.envState.windDirectionX * rainWindHorizSpeed;
+    const targetRainWindZ = state.envState.windDirectionZ * rainWindHorizSpeed;
+    const targetRainIntensity = hideWeatherMeshes ? 0.0 : state.particles.rainIntensity01;
+    rainController.setTarget({
+      intensity: targetRainIntensity,
+      windX: targetRainWindX,
+      windZ: targetRainWindZ,
+    });
+
+    _rainShadowColor
+      .copy(_rainShadowDay)
+      .lerp(_rainShadowDusk, state.envState.duskDawnFactor01 * 0.65)
+      .lerp(_rainShadowNight, state.envState.nightFactor01 * 0.6);
+
+    const rainState = rainController.update({
+      dt: opts.dt,
+      timeSec: opts.timeSec,
+      centerX: opts.pivotX,
+      centerY: opts.pivotY ?? (opts.isCityView ? 18.0 : 12.0),
+      centerZ: opts.pivotZ,
+      spanXZ: rainSpanXZ,
+      spanY: rainSpanY,
+      viewportHeightPx: opts.viewportHeightPx,
+      pixelRatio: opts.pixelRatio,
+      rainColor: state.particles.rainColor,
+      rainShadowColor: _rainShadowColor,
+      immediate: opts.immediateRain,
+    });
+
     uSplashSpanXZ.value = splashBaseSpanXZ * activeSpanScale;
     uLeafSpanXZ.value = leafBaseSpanXZ * activeSpanScale;
     uWeatherTime.value = opts.timeSec;
@@ -1930,7 +1894,7 @@ export function buildDynamicWeatherSystem3D(params: {
     uWeatherWindDir.value.set(state.envState.windDirectionX, state.envState.windDirectionZ);
     uWeatherWindStrength.value = state.envState.windStrength;
     uWeatherWindGust.value = state.envState.windGust;
-    uRainIntensity.value = state.particles.rainIntensity01;
+    uRainIntensity.value = rainState.intensity;
     uSplashIntensity.value = state.particles.splashIntensity01;
     uWetness.value = state.envState.wetness01;
     uLeafIntensity.value = state.particles.leafIntensity01;
@@ -1938,10 +1902,8 @@ export function buildDynamicWeatherSystem3D(params: {
     uSplashColor.value.copy(state.particles.splashColor);
     uLeafLightColor.value.copy(state.lighting.windLightColor);
 
-    const hideWeatherMeshes =
-      opts.isFlatIndoorRoomMode || opts.isShowcaseMode || opts.isFullMapOverview;
     rootGroup.visible = !hideWeatherMeshes;
-    rainMesh.visible = !hideWeatherMeshes && state.particles.rainIntensity01 > 0.015;
+    rainMesh.visible = !hideWeatherMeshes && rainState.intensity > 0.015;
     splashMesh.visible = !hideWeatherMeshes && state.particles.splashIntensity01 > 0.015;
     leafMesh.visible = !hideWeatherMeshes && state.particles.leafIntensity01 > 0.02;
 
@@ -2067,9 +2029,6 @@ export function buildDynamicWeatherSystem3D(params: {
           const target = terrain.grassMat.uniforms?.[k]?.value;
           if (base && target instanceof THREE.Color) {
             target.copy(base).multiply(_terrainTargetColor);
-            if (state.terrain.fogDesat > 0.001) {
-              target.lerp(_fogTintTarget, state.terrain.fogDesat);
-            }
           }
         }
       }
@@ -2140,11 +2099,13 @@ export function buildDynamicWeatherSystem3D(params: {
       evaluated,
     );
     applyEvaluatedToScene(evaluated, {
+      dt: 0,
       windUniforms,
       isFlatIndoorRoomMode: false,
       isShowcaseMode: false,
       isFullMapOverview: false,
       isCityView: false,
+      immediateRain: true,
       timeSec: uWeatherTime.value,
       pivotX: uWeatherPivot.value.x,
       pivotZ: uWeatherPivot.value.z,
@@ -2211,14 +2172,17 @@ export function buildDynamicWeatherSystem3D(params: {
   return {
     rootGroup,
     rainMesh,
+    rainController,
     splashMesh,
     leafMesh,
     getWeatherEnvState: () => evaluated.envState,
     getDrawCallCounts: () => {
-      const meshes = [rainMesh, splashMesh, leafMesh];
+      const instancedMeshes = [splashMesh, leafMesh];
+      const allMeshes = [rainMesh, splashMesh, leafMesh];
       return {
-        totalInstancedMeshes: meshes.length,
-        activeDrawCalls: rootGroup.visible ? meshes.filter((m) => m.visible).length : 0,
+        totalInstancedMeshes: instancedMeshes.length,
+        totalWeatherMeshes: allMeshes.length,
+        activeDrawCalls: rootGroup.visible ? allMeshes.filter((m) => m.visible).length : 0,
         pointLights: 0,
       };
     },
@@ -2229,6 +2193,10 @@ export function buildDynamicWeatherSystem3D(params: {
       timeSec,
       pivotX,
       pivotZ,
+      pivotY,
+      spanY,
+      viewportHeightPx,
+      pixelRatio,
       windUniforms,
       isFlatIndoorRoomMode,
       isShowcaseMode,
@@ -2258,14 +2226,19 @@ export function buildDynamicWeatherSystem3D(params: {
         evaluated,
       );
       applyEvaluatedToScene(evaluated, {
+        dt,
         windUniforms,
         isFlatIndoorRoomMode,
         isShowcaseMode,
         isFullMapOverview,
         isCityView,
         spanScale,
+        spanY,
+        viewportHeightPx,
+        pixelRatio,
         timeSec,
         pivotX,
+        pivotY,
         pivotZ,
       });
 
@@ -2292,8 +2265,7 @@ export function buildDynamicWeatherSystem3D(params: {
     },
     dispose: () => {
       scene.remove(rootGroup);
-      rainGeo.dispose();
-      rainMat.dispose();
+      rainController.dispose();
       splashGeo.dispose();
       splashMat.dispose();
       leafGeo.dispose();

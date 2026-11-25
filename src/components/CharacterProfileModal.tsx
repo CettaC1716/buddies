@@ -83,6 +83,11 @@ import {
   toggleLikeCityFeedPost,
   type CityFeedPost,
 } from '../lib/cityFeedService';
+import {
+  resolveNpcCitizenIdFromEntity,
+  resolveNpcPhotoUrl,
+  useNpcPortraitVersion,
+} from '../game/npcPortraitRegistry';
 
 export interface PhotoPresetOption {
   id: string;
@@ -209,6 +214,15 @@ export function readStoredStatusCoverPhotoUrl(): string {
   }
 }
 
+export function readStoredAvatarPhotoUrl(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return window.localStorage.getItem(AVATAR_PHOTO_STORAGE_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
 function renderProfileAssetTileIcon(tileId: ProfileAssetTileId): React.ReactNode {
   switch (tileId) {
     case 'homes':
@@ -231,12 +245,17 @@ export function resolveSharedEntityPortraitUrl(
   isSelf = false,
   characterGender: 'male' | 'female' = 'male',
   customCoverUrl = '',
+  kind: 'avatar' | 'cover' = 'avatar',
 ): string {
   if (isSelf) {
     return (
       customCoverUrl ||
       (characterGender === 'female' ? '/assets/avatar_nadia.jpg' : '/assets/avatar_hiro.jpg')
     );
+  }
+  const npcCitizenId = resolveNpcCitizenIdFromEntity(entity);
+  if (npcCitizenId) {
+    return resolveNpcPhotoUrl(npcCitizenId, kind);
   }
   const lower = entity.name.replace(/\s*\((ANDA|YOU|KAMU)\)/gi, '').trim().toLowerCase();
   const isFemale =
@@ -339,6 +358,9 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
   onStartWhisper,
   embeddedInPhone = false,
 }) => {
+  // Re-render automatically when an NPC's 3D selfie & full-body cover finish capturing
+  useNpcPortraitVersion();
+
   const defaultPhotoUrl =
     characterGender === 'female' ? '/assets/avatar_nadia.jpg' : '/assets/avatar_hiro.jpg';
 
@@ -464,6 +486,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
   useEffect(() => {
     const syncIdentity = () => {
       setCustomStatusPhotoUrl(readStoredStatusCoverPhotoUrl());
+      setCustomAvatarPhotoUrl(readStoredAvatarPhotoUrl());
       setLocalProfileIdentity(readStoredProfileIdentity());
     };
     const syncPrivacy = () => {
@@ -712,13 +735,14 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
         isSelfProfile,
         characterGender,
         customStatusPhotoUrl,
+        'cover',
       )
     : customStatusPhotoUrl || defaultPhotoUrl;
 
   const resolvedAvatarPhotoUrl = isSelfProfile
     ? customAvatarPhotoUrl || defaultPhotoUrl
     : targetUser
-      ? resolveSharedEntityPortraitUrl(targetUser, false, characterGender, '')
+      ? resolveSharedEntityPortraitUrl(targetUser, false, characterGender, '', 'avatar')
       : defaultPhotoUrl;
 
   const handleSelectPhotoUrl = (target: 'status' | 'avatar', url: string) => {
@@ -741,6 +765,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
         } catch {
           // ignore
         }
+        window.dispatchEvent(new CustomEvent(PROFILE_IDENTITY_UPDATED_EVENT));
       }
     }
     setActivePhotoPicker('none');
@@ -950,7 +975,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
       className={
         embeddedInPhone
           ? 'relative w-full h-full bg-transparent p-3 text-white flex flex-col overflow-hidden'
-          : 'relative rounded-[32px] bg-[#141926]/68 backdrop-blur-2xl border border-white/25 shadow-[0_24px_70px_rgba(0,0,0,0.52)] p-4 sm:p-5 text-white flex flex-col max-h-full overflow-hidden'
+          : 'relative rounded-[32px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] p-4 sm:p-5 text-white flex flex-col max-h-full overflow-hidden'
       }
     >
       {/* Hidden File Inputs for Custom Photo Uploads */}

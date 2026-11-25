@@ -121,6 +121,8 @@ body {
 
 /* Adaptive HUD performance mode: disables per-frame WebGL backdrop-filter passes under GPU pressure */
 html.hud-blur-lite [class*="backdrop-blur"],
+html.hud-blur-lite [class*="backdrop-saturate"],
+html.hud-blur-lite [style*="backdrop-filter"],
 html.hud-blur-lite .casino-glassmorph-scrim {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;

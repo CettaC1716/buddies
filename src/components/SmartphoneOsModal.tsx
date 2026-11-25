@@ -322,7 +322,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
     <div
       role="dialog"
       aria-modal={isExpanded}
-      aria-label="Buddies Smartphone"
+      aria-label="Cerria Smartphone"
       data-smartphone-os-modal="true"
       data-smartphone-active-app={activeApp}
       data-smartphone-expanded={isExpanded ? 'true' : 'false'}
@@ -377,7 +377,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
                 className={`w-3 h-3 ${isDarkShell ? 'text-white/85' : 'text-slate-600'}`}
                 aria-hidden="true"
               />
-              <span className="tracking-wide font-semibold">BLITZ OS</span>
+              <span className="tracking-wide font-semibold">CERRIA OS</span>
             </div>
             <span className="font-mono tabular-nums font-semibold">{clockLabel}</span>
             <div className="flex items-center gap-2">

@@ -821,9 +821,9 @@ export function buildPlazaCommercialArcade3D(
   for (const px of [-3.375, 3.375]) {
     partHelper.addPart(
       arcadeGrp,
-      makeRoundedArcadeBox(0.22, 4.08, 4.64, 0.018),
+      makeRoundedArcadeBox(0.22, 4.02, 4.54, 0.018),
       '#f2ece0',
-      [px, 2.20, 0.01],
+      [px, 2.16, 0.03],
       [0, 0, 0],
       0.006,
       stuccoTex,
@@ -875,23 +875,23 @@ export function buildPlazaCommercialArcade3D(
   const southX = -(ARCADE_HALF_W - 0.08);
   partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(0.16, 5.22, 1.66, 0.016), COL_STUCCO, [southX, 2.63, -1.59], [0, 0, 0], 0.010, stuccoTex, 2.2);
   partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(0.16, 5.22, 1.06, 0.016), COL_STUCCO, [southX, 2.63, 1.89], [0, 0, 0], 0.010, stuccoTex, 2.2);
-  partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(0.16, 0.84, 2.08, 0.014), COL_STUCCO, [southX, 0.45, 0.30], [0, 0, 0], 0.008, stuccoTex, 2.0);
+  partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(0.16, 0.60, 2.04, 0.014), COL_STUCCO, [southX, 0.54, 0.30], [0, 0, 0], 0.008, stuccoTex, 2.0);
   partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(0.20, 0.22, 2.12, 0.014), COL_SANDSTONE_DARK, [southX - 0.02, 0.13, 0.30], [0, 0, 0], 0.006, opts.textures.concreteTex);
-  partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(0.16, 1.36, 2.08, 0.014), COL_STUCCO, [southX, 4.55, 0.30], [0, 0, 0], 0.009, stuccoTex, 2.0);
+  partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(0.16, 1.28, 2.04, 0.014), COL_STUCCO, [southX, 4.59, 0.30], [0, 0, 0], 0.009, stuccoTex, 2.0);
   partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(0.26, 0.12, 2.26, 0.016), COL_SANDSTONE, [southX - 0.04, WINDOW_SILL_TOP_Y - 0.06, 0.30], [0, 0, 0], 0.007, opts.textures.concreteTex);
   partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(0.24, 0.11, 2.24, 0.016), COL_SANDSTONE, [southX - 0.03, 3.88, 0.30], [0, 0, 0], 0.007, opts.textures.concreteTex);
   for (const sz of [-0.72, -0.04, 0.64, 1.32]) {
-    partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(0.18, 2.90, 0.08, 0.010), COL_BRONZE_FRAME, [southX - 0.02, 2.41, sz], [0, 0, 0], 0.006);
+    partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(0.18, 2.84, 0.08, 0.010), COL_BRONZE_FRAME, [southX - 0.02, 2.39, sz], [0, 0, 0], 0.006);
   }
-  partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(0.18, 0.075, 2.10, 0.010), COL_BRONZE_FRAME, [southX - 0.02, 3.24, 0.30], [0, 0, 0], 0.005);
-  addGlassPane(arcadeGrp, new THREE.PlaneGeometry(2.04, 2.86), [southX, 2.41, 0.30], [0, -Math.PI / 2, 0]);
+  partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(0.20, 0.075, 2.06, 0.010), COL_BRONZE_FRAME, [southX - 0.025, 3.24, 0.30], [0, 0, 0], 0.005);
+  addGlassPane(arcadeGrp, new THREE.PlaneGeometry(2.04, 2.84), [southX, 2.39, 0.30], [0, -Math.PI / 2, 0]);
 
-  // Continuous Front Entablature Frieze Band (`y = 4.38 .. 5.24m`, inset inside side walls cleanly)
+  // Continuous Front Entablature Frieze Band (`y = 4.40 .. 5.24m`, inset inside side walls cleanly)
   partHelper.addPart(
     arcadeGrp,
-    makeRoundedArcadeBox(ARCADE_HALF_W * 2 - 0.34, 0.86, 0.24, 0.018),
+    makeRoundedArcadeBox(ARCADE_HALF_W * 2 - 0.34, 0.84, 0.24, 0.018),
     COL_STUCCO,
-    [0, 4.81, 2.38],
+    [0, 4.82, 2.38],
     [0, 0, 0],
     0.010,
     stuccoTex,
@@ -1071,35 +1071,35 @@ export function buildPlazaCommercialArcade3D(
   bay1Shape.holes.push(doorHole1);
 
   const bay1WallGeo = new THREE.ExtrudeGeometry(bay1Shape, {
-    depth: 0.22,
+    depth: 0.18,
     bevelEnabled: false,
     curveSegments: 36,
   });
-  bay1WallGeo.translate(0, 0, -0.11);
-  partHelper.addPart(arcadeGrp, bay1WallGeo, COL_STUCCO, [BAY_FASHION_X, 0, 2.39], [0, 0, 0], 0.008, stuccoTex, 2.0);
+  bay1WallGeo.translate(0, 0, -0.09);
+  partHelper.addPart(arcadeGrp, bay1WallGeo, COL_STUCCO, [BAY_FASHION_X, 0, 2.36], [0, 0, 0], 0.008, stuccoTex, 2.0);
 
   // Lower facade masonry base plinth + framed sandstone dado relief under Bay 1 arch
   partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(4.56, 0.22, 0.28), COL_SANDSTONE_DARK, [BAY_FASHION_X - 0.70, 0.15, 2.42], [0, 0, 0], 0.006, opts.textures.concreteTex);
   partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(3.84, 0.42, 0.06), COL_SANDSTONE, [BAY_FASHION_X - 0.70, 0.55, 2.50], [0, 0, 0], 0.005, opts.textures.concreteTex);
 
-  // Molded sandstone outer arch surround (outer R = 2.20 clears y = 4.29 sandstone architrave cleanly) + chamfered sill at y = 0.96
+  // Molded sandstone outer arch surround (outer R = 2.21 clears y = 4.29 sandstone architrave cleanly) + chamfered sill at y = 0.96
   const archTrimShape = new THREE.Shape();
-  archTrimShape.absarc(0, 0, 2.20, 0, Math.PI, false);
-  archTrimShape.lineTo(-2.12, 0);
-  archTrimShape.absarc(0, 0, 2.12, Math.PI, 0, true);
+  archTrimShape.absarc(0, 0, 2.21, 0, Math.PI, false);
+  archTrimShape.lineTo(-2.125, 0);
+  archTrimShape.absarc(0, 0, 2.125, Math.PI, 0, true);
   archTrimShape.closePath();
-  const archTrimGeo = new THREE.ExtrudeGeometry(archTrimShape, { depth: 0.12, bevelEnabled: false, curveSegments: 36 });
-  archTrimGeo.translate(0, 0, -0.06);
-  partHelper.addPart(arcadeGrp, archTrimGeo, COL_SANDSTONE, [BAY_FASHION_X - 0.70, 2.08, 2.48], [0, 0, 0], 0);
+  const archTrimGeo = new THREE.ExtrudeGeometry(archTrimShape, { depth: 0.14, bevelEnabled: false, curveSegments: 36 });
+  archTrimGeo.translate(0, 0, -0.07);
+  partHelper.addPart(arcadeGrp, archTrimGeo, COL_SANDSTONE, [BAY_FASHION_X - 0.70, 2.08, 2.47], [0, 0, 0], 0);
 
   // Dark bronze arch frame + inner concentric sunburst ring + radial fan-spoke mullions
   const bronzeArchShape = new THREE.Shape();
-  bronzeArchShape.absarc(0, 0, 2.12, 0, Math.PI, false);
+  bronzeArchShape.absarc(0, 0, 2.115, 0, Math.PI, false);
   bronzeArchShape.lineTo(-2.03, 0);
   bronzeArchShape.absarc(0, 0, 2.03, Math.PI, 0, true);
   bronzeArchShape.closePath();
-  const bronzeArchGeo = new THREE.ExtrudeGeometry(bronzeArchShape, { depth: 0.14, bevelEnabled: false, curveSegments: 36 });
-  bronzeArchGeo.translate(0, 0, -0.07);
+  const bronzeArchGeo = new THREE.ExtrudeGeometry(bronzeArchShape, { depth: 0.12, bevelEnabled: false, curveSegments: 36 });
+  bronzeArchGeo.translate(0, 0, -0.06);
   partHelper.addPart(arcadeGrp, bronzeArchGeo, COL_BRONZE_FRAME, [BAY_FASHION_X - 0.70, 2.08, 2.44], [0, 0, 0], 0);
 
   const innerSunRing = new THREE.Shape();
@@ -1107,12 +1107,12 @@ export function buildPlazaCommercialArcade3D(
   innerSunRing.lineTo(-1.32, 0);
   innerSunRing.absarc(0, 0, 1.32, Math.PI, 0, true);
   innerSunRing.closePath();
-  const innerSunGeo = new THREE.ExtrudeGeometry(innerSunRing, { depth: 0.08, bevelEnabled: false, curveSegments: 32 });
-  innerSunGeo.translate(0, 0, -0.04);
+  const innerSunGeo = new THREE.ExtrudeGeometry(innerSunRing, { depth: 0.09, bevelEnabled: false, curveSegments: 32 });
+  innerSunGeo.translate(0, 0, -0.045);
   partHelper.addPart(arcadeGrp, innerSunGeo, COL_BRONZE_FRAME, [BAY_FASHION_X - 0.70, 2.08, 2.44], [0, 0, 0], 0);
 
   // Center sunburst hub + 5 radial fan spokes
-  const hubCyl = new THREE.CylinderGeometry(0.16, 0.16, 0.08, 12, 1, false, 0, Math.PI);
+  const hubCyl = new THREE.CylinderGeometry(0.16, 0.16, 0.09, 12, 1, false, 0, Math.PI);
   hubCyl.rotateX(Math.PI / 2);
   hubCyl.rotateZ(Math.PI / 2);
   partHelper.addPart(arcadeGrp, hubCyl, COL_BRONZE_FRAME, [BAY_FASHION_X - 0.70, 2.08, 2.44], [0, 0, 0], 0.004);
@@ -1121,9 +1121,9 @@ export function buildPlazaCommercialArcade3D(
     const midR = 1.05;
     partHelper.addPart(
       arcadeGrp,
-      new THREE.BoxGeometry(2.06, 0.052, 0.08),
+      new THREE.BoxGeometry(2.04, 0.052, 0.07),
       COL_BRONZE_FRAME,
-      [BAY_FASHION_X - 0.70 + Math.cos(ang) * midR, 2.08 + Math.sin(ang) * midR, 2.44],
+      [BAY_FASHION_X - 0.70 + Math.cos(ang) * midR, 2.08 + Math.sin(ang) * midR, 2.435],
       [0, 0, ang],
       0.003,
       undefined,
@@ -1132,10 +1132,10 @@ export function buildPlazaCommercialArcade3D(
     );
   }
   // Horizontal springline transom bar + vertical mullions (`y = 0.96..2.08`) + moulded stone sill (`y = 0.84..0.96`)
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(4.28, 0.08, 0.12), COL_BRONZE_FRAME, [BAY_FASHION_X - 0.70, 2.08, 2.44], [0, 0, 0], 0.005);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(4.24, 0.08, 0.13), COL_BRONZE_FRAME, [BAY_FASHION_X - 0.70, 2.08, 2.44], [0, 0, 0], 0.005);
   partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(4.46, 0.12, 0.30), COL_SANDSTONE, [BAY_FASHION_X - 0.70, WINDOW_SILL_TOP_Y - 0.06, 2.45], [0, 0, 0], 0.007, opts.textures.concreteTex);
-  for (const mx of [-2.80, -1.75, -0.70, 0.35, 1.40]) {
-    partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.07, 1.14, 0.11), COL_BRONZE_FRAME, [BAY_FASHION_X + mx, 1.52, 2.44], [0, 0, 0], 0.005);
+  for (const mx of [-2.78, -1.74, -0.70, 0.34, 1.38]) {
+    partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.07, 1.08, 0.11), COL_BRONZE_FRAME, [BAY_FASHION_X + mx, 1.50, 2.435], [0, 0, 0], 0.005);
   }
   // Crystal-clear extruded arched glass pane (solid 3D box depth so visible cleanly from all angles)
   const archGlassShape = new THREE.Shape();
@@ -1157,14 +1157,14 @@ export function buildPlazaCommercialArcade3D(
   });
 
   // Bay 1 Right Tall Framed Glass Entry Door (`lx in [-5.10 .. -3.80]`, clear 3.60m leaf + transom)
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.08, 3.92, 0.12), COL_BRONZE_FRAME, [BAY_FASHION_X + 1.69, 2.10, 2.44], [0, 0, 0], 0.005);
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.08, 3.92, 0.12), COL_BRONZE_FRAME, [BAY_FASHION_X + 2.91, 2.10, 2.44], [0, 0, 0], 0.005);
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(1.30, 0.09, 0.12), COL_BRONZE_FRAME, [BAY_FASHION_X + 2.30, 4.04, 2.44], [0, 0, 0], 0.005);
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(1.30, 0.08, 0.12), COL_BRONZE_FRAME, [BAY_FASHION_X + 2.30, DOOR_TOP_Y, 2.44], [0, 0, 0], 0.005);
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(1.30, 0.08, 0.12), COL_BRONZE_FRAME, [BAY_FASHION_X + 2.30, 0.17, 2.44], [0, 0, 0], 0.005);
-  partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(1.20, 0.06, 0.10, 0.010), COL_BRONZE_FRAME, [BAY_FASHION_X + 2.30, 2.68, 2.44], [0, 0, 0], 0.004);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.08, 3.86, 0.11), COL_BRONZE_FRAME, [BAY_FASHION_X + 1.69, 2.07, 2.435], [0, 0, 0], 0.005);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.08, 3.86, 0.11), COL_BRONZE_FRAME, [BAY_FASHION_X + 2.91, 2.07, 2.435], [0, 0, 0], 0.005);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(1.30, 0.09, 0.13), COL_BRONZE_FRAME, [BAY_FASHION_X + 2.30, 4.04, 2.44], [0, 0, 0], 0.005);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(1.14, 0.08, 0.12), COL_BRONZE_FRAME, [BAY_FASHION_X + 2.30, DOOR_TOP_Y, 2.44], [0, 0, 0], 0.005);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(1.14, 0.08, 0.12), COL_BRONZE_FRAME, [BAY_FASHION_X + 2.30, 0.18, 2.44], [0, 0, 0], 0.005);
+  partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(1.12, 0.06, 0.10, 0.010), COL_BRONZE_FRAME, [BAY_FASHION_X + 2.30, 2.68, 2.435], [0, 0, 0], 0.004);
   addAnchoredDoorPullHandle(BAY_FASHION_X + 1.80, 1.56, 2.44);
-  addGlassPane(arcadeGrp, new THREE.BoxGeometry(1.16, 3.78, 0.022), [BAY_FASHION_X + 2.30, 2.10, 2.44], [0, 0, 0], {
+  addGlassPane(arcadeGrp, new THREE.BoxGeometry(1.14, 3.78, 0.022), [BAY_FASHION_X + 2.30, 2.10, 2.435], [0, 0, 0], {
     id: 'arcade-bay1-door-glass',
     kind: 'storefront',
     col: 1,
@@ -1177,11 +1177,11 @@ export function buildPlazaCommercialArcade3D(
   partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(4.44, 0.72, 0.10, 0.016), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X, 4.81, 2.52], [0, 0, 0], 0.007);
   partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(4.26, 0.60, 0.04, 0.008), '#ffffff', [BAY_REAL_ESTATE_X, 4.81, 2.56], [0, 0, 0], 0, getRealEstateFasciaSignTexture(), 0.2, false);
 
-  // Stucco header above Bay 2 storefront (`y = 4.06 .. 4.38`)
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(6.24, 0.34, 0.22), COL_STUCCO, [BAY_REAL_ESTATE_X, 4.22, 2.39], [0, 0, 0], 0.007, stuccoTex, 2.0);
+  // Stucco header above Bay 2 storefront (`y = 4.12 .. 4.36`, recessed behind bronze head lintel & sandstone stringcourse)
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(6.18, 0.24, 0.18), COL_STUCCO, [BAY_REAL_ESTATE_X, 4.24, 2.36], [0, 0, 0], 0.007, stuccoTex, 2.0);
   // Waist-height lower stucco knee-wall + sandstone base plinth + 3 dado panels + moulded sill (`x in [-3.00 .. +1.62]` clearing pilaster base `-3.015` and door jamb `1.64`)
   partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(4.62, 0.22, 0.28), COL_SANDSTONE_DARK, [BAY_REAL_ESTATE_X - 0.69, 0.15, 2.42], [0, 0, 0], 0.006, opts.textures.concreteTex);
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(4.60, 0.64, 0.22), COL_STUCCO, [BAY_REAL_ESTATE_X - 0.69, 0.56, 2.39], [0, 0, 0], 0.008, stuccoTex, 2.0);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(4.56, 0.58, 0.18), COL_STUCCO, [BAY_REAL_ESTATE_X - 0.69, 0.55, 2.36], [0, 0, 0], 0.008, stuccoTex, 2.0);
   for (const dx of [-2.22, -0.70, 0.81]) {
     partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(1.22, 0.40, 0.06), COL_SANDSTONE, [BAY_REAL_ESTATE_X + dx, 0.56, 2.50], [0, 0, 0], 0.005, opts.textures.concreteTex);
   }
@@ -1189,25 +1189,25 @@ export function buildPlazaCommercialArcade3D(
 
   // Tall dark bronze storefront mullions + horizontal upper transom rail (`y = 3.42m`) + head lintel (`y = 4.08m`)
   for (const mx of [-2.97, -1.46, 0.05, 1.56]) {
-    partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.085, 3.16, 0.12), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X + mx, 2.52, 2.44], [0, 0, 0], 0.006);
+    partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.085, 3.08, 0.11), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X + mx, 2.50, 2.435], [0, 0, 0], 0.006);
   }
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(4.60, 0.075, 0.12), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X - 0.69, 3.42, 2.44], [0, 0, 0], 0.005);
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(4.60, 0.085, 0.12), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X - 0.69, STOREFRONT_TOP_Y, 2.44], [0, 0, 0], 0.005);
-  addGlassPane(arcadeGrp, new THREE.BoxGeometry(4.48, 3.04, 0.022), [BAY_REAL_ESTATE_X - 0.69, 2.52, 2.435], [0, 0, 0], {
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(4.62, 0.075, 0.13), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X - 0.69, 3.42, 2.44], [0, 0, 0], 0.005);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(4.62, 0.085, 0.13), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X - 0.69, STOREFRONT_TOP_Y, 2.44], [0, 0, 0], 0.005);
+  addGlassPane(arcadeGrp, new THREE.BoxGeometry(4.48, 3.04, 0.022), [BAY_REAL_ESTATE_X - 0.69, 2.50, 2.435], [0, 0, 0], {
     id: 'arcade-bay2-storefront-glass',
     kind: 'storefront',
     col: 2,
   });
 
   // Bay 2 Right Tall Glazed Entry Door (`lx in [+1.64 .. +3.02]`, clear 3.60m leaf + transom)
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.08, 3.98, 0.12), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X + 1.68, 2.11, 2.44], [0, 0, 0], 0.005);
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.08, 3.98, 0.12), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X + 2.98, 2.11, 2.44], [0, 0, 0], 0.005);
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(1.38, 0.09, 0.12), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X + 2.33, STOREFRONT_TOP_Y, 2.44], [0, 0, 0], 0.005);
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(1.38, 0.08, 0.12), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X + 2.33, DOOR_TOP_Y, 2.44], [0, 0, 0], 0.005);
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(1.38, 0.08, 0.12), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X + 2.33, 0.17, 2.44], [0, 0, 0], 0.005);
-  partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(1.28, 0.06, 0.10, 0.010), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X + 2.33, 2.68, 2.44], [0, 0, 0], 0.004);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.08, 3.90, 0.11), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X + 1.68, 2.09, 2.435], [0, 0, 0], 0.005);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.08, 3.90, 0.11), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X + 2.98, 2.09, 2.435], [0, 0, 0], 0.005);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(1.38, 0.085, 0.13), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X + 2.33, STOREFRONT_TOP_Y, 2.44], [0, 0, 0], 0.005);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(1.22, 0.08, 0.12), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X + 2.33, DOOR_TOP_Y, 2.44], [0, 0, 0], 0.005);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(1.22, 0.08, 0.12), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X + 2.33, 0.18, 2.44], [0, 0, 0], 0.005);
+  partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(1.20, 0.06, 0.10, 0.010), COL_BRONZE_FRAME, [BAY_REAL_ESTATE_X + 2.33, 2.68, 2.435], [0, 0, 0], 0.004);
   addAnchoredDoorPullHandle(BAY_REAL_ESTATE_X + 1.80, 1.56, 2.44);
-  addGlassPane(arcadeGrp, new THREE.BoxGeometry(1.24, 3.84, 0.022), [BAY_REAL_ESTATE_X + 2.33, 2.11, 2.44], [0, 0, 0], {
+  addGlassPane(arcadeGrp, new THREE.BoxGeometry(1.22, 3.84, 0.022), [BAY_REAL_ESTATE_X + 2.33, 2.11, 2.435], [0, 0, 0], {
     id: 'arcade-bay2-door-glass',
     kind: 'storefront',
     col: 3,
@@ -1220,38 +1220,38 @@ export function buildPlazaCommercialArcade3D(
   partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(4.44, 0.72, 0.10, 0.016), COL_BRONZE_FRAME, [BAY_SCOOTER_X, 4.81, 2.52], [0, 0, 0], 0.007);
   partHelper.addPart(arcadeGrp, makeRoundedArcadeBox(4.26, 0.60, 0.04, 0.008), '#ffffff', [BAY_SCOOTER_X, 4.81, 2.56], [0, 0, 0], 0, getUrbanScooterFasciaSignTexture(), 0.2, false);
 
-  // Stucco header above Bay 3 storefront (`y = 4.06 .. 4.38`, reaching outer pilaster cleanly)
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(6.58, 0.34, 0.22), COL_STUCCO, [BAY_SCOOTER_X + 0.17, 4.22, 2.39], [0, 0, 0], 0.007, stuccoTex, 2.0);
+  // Stucco header above Bay 3 storefront (`y = 4.12 .. 4.36`, recessed behind bronze head lintel & sandstone stringcourse)
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(6.18, 0.24, 0.18), COL_STUCCO, [BAY_SCOOTER_X + 0.08, 4.24, 2.36], [0, 0, 0], 0.007, stuccoTex, 2.0);
   // Waist-height lower stucco knee walls + sandstone base plinths + dado panels + moulded sills (trimmed cleanly clear of pilasters)
   partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(1.00, 0.22, 0.28), COL_SANDSTONE_DARK, [BAY_SCOOTER_X - 2.49, 0.15, 2.42], [0, 0, 0], 0.006, opts.textures.concreteTex);
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(1.00, 0.64, 0.22), COL_STUCCO, [BAY_SCOOTER_X - 2.49, 0.56, 2.39], [0, 0, 0], 0.008, stuccoTex, 2.0);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.98, 0.58, 0.18), COL_STUCCO, [BAY_SCOOTER_X - 2.49, 0.55, 2.36], [0, 0, 0], 0.008, stuccoTex, 2.0);
   partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.76, 0.40, 0.06), COL_SANDSTONE, [BAY_SCOOTER_X - 2.49, 0.56, 2.50], [0, 0, 0], 0.005, opts.textures.concreteTex);
   partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(1.02, 0.12, 0.30), COL_SANDSTONE, [BAY_SCOOTER_X - 2.49, WINDOW_SILL_TOP_Y - 0.06, 2.45], [0, 0, 0], 0.007, opts.textures.concreteTex);
 
   partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(2.94, 0.22, 0.28), COL_SANDSTONE_DARK, [BAY_SCOOTER_X + 1.66, 0.15, 2.42], [0, 0, 0], 0.006, opts.textures.concreteTex);
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(2.94, 0.64, 0.22), COL_STUCCO, [BAY_SCOOTER_X + 1.66, 0.56, 2.39], [0, 0, 0], 0.008, stuccoTex, 2.0);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(2.92, 0.58, 0.18), COL_STUCCO, [BAY_SCOOTER_X + 1.66, 0.55, 2.36], [0, 0, 0], 0.008, stuccoTex, 2.0);
   for (const sdx of [0.85, 2.28]) {
     partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(1.12, 0.40, 0.06), COL_SANDSTONE, [BAY_SCOOTER_X + sdx, 0.56, 2.50], [0, 0, 0], 0.005, opts.textures.concreteTex);
   }
   partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(2.96, 0.12, 0.30), COL_SANDSTONE, [BAY_SCOOTER_X + 1.66, WINDOW_SILL_TOP_Y - 0.06, 2.45], [0, 0, 0], 0.007, opts.textures.concreteTex);
 
-  // Center double door jambs go floor-to-head; showcase window mullions span `y = 0.96 .. 4.08` above sills
+  // Center double door jambs go floor-to-head; showcase window mullions span `y = 0.96 .. 4.04` above sills
   for (const mx of [-1.94, -0.90, 0.14]) {
-    partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.085, 3.98, 0.12), COL_BRONZE_FRAME, [BAY_SCOOTER_X + mx, 2.11, 2.44], [0, 0, 0], 0.006);
+    partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.085, 3.90, 0.11), COL_BRONZE_FRAME, [BAY_SCOOTER_X + mx, 2.09, 2.435], [0, 0, 0], 0.006);
   }
   for (const mx of [-2.97, 1.56, 3.12]) {
-    partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.085, 3.16, 0.12), COL_BRONZE_FRAME, [BAY_SCOOTER_X + mx, 2.52, 2.44], [0, 0, 0], 0.006);
+    partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(0.085, 3.08, 0.11), COL_BRONZE_FRAME, [BAY_SCOOTER_X + mx, 2.50, 2.435], [0, 0, 0], 0.006);
   }
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(6.14, 0.085, 0.12), COL_BRONZE_FRAME, [BAY_SCOOTER_X + 0.08, STOREFRONT_TOP_Y, 2.44], [0, 0, 0], 0.005);
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(6.14, 0.075, 0.12), COL_BRONZE_FRAME, [BAY_SCOOTER_X + 0.08, 3.42, 2.44], [0, 0, 0], 0.005);
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(2.08, 0.08, 0.12), COL_BRONZE_FRAME, [BAY_SCOOTER_X - 0.90, DOOR_TOP_Y, 2.44], [0, 0, 0], 0.005);
-  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(2.08, 0.08, 0.12), COL_BRONZE_FRAME, [BAY_SCOOTER_X - 0.90, 0.17, 2.44], [0, 0, 0], 0.005);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(6.16, 0.085, 0.13), COL_BRONZE_FRAME, [BAY_SCOOTER_X + 0.08, STOREFRONT_TOP_Y, 2.44], [0, 0, 0], 0.005);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(6.16, 0.075, 0.13), COL_BRONZE_FRAME, [BAY_SCOOTER_X + 0.08, 3.42, 2.44], [0, 0, 0], 0.005);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(2.00, 0.08, 0.125), COL_BRONZE_FRAME, [BAY_SCOOTER_X - 0.90, DOOR_TOP_Y, 2.44], [0, 0, 0], 0.005);
+  partHelper.addPart(arcadeGrp, new THREE.BoxGeometry(2.00, 0.08, 0.125), COL_BRONZE_FRAME, [BAY_SCOOTER_X - 0.90, 0.18, 2.44], [0, 0, 0], 0.005);
   // Twin anchored vertical U-pull handles on the tall double doors
   for (const handleX of [-1.03, -0.77]) {
     addAnchoredDoorPullHandle(BAY_SCOOTER_X + handleX, 1.56, 2.44);
   }
   // Separate clean panes so door glass reaches threshold while window glass ends cleanly at y = 0.96
-  addGlassPane(arcadeGrp, new THREE.BoxGeometry(1.06, 3.04, 0.022), [BAY_SCOOTER_X - 2.48, 2.52, 2.435], [0, 0, 0], {
+  addGlassPane(arcadeGrp, new THREE.BoxGeometry(1.06, 3.04, 0.022), [BAY_SCOOTER_X - 2.48, 2.50, 2.435], [0, 0, 0], {
     id: 'arcade-bay3-left-glass',
     kind: 'storefront',
     col: 4,
@@ -1261,7 +1261,7 @@ export function buildPlazaCommercialArcade3D(
     kind: 'storefront',
     col: 5,
   });
-  addGlassPane(arcadeGrp, new THREE.BoxGeometry(2.96, 3.04, 0.022), [BAY_SCOOTER_X + 1.66, 2.52, 2.435], [0, 0, 0], {
+  addGlassPane(arcadeGrp, new THREE.BoxGeometry(2.96, 3.04, 0.022), [BAY_SCOOTER_X + 1.66, 2.50, 2.435], [0, 0, 0], {
     id: 'arcade-bay3-right-glass',
     kind: 'storefront',
     col: 6,
@@ -1779,8 +1779,8 @@ export function buildPlazaCommercialArcade3D(
   ];
   for (const [fx, fw, fh, fTex] of bay2Prints) {
     partHelper.addPart(bay2Int, makeMiteredPictureFrameGeo(fw + 0.12, fh + 0.12, 0.06, 0.045), COL_BRONZE_FRAME, [fx, 2.52, -2.24], [0, 0, 0], 0.006);
-    partHelper.addPart(bay2Int, new THREE.BoxGeometry(fw + 0.02, fh + 0.02, 0.02), '#e5e0d5', [fx, 2.52, -2.25], [0, 0, 0], 0, undefined, 0.2, false);
-    partHelper.addPart(bay2Int, new THREE.PlaneGeometry(fw, fh), '#ffffff', [fx, 2.52, -2.238], [0, 0, 0], 0, fTex, 0.2, false);
+    partHelper.addPart(bay2Int, new THREE.BoxGeometry(fw + 0.02, fh + 0.02, 0.02), '#e5e0d5', [fx, 2.52, -2.256], [0, 0, 0], 0, undefined, 0.2, false);
+    partHelper.addPart(bay2Int, new THREE.PlaneGeometry(fw, fh), '#ffffff', [fx, 2.52, -2.226], [0, 0, 0], 0, fTex, 0.2, false);
   }
   partHelper.addPart(bay2Int, new THREE.CylinderGeometry(0.26, 0.20, 0.50, 12), '#d8cfbe', [2.52, 0.25, -1.78], [0, 0, 0], 0.006);
   partHelper.addPart(bay2Int, new THREE.SphereGeometry(0.42, 10, 8), '#4c8e52', [2.52, 0.92, -1.78], [0, 0, 0], 0.007, undefined, 1.0, false);
@@ -1793,8 +1793,8 @@ export function buildPlazaCommercialArcade3D(
 
   // Backlit E-Mobility Feature Mural on Rear Wall seated flush inside mitered frame (`lz = -2.22`)
   partHelper.addPart(bay3Int, makeMiteredPictureFrameGeo(2.30, 1.28, 0.08, 0.05), '#111827', [-0.90, 2.44, -2.22], [0, 0, 0], 0.006);
-  partHelper.addPart(bay3Int, new THREE.BoxGeometry(2.16, 1.14, 0.024), '#1e293b', [-0.90, 2.44, -2.23], [0, 0, 0], 0, undefined, 0.2, false);
-  partHelper.addPart(bay3Int, new THREE.PlaneGeometry(2.14, 1.12), '#ffffff', [-0.90, 2.44, -2.216], [0, 0, 0], 0, getShowroomBackwallGraphicTexture(), 0.2, false);
+  partHelper.addPart(bay3Int, new THREE.BoxGeometry(2.16, 1.14, 0.024), '#1e293b', [-0.90, 2.44, -2.238], [0, 0, 0], 0, undefined, 0.2, false);
+  partHelper.addPart(bay3Int, new THREE.PlaneGeometry(2.14, 1.12), '#ffffff', [-0.90, 2.44, -2.206], [0, 0, 0], 0, getShowroomBackwallGraphicTexture(), 0.2, false);
 
   // Reception & Tech Counter (`lx = -0.25, lz = -0.75`)
   const counterGrp = new THREE.Group();

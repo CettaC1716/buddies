@@ -3012,14 +3012,14 @@ export function createElectricScooterBike3D(
   frontWheelGroup.position.set(0, forkDy, forkDx);
   steeringGroup.add(frontWheelGroup);
 
-  // 6b) Satin Dark Charcoal Handlebar Nacelle (`70cm` span w/ mirrors) + Smoked Glossy Windscreen Visor + Digital Cockpit
+  // 6b) Compact Center Handlebar Nacelle (`±13.5cm` leaving open straight bars) + Smoked Windscreen Visor + Digital Cockpit
   const handlebarNacelleGeo = createLoftedXShellGeo(
     [
-      { x: -0.194, y: 0.128, z: -0.036, ry: 0.025, rzFront: 0.028, rzBack: 0.026, rollRad: 0.18, power: 2.6 },
-      { x: -0.130, y: 0.126, z: -0.022, ry: 0.036, rzFront: 0.044, rzBack: 0.042, rollRad: 0.24, power: 3.0 },
+      { x: -0.135, y: 0.132, z: -0.056, ry: 0.022, rzFront: 0.024, rzBack: 0.024, rollRad: 0.14, power: 2.6 },
+      { x: -0.095, y: 0.128, z: -0.036, ry: 0.034, rzFront: 0.042, rzBack: 0.040, rollRad: 0.24, power: 3.0 },
       { x: 0.0, y: 0.118, z: -0.010, ry: 0.048, rzFront: 0.062, rzBack: 0.064, rollRad: 0.30, power: 3.1 },
-      { x: 0.130, y: 0.126, z: -0.022, ry: 0.036, rzFront: 0.044, rzBack: 0.042, rollRad: 0.24, power: 3.0 },
-      { x: 0.194, y: 0.128, z: -0.036, ry: 0.025, rzFront: 0.028, rzBack: 0.026, rollRad: 0.18, power: 2.6 },
+      { x: 0.095, y: 0.128, z: -0.036, ry: 0.034, rzFront: 0.042, rzBack: 0.040, rollRad: 0.24, power: 3.0 },
+      { x: 0.135, y: 0.132, z: -0.056, ry: 0.022, rzFront: 0.024, rzBack: 0.024, rollRad: 0.14, power: 2.6 },
     ],
     26,
     4,
@@ -3087,67 +3087,112 @@ export function createElectricScooterBike3D(
     getElectricCockpitLcdTexture(),
   );
 
-  // Swept Handlebars, Switchgear Pods, Contoured Grips (`±0.262, 0.132, -0.06`), Ball-End Brake Levers & Teardrop Mirrors
-  const bikeGripGeo = createContouredErgonomicGripGeo(0.116, 0.0175);
+  // Straight Exposed Handlebar Arms, Slim Cylindrical Perches/Switch Collars & Push-Scooter-Matched Contoured Grips (`±0.262, 0.132, -0.060`)
+  const bikeGripGeo = createContouredErgonomicGripGeo(0.128, 0.018);
   for (const side of [-1, 1]) {
+    // Rubber nacelle exit cuff bridging seamlessly onto exposed straight bar
     helper.addPart(
       steeringGroup,
-      new THREE.CylinderGeometry(0.013, 0.014, 0.16, 16),
-      '#58606d',
-      [side * 0.175, 0.132, -0.036],
-      [0, -side * 0.18, Math.PI / 2],
-      0.002,
-      undefined,
-      1.0,
-      false,
-      FINISH_SATIN_METAL,
-    );
-    helper.addPart(
-      steeringGroup,
-      createRoundedRectExtrudeGeo(0.042, 0.044, 0.038, 0.014, 0.005, 3),
+      new THREE.CylinderGeometry(0.017, 0.020, 0.016, 18),
       SCOOTER_DEEP_CHARCOAL_HEX,
-      [side * 0.194, 0.114, -0.048],
-      [0, -side * 0.18, 0],
-      0.002,
+      [side * 0.134, 0.132, -0.059],
+      [0, 0, Math.PI / 2],
+      0,
       undefined,
       1.0,
       false,
       FINISH_MATTE_TRIM,
     );
+    // Straight horizontal brushed-alloy bar (`r = 0.0135`, zero sweep matching push scooter T-bar)
     helper.addPart(
       steeringGroup,
-      bikeGripGeo,
-      '#ffffff',
-      [side * 0.262, 0.132, -0.060],
-      [0, side > 0 ? -0.18 : Math.PI + 0.18, 0],
+      new THREE.CylinderGeometry(0.0135, 0.0135, 0.208, 20),
+      '#687280',
+      [side * 0.222, 0.132, -0.060],
+      [0, 0, Math.PI / 2],
       0.0025,
-      getErgonomicGripTexture(),
+      undefined,
+      1.0,
+      true,
+      FINISH_SATIN_METAL,
+    );
+    // Compact slim cylindrical switchgear & mirror-mount collar cleanly inboard of hand
+    helper.addPart(
+      steeringGroup,
+      new THREE.CylinderGeometry(0.0175, 0.0175, 0.024, 18),
+      SCOOTER_DEEP_CHARCOAL_HEX,
+      [side * 0.160, 0.132, -0.060],
+      [0, 0, Math.PI / 2],
+      0,
+      undefined,
       1.0,
       false,
-      FINISH_RUBBER_TIRE,
+      FINISH_DARK_ALLOY,
+    );
+    // Compact slim brake-lever clamp perch + silver inner collar ring
+    helper.addPart(
+      steeringGroup,
+      new THREE.CylinderGeometry(0.017, 0.017, 0.018, 16),
+      SCOOTER_DEEP_CHARCOAL_HEX,
+      [side * 0.181, 0.132, -0.060],
+      [0, 0, Math.PI / 2],
+      0,
+      undefined,
+      1.0,
+      false,
+      FINISH_DARK_ALLOY,
     );
     helper.addPart(
       steeringGroup,
-      new THREE.CylinderGeometry(0.0185, 0.0165, 0.014, 18),
-      '#8b95a3',
-      [side * 0.322, 0.132, -0.071],
-      [0, -side * 0.18, Math.PI / 2],
-      0.002,
+      new THREE.CylinderGeometry(0.0165, 0.0165, 0.010, 18),
+      SCOOTER_SILVER_TRIM_HEX,
+      [side * 0.196, 0.132, -0.060],
+      [0, 0, Math.PI / 2],
+      0,
       undefined,
       1.0,
       false,
       FINISH_SATIN_METAL,
     );
+    // Smooth Contoured Ergonomic Rubber Grip (identical 0.128m x 0.018m profile & zero-sweep alignment as push scooter)
+    helper.addPart(
+      steeringGroup,
+      bikeGripGeo,
+      '#ffffff',
+      [side * 0.262, 0.132, -0.060],
+      [0, 0, side < 0 ? Math.PI : 0],
+      0.002,
+      getErgonomicGripTexture(),
+      1.0,
+      false,
+      FINISH_RUBBER_TIRE,
+    );
+    // Machined Dark Alloy Bar-End Plug matching push scooter
+    const bikeEndPlug = new THREE.SphereGeometry(0.019, 16, 12);
+    bikeEndPlug.scale(0.55, 1.0, 1.0);
+    helper.addPart(
+      steeringGroup,
+      bikeEndPlug,
+      '#1b2028',
+      [side * 0.326, 0.132, -0.060],
+      [0, 0, 0],
+      0,
+      undefined,
+      1.0,
+      false,
+      FINISH_DARK_ALLOY,
+    );
 
-    // Sculpted Ball-End Cast-Alloy Brake Lever
+    // Slim Swept Cast-Alloy Brake Lever sitting cleanly ahead (+Z) of curled fingers
     const leverCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(side * 0.204, 0.128, -0.030),
-      new THREE.Vector3(side * 0.255, 0.124, -0.012),
-      new THREE.Vector3(side * 0.308, 0.118, -0.022),
+      new THREE.Vector3(side * 0.181, 0.129, -0.048),
+      new THREE.Vector3(side * 0.208, 0.125, -0.028),
+      new THREE.Vector3(side * 0.246, 0.122, -0.022),
+      new THREE.Vector3(side * 0.284, 0.121, -0.028),
     ]);
     helper.addPart(
       steeringGroup,
-      createTubeSweepWithCapsGeo(leverCurve, 14, 0.006, 0.0042, 10, true),
+      createTubeSweepWithCapsGeo(leverCurve, 18, 0.0046, 0.0066, 12, true),
       '#adb5c2',
       [0, 0, 0],
       [0, 0, 0],
@@ -3159,9 +3204,9 @@ export function createElectricScooterBike3D(
     );
     helper.addPart(
       steeringGroup,
-      new THREE.SphereGeometry(0.0075, 12, 10),
+      new THREE.SphereGeometry(0.0072, 12, 10),
       '#adb5c2',
-      [side * 0.310, 0.118, -0.023],
+      [side * 0.285, 0.121, -0.028],
       [0, 0, 0],
       0,
       undefined,
@@ -3173,10 +3218,10 @@ export function createElectricScooterBike3D(
     // Rubber Mirror Stalk Boot + Swept Stalk + Sculpted Lofted Teardrop Wing Mirror (`70cm` total span)
     helper.addPart(
       steeringGroup,
-      new THREE.CylinderGeometry(0.011, 0.013, 0.024, 14),
+      new THREE.CylinderGeometry(0.010, 0.012, 0.022, 14),
       '#242830',
-      [side * 0.184, 0.156, -0.038],
-      [0, 0, -side * 0.35],
+      [side * 0.160, 0.150, -0.058],
+      [0, 0, -side * 0.36],
       0,
       undefined,
       1.0,
@@ -3184,9 +3229,9 @@ export function createElectricScooterBike3D(
       FINISH_RUBBER_TIRE,
     );
     const stalkCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(side * 0.185, 0.160, -0.038),
-      new THREE.Vector3(side * 0.255, 0.255, -0.044),
-      new THREE.Vector3(side * 0.308, 0.305, -0.050),
+      new THREE.Vector3(side * 0.162, 0.156, -0.058),
+      new THREE.Vector3(side * 0.246, 0.254, -0.055),
+      new THREE.Vector3(side * 0.308, 0.305, -0.052),
     ]);
     helper.addPart(
       steeringGroup,

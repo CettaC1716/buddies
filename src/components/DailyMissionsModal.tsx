@@ -343,7 +343,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[700px] rounded-[32px] bg-[#141926]/68 backdrop-blur-2xl border border-white/25 shadow-[0_24px_70px_rgba(0,0,0,0.52)] p-4 sm:p-5 text-white overflow-hidden"
+        className="w-full max-w-[700px] rounded-[32px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] p-4 sm:p-5 text-white overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Dark Glassmorphic Header (matching City Feed) */}

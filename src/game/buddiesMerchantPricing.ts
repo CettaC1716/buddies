@@ -1536,7 +1536,7 @@ export function generateNpcMerchantReply(
       q,
     )
   ) {
-    return `Buddies Blitz is a 3D open-city social economy and tactical arena game on NEAR. Explore Central Plaza and coastal districts, talk and haggle with AI merchants Hana and Kai, catch and mint Fish NFTs, own a customizable 3D Private House, or join 4v4 Warzone Arena matches.${guestNotice}`;
+    return `Cerria is a 3D open-city social economy and tactical arena game on NEAR. Explore Central Plaza and coastal districts, talk and haggle with AI merchants Hana and Kai, catch and mint Fish NFTs, own a customizable 3D Private House, or join 4v4 Warzone Arena matches.${guestNotice}`;
   }
 
   // 15. General How to Play / Activities / Beginner Guide
@@ -1545,7 +1545,7 @@ export function generateNpcMerchantReply(
       q,
     )
   ) {
-    return `In Buddies Blitz, you can claim a starter pack (0.30 NEAR + 100 LUL + 20 CYON) from Hana, fish at Beachfront Harbor or NW Fishing Lake and haggle or mint Fish NFTs with Kai, work barista shifts at Glasshouse Cafe, buy and decorate a 3D Private House, or enter 4v4 Warzone Arena matches via any Transit Kiosk.${guestNotice}`;
+    return `In Cerria, you can claim a starter pack (0.30 NEAR + 100 LUL + 20 CYON) from Hana, fish at Beachfront Harbor or NW Fishing Lake and haggle or mint Fish NFTs with Kai, work barista shifts at Glasshouse Cafe, buy and decorate a 3D Private House, or enter 4v4 Warzone Arena matches via any Transit Kiosk.${guestNotice}`;
   }
 
   // 16. Where am I / Who are you / City Overview
@@ -1554,7 +1554,7 @@ export function generateNpcMerchantReply(
       q,
     )
   ) {
-    return `You are at ${locName} in Buddies Blitz, and I am ${npcName}. From here you can explore the peaceful city, fish at Beachfront Harbor or NW Fishing Lake, decorate a Private House, or ride the tram into the Warzone Arena.${guestNotice}`;
+    return `You are at ${locName} in Cerria, and I am ${npcName}. From here you can explore the peaceful city, fish at Beachfront Harbor or NW Fishing Lake, decorate a Private House, or ride the tram into the Warzone Arena.${guestNotice}`;
   }
 
   // 16b. Casual small-talk & open invitation when Gemini is offline
@@ -1563,7 +1563,7 @@ export function generateNpcMerchantReply(
       q,
     )
   ) {
-    return `Doing great here at ${locName}, Buddy! I am ${npcName}—feel free to ask me anything about Buddies Blitz or chat anytime.`;
+    return `Doing great here at ${locName}, Buddy! I am ${npcName}—feel free to ask me anything about Cerria or chat anytime.`;
   }
 
   // 16. Greetings
@@ -2491,16 +2491,45 @@ export function parseNpcChatTransactionIntent(
 }
 
 /**
- * Generates an immediate English confirmation line for detected in-chat
+ * Detects whether a player chat message is discussing houses, property, or
+ * buying/viewing a home so Hana can embed her "Your First Home" offer template
+ * directly inside her reply bubble.
+ */
+export function isHanaHousingTopicQuery(rawText: string): boolean {
+  const q = rawText.trim().toLowerCase();
+  if (!q) return false;
+  return /\b(rumah|perumahan|properti|property|properties|home|homes|house|houses|housing|deed|sertifikat|model house|tempat tinggal|kavling|residence|residential|plaza manor|japanese pavilion|villa|hunian|katalog rumah|beli rumah|buy house|first home|estate)\b/.test(
+    q,
+  );
+}
+
+/**
+ * Lightweight language check for Hana's in-bubble housing offer template.
+ */
+export function detectHousingPromptLang(rawText: string): 'id' | 'en' {
+  const q = rawText.trim().toLowerCase();
+  if (
+    /\b(rumah|perumahan|properti|sertifikat|tempat tinggal|kavling|hunian|katalog|beli|mau|ingin|pengen|lihat|gimana|bagaimana|soal|tentang|berapa|harga|cara|aku|saya|kamu|punya|ada|dong|nih|bisa)\b/.test(
+      q,
+    )
+  ) {
+    return 'id';
+  }
+  return 'en';
+}
+
+/**
+ * Generates an immediate confirmation line for detected in-chat
  * transaction cards when live AI is offline or omitted an action reply.
  */
 export function buildOfflineChatTransactionAck(
   intent: NpcChatTransactionIntent,
-  _userMessage: string,
-  _location: MerchantLocationId,
+  userMessage: string,
+  location: MerchantLocationId,
   state: MerchantAgentMarketState,
 ): string {
   const quote = evaluateLulToCyonExchangeQuote(state);
+  const isId = detectHousingPromptLang(userMessage) === 'id';
 
   switch (intent.kind) {
     case 'exchange_lul_cyon':
@@ -2508,6 +2537,11 @@ export function buildOfflineChatTransactionAck(
     case 'swap_near_respite':
       return `Got it! The rate is 1 NEAR = 400 RESPITE (0.25 NEAR = 100 RESPITE). Use the quick swap card right below to confirm cleanly.`;
     case 'buy_house':
+      if (location === 'lobby_cafe') {
+        return isId
+          ? `Tentu! Rumah pribadi di kota ini seharga 100 RESPITE. Kamu bisa pilih Model House untuk melihat contohnya dulu atau buka View Catalog langsung dari penawaran di bawah ini.`
+          : `I pulled up your Private House options (100 RESPITE) right here in my reply. You can tour the Model House first or open the Catalog below.`;
+      }
       return `I pulled up the Private House offer (100 RESPITE) right below in chat. You can preview the Model House or buy straight from the card.`;
     case 'buy_catalog_item': {
       const item = MERCHANT_CATALOG_ITEMS.find((it) => it.id === intent.itemId);
@@ -2518,6 +2552,11 @@ export function buildOfflineChatTransactionAck(
       return `I opened the catalog quick card right below in chat—check the details and buy when ready.`;
     }
     case 'browse_catalog':
+      if (location === 'lobby_cafe' && intent.scope === 'house') {
+        return isId
+          ? `Ini pilihan properti yang tersedia! Kamu bisa cek Model House dulu secara gratis atau tekan View Catalog di bawah ini.`
+          : `Here are the property options! You can tour the Model House for free first or tap View Catalog below.`;
+      }
       return `Opening the Quick Shop modal right inside this chat so you can pick and check out without leaving the conversation.`;
     case 'invest_shop':
       return `You can support the shop reserve with 300 LUL for a +45 CYON bonus and a 15% catalog discount. Confirm on the card below.`;

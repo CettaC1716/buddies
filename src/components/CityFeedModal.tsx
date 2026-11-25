@@ -13,6 +13,11 @@ import {
 } from 'lucide-react';
 import { soundEngine } from '../game/audio';
 import {
+  resolveNpcCitizenIdFromEntity,
+  resolveNpcPhotoUrl,
+  useNpcPortraitVersion,
+} from '../game/npcPortraitRegistry';
+import {
   commentCityFeedPost,
   deleteCityFeedPost,
   fetchCityFeedPosts,
@@ -80,6 +85,10 @@ function resolveAuthorPhoto(
   authorName: string,
 ): string {
   if (avatarUrl) return avatarUrl;
+  const npcCid = resolveNpcCitizenIdFromEntity({ name: authorName, isNpc: true });
+  if (npcCid) {
+    return resolveNpcPhotoUrl(npcCid, 'avatar');
+  }
   const lower = authorName.toLowerCase();
   if (gender === 'female' || lower.includes('nadia') || lower.includes('hana')) {
     return '/assets/avatar_nadia.jpg';
@@ -102,6 +111,7 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
   onOpenPlayerProfile,
   onStartWhisper,
 }) => {
+  useNpcPortraitVersion();
   const cleanSelfName = simplifyDisplayName(playerName) || 'Buddy';
   const selfActorId = useMemo(
     () => (playerUid && playerUid.trim()) || `local-${cleanSelfName.toLowerCase()}`,
@@ -383,7 +393,7 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
       className={
         embeddedInPhone
           ? 'relative w-full h-full bg-transparent p-3 text-white flex flex-col overflow-hidden'
-          : 'relative rounded-[32px] bg-[#141926]/68 backdrop-blur-2xl border border-white/25 shadow-[0_24px_70px_rgba(0,0,0,0.52)] p-4 text-white flex flex-col max-h-full overflow-hidden'
+          : 'relative rounded-[32px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] p-4 text-white flex flex-col max-h-full overflow-hidden'
       }
     >
       <input

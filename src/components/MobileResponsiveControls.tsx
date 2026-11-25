@@ -66,9 +66,36 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
   // Virtual Joystick State
   const joystickBaseRef = useRef<HTMLDivElement | null>(null);
   const activePointerIdRef = useRef<number | null>(null);
+  const openCornerPopoversRef = useRef<Set<string>>(new Set());
+  const [isCornerPopoverOpen, setIsCornerPopoverOpen] = useState<boolean>(() => {
+    if (typeof document === 'undefined') return false;
+    return Boolean(
+      document.querySelector('[data-hud-weather-popover="true"], [data-hud-audio-mixer="true"]'),
+    );
+  });
   const [knobOffset, setKnobOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isJoystickActive, setIsJoystickActive] = useState(false);
   const [isSprinting, setIsSprinting] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onCornerPopoverState = (e: Event) => {
+      const detail = (e as CustomEvent<{ id?: string; isOpen?: boolean }>).detail;
+      if (!detail || !detail.id) return;
+      if (detail.isOpen) {
+        openCornerPopoversRef.current.add(detail.id);
+      } else {
+        openCornerPopoversRef.current.delete(detail.id);
+      }
+      setIsCornerPopoverOpen(openCornerPopoversRef.current.size > 0);
+    };
+    window.addEventListener('hud-corner-popover-state', onCornerPopoverState);
+    return () => {
+      window.removeEventListener('hud-corner-popover-state', onCornerPopoverState);
+    };
+  }, []);
+
+  const effectiveModalBlocking = isModalBlocking || isCornerPopoverOpen;
 
   const emitJoystickVector = useCallback((normX: number, normFwd: number, sprint: boolean) => {
     if (typeof window === 'undefined') return;
@@ -91,12 +118,12 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
     emitJoystickVector(0, 0, false);
   }, [emitJoystickVector]);
 
-  // Reset joystick whenever gameplay pauses or a blocking modal opens
+  // Reset joystick whenever gameplay pauses or a blocking modal / bottom menu popover opens
   useEffect(() => {
-    if (!isGameplayActive || isModalBlocking) {
+    if (!isGameplayActive || effectiveModalBlocking) {
       resetJoystick();
     }
-  }, [isGameplayActive, isModalBlocking, resetJoystick]);
+  }, [isGameplayActive, effectiveModalBlocking, resetJoystick]);
 
   const updateJoystickFromClientPoint = useCallback(
     (clientX: number, clientY: number) => {
@@ -170,12 +197,12 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
 
   const showMobileJoystick =
     isGameplayActive &&
-    !isModalBlocking &&
+    !effectiveModalBlocking &&
     (adaptive.showTouchControls || Boolean(forceShowJoystick));
 
   // Render touch controls during active gameplay whenever the joystick pad or shoreline fishing Cast button is active.
   const showControlsLayer =
-    isGameplayActive && !isModalBlocking && (showMobileJoystick || canFish);
+    isGameplayActive && !effectiveModalBlocking && (showMobileJoystick || canFish);
 
   const isCompactLandscape = adaptive.isCompactHeight;
   const isPhonePortrait = adaptive.isPhonePortrait;
@@ -318,7 +345,7 @@ export const MobileResponsiveControls: React.FC<MobileResponsiveControlsProps> =
                     soundEngine.playUiClick();
                     onTriggerBuddyAction(primaryContextualAction.actionEvent);
                   }}
-                  className="px-3.5 py-1.5 rounded-full bg-[#0d1118]/78 hover:bg-[#171e2b]/90 backdrop-blur-sm active:scale-95 text-white border border-white/25 shadow-[0_8px_24px_rgba(0,0,0,0.45)] font-semibold text-[11px] tracking-wide cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-full bg-[#111622]/86 hover:bg-[#192133]/92 active:scale-95 text-white border border-white/22 shadow-[0_8px_24px_rgba(0,0,0,0.45)] font-semibold text-[11px] tracking-wide cursor-pointer"
                 >
                   <span>{primaryContextualAction.label}</span>
                 </button>

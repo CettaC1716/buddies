@@ -276,7 +276,7 @@ test('weather runtime smoothly ramps rain/fog/wind transitions and dries wetness
   assert.ok(runtime.wetness01 > 0.7, `wetness should dry gradually, got ${runtime.wetness01}`);
 });
 
-test('buildDynamicWeatherSystem3D maintains <= 3 instanced meshes, 0 PointLights, indoor suppression, and auto-cycle sync', () => {
+test('buildDynamicWeatherSystem3D maintains <= 3 GPU weather draw calls (Points rain + 2 InstancedMeshes), 0 PointLights, indoor suppression, and auto-cycle sync', () => {
   resetGlobalWeatherConfig();
   const rig = makeMockSkyAndLighting();
   const weather = buildDynamicWeatherSystem3D({
@@ -286,18 +286,27 @@ test('buildDynamicWeatherSystem3D maintains <= 3 instanced meshes, 0 PointLights
   });
 
   try {
-    // 1. Verify exact GPU-instanced draw-call & PointLight hygiene
+    // 1. Verify exact GPU-driven draw-call & PointLight hygiene (1 THREE.Points rain + 2 InstancedMeshes)
     let instancedMeshCount = 0;
+    let pointsCount = 0;
     let pointLightCount = 0;
     weather.rootGroup.traverse((node) => {
       if ((node as THREE.InstancedMesh).isInstancedMesh) {
         instancedMeshCount++;
       }
+      if ((node as THREE.Points).isPoints) {
+        pointsCount++;
+      }
       if ((node as THREE.PointLight).isPointLight) {
         pointLightCount++;
       }
     });
-    assert.ok(instancedMeshCount <= 3 && instancedMeshCount === 3);
+    assert.equal(pointsCount, 1);
+    assert.equal(instancedMeshCount, 2);
+    assert.equal(pointsCount + instancedMeshCount, 3);
+    assert.ok(weather.rainMesh instanceof THREE.Points);
+    assert.equal(weather.rainMesh.frustumCulled, false);
+    assert.equal((weather.rainMesh.material as THREE.ShaderMaterial).depthWrite, false);
     assert.equal(pointLightCount, 0);
 
     // Clear daytime preserves Linear THREE.Fog baseline -> 0 active weather draw calls

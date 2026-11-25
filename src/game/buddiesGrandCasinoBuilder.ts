@@ -2005,10 +2005,10 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
       addScaledBox(
         staticGroup,
         2.5,
-        0.08,
+        0.06,
         2.1,
         COL_LIMESTONE_WARM,
-        [pcCenterX + cxOff, 5.42, cz + czOff],
+        [pcCenterX + cxOff, 5.41, cz + czOff],
         [0, 0, 0],
         0.006,
         false,
@@ -2016,10 +2016,10 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
       addScaledBox(
         staticGroup,
         1.9,
-        0.05,
+        0.04,
         1.5,
         COL_GOLD_BRIGHT,
-        [pcCenterX + cxOff, 5.39, cz + czOff],
+        [pcCenterX + cxOff, 5.36, cz + czOff],
         [0, 0, 0],
         0,
         false,
@@ -2355,10 +2355,10 @@ export function buildGrandCasino3D(options: BuildGrandCasinoOptions): GrandCasin
     trunkGrp.position.set(-0.02, 0.385, -0.18);
     trunkGrp.rotation.y = 0.06;
     cGrp.add(trunkGrp);
-    addScaledBox(trunkGrp, 0.54, 0.40, 0.68, '#7a4626', [0, 0.20, 0], [0, 0, 0], 0.006);
-    addScaledBox(trunkGrp, 0.56, 0.06, 0.70, '#5e341b', [0, 0.37, 0], [0, 0, 0], 0.005);
-    addScaledBox(trunkGrp, 0.57, 0.42, 0.07, '#c79052', [0, 0.20, -0.20], [0, 0, 0], 0.004, false);
-    addScaledBox(trunkGrp, 0.57, 0.42, 0.07, '#c79052', [0, 0.20, 0.20], [0, 0, 0], 0.004, false);
+    addScaledBox(trunkGrp, 0.54, 0.36, 0.68, '#7a4626', [0, 0.18, 0], [0, 0, 0], 0.006);
+    addScaledBox(trunkGrp, 0.56, 0.06, 0.70, '#5e341b', [0, 0.39, 0], [0, 0, 0], 0.005);
+    addScaledBox(trunkGrp, 0.57, 0.43, 0.07, '#c79052', [0, 0.215, -0.20], [0, 0, 0], 0.004, false);
+    addScaledBox(trunkGrp, 0.57, 0.43, 0.07, '#c79052', [0, 0.215, 0.20], [0, 0, 0], 0.004, false);
     addScaledBox(trunkGrp, 0.06, 0.11, 0.10, COL_GOLD_BRIGHT, [0.28, 0.28, 0], [0, 0, 0], 0, false);
 
     //    (b) Upright Saddle-Tan Hardcase Valise with Brass Latches & Top Handle

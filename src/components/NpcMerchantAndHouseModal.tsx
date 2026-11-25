@@ -44,6 +44,8 @@ import {
   evaluateRoomMoodScores,
   parseNpcChatTransactionIntent,
   buildOfflineChatTransactionAck,
+  isHanaHousingTopicQuery,
+  detectHousingPromptLang,
   type NpcChatTransactionIntent,
 } from '../game/buddiesMerchantPricing';
 import { soundEngine } from '../game/audio';
@@ -51,6 +53,10 @@ import {
   startHanaVoiceChat,
   type HanaVoiceChatSession,
 } from '../game/hanaVoiceChat';
+import {
+  resolveNpcPhotoUrl,
+  useNpcPortraitVersion,
+} from '../game/npcPortraitRegistry';
 import type {
   CityTransitDestinationSpec,
   CityTransitStationId,
@@ -477,7 +483,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const [isNpcThinking, setIsNpcThinking] = useState<boolean>(false);
   const activeNpcRequestIdRef = useRef<number>(0);
   const [chatHistory, setChatHistory] = useState<
-    Array<{ id: string; role: 'player' | 'npc'; text: string }>
+    Array<{
+      id: string;
+      role: 'player' | 'npc';
+      text: string;
+      propertyOffer?: { lang: 'en' | 'id'; dismissed?: boolean } | null;
+    }>
   >([]);
   const chatScrollEndRef = useRef<HTMLDivElement | null>(null);
   // Hana voice chat (Gemini Live test): Hana's chat tab only, never Kai's.
@@ -539,6 +550,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     window.addEventListener('open-npc-merchant-ui', onOpenMerchantResetTab);
     return () => window.removeEventListener('open-npc-merchant-ui', onOpenMerchantResetTab);
   }, []);
+
+  useNpcPortraitVersion();
 
   // Cutaway Interior Studio State
   const [studioDockTab, setStudioDockTab] = useState<'furniture' | 'materials' | 'lighting'>(
@@ -605,7 +618,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       walletConnected &&
       !hanaWelcomeNearClaimed
     ) {
-      return `Welcome to ${locLabel}, ${displayCitizen}! I'm Hana \u2014 the city's property & housing agent and your city guide. I welcome new citizens, handle home purchases, and help with currency exchange. Claim your starter pack below (0.30 NEAR + 100 LUL + 20 CYON) to get started. Ask me anything at all \u2014 about Buddies Blitz or any topic you want!`;
+      return `Welcome to ${locLabel}, ${displayCitizen}! I'm Hana \u2014 the city's property & housing agent and your city guide. I welcome new citizens, handle home purchases, and help with currency exchange. Claim your starter pack below (0.30 NEAR + 100 LUL + 20 CYON) to get started. Ask me anything at all \u2014 about Cerria or any topic you want!`;
     }
     if (!walletConnected && merchantLocation === 'beach_house') {
       return `Ahoy! I'm Kai \u2014 a fisherman and the keeper of this beach. I run the fish market here at ${locLabel}: I buy your catches, sell tackle, and trade Fish NFTs. You are in Guest Mode, but you can still sell me your raw catches for LUL right here in chat \u2014 and ask me anything at all, whether about fishing or anything else!`;
@@ -622,7 +635,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const resetChatToGreeting = () => {
     setNpcFullText(buildInitialNpcGreeting());
     setNpcTypedText('');
-    setPitchViewBoth('full');
+    setActivePropertyOfferBoth(
+      merchantLocation === 'lobby_cafe' && Boolean(hanaPitchOrigin) && !hasHouseOwnership
+        ? { lang: 'en' }
+        : null,
+    );
     setLastPlayerMessage('');
     setChatHistory([]);
     setExchangeQuickMode(null);
@@ -698,16 +715,25 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       ? caughtFishBucket.find((f) => f.id === tradeFishId) ?? null
       : null;
 
-  /* Hana property pitch visibility. The offer card is present in full at
-   * the start of every Hana chat (she is the property agent). When the
-   * conversation topic moves elsewhere the card steps aside entirely,
-   * and when the topic turns back to housing Hana offers it again —
-   * the card follows the conversation, not the other way around. */
-  const [pitchView, setPitchView] = useState<'full' | 'hidden'>('full');
-  const pitchViewRef = useRef<'full' | 'hidden'>('full');
-  const setPitchViewBoth = (v: 'full' | 'hidden') => {
-    pitchViewRef.current = v;
-    setPitchView(v);
+  /* Hana in-bubble property offer template. Only attached to Hana's chat bubble
+   * when the player opens Hana specifically from a property/kiosk pitch or when
+   * the player asks about houses/homes in chat. */
+  const [activePropertyOffer, setActivePropertyOffer] = useState<{ lang: 'en' | 'id' } | null>(
+    null,
+  );
+  const activePropertyOfferRef = useRef<{ lang: 'en' | 'id' } | null>(null);
+  const setActivePropertyOfferBoth = (next: { lang: 'en' | 'id' } | null) => {
+    activePropertyOfferRef.current = next;
+    setActivePropertyOffer(next);
+  };
+  const dismissHistoryPropertyOffer = (entryId: string) => {
+    setChatHistory((prev) =>
+      prev.map((entry) =>
+        entry.id === entryId && entry.propertyOffer
+          ? { ...entry, propertyOffer: { ...entry.propertyOffer, dismissed: true } }
+          : entry,
+      ),
+    );
   };
   const openPitchCatalog = () => {
     soundEngine.playUiClick();
@@ -988,11 +1014,20 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     }
 
     const prevNpcMsg = isNpcThinking ? '' : npcFullText.trim();
+    const prevPropertyOffer = activePropertyOfferRef.current;
     setLastPlayerMessage(text);
     setActiveTab('sesi_chat');
 
     const priorTurns = prevNpcMsg
-      ? [...chatHistory, { id: `npc-${Date.now()}-prev`, role: 'npc' as const, text: prevNpcMsg }]
+      ? [
+          ...chatHistory,
+          {
+            id: `npc-${Date.now()}-prev`,
+            role: 'npc' as const,
+            text: prevNpcMsg,
+            ...(prevPropertyOffer ? { propertyOffer: prevPropertyOffer } : {}),
+          },
+        ]
       : [...chatHistory];
     const nextHistory = [
       ...priorTurns.slice(-14),
@@ -1000,22 +1035,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     ];
     setChatHistory(nextHistory);
 
-    if (merchantLocation === 'lobby_cafe' && !hasHouseOwnership) {
-      const lowered = text.toLowerCase();
-      const propertyTopic =
-        /(rumah|properti|property|home|house|housing|deed|model house|tempat tinggal|pulang)/.test(
-          lowered,
-        );
-      const greetingOnly =
-        /^(ha+lo+|ha+i+|he+i+|hi+|hello+|hey+|pagi|siang|sore|malam|selamat pagi|selamat siang|selamat sore|selamat malam)( hana)?$/.test(
-          lowered.replace(/[!.,\s]+/g, ' ').trim(),
-        );
-      if (propertyTopic) {
-        setPitchViewBoth('full');
-      } else if (!greetingOnly) {
-        setPitchViewBoth('hidden');
-      }
-    }
+    const housingOfferLang = detectHousingPromptLang(text);
+    const shouldOfferHomeInBubble =
+      merchantLocation === 'lobby_cafe' &&
+      !hasHouseOwnership &&
+      isHanaHousingTopicQuery(text);
+    setActivePropertyOfferBoth(shouldOfferHomeInBubble ? { lang: housingOfferLang } : null);
 
     const reqId = activeNpcRequestIdRef.current + 1;
     activeNpcRequestIdRef.current = reqId;
@@ -1180,6 +1205,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       if (!resolved) return null;
       if (resolved.kind === 'browse_catalog') {
         if (merchantLocation === 'lobby_cafe') {
+          if (resolved.scope === 'house' && !hasHouseOwnership) {
+            setActivePropertyOfferBoth({ lang: housingOfferLang });
+            return resolved;
+          }
           onClose();
           const targetTab = resolved.scope === 'house' ? 'house' : 'furniture';
           if (onOpenExternalCatalog) {
@@ -1204,6 +1233,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         setActiveTab('transaksi');
         setExchangeQuickMode('swap_near');
       } else if (resolved.kind === 'buy_house') {
+        if (merchantLocation === 'lobby_cafe' && !hasHouseOwnership) {
+          setActivePropertyOfferBoth({ lang: housingOfferLang });
+          return resolved;
+        }
         setQuickHouseStyleOverride(resolved.style);
         setActiveTab('transaksi');
         setExchangeQuickMode('buy_house');
@@ -1211,7 +1244,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         setActiveTab('transaksi');
         setExchangeQuickMode(merchantLocation === 'beach_house' ? 'fishing_gear' : 'quick_shop');
       } else if (resolved.kind === 'teleport_places') {
-        setPitchViewBoth('hidden');
+        setActivePropertyOfferBoth(null);
         setQuickTeleportFocusId(resolved.focusStationId ?? null);
         setActiveTab('transaksi');
         setExchangeQuickMode('teleport');
@@ -2136,7 +2169,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         <div className="shrink-0 flex items-center justify-between text-[10.5px] font-medium px-4 pt-3 pb-1.5 text-white/90">
           <div className="flex items-center gap-1.5">
             <Wifi className="w-3 h-3 text-white/85" aria-hidden="true" />
-            <span className="tracking-wide font-semibold">BLITZ OS</span>
+            <span className="tracking-wide font-semibold">CERRIA OS</span>
           </div>
           <button
             type="button"
@@ -2157,10 +2190,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         <div className="shrink-0 flex items-center justify-between gap-2.5 px-3.5 py-2 border-b border-white/12">
           <div className="flex items-center gap-2.5 min-w-0">
             <img
-              src={npcShortName === 'HANA' ? '/assets/avatar_nadia.jpg' : '/assets/avatar_hiro.jpg'}
+              src={resolveNpcPhotoUrl(npcShortName === 'HANA' ? 'npc_hana' : 'npc_kai', 'avatar')}
               alt={npcShortName === 'HANA' ? 'Hana' : 'Kai'}
               draggable={false}
-              className="w-8 h-8 rounded-full object-cover object-top ring-1 ring-white/25 shrink-0"
+              className="w-8 h-8 rounded-full object-cover object-center ring-1 ring-white/25 shrink-0"
             />
             <div className="min-w-0">
               <div className="text-xs font-bold text-white leading-tight truncate">
@@ -2261,63 +2294,178 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             <div className="flex-1 flex flex-col justify-between gap-2.5 min-h-0">
               {/* Scrollable Conversation Thread */}
               <div className="flex-1 overflow-y-auto space-y-3 min-h-0">
-                {chatHistory.map((entry) =>
-                  entry.role === 'player' ? (
-                    <div key={entry.id} className="flex flex-col items-end">
-                      <div className="flex items-center gap-1.5 mb-1 px-1.5">
-                        <span className="text-[10px] font-semibold text-white/75">You</span>
-                      </div>
+                {(() => {
+                  const renderInBubblePropertyOffer = (
+                    lang: 'en' | 'id',
+                    onDismiss?: () => void,
+                  ) => {
+                    const isId = lang === 'id';
+                    return (
                       <div
-                        data-player-chat-bubble="true"
-                        className="max-w-[85%] px-3.5 py-2.5 rounded-2xl rounded-tr-sm bg-sky-500 text-white shadow-sm"
+                        data-hana-property-pitch="true"
+                        className="mt-2.5 pt-2.5 border-t border-slate-300/75 space-y-2"
                       >
-                        <p className="text-xs font-medium leading-relaxed">
-                          {entry.text}
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div key={entry.id} className="flex flex-col items-start">
-                      <div className="flex items-center gap-1.5 mb-1 px-1.5">
-                        <span className="text-[10px] font-semibold text-white/75">
-                          {npcShortName === 'HANA' ? 'Hana' : 'Kai'}
-                        </span>
-                      </div>
-                      <div className="max-w-[85%] px-3.5 py-2.5 rounded-2xl rounded-tl-sm bg-[#eef0f4]/92 text-slate-900 border border-white/80 shadow-sm">
-                        <p className="text-xs font-medium leading-relaxed text-slate-900">
-                          {entry.text}
-                        </p>
-                      </div>
-                    </div>
-                  ),
-                )}
-
-                {/* Active NPC Reply Bubble */}
-                <div className="flex flex-col items-start">
-                  <div className="flex items-center gap-1.5 mb-1 px-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                    <span className="text-[10px] font-semibold text-white/75">
-                      {npcShortName === 'HANA' ? 'Hana' : 'Kai'}
-                    </span>
-                  </div>
-                  <div
-                    data-npc-chat-bubble="true"
-                    className="max-w-[85%] px-3.5 py-2.5 rounded-2xl rounded-tl-sm bg-[#eef0f4]/92 text-slate-900 border border-white/80 shadow-sm"
-                  >
-                    <p className="text-xs font-medium leading-relaxed text-slate-900">
-                      {isNpcThinking ? (
-                        <span className="text-slate-500">Typing...</span>
-                      ) : (
-                        <>
-                          {npcTypedText}
-                          {npcTypedText.length < npcFullText.length && (
-                            <span className="inline-block w-1.5 h-3.5 rounded-full bg-sky-500 ml-0.5 align-middle animate-pulse" />
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-sky-700">
+                            <Home className="w-3.5 h-3.5 text-sky-600 shrink-0" aria-hidden="true" />
+                            <span>{isId ? 'Rumah Pertamamu' : 'Your First Home'}</span>
+                          </span>
+                          {onDismiss && (
+                            <button
+                              type="button"
+                              aria-label="Dismiss property offer for now"
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                onDismiss();
+                              }}
+                              className="w-5 h-5 rounded-full bg-slate-200/85 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center cursor-pointer transition-colors shrink-0"
+                            >
+                              <X className="w-3 h-3" aria-hidden="true" />
+                            </button>
                           )}
-                        </>
+                        </div>
+                        <p className="text-[11px] leading-snug text-slate-600">
+                          {isId
+                            ? 'Kamu bisa lihat isi Model House secara gratis dulu, atau buka Catalog untuk melihat pilihan rumah & harga (100 RESPITE).'
+                            : 'Tour the open Model House for free first, or open the Catalog to compare home styles & prices (100 RESPITE).'}
+                        </p>
+                        <div
+                          className={`grid gap-1.5 ${onViewModelHouse ? 'grid-cols-2' : 'grid-cols-1'}`}
+                        >
+                          {onViewModelHouse && (
+                            <button
+                              type="button"
+                              data-hana-view-model-house-btn="true"
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                onViewModelHouse();
+                              }}
+                              className="py-1.5 px-2.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs font-semibold text-[10.5px] cursor-pointer active:scale-[0.99] transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
+                            >
+                              <Eye className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                              <span>Model House</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            data-hana-view-catalog-btn="true"
+                            onClick={openPitchCatalog}
+                            className="py-1.5 px-2.5 rounded-full bg-white hover:bg-slate-100 text-slate-800 border border-slate-300/90 shadow-xs font-semibold text-[10.5px] cursor-pointer active:scale-[0.99] transition-all inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
+                          >
+                            <Store className="w-3.5 h-3.5 shrink-0 text-slate-600" aria-hidden="true" />
+                            <span>View Catalog</span>
+                          </button>
+                        </div>
+                        {hanaPitchOrigin === 'kiosk' && onOpenTeleportKioskFromPitch && (
+                          <button
+                            type="button"
+                            data-hana-open-kiosk-btn="true"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              onOpenTeleportKioskFromPitch();
+                            }}
+                            className="w-full py-1.5 px-2.5 rounded-full bg-sky-100/90 hover:bg-sky-200/80 text-sky-800 border border-sky-300/80 font-semibold text-[10.5px] cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors"
+                          >
+                            <MapPin className="w-3.5 h-3.5 text-sky-600 shrink-0" aria-hidden="true" />
+                            <span>Open Teleport Kiosk</span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  };
+
+                  const showActivePropertyOffer =
+                    merchantLocation === 'lobby_cafe' &&
+                    !hasHouseOwnership &&
+                    !isNpcThinking &&
+                    npcFullText.length > 0 &&
+                    Boolean(activePropertyOffer);
+
+                  return (
+                    <>
+                      {chatHistory.map((entry) =>
+                        entry.role === 'player' ? (
+                          <div key={entry.id} className="flex flex-col items-end">
+                            <div className="flex items-center gap-1.5 mb-1 px-1.5">
+                              <span className="text-[10px] font-semibold text-white/75">You</span>
+                            </div>
+                            <div
+                              data-player-chat-bubble="true"
+                              className="max-w-[85%] px-3.5 py-2.5 rounded-2xl rounded-tr-sm bg-sky-500 text-white shadow-sm"
+                            >
+                              <p className="text-xs font-medium leading-relaxed">
+                                {entry.text}
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div key={entry.id} className="flex flex-col items-start">
+                            <div className="flex items-center gap-1.5 mb-1 px-1.5">
+                              <span className="text-[10px] font-semibold text-white/75">
+                                {npcShortName === 'HANA' ? 'Hana' : 'Kai'}
+                              </span>
+                            </div>
+                            <div
+                              className={`${
+                                entry.propertyOffer &&
+                                !entry.propertyOffer.dismissed &&
+                                merchantLocation === 'lobby_cafe' &&
+                                !hasHouseOwnership
+                                  ? 'max-w-[92%]'
+                                  : 'max-w-[85%]'
+                              } px-3.5 py-2.5 rounded-2xl rounded-tl-sm bg-[#eef0f4]/92 text-slate-900 border border-white/80 shadow-sm`}
+                            >
+                              <p className="text-xs font-medium leading-relaxed text-slate-900">
+                                {entry.text}
+                              </p>
+                              {merchantLocation === 'lobby_cafe' &&
+                                !hasHouseOwnership &&
+                                entry.propertyOffer &&
+                                !entry.propertyOffer.dismissed &&
+                                renderInBubblePropertyOffer(entry.propertyOffer.lang, () =>
+                                  dismissHistoryPropertyOffer(entry.id),
+                                )}
+                            </div>
+                          </div>
+                        ),
                       )}
-                    </p>
-                  </div>
-                </div>
+
+                      {/* Active NPC Reply Bubble */}
+                      <div className="flex flex-col items-start">
+                        <div className="flex items-center gap-1.5 mb-1 px-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                          <span className="text-[10px] font-semibold text-white/75">
+                            {npcShortName === 'HANA' ? 'Hana' : 'Kai'}
+                          </span>
+                        </div>
+                        <div
+                          data-npc-chat-bubble="true"
+                          className={`${
+                            showActivePropertyOffer ? 'max-w-[92%]' : 'max-w-[85%]'
+                          } px-3.5 py-2.5 rounded-2xl rounded-tl-sm bg-[#eef0f4]/92 text-slate-900 border border-white/80 shadow-sm`}
+                        >
+                          <p className="text-xs font-medium leading-relaxed text-slate-900">
+                            {isNpcThinking ? (
+                              <span className="text-slate-500">Typing...</span>
+                            ) : (
+                              <>
+                                {npcTypedText}
+                                {npcTypedText.length < npcFullText.length && (
+                                  <span className="inline-block w-1.5 h-3.5 rounded-full bg-sky-500 ml-0.5 align-middle animate-pulse" />
+                                )}
+                              </>
+                            )}
+                          </p>
+                          {showActivePropertyOffer &&
+                            activePropertyOffer &&
+                            renderInBubblePropertyOffer(activePropertyOffer.lang, () =>
+                              setActivePropertyOfferBoth(null),
+                            )}
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
 
                 {/* Guest Sign-In Callout (Compact 1-row dark glass card) */}
                 {!walletConnected && onConnectWallet && (
@@ -2582,70 +2730,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           {tradeLabels.close}
                         </button>
                       </div>
-                    </div>
-                  )}
-
-                {/* Hana Property Pitch Card (Compact dark glass card) */}
-                {merchantLocation === 'lobby_cafe' &&
-                  !hasHouseOwnership &&
-                  pitchView === 'full' && (
-                    <div
-                      data-hana-property-pitch="true"
-                      className="p-3 rounded-2xl bg-white/10 text-white border border-white/15 space-y-2.5"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-sky-300">
-                          <Home className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
-                          <span>Your First Home</span>
-                        </span>
-                        <button
-                          type="button"
-                          aria-label="Dismiss property offer for now"
-                          onClick={() => setPitchViewBoth('hidden')}
-                          className="w-6 h-6 rounded-full bg-white/10 hover:bg-rose-500/30 text-white/70 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
-                        >
-                          <X className="w-3.5 h-3.5" aria-hidden="true" />
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {onViewModelHouse && (
-                          <button
-                            type="button"
-                            data-hana-view-model-house-btn="true"
-                            onClick={() => {
-                              soundEngine.playUiClick();
-                              onViewModelHouse();
-                            }}
-                            className="py-2 px-2.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white shadow-xs font-semibold text-[10.5px] cursor-pointer active:scale-[0.99] transition-all inline-flex items-center justify-center gap-1.5"
-                          >
-                            <Eye className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                            <span>Model House</span>
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          data-hana-view-catalog-btn="true"
-                          onClick={openPitchCatalog}
-                          className="py-2 px-2.5 rounded-full bg-white/14 hover:bg-white/22 text-white border border-white/15 font-semibold text-[10.5px] cursor-pointer active:scale-[0.99] transition-all inline-flex items-center justify-center gap-1.5"
-                        >
-                          <Store className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                          <span>View Catalog</span>
-                        </button>
-                      </div>
-                      {hanaPitchOrigin === 'kiosk' && onOpenTeleportKioskFromPitch && (
-                        <button
-                          type="button"
-                          data-hana-open-kiosk-btn="true"
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            onOpenTeleportKioskFromPitch();
-                          }}
-                          className="w-full py-2 rounded-full bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 border border-sky-300/30 font-semibold text-[10.5px] cursor-pointer inline-flex items-center justify-center gap-1.5 transition-colors"
-                        >
-                          <MapPin className="w-3.5 h-3.5 text-sky-300" aria-hidden="true" />
-                          <span>Open Teleport Kiosk</span>
-                        </button>
-                      )}
                     </div>
                   )}
 
@@ -3396,7 +3480,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       data-chat-quick-teleport-btn="true"
                       onClick={() => {
                         soundEngine.playUiClick();
-                        setPitchViewBoth('hidden');
+                        setActivePropertyOfferBoth(null);
                         setQuickTeleportFocusId(null);
                         setExchangeQuickMode((prev) =>
                           prev === 'teleport' ? null : 'teleport',

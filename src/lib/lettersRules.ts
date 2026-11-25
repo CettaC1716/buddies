@@ -184,7 +184,7 @@ export function getLetterSenderDisplayName(
   if (letter.kind === 'announcement') {
     return 'City Hall';
   }
-  return letter.payload.senderAccount?.trim() || 'Buddies Citizen';
+  return letter.payload.senderAccount?.trim() || 'Cerria Citizen';
 }
 
 export function getLetterKindLabel(kind: BuddiesLetterKind): string {

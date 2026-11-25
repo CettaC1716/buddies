@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as THREE from 'three';
 import {
+  BEACH_CLUB_COCKTAIL_BAR_SEAT_SPOTS,
   BEACH_CLUB_MASTERPLAN,
   BEACH_CLUB_Z_MAX,
   BEACH_CLUB_Z_MIN,
@@ -85,6 +86,26 @@ test('BEACH_CLUB_MASTERPLAN seamlessly joins Kai Beach (+46.2) and East Outer Si
   assert.equal(BEACH_CLUB_MASTERPLAN.cabanas.length, 5);
   assert.equal(BEACH_CLUB_MASTERPLAN.sunkenPods.length, 6);
   assert.equal(BEACH_CLUB_MASTERPLAN.pools.southSeaPool.rotY, 0);
+
+  // South White Calacatta Marble boundary wall spans full arrow length (x = 91.2 .. 123.8)
+  const sw = BEACH_CLUB_MASTERPLAN.southBoundaryWall;
+  assert.equal(sw.minX, 91.2);
+  assert.equal(sw.maxX, 123.8);
+  assert.ok(sw.thicknessZ >= 0.85);
+  assert.ok(sw.upperTopY >= 3.0);
+
+  // Shifted stair_vip_bar_s sits cleanly North (-Z) of the enlarged Cocktail Bar podium
+  const vipBarStair = BEACH_CLUB_MASTERPLAN.stairFlights.find((s) => s.id === 'stair_vip_bar_s')!;
+  const bar = BEACH_CLUB_MASTERPLAN.cocktailBar;
+  assert.ok(bar.padRadiusM >= 6.4, 'Cocktail Bar podium must be enlarged');
+  assert.ok(vipBarStair.maxZ < bar.cz - bar.padRadiusM - 0.5, 'stair_vip_bar_s must sit North (-Z) of Cocktail Bar podium');
+
+  // 8 interactive Cocktail Bar stools stand on the +0.68m terrazzo podium facing inward toward the bar counter
+  assert.equal(BEACH_CLUB_COCKTAIL_BAR_SEAT_SPOTS.length, 8);
+  for (const spot of BEACH_CLUB_COCKTAIL_BAR_SEAT_SPOTS) {
+    assert.ok(Math.abs(evaluateBeachClubElevation(spot.x, spot.z) - bar.padElevY) < 1e-6);
+    assert.ok(Math.abs(evaluateBeachClubElevation(spot.standUpX, spot.standUpZ) - bar.padElevY) < 1e-6);
+  }
 });
 
 test('evaluateBeachClubPoolWaterSdf and evaluateBeachClubElevation enforce multi-tiered stepped contours, cascading pools, bridges & decks', () => {
@@ -163,7 +184,7 @@ test('evaluateBeachClubPoolWaterSdf and evaluateBeachClubElevation enforce multi
   assert.equal(classifyBeachClubSurface(40.0, 0.0), 'none');
 });
 
-test('getBeachClubObstacles registers DJ Pavilion, Cocktail Bar, Cabana daybeds, Beach Sets, and Palms cleanly', () => {
+test('getBeachClubObstacles registers DJ Pavilion, Cocktail Bar, South Marble Boundary Wall, Cabana daybeds, Beach Sets, and Palms cleanly', () => {
   const obstacles = getBeachClubObstacles();
   const byId = new Map(obstacles.map((o) => [o.id, o]));
 
@@ -175,6 +196,7 @@ test('getBeachClubObstacles registers DJ Pavilion, Cocktail Bar, Cabana daybeds,
     'beach_club_dj_backwall',
     'beach_club_bar_counter',
     'beach_club_bar_backwall',
+    'beach_club_south_marble_boundary_wall',
   ]) {
     assert.ok(byId.has(requiredId), `Missing expected collider ${requiredId}`);
   }

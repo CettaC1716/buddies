@@ -298,6 +298,9 @@ import {
   computeSpatialAudioGain,
   isListenerInsideBasePerimeter,
   computeBuildBoxAudioGain,
+  computeElectricScooterAudioParams,
+  computePushScooterAudioParams,
+  computeCityTramAudioParams,
   soundEngine,
 } from './audio';
 
@@ -7578,4 +7581,132 @@ test('Bone-tracked portrait metrics & boneDropY keep seated/paired animations (e
   assert.equal(faceToFaceDir.frontDirX, 0);
   assert.equal(faceToFaceDir.frontDirZ, 1, 'Face-to-face hug/dance preserves perpendicular side view');
 });
+
+test('Vehicle synthesis audio curves & SoundEngine lifecycle for electric scooter bike, push scooter, and city tram', () => {
+  // 1. Electric Scooter Bike (Matic EV): smooth hub motor + inverter pitch ramp + regen brake presence
+  const eIdle = computeElectricScooterAudioParams(0, false, false);
+  const eCruise = computeElectricScooterAudioParams(9.5, true, false);
+  const eBoost = computeElectricScooterAudioParams(12.5, true, false);
+  const eBrake = computeElectricScooterAudioParams(6.0, false, true);
+  assert.equal(eIdle.motorGain, 0);
+  assert.ok(eCruise.motorFreqHz > eIdle.motorFreqHz);
+  assert.ok(eBoost.motorFreqHz > eCruise.motorFreqHz);
+  assert.ok(eBoost.inverterFreqHz > eCruise.inverterFreqHz);
+  assert.ok(eBrake.inverterGain > 0.01);
+
+  // 2. Push Kick Scooter: polyurethane wheel pavement rumble scales with speed without motor tones
+  const pStopped = computePushScooterAudioParams(0);
+  const pSlow = computePushScooterAudioParams(2.2);
+  const pFast = computePushScooterAudioParams(8.5);
+  assert.equal(pStopped.rumbleGain, 0);
+  assert.ok(pFast.rumbleCutoffHz > pSlow.rumbleCutoffHz);
+  assert.ok(pFast.wheelWhirHz > pSlow.wheelWhirHz);
+  assert.ok(pFast.rumbleGain > pSlow.rumbleGain);
+
+  // 3. City Tram: traction motor, rail rumble, idle cabin hum, brake hiss, and spatial attenuation
+  const tramStationAboard = computeCityTramAudioParams(0, true, false, 1.0);
+  const tramCruiseAboard = computeCityTramAudioParams(8.2, true, false, 1.0);
+  const tramBrakeAboard = computeCityTramAudioParams(4.5, true, true, 1.0);
+  const tramDistant = computeCityTramAudioParams(8.2, false, false, 0.0);
+  assert.ok(tramStationAboard.tractionGain > 0, 'Energized stationary tram maintains soft cabin hum');
+  assert.ok(tramCruiseAboard.tractionFreqHz > tramStationAboard.tractionFreqHz);
+  assert.ok(tramCruiseAboard.railRumbleGain > 0.08);
+  assert.ok(tramBrakeAboard.brakeGain > 0.02);
+  assert.equal(tramDistant.tractionGain, 0);
+  assert.equal(tramDistant.railRumbleGain, 0);
+
+  // 4. SoundEngine calls execute cleanly in Node/Browser context without throwing
+  const g = globalThis as unknown as {
+    window?: Record<string, unknown>;
+  };
+  const prevWindow = g.window;
+  const makeAudioParam = () => ({
+    value: 0,
+    setValueAtTime: () => {},
+    linearRampToValueAtTime: () => {},
+    exponentialRampToValueAtTime: () => {},
+    setTargetAtTime: () => {},
+  });
+  const makeMockNode = () => ({
+    connect: () => {},
+    disconnect: () => {},
+    gain: makeAudioParam(),
+    frequency: makeAudioParam(),
+    Q: makeAudioParam(),
+    threshold: makeAudioParam(),
+    knee: makeAudioParam(),
+    ratio: makeAudioParam(),
+    attack: makeAudioParam(),
+    release: makeAudioParam(),
+    type: 'sine',
+    buffer: null as unknown,
+    loop: false,
+    playbackRate: makeAudioParam(),
+    onended: null as null | (() => void),
+    start: () => {},
+    stop: () => {},
+  });
+  class MockVehicleAudioContext {
+    public state: 'running' | 'suspended' = 'running';
+    public currentTime = 1.25;
+    public sampleRate = 48000;
+    public destination = makeMockNode();
+    public resume() {
+      return Promise.resolve();
+    }
+    public createGain() {
+      return makeMockNode();
+    }
+    public createBiquadFilter() {
+      return makeMockNode();
+    }
+    public createDynamicsCompressor() {
+      return makeMockNode();
+    }
+    public createOscillator() {
+      return makeMockNode();
+    }
+    public createBufferSource() {
+      return makeMockNode();
+    }
+    public createBuffer(_channels: number, length: number, sampleRate: number) {
+      const ch = new Float32Array(length);
+      return {
+        duration: length / sampleRate,
+        getChannelData: () => ch,
+      };
+    }
+  }
+  try {
+    g.window = {
+      AudioContext: MockVehicleAudioContext,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
+    soundEngine.playElectricScooterMountChime();
+    soundEngine.updateElectricScooterLoop(9.5, true, false, true);
+    soundEngine.updateElectricScooterLoop(0, false, false, false);
+
+    soundEngine.playPushScooterMountBell();
+    soundEngine.playPushScooterKickStroke(0.6);
+    soundEngine.playPushScooterDeckStep();
+    soundEngine.playPushScooterSeamTick(0.5);
+    soundEngine.updatePushScooterLoop(5.4, true);
+    soundEngine.updatePushScooterLoop(0, false);
+
+    soundEngine.playTramBell(2, 1.0);
+    soundEngine.playTramRailClack(0.8, 0.9);
+    soundEngine.updateTramMovementLoop(8.2, true, false, 1.0, true);
+    soundEngine.updateTramMovementLoop(0, false, false, 0, false);
+    soundEngine.stopAllLoops();
+    soundEngine.disposeVehicleLoops();
+  } finally {
+    if (prevWindow === undefined) {
+      delete g.window;
+    } else {
+      g.window = prevWindow;
+    }
+  }
+});
+
 

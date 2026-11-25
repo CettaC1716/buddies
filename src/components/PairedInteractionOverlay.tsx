@@ -132,7 +132,7 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
             hasEntered ? 'translate-x-0 opacity-100' : '-translate-x-8 opacity-0'
           }`}
         >
-          <div className="w-full h-full rounded-[32px] overflow-hidden flex flex-col bg-[#141926]/68 backdrop-blur-2xl border border-white/25 shadow-[0_24px_70px_rgba(0,0,0,0.52)] text-white">
+          <div className="w-full h-full rounded-[32px] overflow-hidden flex flex-col bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] text-white">
             {/* Top Header Bar */}
             <div className="shrink-0 px-4 py-3.5 border-b border-white/[0.12] flex items-center justify-between gap-2">
               <div className="min-w-0">
@@ -335,7 +335,7 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
         <div
           data-paired-active-banner="true"
           onPointerDown={(e) => e.stopPropagation()}
-          className="fixed top-20 left-1/2 -translate-x-1/2 z-[47] flex items-center gap-2.5 px-3.5 py-2 rounded-full bg-[#141926]/74 backdrop-blur-2xl border border-white/25 shadow-[0_12px_32px_rgba(0,0,0,0.48)] text-white text-xs select-none"
+          className="fixed top-20 left-1/2 -translate-x-1/2 z-[47] flex items-center gap-2.5 px-3.5 py-2 rounded-full bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_12px_32px_rgba(0,0,0,0.52)] text-white text-xs select-none"
         >
           <Users className="w-3.5 h-3.5 text-[#8ad8ff] shrink-0" />
           <span className="font-semibold max-w-[260px] truncate">
@@ -367,7 +367,7 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
         <div
           data-paired-invite-banner="true"
           onPointerDown={(e) => e.stopPropagation()}
-          className="fixed top-24 left-1/2 -translate-x-1/2 z-[48] flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-[#141926]/78 backdrop-blur-2xl border border-white/25 shadow-[0_16px_42px_rgba(0,0,0,0.58)] text-white select-none"
+          className="fixed top-24 left-1/2 -translate-x-1/2 z-[48] flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_16px_42px_rgba(0,0,0,0.58)] text-white select-none"
         >
           <span className="w-8 h-8 rounded-full bg-[#8ad8ff] text-slate-950 flex items-center justify-center shrink-0">
             <Users className="w-4 h-4" />

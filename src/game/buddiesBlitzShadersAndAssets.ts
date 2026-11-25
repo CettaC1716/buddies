@@ -2119,6 +2119,7 @@ export function upgradeMeshToBlitzWorldMaterial(
         }
       `,
       side: THREE.DoubleSide,
+      shadowSide: THREE.FrontSide,
     });
     mat.userData.windUniforms = windUniforms;
     if (bounceStrength >= 1.5) {
@@ -2197,6 +2198,9 @@ export function createBlitzStrokeMesh(
         `,
         side: THREE.BackSide,
         depthWrite: true,
+        polygonOffset: true,
+        polygonOffsetFactor: 2,
+        polygonOffsetUnits: 2,
       });
       blitzStrokeMaterialCache.set(matKey, strokeMat);
     }
@@ -2219,6 +2223,9 @@ function getSharedBakedStrokeMaterial(): THREE.MeshBasicMaterial {
       color: 0x3b2f27,
       side: THREE.BackSide,
       fog: true,
+      polygonOffset: true,
+      polygonOffsetFactor: 2,
+      polygonOffsetUnits: 2,
     });
   }
   return sharedBakedStrokeMat;
@@ -2595,6 +2602,7 @@ function getOrCreateBakedVertexColorWorldMaterial(
       }
     `,
     side: THREE.DoubleSide,
+    shadowSide: THREE.FrontSide,
   });
   cached.userData.isBakedVertexColorWorldMat = true;
   cached.userData.cityGlassNightUniform = showcaseNightUniform;
@@ -3372,7 +3380,12 @@ export function createBlitzInfiniteGrassSystem(
         gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
+        vec3 preGrassFogRgb = gl_FragColor.rgb;
         #include <fog_fragment>
+        #if defined(USE_FOG) && !defined(FOG_EXP2)
+          float grassFogWeight = mix(0.24, 0.56, smoothstep(fogNear, fogFar * 1.15, vFogDepth));
+          gl_FragColor.rgb = mix(preGrassFogRgb, gl_FragColor.rgb, grassFogWeight);
+        #endif
       }
     `,
     side: THREE.DoubleSide,
@@ -3590,7 +3603,12 @@ export function createBlitzInfiniteGrassSystem(
         gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
+        vec3 prePetalFogRgb = gl_FragColor.rgb;
         #include <fog_fragment>
+        #if defined(USE_FOG) && !defined(FOG_EXP2)
+          float petalFogWeight = mix(0.24, 0.56, smoothstep(fogNear, fogFar * 1.15, vFogDepth));
+          gl_FragColor.rgb = mix(prePetalFogRgb, gl_FragColor.rgb, petalFogWeight);
+        #endif
       }
     `,
     side: THREE.DoubleSide,
@@ -9950,6 +9968,7 @@ export interface CharBuddiesGlbRigController {
   bindQuats: Map<string, THREE.Quaternion>;
   boxCarryUpperQuats: Map<string, THREE.Quaternion>;
   fireUpperQuats: Map<string, THREE.Quaternion>;
+  scooterFistQuats?: Map<string, THREE.Quaternion>;
   fireUpperFrames: Map<string, Float32Array>;
   fireFrameCount: number;
   fireDuration: number;
@@ -12569,10 +12588,9 @@ function convertToStylizedPlayerCharacterMaterial(
   const srcMat = mat as THREE.MeshBasicMaterial & THREE.MeshStandardMaterial;
   const baseMap = srcMat.map ?? null;
   const lowerName = (srcMat.name || '').toLowerCase();
-  const isFaceTex = lowerName.includes('face') || lowerName.includes('head') || lowerName.includes('eye');
   if (baseMap) {
     baseMap.colorSpace = THREE.SRGBColorSpace;
-    baseMap.anisotropy = isFaceTex ? 8 : 4;
+    baseMap.anisotropy = 8;
     baseMap.minFilter = THREE.LinearMipmapLinearFilter;
     baseMap.magFilter = THREE.LinearFilter;
     baseMap.needsUpdate = true;
@@ -12791,6 +12809,32 @@ function convertToStylizedPlayerCharacterMaterial(
         #endif
         `,
       );
+    } else if (!isSkinMat && !isHairMat) {
+      // Multi-Scale Fabric Weave & Fold Micro-Relief Pass for clothing:
+      // Recovers crisp knit stitches, ribbed yarn lines, seams, and ruched pleat detail
+      // from 512px/1024px wardrobe albedo textures using hardware mipmap frequency decomposition.
+      fragShader = fragShader.replace(
+        '#include <map_fragment>',
+        /* glsl */ `
+        #ifdef USE_MAP
+          vec4 centerTap = texture2D( map, vMapUv, -0.35 );
+          vec3 microBlur = texture2D( map, vMapUv, 1.65 ).rgb;
+          vec3 macroBlur = texture2D( map, vMapUv, 3.55 ).rgb;
+          vec3 threadWeave = centerTap.rgb - microBlur;
+          vec3 foldRelief = microBlur - macroBlur;
+          vec3 crispClothRgb = clamp(
+            centerTap.rgb + threadWeave * 1.45 + foldRelief * 0.90,
+            vec3( 0.0 ),
+            vec3( 1.0 )
+          );
+          vec4 sampledDiffuseColor = vec4( crispClothRgb, centerTap.a );
+          #ifdef DECODE_VIDEO_TEXTURE
+            sampledDiffuseColor = sRGBTransferEOTF( sampledDiffuseColor );
+          #endif
+          diffuseColor *= sampledDiffuseColor;
+        #endif
+        `,
+      );
     }
 
     shader.fragmentShader = fragShader.replace(
@@ -12842,26 +12886,41 @@ function convertToStylizedPlayerCharacterMaterial(
       baseCol = clamp( baseCol * mix( vec3( 1.0 ), vec3( 1.005, 0.990, 0.982 ), skinMask ), 0.0, 1.04 );
       `
             : /* glsl */ `
-      // Matte Anime Clothing Pass: eliminate glossy baked latex glare on dark tops/hair while keeping whites crisp
+      // Rich Fabric Clarity & Adaptive Color Vibrance Pass:
+      // - Preserves continuous fabric weave micro-contrast (no 6-band posterization flattening)
+      // - Expands shadow grooves and deepens midtones on washed-out/pastel wardrobe textures
+      //   so knit ribs and pleats match the crisp depth & vividness of bespoke NPC outfits (e.g. Tari)
+      // - Tames glossy glare on near-black fabrics while keeping whites crisp
       float rawClothLuma = dot( baseCol, vec3( 0.299, 0.587, 0.114 ) );
-      float darkFabricMask = 1.0 - smoothstep( 0.24, 0.52, rawClothLuma );
+      float maxClothC = max( baseCol.r, max( baseCol.g, baseCol.b ) );
+      float minClothC = min( baseCol.r, min( baseCol.g, baseCol.b ) );
+      float rawClothChroma = maxClothC - minClothC;
+      float rawClothSat = maxClothC > 0.0005 ? ( rawClothChroma / maxClothC ) : 0.0;
+
+      float darkFabricMask = 1.0 - smoothstep( 0.18, 0.36, rawClothLuma );
       float darkGlareExcess = max( rawClothLuma - 0.042, 0.0 ) * darkFabricMask;
-      float tamedClothLuma = rawClothLuma - darkGlareExcess * 0.58;
+      float targetClothLuma = rawClothLuma - darkGlareExcess * 0.48;
+
+      float coloredFabricMask = smoothstep( 0.045, 0.16, rawClothChroma ) * ( 1.0 - smoothstep( 0.82, 0.95, rawClothLuma ) );
+      float washedOutFabricMask = coloredFabricMask * smoothstep( 0.26, 0.48, rawClothLuma ) * ( 1.0 - smoothstep( 0.54, 0.78, rawClothSat ) );
+
+      float expandedClothLuma = pow( clamp( targetClothLuma, 0.0, 1.0 ), 1.38 ) * 0.92;
+      float sCurveClothLuma = smoothstep( 0.06, 0.92, targetClothLuma );
+      float richClothLuma = mix( expandedClothLuma, sCurveClothLuma, 0.45 );
+      float depthBlend = clamp( 0.58 * washedOutFabricMask + 0.16 * coloredFabricMask, 0.0, 0.72 );
+      targetClothLuma = mix( targetClothLuma, richClothLuma, depthBlend );
+
+      float brightClothExcess = max( targetClothLuma - 0.84, 0.0 );
+      targetClothLuma -= brightClothExcess * 0.30;
       if ( rawClothLuma > 0.0005 ) {
-        baseCol *= ( tamedClothLuma / rawClothLuma );
+        baseCol *= ( targetClothLuma / rawClothLuma );
       }
-      // Subtle 2-3 band painted tonal simplification + soft-knee bright white protection + charcoal floor
-      float clothLuma = dot( baseCol, vec3( 0.299, 0.587, 0.114 ) );
-      float bandedClothLuma = floor( clothLuma * 6.0 + 0.5 ) / 6.0;
-      float targetClothLuma = mix( clothLuma, bandedClothLuma, 0.26 );
-      float brightClothExcess = max( targetClothLuma - 0.74, 0.0 );
-      targetClothLuma -= brightClothExcess * 0.42;
-      if ( clothLuma > 0.0005 ) {
-        baseCol *= ( targetClothLuma / clothLuma );
-      }
-      baseCol = max( baseCol, vec3( 0.018, 0.019, 0.025 ) );
+      baseCol = max( baseCol, vec3( 0.015, 0.016, 0.020 ) );
       float finalClothLuma = dot( baseCol, vec3( 0.299, 0.587, 0.114 ) );
-      baseCol = clamp( mix( vec3( finalClothLuma ), baseCol, 1.04 ), 0.0, 1.02 );
+      float clothSatBoost = 1.12 + 0.44 * washedOutFabricMask + 0.12 * coloredFabricMask;
+      baseCol = max( vec3( 0.0 ), mix( vec3( finalClothLuma ), baseCol, clothSatBoost ) );
+      float peakBaseC = max( max( baseCol.r, max( baseCol.g, baseCol.b ) ), 1.0 );
+      baseCol /= peakBaseC;
       `
       }
 
@@ -12885,21 +12944,39 @@ function convertToStylizedPlayerCharacterMaterial(
       vec3 shadedCol = baseCol * mix( shadowTint, litTint, celLit ) * hemiShade;
       float rim = pow( clamp( 1.0 - abs( dot( N, viewWorld ) ), 0.0, 1.0 ), 3.2 ) * smoothstep( -0.05, 0.85, N.y );
       vec3 rimScale = vec3( 0.055, 0.048, 0.042 );
+      outgoingLight = min( shadedCol + baseCol * rimScale * rim, vec3( 1.02 ) );
       `
-          : /* glsl */ `
+          : isHairMat
+            ? /* glsl */ `
       vec3 L = worldL;
       float ndl = dot( N, L );
-      float celLit = smoothstep( ${isHairMat ? '-0.14, 0.28' : '-0.14, 0.28'}, ndl );
+      float celLit = smoothstep( -0.14, 0.28, ndl );
       float hemi = clamp( N.y * 0.5 + 0.5, 0.0, 1.0 );
-      float hemiShade = mix( ${isHairMat ? '0.84' : '0.82'}, 1.04, hemi );
-      vec3 shadowTint = ${isHairMat ? 'vec3( 0.70, 0.66, 0.72 )' : 'vec3( 0.68, 0.66, 0.73 )'};
+      float hemiShade = mix( 0.84, 1.04, hemi );
+      vec3 shadowTint = vec3( 0.70, 0.66, 0.72 );
       vec3 litTint = mix( vec3( 1.00 ), uStylizedLightColor, 0.38 );
       vec3 shadedCol = baseCol * mix( shadowTint, litTint, celLit ) * hemiShade;
       float rim = pow( clamp( 1.0 - abs( dot( N, viewWorld ) ), 0.0, 1.0 ), 3.2 ) * smoothstep( -0.1, 0.8, N.y );
-      vec3 rimScale = ${isHairMat ? 'vec3( 0.085, 0.075, 0.062 )' : 'vec3( 0.055, 0.052, 0.056 )'};
+      vec3 rimScale = vec3( 0.085, 0.075, 0.062 );
+      outgoingLight = min( shadedCol + baseCol * rimScale * rim, vec3( 1.02 ) );
+      `
+            : /* glsl */ `
+      vec3 camClothL = normalize( viewWorld + vec3( 0.18, 0.72, 0.0 ) );
+      vec3 L = normalize( mix( worldL, camClothL, 0.25 ) );
+      float ndl = dot( N, L );
+      float celLit = smoothstep( -0.16, 0.30, ndl );
+      float hemi = clamp( N.y * 0.5 + 0.5, 0.0, 1.0 );
+      float hemiShade = mix( 0.80, 1.03, hemi );
+      vec3 shadowTint = vec3( 0.66, 0.64, 0.72 );
+      vec3 litTint = mix( vec3( 1.00 ), uStylizedLightColor, 0.32 );
+      vec3 shadedCol = baseCol * mix( shadowTint, litTint, celLit ) * hemiShade;
+      float rim = pow( clamp( 1.0 - abs( dot( N, viewWorld ) ), 0.0, 1.0 ), 3.2 ) * smoothstep( -0.1, 0.8, N.y );
+      vec3 rimScale = vec3( 0.048, 0.045, 0.050 );
+      vec3 rawClothOut = shadedCol + baseCol * rimScale * rim;
+      float peakOutC = max( max( rawClothOut.r, max( rawClothOut.g, rawClothOut.b ) ), 1.02 );
+      outgoingLight = rawClothOut * ( 1.02 / peakOutC );
       `
       }
-      outgoingLight = min( shadedCol + baseCol * rimScale * rim, vec3( 1.02 ) );
       #include <opaque_fragment>
       `,
     );
@@ -15506,14 +15583,255 @@ function solveTwoBoneLimbPoleIkBodyLocal(
   }
 }
 
-/** Aligns hand palm center to rubber grip, twists knuckles along grip axis, and curls fingers. */
+const _scooterGripPalmScratch = new THREE.Vector3();
+const _scooterGripWristScratch = new THREE.Vector3();
+const _scooterHipLocalScratch = new THREE.Vector3();
+const _scooterIkUpScratch = new THREE.Vector3(0, 1, 0);
+const _scooterGripFwdScratch = new THREE.Vector3();
+const _scooterFistFwd = new THREE.Vector3();
+const _scooterFistAcross = new THREE.Vector3();
+const _scooterFistCurlAxis = new THREE.Vector3();
+const _scooterFistPalmNormal = new THREE.Vector3();
+const _scooterFistIndexSide = new THREE.Vector3();
+const _scooterFistThumbAxis = new THREE.Vector3();
+const _scooterFistPosA = new THREE.Vector3();
+const _scooterFistPosB = new THREE.Vector3();
+const _scooterFistPosC = new THREE.Vector3();
+const _scooterFistDir = new THREE.Vector3();
+
+function rotateBoneAroundWorldAxis(
+  bone: THREE.Bone,
+  worldAxis: THREE.Vector3,
+  angleRad: number,
+) {
+  if (!bone.parent || Math.abs(angleRad) < 1e-5) return;
+  bone.parent.updateWorldMatrix(true, false);
+  _scooterIkWorldDeltaQ.setFromAxisAngle(worldAxis, angleRad);
+  bone.parent.getWorldQuaternion(_scooterIkParentWorldQ);
+  _scooterIkParentInvQ.copy(_scooterIkParentWorldQ).invert();
+  _scooterIkLocalDeltaQ
+    .copy(_scooterIkParentInvQ)
+    .multiply(_scooterIkWorldDeltaQ)
+    .multiply(_scooterIkParentWorldQ);
+  bone.quaternion.premultiply(_scooterIkLocalDeltaQ);
+  bone.updateWorldMatrix(false, true);
+}
+
+/**
+ * Computes exact handlebar closed-fist bone quaternions directly from each rig's
+ * anatomical bind pose (`Left`/`Right` Mixamo & PelvisRoot `Index`/`Others`/`Thumb`).
+ */
+function buildScooterFistQuats(
+  bones: Map<string, THREE.Bone>,
+  bindQuats: Map<string, THREE.Quaternion>,
+  glbRoot: THREE.Object3D,
+): Map<string, THREE.Quaternion> {
+  const fistQuats = new Map<string, THREE.Quaternion>();
+  glbRoot.updateWorldMatrix(true, true);
+
+  for (const side of ['Left', 'Right'] as const) {
+    const hand = bones.get(`${side}Hand`);
+    const mid1 = bones.get(`${side}HandMiddle1`) ?? bones.get(`${side}Others1`);
+    const idx1 = bones.get(`${side}HandIndex1`) ?? bones.get(`${side}Index1`);
+    const pinky1 = bones.get(`${side}HandPinky1`) ?? bones.get(`${side}Others1`);
+    if (!hand || !mid1 || !idx1 || !pinky1) continue;
+
+    hand.getWorldPosition(_scooterFistPosA);
+    mid1.getWorldPosition(_scooterFistPosB);
+    _scooterFistFwd.subVectors(_scooterFistPosB, _scooterFistPosA);
+    if (_scooterFistFwd.lengthSq() < 1e-6) continue;
+    _scooterFistFwd.normalize();
+
+    idx1.getWorldPosition(_scooterFistPosA);
+    pinky1.getWorldPosition(_scooterFistPosB);
+    _scooterFistAcross.subVectors(_scooterFistPosB, _scooterFistPosA);
+    _scooterFistAcross.addScaledVector(_scooterFistFwd, -_scooterFistAcross.dot(_scooterFistFwd));
+    if (_scooterFistAcross.lengthSq() < 1e-6) continue;
+    _scooterFistAcross.normalize();
+
+    // Right-hand rule curl axis: Left hand Index->Pinky; Right hand Pinky->Index
+    _scooterFistCurlAxis.copy(_scooterFistAcross);
+    if (side === 'Right') _scooterFistCurlAxis.negate();
+
+    _scooterFistPalmNormal.crossVectors(_scooterFistCurlAxis, _scooterFistFwd);
+    if (_scooterFistPalmNormal.lengthSq() < 1e-6) continue;
+    _scooterFistPalmNormal.normalize();
+
+    _scooterFistIndexSide.copy(_scooterFistAcross).negate();
+    _scooterFistThumbAxis.crossVectors(_scooterFistIndexSide, _scooterFistPalmNormal);
+    if (_scooterFistThumbAxis.lengthSq() > 1e-6) {
+      _scooterFistThumbAxis.normalize();
+    } else {
+      _scooterFistThumbAxis.copy(_scooterFistFwd);
+    }
+
+    const touchedBones: Array<[string, THREE.Bone]> = [];
+
+    for (const finger of ['Index', 'Middle', 'Ring', 'Pinky'] as const) {
+      const n1 = `${side}Hand${finger}1`;
+      const n2 = `${side}Hand${finger}2`;
+      const n3 = `${side}Hand${finger}3`;
+      const b1 = bones.get(n1);
+      const b2 = bones.get(n2);
+      const b3 = bones.get(n3);
+      if (!b1) continue;
+
+      let bindPitch1 = 0;
+      let bindPitch2 = 0;
+      if (b2) {
+        b1.getWorldPosition(_scooterFistPosA);
+        b2.getWorldPosition(_scooterFistPosB);
+        _scooterFistDir.subVectors(_scooterFistPosB, _scooterFistPosA);
+        if (_scooterFistDir.lengthSq() > 1e-7) {
+          _scooterFistDir.normalize();
+          bindPitch1 = Math.atan2(
+            _scooterFistDir.dot(_scooterFistPalmNormal),
+            _scooterFistDir.dot(_scooterFistFwd),
+          );
+        }
+        if (b3) {
+          b3.getWorldPosition(_scooterFistPosC);
+          _scooterFistDir.subVectors(_scooterFistPosC, _scooterFistPosB);
+          if (_scooterFistDir.lengthSq() > 1e-7) {
+            _scooterFistDir.normalize();
+            bindPitch2 = Math.atan2(
+              _scooterFistDir.dot(_scooterFistPalmNormal),
+              _scooterFistDir.dot(_scooterFistFwd),
+            );
+          } else {
+            bindPitch2 = bindPitch1;
+          }
+        } else {
+          bindPitch2 = bindPitch1;
+        }
+      }
+
+      const delta1 = Math.max(0.15, Math.min(1.45, 0.80 - bindPitch1));
+      const delta2 = Math.max(0.35, Math.min(1.75, 2.12 - (bindPitch2 + delta1)));
+      const delta3 = 1.02;
+
+      rotateBoneAroundWorldAxis(b1, _scooterFistCurlAxis, delta1);
+      fistQuats.set(n1, b1.quaternion.clone());
+      touchedBones.push([n1, b1]);
+
+      if (b2) {
+        rotateBoneAroundWorldAxis(b2, _scooterFistCurlAxis, delta2);
+        fistQuats.set(n2, b2.quaternion.clone());
+        touchedBones.push([n2, b2]);
+      }
+      if (b3) {
+        rotateBoneAroundWorldAxis(b3, _scooterFistCurlAxis, delta3);
+        fistQuats.set(n3, b3.quaternion.clone());
+        touchedBones.push([n3, b3]);
+      }
+    }
+
+    const tn1 = `${side}HandThumb1`;
+    const tn2 = `${side}HandThumb2`;
+    const tn3 = `${side}HandThumb3`;
+    const t1 = bones.get(tn1);
+    const t2 = bones.get(tn2);
+    const t3 = bones.get(tn3);
+    if (t1) {
+      let opposeScale = 1.0;
+      if (t2) {
+        t1.getWorldPosition(_scooterFistPosA);
+        t2.getWorldPosition(_scooterFistPosB);
+        _scooterFistDir.subVectors(_scooterFistPosB, _scooterFistPosA);
+        if (_scooterFistDir.lengthSq() > 1e-7) {
+          _scooterFistDir.normalize();
+          const curPalmComp = _scooterFistDir.dot(_scooterFistPalmNormal);
+          opposeScale = Math.max(0.35, Math.min(1.0, (0.68 - curPalmComp) / 0.68));
+        }
+      }
+      rotateBoneAroundWorldAxis(t1, _scooterFistThumbAxis, 0.52 * opposeScale);
+      rotateBoneAroundWorldAxis(t1, _scooterFistCurlAxis, 0.24);
+      fistQuats.set(tn1, t1.quaternion.clone());
+      touchedBones.push([tn1, t1]);
+
+      if (t2) {
+        rotateBoneAroundWorldAxis(t2, _scooterFistThumbAxis, 0.50 * opposeScale);
+        rotateBoneAroundWorldAxis(t2, _scooterFistCurlAxis, 0.36);
+        fistQuats.set(tn2, t2.quaternion.clone());
+        touchedBones.push([tn2, t2]);
+      }
+      if (t3) {
+        rotateBoneAroundWorldAxis(t3, _scooterFistThumbAxis, 0.46 * opposeScale);
+        rotateBoneAroundWorldAxis(t3, _scooterFistCurlAxis, 0.48);
+        fistQuats.set(tn3, t3.quaternion.clone());
+        touchedBones.push([tn3, t3]);
+      }
+    }
+
+    // Restore finger bones to bind pose before leaving
+    for (const [bName, bone] of touchedBones) {
+      const bq = bindQuats.get(bName);
+      if (bq) bone.quaternion.copy(bq);
+    }
+    glbRoot.updateWorldMatrix(true, true);
+  }
+
+  return fistQuats;
+}
+
+function curlScooterHandFingers(
+  ctrl: CharBuddiesGlbRigController,
+  side: 'Left' | 'Right',
+  fingerCurl: number,
+  blend: number,
+) {
+  const curlAmount = Math.max(0, Math.min(1, fingerCurl)) * blend;
+  if (curlAmount <= 0.01) return;
+  for (const suffix of SCOOTER_FINGER_BONE_SUFFIXES) {
+    const shortName = `${side}Hand${suffix}`;
+    const fBone = ctrl.bones.get(shortName);
+    let fistQ = ctrl.scooterFistQuats?.get(shortName) ?? ctrl.fireUpperQuats.get(shortName);
+    if (!fistQ && side === 'Right' && suffix.startsWith('Index')) {
+      const phalanx = suffix.slice('Index'.length);
+      fistQ =
+        ctrl.scooterFistQuats?.get(`RightHandMiddle${phalanx}`) ??
+        ctrl.fireUpperQuats.get(`RightHandMiddle${phalanx}`);
+    }
+    if (fBone && fistQ) {
+      fBone.quaternion.slerp(fistQ, curlAmount);
+    }
+  }
+}
+
+/** Computes desired Hand->Mid1 forward direction in bodyGroup space from steered grip bar axis. */
+function computeScooterGripHandFwdBody(
+  side: 'Left' | 'Right',
+  barAxisBody: { x: number; y: number; z: number },
+  outFwdBody: THREE.Vector3,
+): THREE.Vector3 {
+  _scooterIkSideDes.set(barAxisBody.x, barAxisBody.y, barAxisBody.z);
+  if (_scooterIkSideDes.lengthSq() < 1e-6) {
+    _scooterIkSideDes.set(side === 'Left' ? 1 : -1, 0, 0);
+  } else {
+    _scooterIkSideDes.normalize();
+  }
+  _scooterIkUpScratch.set(0, 1, 0);
+  if (side === 'Left') {
+    outFwdBody.crossVectors(_scooterIkSideDes, _scooterIkUpScratch);
+  } else {
+    outFwdBody.crossVectors(_scooterIkUpScratch, _scooterIkSideDes);
+  }
+  if (outFwdBody.lengthSq() < 1e-6) {
+    outFwdBody.set(0, 0, 1);
+  } else {
+    outFwdBody.normalize();
+  }
+  // Pitch knuckles ~16 deg forward-down over the top shoulder of the handlebar grip
+  outFwdBody.multiplyScalar(0.96).addScaledVector(_scooterIkUpScratch, -0.28).normalize();
+  return outFwdBody;
+}
+
+/** Aligns hand palm over handlebar grip and twists knuckles strictly parallel to the grip axis. */
 function orientScooterHandOnGrip(
   ctrl: CharBuddiesGlbRigController,
   bodyGroup: THREE.Group,
   side: 'Left' | 'Right',
-  gripBody: { x: number; y: number; z: number },
   barAxisBody: { x: number; y: number; z: number },
-  fingerCurl: number,
   blend: number,
 ) {
   const hand = ctrl.bones.get(`${side}Hand`);
@@ -15525,10 +15843,11 @@ function orientScooterHandOnGrip(
   hand.updateWorldMatrix(true, true);
   hand.getWorldPosition(_scooterIkRootPos);
   mid1.getWorldPosition(_scooterIkMidPos);
-  _scooterIkWorldTarget.set(gripBody.x, gripBody.y, gripBody.z).applyMatrix4(bodyGroup.matrixWorld);
+
+  computeScooterGripHandFwdBody(side, barAxisBody, _scooterIkDesDir);
+  _scooterIkDesDir.transformDirection(bodyGroup.matrixWorld).normalize();
 
   _scooterIkCurDir.copy(_scooterIkMidPos).sub(_scooterIkRootPos);
-  _scooterIkDesDir.copy(_scooterIkWorldTarget).sub(_scooterIkRootPos);
   swingBoneWorldVector(hand, _scooterIkCurDir, _scooterIkDesDir, blend);
 
   // Align palm width axis (Index1 -> Pinky1) with outward steered handlebar axis around Hand->Mid1
@@ -15550,26 +15869,7 @@ function orientScooterHandOnGrip(
       _scooterIkSideDes.addScaledVector(fingerDir, -_scooterIkSideDes.dot(fingerDir));
 
       if (_scooterIkSideCur.lengthSq() > 1e-6 && _scooterIkSideDes.lengthSq() > 1e-6) {
-        swingBoneWorldVector(hand, _scooterIkSideCur, _scooterIkSideDes, blend * 0.85);
-      }
-    }
-  }
-
-  // Curl fingers into native Mixamo grip fist (using Middle1..3 fallback for Index on scooter grips
-  // when rifle trigger poses keep RightHandIndex straighter than Middle).
-  const curlAmount = Math.max(0, Math.min(1, fingerCurl)) * blend;
-  if (curlAmount > 0.01 && ctrl.fireUpperQuats.size > 0) {
-    for (const suffix of SCOOTER_FINGER_BONE_SUFFIXES) {
-      const shortName = `${side}Hand${suffix}`;
-      const fBone = ctrl.bones.get(shortName);
-      let fistQ = ctrl.fireUpperQuats.get(shortName);
-      if (side === 'Right' && suffix.startsWith('Index')) {
-        const phalanx = suffix.slice('Index'.length);
-        const midFistQ = ctrl.fireUpperQuats.get(`RightHandMiddle${phalanx}`);
-        if (midFistQ) fistQ = midFistQ;
-      }
-      if (fBone && fistQ) {
-        fBone.quaternion.slerp(fistQ, curlAmount);
+        swingBoneWorldVector(hand, _scooterIkSideCur, _scooterIkSideDes, blend);
       }
     }
   }
@@ -15600,7 +15900,7 @@ function orientScooterFootSole(
   swingBoneWorldVector(foot, _scooterIkCurDir, _scooterIkDesDir, blend);
 }
 
-/** Applies full two-bone IK, spine/head steering lean, grip wrap, and rocker foot grounding. */
+/** Applies full two-bone IK, spine/head steering lean, precision palm-centered grip wrap, and floorboard foot grounding. */
 function applyScooterRiderGlbRig(
   ctrl: CharBuddiesGlbRigController,
   bodyGroup: THREE.Group,
@@ -15609,8 +15909,7 @@ function applyScooterRiderGlbRig(
   const bp = pose.blend;
   if (bp <= 0.001) return;
 
-  ctrl.glbRoot.position.x = 0;
-  ctrl.glbRoot.position.y = ctrl.baseRootY;
+  ctrl.glbRoot.position.set(0, ctrl.baseRootY, 0);
 
   // Strip any FBX clip root tilt (e.g. idle-2.fbx Hips pitch) right from mount blend start.
   if (!ctrl.isCustomSkeleton) {
@@ -15625,6 +15924,20 @@ function applyScooterRiderGlbRig(
     const bone = ctrl.bones.get(name);
     const bindQ = ctrl.bindQuats.get(name);
     if (bone && bindQ) bone.quaternion.slerp(bindQ, bp);
+  }
+
+  // Anchor seated pelvis cleanly onto the contoured saddle center across all Mixamo/PelvisRoot rigs.
+  if (pose.kind === 'electric_scooter_bike') {
+    bodyGroup.updateWorldMatrix(true, true);
+    const hipBone = ctrl.bones.get('Hips') ?? ctrl.bones.get('Hip');
+    if (hipBone) {
+      hipBone.getWorldPosition(_scooterHipLocalScratch);
+      bodyGroup.worldToLocal(_scooterHipLocalScratch);
+      const clampShift = (d: number) => Math.max(-0.26, Math.min(0.26, d)) * bp;
+      ctrl.glbRoot.position.x += clampShift(0 - _scooterHipLocalScratch.x);
+      ctrl.glbRoot.position.y += clampShift(0.99 - _scooterHipLocalScratch.y);
+      ctrl.glbRoot.position.z += clampShift(0 - _scooterHipLocalScratch.z);
+    }
   }
 
   const sp0 = ctrl.bones.get('Spine');
@@ -15648,53 +15961,74 @@ function applyScooterRiderGlbRig(
 
   bodyGroup.updateWorldMatrix(true, true);
 
-  // Arms -> Handlebar grips (place wrist slightly up & back so palm center lands on rubber grip)
-  const palmOff = ctrl.bindPalmOffsetM;
-  solveTwoBoneLimbPoleIkBodyLocal(
-    bodyGroup,
-    ctrl.bones.get('LeftArm'),
-    ctrl.bones.get('LeftForeArm'),
-    ctrl.bones.get('LeftHand'),
-    pose.leftGripBodyLocal.x,
-    pose.leftGripBodyLocal.y + palmOff * 0.38,
-    pose.leftGripBodyLocal.z - palmOff * 0.68,
-    0.45,
-    -0.45,
-    -0.80,
-    bp,
-  );
-  solveTwoBoneLimbPoleIkBodyLocal(
-    bodyGroup,
-    ctrl.bones.get('RightArm'),
-    ctrl.bones.get('RightForeArm'),
-    ctrl.bones.get('RightHand'),
-    pose.rightGripBodyLocal.x,
-    pose.rightGripBodyLocal.y + palmOff * 0.38,
-    pose.rightGripBodyLocal.z - palmOff * 0.68,
-    -0.45,
-    -0.45,
-    -0.80,
-    bp,
-  );
+  // Arms -> Handlebar grips:
+  // 1) Curl fingers first so fist hollow center reflects actual grip geometry.
+  // 2) Pass 1 places wrist slightly up & back and orients palm/knuckles along grip bar axis.
+  // 3) Pass 2 measures the actual curled fist palm center and shifts wrist so the hollow fist locks dead-center on the rubber grip.
+  const palmSpan = ctrl.bindPalmOffsetM * 2.0;
+  const solveSideGrip = (
+    side: 'Left' | 'Right',
+    gripBody: { x: number; y: number; z: number },
+    barAxisBody: { x: number; y: number; z: number },
+    poleX: number,
+  ) => {
+    const arm = ctrl.bones.get(`${side}Arm`);
+    const foreArm = ctrl.bones.get(`${side}ForeArm`);
+    const hand = ctrl.bones.get(`${side}Hand`);
+    curlScooterHandFingers(ctrl, side, pose.fingerGripCurl, bp);
+    computeScooterGripHandFwdBody(side, barAxisBody, _scooterGripFwdScratch);
+    const fwdHorizLen = Math.hypot(_scooterGripFwdScratch.x, _scooterGripFwdScratch.z) || 1;
+    const targetPalmX = gripBody.x + (_scooterGripFwdScratch.x / fwdHorizLen) * 0.046;
+    const targetPalmY = gripBody.y + 0.022;
+    const targetPalmZ = gripBody.z + (_scooterGripFwdScratch.z / fwdHorizLen) * 0.046;
+    solveTwoBoneLimbPoleIkBodyLocal(
+      bodyGroup,
+      arm,
+      foreArm,
+      hand,
+      targetPalmX - _scooterGripFwdScratch.x * (palmSpan * 0.90),
+      targetPalmY - _scooterGripFwdScratch.y * (palmSpan * 0.90) + 0.042,
+      targetPalmZ - _scooterGripFwdScratch.z * (palmSpan * 0.90),
+      poleX,
+      -0.52,
+      -0.68,
+      bp,
+    );
+    orientScooterHandOnGrip(ctrl, bodyGroup, side, barAxisBody, bp);
+    if (hand && bp > 0.05) {
+      for (let iter = 0; iter < 2; iter++) {
+        bodyGroup.updateWorldMatrix(true, true);
+        if (!sampleMixamoHandPalmLocal(ctrl, bodyGroup, side === 'Right', _scooterGripPalmScratch)) {
+          break;
+        }
+        hand.getWorldPosition(_scooterGripWristScratch);
+        bodyGroup.worldToLocal(_scooterGripWristScratch);
+        const errX = targetPalmX - _scooterGripPalmScratch.x;
+        const errY = targetPalmY - _scooterGripPalmScratch.y;
+        const errZ = targetPalmZ - _scooterGripPalmScratch.z;
+        const errLen = Math.hypot(errX, errY, errZ);
+        if (errLen <= 0.002) break;
+        const clampRatio = errLen > 0.35 ? 0.35 / errLen : 1.0;
+        solveTwoBoneLimbPoleIkBodyLocal(
+          bodyGroup,
+          arm,
+          foreArm,
+          hand,
+          _scooterGripWristScratch.x + errX * clampRatio,
+          _scooterGripWristScratch.y + errY * clampRatio,
+          _scooterGripWristScratch.z + errZ * clampRatio,
+          poleX,
+          -0.52,
+          -0.68,
+          bp,
+        );
+        orientScooterHandOnGrip(ctrl, bodyGroup, side, barAxisBody, bp);
+      }
+    }
+  };
 
-  orientScooterHandOnGrip(
-    ctrl,
-    bodyGroup,
-    'Left',
-    pose.leftGripBodyLocal,
-    pose.leftGripBarAxisLocal,
-    pose.fingerGripCurl,
-    bp,
-  );
-  orientScooterHandOnGrip(
-    ctrl,
-    bodyGroup,
-    'Right',
-    pose.rightGripBodyLocal,
-    pose.rightGripBarAxisLocal,
-    pose.fingerGripCurl,
-    bp,
-  );
+  solveSideGrip('Left', pose.leftGripBodyLocal, pose.leftGripBarAxisLocal, 0.52);
+  solveSideGrip('Right', pose.rightGripBodyLocal, pose.rightGripBarAxisLocal, -0.52);
 
   // Legs -> Floorboard / Scooter Deck / Ground Push Sweep (rocker-compensated ankle height)
   const computeAnkleTargetY = (soleY: number, pitchRad: number) => {
@@ -15717,8 +16051,8 @@ function applyScooterRiderGlbRig(
     pose.leftFootSoleBodyLocal.x,
     computeAnkleTargetY(pose.leftFootSoleBodyLocal.y, pose.leftFootPitchRad),
     pose.leftFootSoleBodyLocal.z,
-    0.22,
-    0.08,
+    0.16,
+    0.14,
     1.0,
     bp,
   );
@@ -15730,8 +16064,8 @@ function applyScooterRiderGlbRig(
     pose.rightFootSoleBodyLocal.x,
     computeAnkleTargetY(pose.rightFootSoleBodyLocal.y, pose.rightFootPitchRad),
     pose.rightFootSoleBodyLocal.z,
-    -0.22,
-    0.08,
+    -0.16,
+    0.14,
     1.0,
     bp,
   );
@@ -16285,6 +16619,9 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
 
   const bones = new Map<string, THREE.Bone>();
   const meshes: { mesh: THREE.Mesh; defaultMat: THREE.Material | THREE.Material[] }[] = [];
+  const disableNpcOutline = Boolean(rig.bodyGroupRef?.userData?.disableNpcOutline);
+  glbRoot.userData.disableNpcOutline = disableNpcOutline;
+  const npcOutlineMeshesToRemove: THREE.Mesh[] = [];
 
   glbRoot.traverse((node) => {
     if ((node as THREE.Bone).isBone) {
@@ -16300,17 +16637,21 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     if ((node as THREE.Mesh).isMesh) {
       const mesh = node as THREE.Mesh;
       const lowerMeshName = (mesh.name || '').toLowerCase();
+      const isOutlineMesh =
+        lowerMeshName.includes('outline') || Boolean(mesh.userData?.isRuntimeOutlineMesh);
+      if (disableNpcOutline && isOutlineMesh) {
+        npcOutlineMeshesToRemove.push(mesh);
+        return;
+      }
       // Isolate all index-trimmable skin & skin-outline BufferGeometries per cloned rig so customizing
       // one NPC/player never mutates other characters sharing the same GLTF template.
       if (lowerMeshName.includes('_skin')) {
         ensurePerRigUniqueSkinGeometry(mesh);
       }
       mesh.visible = true;
-      // Enable directional ground/furniture cast shadow for local player & ambient city NPCs (non-outline meshes only)
-      const allowCastShadow = Boolean(rig.bodyGroupRef?.userData?.enableAvatarCastShadow);
-      glbRoot.userData.enableAvatarCastShadow = allowCastShadow;
-      mesh.castShadow =
-        allowCastShadow && !lowerMeshName.includes('outline') && !mesh.userData?.isRuntimeOutlineMesh;
+      // Disable 3D directional SkinnedMesh shadow casting on characters (lightweight contact shadow disc is used instead)
+      glbRoot.userData.enableAvatarCastShadow = false;
+      mesh.castShadow = false;
       mesh.receiveShadow = false;
       if ((mesh as THREE.SkinnedMesh).isSkinnedMesh) {
         applySkinnedMeshSafeBounds(mesh as THREE.SkinnedMesh);
@@ -16321,6 +16662,9 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
       meshes.push({ mesh, defaultMat: mesh.material });
     }
   });
+  for (const outMesh of npcOutlineMeshesToRemove) {
+    outMesh.parent?.remove(outMesh);
+  }
   applyRigPostUpgradeAnatomyRules(glbRoot);
 
   if (isSeatedRider) {
@@ -16343,6 +16687,7 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
   let bindFootDropPitchRad = 0.65;
   let bindFootBallLenM = 0.275;
   let bindPalmOffsetM = 0.11;
+  let scooterFistQuats: Map<string, THREE.Quaternion> | undefined;
   if (!isSeatedRider) {
     const tempMeasureHost = new THREE.Group();
     tempMeasureHost.add(glbRoot);
@@ -16385,6 +16730,7 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     bodyGroup.add(glbRoot);
     glbRoot.position.set(0, baseRootY, 0);
     glbRoot.updateWorldMatrix(true, true);
+    scooterFistQuats = buildScooterFistQuats(bones, template.bindQuats, glbRoot);
     const rawSoleOffsetY = measureLowestFootBoneLocalY(bones, glbRoot);
     if (Number.isFinite(rawSoleOffsetY)) {
       standingSoleOffsetY = rawSoleOffsetY;
@@ -16442,6 +16788,7 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     bindQuats: template.bindQuats,
     boxCarryUpperQuats: template.boxCarryUpperQuats,
     fireUpperQuats: template.fireUpperQuats,
+    scooterFistQuats,
     fireUpperFrames: template.fireUpperFrames,
     fireFrameCount: template.fireFrameCount,
     fireDuration: template.fireDuration,
@@ -17297,7 +17644,7 @@ function createSupplementalTorsoSkinMeshes(
   created.push(skinMesh);
   controller.meshes.push({ mesh: skinMesh, defaultMat: skinMat });
 
-  if (outlineMat && arrays.outlineIndices.length > 0) {
+  if (!controller.glbRoot.userData?.disableNpcOutline && outlineMat && arrays.outlineIndices.length > 0) {
     const outGeom = makeSkinnedBuffer(true);
     sanitizeAndNormalizeSkinAttributes(outGeom, mappedBones.length, undefined, 0);
     const mappedBoneNames = mappedBones.map((b) => b.name);
@@ -17439,7 +17786,7 @@ function cloneAndBindModularSkinnedMeshes(
   for (const srcSm of orderedSources) {
     const meshName = srcSm.name || `CustomEquipped_${slotTag}`;
     const isOutlineMesh = meshName.toLowerCase().includes('outline');
-    if (useRuntimeOutlinesForBlitz && isOutlineMesh) {
+    if ((useRuntimeOutlinesForBlitz || controller.glbRoot.userData?.disableNpcOutline) && isOutlineMesh) {
       continue;
     }
     const srcBones = srcSm.skeleton?.bones ?? [];
@@ -17545,7 +17892,7 @@ function cloneAndBindModularSkinnedMeshes(
     clonedMesh.userData.wardrobeClearanceM = appliedClearance;
     clonedMesh.userData.wardrobeScaleMultiplier = syncResult.appliedScaleMultiplier;
 
-    clonedMesh.castShadow = Boolean(controller.glbRoot.userData?.enableAvatarCastShadow) && !isOutlineMesh;
+    clonedMesh.castShadow = false;
     clonedMesh.receiveShadow = false;
     applySkinnedMeshSafeBoundingSphere(clonedMesh, 1.85, 0.75);
     clonedMesh.bindMode = targetProfile.bindMode;
@@ -17603,7 +17950,7 @@ function cloneAndBindModularSkinnedMeshes(
     controller.meshes.push({ mesh: clonedMesh, defaultMat: clonedMesh.material });
 
     // Synthesize matching thin anime runtime outline shell for native Blitz garments that have no pre-baked _Outline mesh
-    if (!isOutlineMesh && !existingOutlineStems.has(stem)) {
+    if (!controller.glbRoot.userData?.disableNpcOutline && !isOutlineMesh && !existingOutlineStems.has(stem)) {
       const isHairMeshHint = slotTag === 'hair' || meshName.toLowerCase().includes('hair');
       const matsArr = Array.isArray(clonedMesh.material)
         ? clonedMesh.material
@@ -19167,6 +19514,9 @@ export async function setBuddyRigModularOutfitUrls(
   if (savedBodyShape) {
     applyBuddyRigBodyShape(rig, savedBodyShape);
   }
+  if (rig.bodyGroupRef) {
+    rig.bodyGroupRef.userData.modularOutfitCompletedSeq = nextSeq;
+  }
   return ok;
 }
 
@@ -20633,11 +20983,15 @@ function stepCharBuddiesGlbRigController(
     !hasScooterPose &&
     (carryingCrate || isCafeEatingPose || (punchTimer <= 0 && weaponId !== 'unarmed'));
   const surfaceAnchorSpec =
-    (isSleeping && targetClip === 'sleeping.001') || isSitting
+    !hasScooterPose && ((isSleeping && targetClip === 'sleeping.001') || isSitting)
       ? CUSTOM_POSE_SURFACE_ANCHOR[targetClip]
       : undefined;
   const didFloorPass = Boolean(
-    bodyGroup && (!isSeatedOrPiloting || surfaceAnchorSpec || needHandSampling || isSitting),
+    bodyGroup &&
+      (!isSeatedOrPiloting ||
+        surfaceAnchorSpec ||
+        needHandSampling ||
+        (isSitting && !hasScooterPose)),
   );
   if (didFloorPass && bodyGroup) {
     ctrl.glbRoot.updateWorldMatrix(true, true);
@@ -20662,6 +21016,7 @@ function stepCharBuddiesGlbRigController(
         applySeatedFloorGroundingIk(ctrl, bodyGroup, targetClip, true);
       }
     } else if (
+      !hasScooterPose &&
       isSitting &&
       !isMoving &&
       jumpOffset <= 0.05 &&
@@ -21314,7 +21669,7 @@ export function buildProceduralBuddyAvatar(
     mesh.position.set(pos[0], pos[1], pos[2]);
     mesh.rotation.set(rot[0], rot[1], rot[2]);
     mesh.scale.set(scale[0], scale[1], scale[2]);
-    mesh.castShadow = !isSoftwareGl;
+    mesh.castShadow = false;
     mesh.receiveShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(mesh, windUniforms);
     if (strokeWidth > 0) {
@@ -24031,7 +24386,16 @@ export function createCurvedPlanetEnvironment(
         gl_FragColor = vec4(surfaceCol, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
+        vec3 preGroundFogRgb = gl_FragColor.rgb;
         #include <fog_fragment>
+        #if defined(USE_FOG) && !defined(FOG_EXP2)
+          float grassRegionMask = clamp(max(grassMask, inCentralParkMask), 0.0, 1.0);
+          if (grassRegionMask > 0.01) {
+            float horizonBlend = smoothstep(fogNear, fogFar, vFogDepth);
+            float grassFogScale = mix(mix(1.0, 0.34, grassRegionMask), 1.0, horizonBlend * horizonBlend);
+            gl_FragColor.rgb = mix(preGroundFogRgb, gl_FragColor.rgb, grassFogScale);
+          }
+        #endif
       }
     `,
   });
@@ -24114,12 +24478,12 @@ export function createCurvedPlanetEnvironment(
   //      and Far South Tail (localX in [-170.0..-104.2], worldZ in [+104.2..+170.0]) so the
   //      South-East Coastal Beachfront (worldZ in [+46.2..+104.2]) opens directly onto the ocean surf!
   const addQuayWallSegment = (segLength: number, centerLocalX: number, tileCountU: number) => {
-    const quayWallGeo = new THREE.BoxGeometry(segLength, 4.15, 1.35);
+    const quayWallGeo = new THREE.BoxGeometry(segLength, 3.84, 1.35);
     const quayWallMesh = new THREE.Mesh(
       quayWallGeo,
       new THREE.MeshStandardMaterial({ color: '#646b75', roughness: 0.85 }),
     );
-    quayWallMesh.position.set(centerLocalX, -1.68, -0.35);
+    quayWallMesh.position.set(centerLocalX, -1.84, -0.35);
     quayWallMesh.castShadow = !isSoftwareGl;
     quayWallMesh.receiveShadow = !isSoftwareGl;
     upgradeMeshToBlitzWorldMaterial(quayWallMesh, windUniforms, '#646b75');
@@ -24663,16 +25027,16 @@ export function createCurvedPlanetEnvironment(
   //    Preserves exact 28m x 76m footprint (x in [-104.5, -76.5], z in [-38.0, +38.0])
   // -------------------------------------------------------------------------
   // Lower Basalt Sub-Base Plinth (recessed around the East Urban Staircase bay lx in [+5.20 .. +14.10], lz in [-10.00 .. +10.00], widened -4.0m backward)
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(28.20, 0.48, 76.4), '#8a8d88', [-4.00, 0.24, 0], [0, 0, 0], 0.020, lobbyBasaltTex, 3.2);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(4.10, 0.48, 28.2), '#8a8d88', [12.05, 0.24, -24.1], [0, 0, 0], 0.020, lobbyBasaltTex, 3.2);
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(4.10, 0.48, 28.2), '#8a8d88', [12.05, 0.24, 24.1], [0, 0, 0], 0.020, lobbyBasaltTex, 3.2);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(28.20, 0.50, 76.4), '#8a8d88', [-4.00, 0.23, 0], [0, 0, 0], 0, lobbyBasaltTex, 3.2);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(4.00, 0.50, 28.2), '#8a8d88', [12.10, 0.23, -24.1], [0, 0, 0], 0, lobbyBasaltTex, 3.2);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(4.00, 0.50, 28.2), '#8a8d88', [12.10, 0.23, 24.1], [0, 0, 0], 0, lobbyBasaltTex, 3.2);
 
   // Main West & Central Upper Plaza Deck (lx in [-17.90 .. +5.20], full 75.8m length, top at y = +2.50m)
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(23.10, 2.02, 75.8), '#e5e2da', [-6.35, 1.49, 0], [0, 0, 0], 0.018, lobbyGranitePaverTex, 3.4);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(23.10, 2.04, 75.8), '#e5e2da', [-6.35, 1.48, 0], [0, 0, 0], 0, lobbyGranitePaverTex, 3.4);
   // East-North Upper Plaza Wing (lx in [+5.20 .. +13.90], lz in [-37.90 .. -10.00], top at y = +2.50m)
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(8.70, 2.02, 27.9), '#e5e2da', [9.55, 1.49, -23.95], [0, 0, 0], 0.018, lobbyGranitePaverTex, 3.4);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(8.70, 2.04, 27.9), '#e5e2da', [9.55, 1.48, -23.95], [0, 0, 0], 0, lobbyGranitePaverTex, 3.4);
   // East-South Upper Plaza Wing (lx in [+5.20 .. +13.90], lz in [+10.00 .. +37.90], top at y = +2.50m)
-  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(8.70, 2.02, 27.9), '#e5e2da', [9.55, 1.49, 23.95], [0, 0, 0], 0.018, lobbyGranitePaverTex, 3.4);
+  addLobbyPart(westPlantGroup, new THREE.BoxGeometry(8.70, 2.04, 27.9), '#e5e2da', [9.55, 1.48, 23.95], [0, 0, 0], 0, lobbyGranitePaverTex, 3.4);
 
   // Walkway border curb is now integrated into the continuous mitred perimeter balustrade curb (+2.50m Plaza Level)
 
@@ -24842,44 +25206,33 @@ export function createCurvedPlanetEnvironment(
   // 1) Central Staircase Landing Sidewalk (lz in [-10.00 .. +10.00], lx in [13.605 .. 18.72])
   addLobbyPart(
     urbanStaircaseGrp,
-    new THREE.BoxGeometry(5.115, 0.09, 20.00),
+    new THREE.BoxGeometry(5.115, 0.11, 20.00),
     '#bcc3cc',
-    [16.1625, 0.045, 0.0],
+    [16.1625, 0.035, 0.0],
     [0, 0, 0],
-    0.012,
+    0,
     lobbySidewalkPaverTex,
     2.2,
   );
-  // 2) North Plaza Roadside Sidewalk Promenade (lz in [-38.10 .. -10.00], lx in [13.92 .. 18.72];
+  // 2) North Plaza Roadside Sidewalk Promenade (lz in [-38.10 .. -10.00], lx in [14.10 .. 18.72];
   //    strokeW = 0 so zero BackSide outline lip crosses the flush z = -38.10 Grand Casino sidewalk seam!)
   addLobbyPart(
     urbanStaircaseGrp,
-    new THREE.BoxGeometry(4.80, 0.09, 28.10),
+    new THREE.BoxGeometry(4.62, 0.11, 28.10),
     '#bcc3cc',
-    [16.32, 0.045, -24.05],
+    [16.41, 0.035, -24.05],
     [0, 0, 0],
     0,
     lobbySidewalkPaverTex,
     2.2,
   );
-  // NE Granite Return Curb along z = -38.00 linking the widened Plaza Sidewalk [-78.83..-76.58] cleanly to Grand Casino's West Edge (-76.58)
-  addLobbyPart(
-    urbanStaircaseGrp,
-    new THREE.BoxGeometry(2.35, 0.105, 0.20),
-    '#8f96a0',
-    [15.095, 0.0525, -38.00],
-    [0, 0, 0],
-    0,
-    lobbyConcreteTex,
-    2.2,
-  );
-  // 3) South Plaza Roadside Sidewalk Promenade (lz in [+10.00 .. +38.10], lx in [13.92 .. 18.72],
+  // 3) South Plaza Roadside Sidewalk Promenade (lz in [+10.00 .. +38.10], lx in [14.10 .. 18.72],
   //    joining the Tennis Court East Sidewalk [-78.82 .. -74.03] 100% flush at worldZ = +38.10!)
   addLobbyPart(
     urbanStaircaseGrp,
-    new THREE.BoxGeometry(4.80, 0.09, 28.10),
+    new THREE.BoxGeometry(4.62, 0.11, 28.10),
     '#bcc3cc',
-    [16.32, 0.045, 24.05],
+    [16.41, 0.035, 24.05],
     [0, 0, 0],
     0,
     lobbySidewalkPaverTex,
@@ -24890,11 +25243,11 @@ export function createCurvedPlanetEnvironment(
   //    and South end flows continuously into the Tennis Court curb at z = +38.10!)
   addLobbyPart(
     urbanStaircaseGrp,
-    new THREE.BoxGeometry(0.20, 0.105, 76.25),
+    new THREE.BoxGeometry(0.20, 0.125, 76.25),
     '#8f96a0',
-    [18.82, 0.0525, 0.025],
+    [18.82, 0.0425, 0.025],
     [0, 0, 0],
-    0.010,
+    0,
     lobbyConcreteTex,
     2.2,
   );
@@ -25056,14 +25409,16 @@ export function createCurvedPlanetEnvironment(
   const shrubUpAxis = new THREE.Vector3(0, 1, 0);
   for (const sideSign of [-1, 1]) {
     const planterZ = sideSign * 9.20;
+    const tierBaseY = 0.04;
     for (let tIdx = 0; tIdx < steppedPlanterTiers.length; tIdx++) {
       const [tierX, tierLenX, tierTopY] = steppedPlanterTiers[tIdx];
+      const tierH = Math.max(0.20, tierTopY - tierBaseY);
       // Monolithic Architectural Concrete Planter Box (Blitz Toon solid color + outline)
       addToonRailingPart(
         urbanStaircaseGrp,
-        new THREE.BoxGeometry(tierLenX, tierTopY, 1.56),
+        new THREE.BoxGeometry(tierLenX - 0.02, tierH, 1.44),
         '#d6d2c8',
-        [tierX, tierTopY * 0.5, planterZ],
+        [tierX, tierBaseY + tierH * 0.5, planterZ],
         [0, 0, 0],
         0.011,
         false,
@@ -25072,18 +25427,18 @@ export function createCurvedPlanetEnvironment(
       // Chamfered Concrete Planter Coping Rim (Blitz Toon solid color + outline)
       addToonRailingPart(
         urbanStaircaseGrp,
-        new THREE.BoxGeometry(tierLenX + 0.06, 0.09, 1.62),
+        new THREE.BoxGeometry(tierLenX - 0.01, 0.07, 1.50),
         '#e8e4da',
-        [tierX, tierTopY - 0.03, planterZ],
+        [tierX, tierTopY - 0.02, planterZ],
         [0, 0, 0],
         0.009,
       );
       // Dark Soil & Mulch Bed inside Planter
       addToonRailingPart(
         urbanStaircaseGrp,
-        new THREE.BoxGeometry(tierLenX - 0.22, 0.05, 1.18),
+        new THREE.BoxGeometry(tierLenX - 0.22, 0.05, 1.16),
         '#6b4c35',
-        [tierX, tierTopY + 0.02, planterZ],
+        [tierX, tierTopY + 0.03, planterZ],
         [0, 0, 0],
         0.006,
       );
@@ -26985,13 +27340,13 @@ export function createCurvedPlanetEnvironment(
 
   // Front & Rear Pitched Slate Roof Slopes + Sage-Green Raking Gable Trim
   for (const zSide of [-1, 1]) {
-    const slopeZ = -0.55 + zSide * 1.42;
+    const slopeZ = -0.55 + zSide * 1.44;
     const slopePitch = zSide * 0.575;
     addChToonPart(
       civicHallGrp,
-      new THREE.BoxGeometry(9.42, 0.14, 3.42),
+      new THREE.BoxGeometry(9.42, 0.14, 3.28),
       COL_CH_SLATE,
-      [0, 4.58, slopeZ],
+      [0, 4.54, slopeZ],
       [slopePitch, 0, 0],
       0.011,
       lobbySteelRoofTex,
@@ -27000,16 +27355,16 @@ export function createCurvedPlanetEnvironment(
     for (const xEnd of [-4.65, 4.65]) {
       addChToonPart(
         civicHallGrp,
-        new THREE.BoxGeometry(0.18, 0.18, 3.46),
+        new THREE.BoxGeometry(0.18, 0.18, 3.32),
         COL_CH_SAGE,
-        [xEnd, 4.52, slopeZ],
+        [xEnd, 4.48, slopeZ],
         [slopePitch, 0, 0],
         0.008,
       );
     }
   }
-  // Roof Ridge Beam (y = 5.46m, z = -0.55)
-  addChToonPart(civicHallGrp, new THREE.BoxGeometry(9.46, 0.14, 0.24), COL_CH_SLATE_DARK, [0, 5.46, -0.55], [0, 0, 0], 0.009);
+  // Roof Ridge Beam (y = 5.52m, z = -0.55)
+  addChToonPart(civicHallGrp, new THREE.BoxGeometry(9.48, 0.18, 0.28), COL_CH_SLATE_DARK, [0, 5.52, -0.55], [0, 0, 0], 0.009);
 
   // Arched Sage-Green Louvered Attic Vents on Left & Right Side Gables (Panel 2 Side Elevation View!)
   for (const sideX of [-4.50, 4.50]) {
@@ -28282,14 +28637,14 @@ export function createCurvedPlanetEnvironment(
   // Court center in tennisClubGrp local coords: cx = -0.60, cz = -0.20 (14.8m W x 18.0m L -> 20.0m W x 24.3m L at 1.35x scale)
   // Spans lx in [-8.00 .. +6.80] (worldX in [-98.80 .. -78.82]), lz in [-9.20 .. +8.80] (worldZ in [+38.43 .. +62.73])
   // Notice that lz = -9.20 (worldZ = +38.43) sits 100% flush against the Central Plaza South Retaining Wall (worldZ = +38.33)!
-  const courtFlatGeo = new THREE.BoxGeometry(14.80, 0.08, 18.00);
+  const courtFlatGeo = new THREE.BoxGeometry(14.80, 0.10, 18.00);
   addTennisToonPart(
     tennisClubGrp,
     courtFlatGeo,
     '#ffffff',
-    [-0.60, 0.04, -0.20],
+    [-0.60, 0.03, -0.20],
     [0, 0, 0],
-    0.012,
+    0,
     tennisClayCourtTex,
     0.8,
     false,
@@ -28303,11 +28658,11 @@ export function createCurvedPlanetEnvironment(
   //    connecting 100% seamlessly with the South end of the Central Plaza Roadside Sidewalk at worldZ = +38.10!)
   addTennisToonPart(
     tennisClubGrp,
-    new THREE.BoxGeometry(3.55, 0.0667, 20.444),
+    new THREE.BoxGeometry(3.55, 0.0867, 20.444),
     '#bcc3cc',
-    [8.575, 0.03335, 0.778],
+    [8.575, 0.02335, 0.778],
     [0, 0, 0],
-    0.009,
+    0,
     lobbySidewalkPaverTex,
     1.63,
     false,
@@ -28316,11 +28671,11 @@ export function createCurvedPlanetEnvironment(
   //    aligned with the West Retaining Wall of the Central Plaza!) and lz in [+8.80 .. +11.00] (worldZ in [+62.73 .. +65.70])
   addTennisToonPart(
     tennisClubGrp,
-    new THREE.BoxGeometry(18.95, 0.0667, 2.20),
+    new THREE.BoxGeometry(18.95, 0.0867, 2.20),
     '#bcc3cc',
-    [-2.675, 0.03335, 9.90],
+    [-2.675, 0.02335, 9.90],
     [0, 0, 0],
-    0.009,
+    0,
     lobbySidewalkPaverTex,
     1.63,
     false,
@@ -28329,11 +28684,11 @@ export function createCurvedPlanetEnvironment(
   //    and lz in [-9.25 .. +8.80] (worldZ in [+38.36 .. +62.73], flush against the Central Plaza South Wall!)
   addTennisToonPart(
     tennisClubGrp,
-    new THREE.BoxGeometry(4.15, 0.0667, 18.05),
+    new THREE.BoxGeometry(4.15, 0.0867, 18.05),
     '#bcc3cc',
-    [-10.075, 0.03335, -0.225],
+    [-10.075, 0.02335, -0.225],
     [0, 0, 0],
-    0.009,
+    0,
     lobbySidewalkPaverTex,
     1.63,
     false,
@@ -28354,11 +28709,11 @@ export function createCurvedPlanetEnvironment(
   for (const curbPath of [spectatorNorthCurbPath, spectatorOuterCurbPath]) {
     addTennisToonPart(
       tennisClubGrp,
-      createMitredPolylineStripGeometry(curbPath, 0.148, 0.0778, false),
+      createMitredPolylineStripGeometry(curbPath, 0.148, 0.0978, false),
       '#8f96a0',
-      [0, 0.0389, 0],
+      [0, 0.0289, 0],
       [0, 0, 0],
-      0.008,
+      0,
       lobbyConcreteTex,
       1.63,
       false,
@@ -29026,6 +29381,10 @@ export function createCurvedPlanetEnvironment(
       );
       for (const bolX of [sideSign * 7.58, sideSign * 9.08]) {
         const isInner = Math.abs(bolX) < 7.8;
+        // On Central Plaza Halte, the front-north inner short bollard is replaced by the TRAM STOP sign (`sign_halte_plaza`)
+        if (stationId === 'central_plaza' && sideSign === -1 && isInner) {
+          continue;
+        }
         const bolH = isInner ? 0.88 : 0.96;
         const bolCenterY = isInner ? 0.25 + bolH * 0.5 : -0.06 + bolH * 0.5;
         addLobbyPart(
@@ -37046,11 +37405,22 @@ export function buildMilitaryBaseMasterplan(
     const w = 34.8;
     const d = 19.4;
 
-    // 1. Granite Border Curb framing the entire 35.0m x 19.6m plot interior
-    const curb = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.36, d + 0.36), lobbyGraniteCurbMat);
-    curb.rotation.x = -Math.PI / 2;
-    curb.position.set(cx, 0.032, plotZ);
-    floorGrp.add(curb);
+    // 1. Granite Border Curb framing the entire 35.0m x 19.6m plot interior (4 non-overlapping edge strips)
+    const curbBorderW = 0.24;
+    const curbNsGeo = new THREE.PlaneGeometry(w + curbBorderW * 2, curbBorderW);
+    for (const zSign of [-1, 1]) {
+      const curbStrip = new THREE.Mesh(curbNsGeo, lobbyGraniteCurbMat);
+      curbStrip.rotation.x = -Math.PI / 2;
+      curbStrip.position.set(cx, 0.034, plotZ + zSign * (d * 0.5 + curbBorderW * 0.5));
+      floorGrp.add(curbStrip);
+    }
+    const curbEwGeo = new THREE.PlaneGeometry(curbBorderW, d);
+    for (const xSign of [-1, 1]) {
+      const curbStrip = new THREE.Mesh(curbEwGeo, lobbyGraniteCurbMat);
+      curbStrip.rotation.x = -Math.PI / 2;
+      curbStrip.position.set(cx + xSign * (w * 0.5 + curbBorderW * 0.5), 0.034, plotZ);
+      floorGrp.add(curbStrip);
+    }
 
     // 2. Main Lobby-Style Polished Concrete Plaza Slab (#dcdad4)
     const slab = new THREE.Mesh(new THREE.PlaneGeometry(w, d), lobbyConcreteFloorMat);
@@ -37062,21 +37432,25 @@ export function buildMilitaryBaseMasterplan(
     for (let gx = -10.5; gx <= 19.5; gx += 5.0) {
       const jointX = new THREE.Mesh(new THREE.PlaneGeometry(0.11, d - 0.2), lobbyTileJointMat);
       jointX.rotation.x = -Math.PI / 2;
-      jointX.position.set(gx, 0.043, plotZ);
+      jointX.position.set(gx, 0.044, plotZ);
       floorGrp.add(jointX);
     }
     for (const gzOff of [-4.85, 0.0, 4.85]) {
       const jointZ = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.2, 0.11), lobbyTileJointMat);
       jointZ.rotation.x = -Math.PI / 2;
-      jointZ.position.set(cx, 0.049, plotZ + gzOff);
+      jointZ.position.set(cx, 0.050, plotZ + gzOff);
       floorGrp.add(jointZ);
     }
 
     // 4. Short Front Gate Driveway Apron outside the plot gate (lx in [21.8, 28.6])
-    const apronCurb = new THREE.Mesh(new THREE.PlaneGeometry(7.0, 5.5), roadCurbMat);
-    apronCurb.rotation.x = -Math.PI / 2;
-    apronCurb.position.set(25.2, 0.037, plotZ);
-    floorGrp.add(apronCurb);
+    const apronCurbW = 0.20;
+    const apronNsGeo = new THREE.PlaneGeometry(6.8 + apronCurbW * 2, apronCurbW);
+    for (const zSign of [-1, 1]) {
+      const apronCurb = new THREE.Mesh(apronNsGeo, roadCurbMat);
+      apronCurb.rotation.x = -Math.PI / 2;
+      apronCurb.position.set(25.2, 0.038, plotZ + zSign * (2.55 + apronCurbW * 0.5));
+      floorGrp.add(apronCurb);
+    }
 
     const apronSlab = new THREE.Mesh(new THREE.PlaneGeometry(6.8, 5.1), roadAsphaltMat);
     apronSlab.rotation.x = -Math.PI / 2;
@@ -37095,6 +37469,10 @@ export function buildMilitaryBaseMasterplan(
   // Empty Grass Lot Boundary Frame ("garis/bentuk batas kavling tanah"):
   // Renders ONLY the 4 thin flat stone boundary curb lines framing the 35.0m x 19.6m lot,
   // leaving the entire interior as flat lush green grass with zero concrete slab or obstacles.
+  const emptyLotBoundaryGroup = new THREE.Group();
+  emptyLotBoundaryGroup.name = 'LegacyEmptyGrassLotBoundaries';
+  masterRoot.add(emptyLotBoundaryGroup);
+
   const addEmptyGrassLotBoundaryForPlot = (plotZ: number) => {
     const cx = 4.3;
     const w = 34.8;
@@ -37106,7 +37484,7 @@ export function buildMilitaryBaseMasterplan(
       const strip = new THREE.Mesh(northSouthGeo, lobbyGraniteCurbMat);
       strip.rotation.x = -Math.PI / 2;
       strip.position.set(cx, 0.02, plotZ + zSign * (d * 0.5 + borderW * 0.5));
-      masterRoot.add(strip);
+      emptyLotBoundaryGroup.add(strip);
     }
 
     const eastWestGeo = new THREE.PlaneGeometry(borderW, d);
@@ -37114,7 +37492,7 @@ export function buildMilitaryBaseMasterplan(
       const strip = new THREE.Mesh(eastWestGeo, lobbyGraniteCurbMat);
       strip.rotation.x = -Math.PI / 2;
       strip.position.set(cx + xSign * (w * 0.5 + borderW * 0.5), 0.02, plotZ);
-      masterRoot.add(strip);
+      emptyLotBoundaryGroup.add(strip);
     }
   };
 
@@ -37123,7 +37501,9 @@ export function buildMilitaryBaseMasterplan(
   for (let pIdx = 0; pIdx < PLOT_CENTERS_Z.length; pIdx++) {
     const plotZ = PLOT_CENTERS_Z[pIdx];
     const isModelEstate = team === 'blue' && pIdx === 0;
-    addEmptyGrassLotBoundaryForPlot(plotZ);
+    if (!isModelEstate) {
+      addEmptyGrassLotBoundaryForPlot(plotZ);
+    }
     plotPlazaFloorGroups.push(addLobbyPlazaFloorForPlot(plotZ, isModelEstate));
   }
 
@@ -40005,6 +40385,13 @@ export function buildMilitaryBaseMasterplan(
     enumerable: false,
   });
 
+  Object.defineProperty(baseGroup, '__emptyLotBoundaryGroup', {
+    value: emptyLotBoundaryGroup,
+    configurable: true,
+    writable: true,
+    enumerable: false,
+  });
+
   bakeStaticGroupMeshes(masterRoot, {
     excludeObjects: new Set<THREE.Object3D>([
       hqGroup,
@@ -40012,6 +40399,7 @@ export function buildMilitaryBaseMasterplan(
       barracksGroup,
       checkpointGroup,
       plazaManorPlotTemplate,
+      emptyLotBoundaryGroup,
       ...plotPlazaFloorGroups,
       ...plotBastionGroups,
       ...plotControllers.map((pc) => pc.plotRoot),
@@ -40134,30 +40522,33 @@ export function syncMilitaryBasePlotsVisuals(
   team: 'blue' | 'red',
   isSafezoneMode = false,
 ): void {
-  const plotControllers = (
-    baseGroup as unknown as {
-      __plotControllers?: Array<{
-        plotRoot: THREE.Group;
-        plazaFloorGroup: THREE.Group;
-        bastionGroup: THREE.Group;
-        skyTurret: SkyshieldTurretController;
-        lv1Building: THREE.Group;
-        lv2Building: THREE.Group;
-        lv3Building: THREE.Group;
-        plazaManorBuilding?: THREE.Group;
-        rubbleGroup: THREE.Group;
-        fenceLv1Group: THREE.Group;
-        fenceLv2Group: THREE.Group;
-        fenceLv3Group: THREE.Group;
-        helipadBlueprintGroup: THREE.Group;
-        helipadBuiltGroup: THREE.Group;
-        parkingBlueprintGroup: THREE.Group;
-        parkingBuiltGroup: THREE.Group;
-        gardenGroups: Record<string, THREE.Group>;
-        skinAccentMat: THREE.MeshBasicMaterial;
-      }>;
-    }
-  ).__plotControllers;
+  const baseWithMeta = baseGroup as unknown as {
+    __emptyLotBoundaryGroup?: THREE.Group;
+    __plotControllers?: Array<{
+      plotRoot: THREE.Group;
+      plazaFloorGroup: THREE.Group;
+      bastionGroup: THREE.Group;
+      skyTurret: SkyshieldTurretController;
+      lv1Building: THREE.Group;
+      lv2Building: THREE.Group;
+      lv3Building: THREE.Group;
+      plazaManorBuilding?: THREE.Group;
+      rubbleGroup: THREE.Group;
+      fenceLv1Group: THREE.Group;
+      fenceLv2Group: THREE.Group;
+      fenceLv3Group: THREE.Group;
+      helipadBlueprintGroup: THREE.Group;
+      helipadBuiltGroup: THREE.Group;
+      parkingBlueprintGroup: THREE.Group;
+      parkingBuiltGroup: THREE.Group;
+      gardenGroups: Record<string, THREE.Group>;
+      skinAccentMat: THREE.MeshBasicMaterial;
+    }>;
+  };
+  if (baseWithMeta.__emptyLotBoundaryGroup) {
+    baseWithMeta.__emptyLotBoundaryGroup.visible = !isSafezoneMode;
+  }
+  const plotControllers = baseWithMeta.__plotControllers;
   if (!plotControllers) return;
 
   const skinColors: Record<string, string> = {

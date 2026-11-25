@@ -388,8 +388,7 @@ export class RadialInteractPinManager {
     labelEl.style.transform = 'translate(-50%, -2px)';
     labelEl.style.padding = '3px 8px';
     labelEl.style.borderRadius = '9999px';
-    labelEl.style.background = 'rgba(15, 20, 32, 0.82)';
-    labelEl.style.backdropFilter = 'blur(8px)';
+    labelEl.style.background = 'rgba(15, 20, 32, 0.90)';
     labelEl.style.border = '1px solid rgba(255, 255, 255, 0.22)';
     labelEl.style.color = '#ffffff';
     labelEl.style.fontFamily = "'Plus Jakarta Sans', 'Inter', sans-serif";

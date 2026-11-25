@@ -468,36 +468,36 @@ export function buildRealEstateArchitecturalScaleModel(
   );
 
   const houseMinGrp = new THREE.Group();
-  houseMinGrp.position.set(-0.02, 0.820, -0.03);
+  houseMinGrp.position.set(-0.02, 0.826, -0.03);
   scaleModelGrp.add(houseMinGrp);
 
   partHelper.addPart(houseMinGrp, makeRoundedReBox(0.82, 0.22, 0.46, 0.012), '#f8f5ec', [0.04, 0.11, -0.02], [0, 0, 0], 0.006);
-  partHelper.addPart(houseMinGrp, makeRoundedReBox(0.34, 0.20, 0.24, 0.010), '#efeadd', [-0.30, 0.095, 0.14], [0, 0, 0], 0.005);
-  partHelper.addPart(houseMinGrp, makeRoundedReBox(0.56, 0.20, 0.40, 0.012), '#fcfaf3', [0.12, 0.32, -0.02], [0, 0, 0], 0.006);
+  partHelper.addPart(houseMinGrp, makeRoundedReBox(0.32, 0.20, 0.24, 0.010), '#efeadd', [-0.31, 0.10, 0.14], [0, 0, 0], 0.005);
+  partHelper.addPart(houseMinGrp, makeRoundedReBox(0.56, 0.20, 0.40, 0.012), '#fcfaf3', [0.12, 0.322, -0.02], [0, 0, 0], 0.006);
 
   const mainRoofGeo = new THREE.ConeGeometry(0.46, 0.17, 4);
   mainRoofGeo.rotateY(Math.PI / 4);
   mainRoofGeo.scale(1.06, 1.0, 0.78);
-  partHelper.addPart(houseMinGrp, mainRoofGeo, '#464d57', [0.12, 0.505, -0.02], [0, 0, 0], 0.006);
+  partHelper.addPart(houseMinGrp, mainRoofGeo, '#464d57', [0.12, 0.508, -0.02], [0, 0, 0], 0.006);
 
   const lowerWingRoofGeo = new THREE.ConeGeometry(0.28, 0.12, 4);
   lowerWingRoofGeo.rotateY(Math.PI / 4);
   lowerWingRoofGeo.scale(0.96, 1.0, 0.78);
-  partHelper.addPart(houseMinGrp, lowerWingRoofGeo, '#525a66', [-0.26, 0.25, 0.08], [0, 0, 0], 0.005);
+  partHelper.addPart(houseMinGrp, lowerWingRoofGeo, '#525a66', [-0.27, 0.255, 0.08], [0, 0, 0], 0.005);
 
-  partHelper.addPart(houseMinGrp, new THREE.BoxGeometry(0.08, 0.13, 0.02), COL_TIMBER_DARK, [0.08, 0.07, 0.215], [0, 0, 0], 0.003, undefined, 0.4, false);
+  partHelper.addPart(houseMinGrp, new THREE.BoxGeometry(0.08, 0.13, 0.024), COL_TIMBER_DARK, [0.08, 0.07, 0.218], [0, 0, 0], 0.003, undefined, 0.4, false);
   for (const [wx, wy, wz] of [
-    [0.27, 0.11, 0.215],
-    [-0.10, 0.11, 0.215],
-    [0.01, 0.32, 0.185],
-    [0.24, 0.32, 0.185],
-    [0.455, 0.12, -0.02],
-    [0.405, 0.32, -0.02],
+    [0.27, 0.11, 0.218],
+    [-0.07, 0.11, 0.218],
+    [0.01, 0.322, 0.188],
+    [0.24, 0.322, 0.188],
+    [0.458, 0.12, -0.02],
+    [0.408, 0.322, -0.02],
   ] as [number, number, number][]) {
     const isSideWin = wx > 0.39;
     addLuminousPart(
       houseMinGrp,
-      new THREE.BoxGeometry(isSideWin ? 0.02 : 0.11, 0.085, isSideWin ? 0.12 : 0.02),
+      new THREE.BoxGeometry(isSideWin ? 0.024 : 0.11, 0.085, isSideWin ? 0.12 : 0.024),
       '#fef3c7',
       '#fde68a',
       0.64,

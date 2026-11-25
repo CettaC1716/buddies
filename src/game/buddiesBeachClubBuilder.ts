@@ -1724,8 +1724,8 @@ export function buildCoastalBeachClub3D(
     [prom.minZ, -95.5],
     [-92.6, -67.6],
     [-63.8, -17.0],
-    [-12.0, 32.5],
-    [38.5, 43.8],
+    [-12.0, 25.4],
+    [30.6, 43.8],
   ] as const) {
     const segLen = cz1 - cz0;
     if (segLen > 0.2) {
@@ -1804,46 +1804,137 @@ export function buildCoastalBeachClub3D(
     );
   };
 
-  // North Arrival Courtyard (+0.82m), North VIP Walk (+0.64m), Dry North Pergola Walkway (+0.36m) & East Catch Ledge (-0.96m)
+  // North Arrival Courtyard (+0.82m), North VIP Walk (+0.64m) & Dry North Pergola Walkway (+0.36m)
   buildSolidTerraceTierSlab(91.2, 99.6, -96.2, -89.0, 0.82, -2.15);
   buildSolidTerraceTierSlab(91.2, 99.6, -89.0, -77.4, 0.64, -2.15);
   buildSolidTerraceTierSlab(99.6, 120.6, -96.2, -94.0, 0.36, -2.15); // Dry pergola landing flush with cascadeTier1.minZ=-94.0
-  buildSolidTerraceTierSlab(119.6, 120.6, -94.0, -78.2, -0.96, -2.15); // Lowered East catch ledge below cascade weirs
 
   // Solid VIP Cabana Mezzanine Deck (+0.64m continuous platform from Promenade to West Moat & Cliff Edge)
-  buildSolidTerraceTierSlab(91.2, 96.4, -77.4, 45.2, 0.64, -2.15);
+  buildSolidTerraceTierSlab(91.2, 96.4, -77.4, 45.02, 0.64, -2.15);
   buildSolidTerraceTierSlab(96.4, 99.6, -77.4, -74.2, 0.64, -2.15); // North-West moat cap
   buildSolidTerraceTierSlab(96.4, 99.6, -51.2, -49.4, 0.64, -2.15); // North flank beside stair_vip_mid_n
   buildSolidTerraceTierSlab(96.4, 99.6, -45.6, -45.0, 0.64, -2.15); // South flank beside stair_vip_mid_n
   buildSolidTerraceTierSlab(96.4, 99.6, -17.2, 7.4, 0.64, -2.15); // Center West VIP entrance mezzanine deck
-  // Smooth 2-step threshold joining VIP Mezzanine (+0.64m at z=45.2) to Kai's Boardwalk (+0.82m at z=46.2)
-  buildSolidTerraceTierSlab(91.2, 92.2, 45.2, 45.7, 0.7, -2.15);
-  buildSolidTerraceTierSlab(91.2, 92.2, 45.7, 46.2, 0.78, -2.15);
   // Solid retaining foundations under West Reflection Moats (water +0.52m, floor +0.14m -> grounded to -2.15m)
   buildSubBasinRetainingPodium(96.4, 99.5, -74.2, -51.2, 0.08, -2.15);
   buildSubBasinRetainingPodium(96.4, 99.5, -45.0, -17.2, 0.08, -2.15);
 
-  // North Crosswalk Spine at z = -78.2..-74.8 (-0.56m West -> stair_mid_ocean_north -> -0.96m East, flush w/ stair_beach_n at 120.6)
-  buildSolidTerraceTierSlab(99.6, 112.0, -78.2, -74.8, -0.56, -2.15);
-  buildSolidTerraceTierSlab(112.0, 120.6, -78.2, -74.8, -0.96, -2.15);
-  // West dry walkway strip bordering pool_north_inner_lagoon (x: 99.6..100.4, seats bc_planter_mid_w)
-  buildSolidTerraceTierSlab(99.6, 100.4, -74.8, -17.6, -0.56, -2.15);
-  // Central Crosswalk Spine at z = -17.6..-11.2 (-0.56m West -> stair_mid_ocean_n -> -0.96m East, flush w/ stair_beach_c at 120.6)
+  // West dry walkway strip bordering pool_north_inner_lagoon (x: 99.6..100.4, z: -49.4..-17.6; z <= -49.4 is covered by North Calacatta Plaza)
+  buildSolidTerraceTierSlab(99.6, 100.4, -49.4, -17.6, -0.56, -2.15);
+  // Central Crosswalk Spine at z = -17.6..-11.2 (-0.56m West -> stair_mid_ocean_n [110.8..112.4] -> -0.96m East, flush w/ stair_beach_c at 120.6)
   buildSolidTerraceTierSlab(99.6, 110.8, -17.6, -11.2, -0.56, -2.15);
-  buildSolidTerraceTierSlab(110.8, 120.6, -17.6, -11.2, -0.96, -2.15);
+  buildSolidTerraceTierSlab(112.4, 120.6, -17.6, -11.2, -0.96, -2.15);
   // Central DJ & Skylight Dance Plaza at z = -11.2..7.4 (-0.56m Mid Plaza + -0.96m Oceanfront Terrace flush w/ stair_beach_cs at 120.8)
   buildSolidTerraceTierSlab(99.6, 112.0, -11.2, 7.4, -0.56, -2.15);
   buildSolidTerraceTierSlab(112.0, 120.8, -11.2, 7.4, -0.96, -2.15);
-  // South Inner Lounge Terrace (-0.56m) -> stair_mid_ocean_s -> 2.0m Dry Poolside Promenade (-1.00m) + North/South rims of southSeaPool
-  buildSolidTerraceTierSlab(96.4, 105.2, 7.4, 45.2, -0.56, -2.15);
-  buildSolidTerraceTierSlab(105.2, 108.4, 7.4, 42.6, -1.0, -2.15); // 2.0m poolside promenade west of southSeaPool (minX=108.4)
+  // South Inner Lounge Terrace (-0.56m) -> stair_mid_ocean_s [105.2..106.4] -> 2.0m Dry Poolside Promenade (-1.00m) + North/South rims of southSeaPool
+  buildSolidTerraceTierSlab(96.4, 105.2, 7.4, 45.02, -0.56, -2.15);
+  buildSolidTerraceTierSlab(106.4, 108.4, 7.4, 42.6, -1.0, -2.15); // Poolside promenade west of southSeaPool (clear of stair_mid_ocean_s)
   buildSolidTerraceTierSlab(108.4, 120.6, 7.4, 8.2, -1.0, -2.15); // North rim of southSeaPool
-  buildSolidTerraceTierSlab(105.2, 120.8, 42.6, 45.2, -1.0, -2.15); // South-end perimeter terrace flush w/ stair_beach_s at 120.8
+  buildSolidTerraceTierSlab(106.4, 120.8, 42.6, 45.02, -1.0, -2.15); // South-end perimeter terrace flush w/ stair_beach_s at 120.8
+
+  // ============================================================================
+  // 2B. TALL, THICK WHITE CALACATTA MARBLE DIVIDING WALL BETWEEN KAI'S BEACH & BEACH CLUB
+  //     Spans x = 91.2 .. 123.8 along z = 45.52 (0.92m thick core + 1.08m coping & 1.14m pilasters)
+  // ============================================================================
+  const sw = mp.southBoundaryWall;
+  const swUpperW = sw.stepX - sw.minX;
+  const swUpperCx = (sw.minX + sw.stepX) * 0.5;
+  const swUpperH = sw.upperTopY - sw.baseY;
+  // Upper section (VIP Mezzanine & Mid Lounge Terrace: x = 91.2 .. 106.4, top = +3.35m)
+  addWorldPart(
+    staticClubGroup,
+    applyBoxMetricUvs(new THREE.BoxGeometry(swUpperW, swUpperH - 0.18, sw.thicknessZ), 2.6, 2.6),
+    '#ffffff',
+    [swUpperCx, sw.baseY + (swUpperH - 0.18) * 0.5, sw.cz],
+    [0, 0, 0],
+    { tex: calacattaTex, strokeW: 0.015, castShadow: true, receiveShadow: true },
+  );
+  // Overhanging White Calacatta Marble crown coping + brushed-brass reveal band on Upper section
+  addWorldPart(
+    staticClubGroup,
+    applyBoxMetricUvs(new THREE.BoxGeometry(swUpperW + 0.16, 0.2, sw.thicknessZ + 0.18), 2.4, 2.4),
+    '#ffffff',
+    [swUpperCx, sw.upperTopY - 0.1, sw.cz],
+    [0, 0, 0],
+    { tex: calacattaTex, strokeW: 0.014, castShadow: true, receiveShadow: true },
+  );
+  addCustomMatPart(
+    staticClubGroup,
+    new THREE.BoxGeometry(swUpperW + 0.08, 0.06, sw.thicknessZ + 0.08),
+    brushedBrassMat,
+    [swUpperCx, sw.upperTopY - 0.23, sw.cz],
+    [0, 0, 0],
+    { castShadow: true, receiveShadow: true },
+  );
+
+  // Lower oceanfront section (South Ocean Lagoon & Beachfront Stair: x = 106.4 .. 123.8, top = +2.55m)
+  const swLowerW = sw.maxX - sw.stepX;
+  const swLowerCx = (sw.stepX + sw.maxX) * 0.5;
+  const swLowerH = sw.lowerTopY - sw.baseY;
+  addWorldPart(
+    staticClubGroup,
+    applyBoxMetricUvs(new THREE.BoxGeometry(swLowerW, swLowerH - 0.18, sw.thicknessZ), 2.6, 2.6),
+    '#ffffff',
+    [swLowerCx, sw.baseY + (swLowerH - 0.18) * 0.5, sw.cz],
+    [0, 0, 0],
+    { tex: calacattaTex, strokeW: 0.015, castShadow: true, receiveShadow: true },
+  );
+  addWorldPart(
+    staticClubGroup,
+    applyBoxMetricUvs(new THREE.BoxGeometry(swLowerW + 0.16, 0.2, sw.thicknessZ + 0.18), 2.4, 2.4),
+    '#ffffff',
+    [swLowerCx, sw.lowerTopY - 0.1, sw.cz],
+    [0, 0, 0],
+    { tex: calacattaTex, strokeW: 0.014, castShadow: true, receiveShadow: true },
+  );
+  addCustomMatPart(
+    staticClubGroup,
+    new THREE.BoxGeometry(swLowerW + 0.08, 0.06, sw.thicknessZ + 0.08),
+    brushedBrassMat,
+    [swLowerCx, sw.lowerTopY - 0.23, sw.cz],
+    [0, 0, 0],
+    { castShadow: true, receiveShadow: true },
+  );
+
+  // Molded White Calacatta Marble base plinth skirting both sides along the full 32.6m length
+  const swFullW = sw.maxX - sw.minX;
+  const swFullCx = (sw.minX + sw.maxX) * 0.5;
+  addWorldPart(
+    staticClubGroup,
+    applyBoxMetricUvs(new THREE.BoxGeometry(swFullW + 0.08, 3.05, sw.thicknessZ + 0.12), 2.6, 2.0),
+    '#ffffff',
+    [swFullCx, sw.baseY + 1.525, sw.cz],
+    [0, 0, 0],
+    { tex: calacattaTex, strokeW: 0.012, receiveShadow: true },
+  );
+
+  // 8 Classical White Calacatta Marble Square Pilasters / Boundary Columns with stepped capitals
+  for (const px of [91.6, 96.4, 101.4, 106.4, 111.0, 115.6, 120.2, 123.4]) {
+    const pTopY = px <= sw.stepX + 0.05 ? sw.upperTopY + 0.14 : sw.lowerTopY + 0.14;
+    const pH = pTopY - sw.baseY;
+    addWorldPart(
+      staticClubGroup,
+      applyBoxMetricUvs(new THREE.BoxGeometry(0.84, pH - 0.16, sw.thicknessZ + 0.22), 2.0, 2.4),
+      '#ffffff',
+      [px, sw.baseY + (pH - 0.16) * 0.5, sw.cz],
+      [0, 0, 0],
+      { tex: calacattaTex, strokeW: 0.014, castShadow: true, receiveShadow: true },
+    );
+    addWorldPart(
+      staticClubGroup,
+      applyBoxMetricUvs(new THREE.BoxGeometry(0.98, 0.18, sw.thicknessZ + 0.34), 1.8, 1.8),
+      '#ffffff',
+      [px, pTopY - 0.08, sw.cz],
+      [0, 0, 0],
+      { tex: calacattaTex, strokeW: 0.012, castShadow: true, receiveShadow: true },
+    );
+  }
 
   // Sleek Coastal Brushed-Brass & Low-Iron Glass Balustrade along the +0.64m South VIP Cliff Edge
-  // (x=96.26, z in [14.2..29.8], aligned 1:1 with beach_club_retaining_vip_south_mid and clear of both south stairs!)
+  // (x=96.26, z in [14.2..25.0], aligned 1:1 with beach_club_retaining_vip_south_mid and clear of both south stairs!)
   const vipRailMinZ = 14.2;
-  const vipRailMaxZ = 29.8;
+  const vipRailMaxZ = 25.0;
   const vipRailLen = vipRailMaxZ - vipRailMinZ;
   const vipRailCz = (vipRailMinZ + vipRailMaxZ) * 0.5;
   const vipRailX = 96.26;
@@ -1874,8 +1965,8 @@ export function buildCoastalBeachClub3D(
     [0, 0, 0],
     { receiveShadow: true },
   );
-  // Brushed-brass stanchion posts every ~2.6m + clear coastal glass panels between posts
-  const railBays = 6;
+  // Brushed-brass stanchion posts every ~2.7m + clear coastal glass panels between posts
+  const railBays = 4;
   const railBayLen = vipRailLen / railBays;
   for (let i = 0; i <= railBays; i++) {
     const pz = vipRailMinZ + i * railBayLen;
@@ -1904,12 +1995,15 @@ export function buildCoastalBeachClub3D(
   //    Exact flush non-overlapping treads (zero side Z-fighting) grounded solidly into lower tiers!
   // ============================================================================
   for (const sf of mp.stairFlights) {
-    const w = sf.maxX - sf.minX;
-    const d = sf.maxZ - sf.minZ;
-    const cx = (sf.minX + sf.maxX) * 0.5;
-    const cz = (sf.minZ + sf.maxZ) * 0.5;
+    const inset0 = 0.015;
+    const effMinX = sf.axis === 'x' ? sf.minX + inset0 : sf.minX;
+    const effMinZ = sf.axis === 'z' ? sf.minZ + inset0 : sf.minZ;
+    const w = sf.maxX - effMinX;
+    const d = sf.maxZ - effMinZ;
+    const cx = (effMinX + sf.maxX) * 0.5;
+    const cz = (effMinZ + sf.maxZ) * 0.5;
     const nSteps = Math.max(2, sf.steps);
-    const minElev = Math.max(-2.15, Math.min(sf.fromElevY, sf.toElevY) - 0.55);
+    const minElev = Math.max(-2.12, Math.min(sf.fromElevY, sf.toElevY) - 0.55);
 
     for (let s = 0; s < nSteps; s++) {
       const frac0 = s / nSteps;
@@ -1920,10 +2014,10 @@ export function buildCoastalBeachClub3D(
 
       if (sf.axis === 'x') {
         const stepW = w / nSteps;
-        const sx = sf.minX + (s + 0.5) * stepW;
+        const sx = effMinX + (s + 0.5) * stepW;
         addWorldPart(
           staticClubGroup,
-          applyBoxMetricUvs(new THREE.BoxGeometry(stepW, treadH, d), 2.0, 2.0),
+          applyBoxMetricUvs(new THREE.BoxGeometry(stepW - 0.004, treadH, d - 0.01), 2.0, 2.0),
           s % 2 === 0 ? '#efe7da' : '#e5dac7',
           [sx, stepCenterY, cz],
           [0, 0, 0],
@@ -1931,10 +2025,10 @@ export function buildCoastalBeachClub3D(
         );
       } else {
         const stepD = d / nSteps;
-        const sz = sf.minZ + (s + 0.5) * stepD;
+        const sz = effMinZ + (s + 0.5) * stepD;
         addWorldPart(
           staticClubGroup,
-          applyBoxMetricUvs(new THREE.BoxGeometry(w, treadH, stepD), 2.0, 2.0),
+          applyBoxMetricUvs(new THREE.BoxGeometry(w - 0.01, treadH, stepD - 0.004), 2.0, 2.0),
           s % 2 === 0 ? '#efe7da' : '#e5dac7',
           [cx, stepCenterY, sz],
           [0, 0, 0],
@@ -2205,17 +2299,17 @@ export function buildCoastalBeachClub3D(
   buildInfinityPoolBasin(mp.pools.westFlankNorth, 0.52, 0.14, { copingMarginY: 0.04 });
   buildInfinityPoolBasin(mp.pools.westFlankSouth, 0.52, 0.14, { copingMarginY: 0.04 });
 
-  // Inner Reflection Lagoon (-0.60m, flush coping beside Timber Sunbed Peninsula) + Seaward Oceanfront Lagoons (-0.98m)
+  // Inner Reflection Lagoon (-0.60m, raised +0.055m coping margin above -0.56m terrace) + Seaward Oceanfront Lagoons (-0.98m)
   buildInfinityPoolBasin(mp.pools.lapChannels[0], -0.6, -0.96, {
     eastInfinityWeir: false,
-    copingMarginY: 0.03,
+    copingMarginY: 0.055,
   });
   for (const seaChan of mp.pools.lapChannels.slice(1)) {
     buildSubBasinRetainingPodium(seaChan.minX, seaChan.maxX, seaChan.minZ, seaChan.maxZ, -1.42, -2.15);
     buildInfinityPoolBasin(seaChan, -0.98, -1.36, {
       eastInfinityWeir: true,
       eastWeirBaseY: -2.04,
-      copingMarginY: 0.02,
+      copingMarginY: 0.04,
     });
   }
 
@@ -2276,7 +2370,7 @@ export function buildCoastalBeachClub3D(
     isOriented: true,
     eastInfinityWeir: true,
     eastWeirBaseY: -2.04,
-    copingMarginY: 0.02,
+    copingMarginY: 0.045,
   });
 
   // ============================================================================
@@ -2931,9 +3025,9 @@ export function buildCoastalBeachClub3D(
   }
 
   // ============================================================================
-  // 7. MODERN LUXURY COCKTAIL BAR (cx=95.6, cz=40.4, rotY=+PI/2 facing East beach)
+  // 7. ENLARGED MODERN LUXURY COCKTAIL BAR (cx=96.2, cz=38.2, rotY=+PI/2 facing East beach)
   //    *** STRICTLY ZERO WOOD / TANPA KAYU! ***
-  //    Scaled proportionally to 3.31m avatar height on a 2-tier circular Ivory Terrazzo & Brass Podium (+0.68m)
+  //    Enlarged for comfortable avatar seating on a 2-tier circular Ivory Terrazzo & Brass Podium (+0.68m)
   // ============================================================================
   const bar = mp.cocktailBar;
   const barGrp = new THREE.Group();
@@ -2942,26 +3036,26 @@ export function buildCoastalBeachClub3D(
   barGrp.rotation.y = bar.rotY;
   staticClubGroup.add(barGrp);
 
-  // Lower stepped Terrazzo foundation (-0.65m .. +0.58m) + Upper Podium (+0.68m) matching evaluateBeachClubElevation radius
+  // Lower stepped Terrazzo foundation (-0.68m .. +0.58m) + Upper Podium (+0.68m) matching evaluateBeachClubElevation radius
   addWorldPart(
     barGrp,
-    new THREE.CylinderGeometry(bar.padRadiusM + 0.16, bar.padRadiusM + 0.26, 1.23, 32),
+    new THREE.CylinderGeometry(bar.padRadiusM + 0.18, bar.padRadiusM + 0.28, 1.26, 36),
     '#ebe2d3',
-    [0, -0.035, 0],
+    [0, -0.05, 0],
     [0, 0, 0],
     { tex: limestoneTex, receiveShadow: true },
   );
   addWorldPart(
     barGrp,
-    new THREE.CylinderGeometry(bar.padRadiusM, bar.padRadiusM + 0.16, bar.padElevY + 0.65, 32),
+    new THREE.CylinderGeometry(bar.padRadiusM, bar.padRadiusM + 0.18, bar.padElevY + 0.68, 36),
     '#ffffff',
-    [0, (bar.padElevY - 0.65) * 0.5, 0],
+    [0, (bar.padElevY - 0.68) * 0.5, 0],
     [0, 0, 0],
     { tex: terrazzoInlayTex, receiveShadow: true, strokeW: 0.015 },
   );
   addCustomMatPart(
     barGrp,
-    new THREE.RingGeometry(bar.padRadiusM - 0.18, bar.padRadiusM - 0.06, 40),
+    new THREE.RingGeometry(bar.padRadiusM - 0.2, bar.padRadiusM - 0.06, 44),
     brushedBrassMat,
     [0, bar.padElevY + 0.006, 0],
     [-Math.PI / 2, 0, 0],
@@ -2969,33 +3063,33 @@ export function buildCoastalBeachClub3D(
 
   const barBaseY = bar.padElevY;
 
-  // Curved Horseshoe Fluted White Stone Bar Counter + Overhanging Calacatta Marble Slab (top at +1.76m)
-  const uCurveSegments = 13;
-  const uRadius = 2.65;
-  const uCenterZ = -0.18;
+  // Curved Horseshoe Fluted White Stone Bar Counter + Overhanging Calacatta Marble Slab (top at +1.82m)
+  const uCurveSegments = 15;
+  const uRadius = bar.uRadiusM;
+  const uCenterZ = bar.uCenterZM;
   for (let i = 0; i < uCurveSegments; i++) {
     const a0 = -Math.PI * 0.06 + (i / uCurveSegments) * (Math.PI * 1.12);
     const a1 = -Math.PI * 0.06 + ((i + 1) / uCurveSegments) * (Math.PI * 1.12);
     const aMid = (a0 + a1) * 0.5;
-    const segLen = uRadius * (a1 - a0) + 0.08;
+    const segLen = uRadius * (a1 - a0) + 0.1;
     const sx = Math.cos(aMid) * uRadius;
     const sz = Math.sin(aMid) * uRadius + uCenterZ;
 
     // Fluted white stone body with vertical brass inlay texture
     addWorldPart(
       barGrp,
-      applyBoxMetricUvs(new THREE.BoxGeometry(segLen, 1.64, 0.56), 0.78, 1.64),
+      applyBoxMetricUvs(new THREE.BoxGeometry(segLen, 1.68, 0.72), 0.78, 1.68),
       '#ffffff',
-      [sx, barBaseY + 0.82, sz],
+      [sx, barBaseY + 0.84, sz],
       [0, -aMid + Math.PI / 2, 0],
       { tex: flutedStoneTex, strokeW: 0.012, castShadow: true },
     );
     // Overhanging Calacatta marble countertop slab
     addWorldPart(
       barGrp,
-      applyBoxMetricUvs(new THREE.BoxGeometry(segLen + 0.1, 0.12, 0.92), 1.8, 1.8),
+      applyBoxMetricUvs(new THREE.BoxGeometry(segLen + 0.14, 0.14, 1.12), 1.8, 1.8),
       '#ffffff',
-      [sx, barBaseY + 1.7, sz],
+      [sx, barBaseY + 1.75, sz],
       [0, -aMid + Math.PI / 2, 0],
       { tex: calacattaTex, strokeW: 0.012, castShadow: true },
     );
@@ -3004,109 +3098,109 @@ export function buildCoastalBeachClub3D(
   // Concealed warm amber LED strips (under marble overhang + toe-kick) & brushed-brass wrap-around footrest
   addCustomMatPart(
     barGrp,
-    new THREE.TorusGeometry(uRadius + 0.34, 0.036, 8, 32, Math.PI * 1.12),
+    new THREE.TorusGeometry(uRadius + 0.42, 0.038, 8, 36, Math.PI * 1.12),
     warmAmberGlowMat,
-    [0, barBaseY + 1.61, uCenterZ],
+    [0, barBaseY + 1.66, uCenterZ],
     [Math.PI / 2, 0, -Math.PI * 0.06],
   );
   addCustomMatPart(
     barGrp,
-    new THREE.TorusGeometry(uRadius + 0.3, 0.035, 8, 32, Math.PI * 1.12),
+    new THREE.TorusGeometry(uRadius + 0.38, 0.036, 8, 36, Math.PI * 1.12),
     warmAmberGlowMat,
     [0, barBaseY + 0.09, uCenterZ],
     [Math.PI / 2, 0, -Math.PI * 0.06],
   );
   addCustomMatPart(
     barGrp,
-    new THREE.TorusGeometry(uRadius + 0.48, 0.034, 8, 32, Math.PI * 1.12),
+    new THREE.TorusGeometry(uRadius + 0.58, 0.036, 8, 36, Math.PI * 1.12),
     brushedBrassMat,
-    [0, barBaseY + 0.28, uCenterZ],
+    [0, barBaseY + 0.3, uCenterZ],
     [Math.PI / 2, 0, -Math.PI * 0.06],
   );
 
-  // Tall Calacatta Marble Back Wall (+4.15m) with Brushed Brass Perimeter Frame
+  // Tall Calacatta Marble Back Wall (+4.85m) with Brushed Brass Perimeter Frame
   addWorldPart(
     barGrp,
-    applyBoxMetricUvs(new THREE.BoxGeometry(5.5, 4.15, 0.36), 2.8, 2.8),
+    applyBoxMetricUvs(new THREE.BoxGeometry(7.35, 4.85, 0.44), 2.8, 2.8),
     '#ffffff',
-    [0, barBaseY + 2.075, -2.14],
+    [0, barBaseY + 2.425, -2.78],
     [0, 0, 0],
     { tex: calacattaTex, strokeW: 0.015, castShadow: true },
   );
-  addCustomMatPart(barGrp, new THREE.BoxGeometry(5.62, 0.08, 0.42), brushedBrassMat, [0, barBaseY + 4.17, -2.14]);
-  for (const trimX of [-2.77, 2.77]) {
-    addCustomMatPart(barGrp, new THREE.BoxGeometry(0.08, 4.18, 0.42), brushedBrassMat, [trimX, barBaseY + 2.09, -2.14]);
+  addCustomMatPart(barGrp, new THREE.BoxGeometry(7.48, 0.09, 0.5), brushedBrassMat, [0, barBaseY + 4.87, -2.78]);
+  for (const trimX of [-3.7, 3.7]) {
+    addCustomMatPart(barGrp, new THREE.BoxGeometry(0.09, 4.88, 0.5), brushedBrassMat, [trimX, barBaseY + 2.44, -2.78]);
   }
 
   // Stainless-Steel Bartender Back Counter, Center Prep Island & Sleek POS Terminal
   addCustomMatPart(
     barGrp,
-    new THREE.BoxGeometry(4.85, 1.38, 0.86),
+    new THREE.BoxGeometry(6.45, 1.44, 0.96),
     stainlessSteelMat,
-    [0, barBaseY + 0.69, -1.52],
+    [0, barBaseY + 0.72, -2.02],
   );
   addCustomMatPart(
     barGrp,
-    new THREE.BoxGeometry(1.75, 1.32, 0.9),
+    new THREE.BoxGeometry(2.35, 1.38, 1.12),
     stainlessSteelMat,
-    [0, barBaseY + 0.66, 0.22],
+    [0, barBaseY + 0.69, 0.28],
   );
   // POS terminal on the right-hand marble counter
   addCustomMatPart(
     barGrp,
-    new THREE.BoxGeometry(0.42, 0.32, 0.06),
+    new THREE.BoxGeometry(0.48, 0.36, 0.07),
     stainlessSteelMat,
-    [1.65, barBaseY + 1.94, 1.25],
+    [2.18, barBaseY + 2.0, 1.65],
     [-0.28, -0.35, 0],
   );
 
   // 2-Tier Illuminated Brushed-Brass Bottle Display Shelves stocked with colorful glass bottles
-  for (const shelfY of [barBaseY + 2.12, barBaseY + 2.86]) {
-    addCustomMatPart(barGrp, new THREE.BoxGeometry(4.15, 0.055, 0.42), brushedBrassMat, [0, shelfY, -1.76]);
-    addCustomMatPart(barGrp, new THREE.BoxGeometry(4.02, 0.04, 0.05), warmAmberGlowMat, [0, shelfY + 0.04, -1.92]);
+  for (const shelfY of [barBaseY + 2.35, barBaseY + 3.25]) {
+    addCustomMatPart(barGrp, new THREE.BoxGeometry(5.55, 0.06, 0.48), brushedBrassMat, [0, shelfY, -2.32]);
+    addCustomMatPart(barGrp, new THREE.BoxGeometry(5.38, 0.045, 0.06), warmAmberGlowMat, [0, shelfY + 0.045, -2.5]);
     const bottlePalette = ['#10b981', '#f59e0b', '#e11d48', '#38bdf8', '#d97706', '#a855f7'];
-    for (let b = 0; b < 13; b++) {
-      const bx = -1.74 + b * 0.29;
+    for (let b = 0; b < 17; b++) {
+      const bx = -2.32 + b * 0.29;
       addWorldPart(
         barGrp,
-        new THREE.CylinderGeometry(0.058, 0.068, 0.36 + (b % 3) * 0.06, 8),
+        new THREE.CylinderGeometry(0.064, 0.074, 0.4 + (b % 3) * 0.07, 8),
         bottlePalette[b % bottlePalette.length],
-        [bx, shelfY + 0.22, -1.74],
+        [bx, shelfY + 0.24, -2.3],
         [0, 0, 0],
         { strokeW: 0.005 },
       );
     }
   }
 
-  // Curved Cantilevered Tinted Sea-Glass & Brushed-Brass Ribbed Canopy (+4.35m clearance above podium, ZERO WOOD)
+  // Curved Cantilevered Tinted Sea-Glass & Brushed-Brass Ribbed Canopy (+5.12m clearance above podium, ZERO WOOD)
   const canopyGroup = new THREE.Group();
-  canopyGroup.position.set(0, barBaseY + 4.38, 0.24);
+  canopyGroup.position.set(0, barBaseY + 5.14, 0.32);
   canopyGroup.rotation.x = THREE.MathUtils.degToRad(-6.0);
   barGrp.add(canopyGroup);
 
   // 2 Tall Brushed-Brass Structural Support Columns with base & top collars
-  for (const colX of [-2.32, 2.32]) {
+  for (const colX of [-3.12, 3.12]) {
     addCustomMatPart(
       barGrp,
-      new THREE.CylinderGeometry(0.095, 0.11, 4.3, 14),
+      new THREE.CylinderGeometry(0.115, 0.13, 5.05, 14),
       brushedBrassMat,
-      [colX, barBaseY + 2.15, -0.78],
+      [colX, barBaseY + 2.525, -1.04],
       [0, 0, 0],
       { castShadow: true, receiveShadow: true },
     );
     addCustomMatPart(
       barGrp,
-      new THREE.CylinderGeometry(0.16, 0.18, 0.14, 14),
+      new THREE.CylinderGeometry(0.19, 0.22, 0.16, 14),
       brushedBrassMat,
-      [colX, barBaseY + 0.07, -0.78],
+      [colX, barBaseY + 0.08, -1.04],
     );
   }
 
   // Open curved elliptical/arched brushed-brass canopy perimeter fascia + arched ribs (NO solid opaque slab!)
-  const canopyWidth = 7.3;
-  const canopyDepth = 4.9;
+  const canopyWidth = 9.75;
+  const canopyDepth = 6.55;
   const canopyArcSteps = 12;
-  const archRise = 0.36;
+  const archRise = 0.46;
   for (let i = 0; i < canopyArcSteps; i++) {
     const t0 = -1 + (2 * i) / canopyArcSteps;
     const t1 = -1 + (2 * (i + 1)) / canopyArcSteps;
@@ -3117,26 +3211,26 @@ export function buildCoastalBeachClub3D(
     const y0 = Math.cos(t0 * Math.PI * 0.5) * archRise;
     const y1 = Math.cos(t1 * Math.PI * 0.5) * archRise;
     const ym = (y0 + y1) * 0.5;
-    const segW = Math.hypot(x1 - x0, y1 - y0) + 0.05;
+    const segW = Math.hypot(x1 - x0, y1 - y0) + 0.06;
     const tiltZ = Math.atan2(y1 - y0, x1 - x0);
     // Gently bow the front edge outward (+Z) like the 4-view model sheet
-    const frontBowZ = Math.cos(tm * Math.PI * 0.5) * 0.42;
+    const frontBowZ = Math.cos(tm * Math.PI * 0.5) * 0.56;
     const localDepth = canopyDepth + frontBowZ;
     const localCenterZ = frontBowZ * 0.5;
 
     // Translucent tinted sea-glass canopy panel
     addCustomMatPart(
       canopyGroup,
-      new THREE.BoxGeometry(segW, 0.055, localDepth),
+      new THREE.BoxGeometry(segW, 0.065, localDepth),
       barTintedGlassMat,
-      [xm, ym + 0.07, localCenterZ],
+      [xm, ym + 0.08, localCenterZ],
       [0, 0, tiltZ],
       { renderOrder: 3 },
     );
     // Front & rear brushed-brass curved fascia beams
     addCustomMatPart(
       canopyGroup,
-      new THREE.BoxGeometry(segW + 0.02, 0.14, 0.12),
+      new THREE.BoxGeometry(segW + 0.02, 0.16, 0.14),
       brushedBrassMat,
       [xm, ym, localCenterZ + localDepth * 0.5],
       [0, 0, tiltZ],
@@ -3144,7 +3238,7 @@ export function buildCoastalBeachClub3D(
     );
     addCustomMatPart(
       canopyGroup,
-      new THREE.BoxGeometry(segW + 0.02, 0.14, 0.12),
+      new THREE.BoxGeometry(segW + 0.02, 0.16, 0.14),
       brushedBrassMat,
       [xm, ym, localCenterZ - localDepth * 0.5],
       [0, 0, tiltZ],
@@ -3155,12 +3249,12 @@ export function buildCoastalBeachClub3D(
   for (let rib = -4; rib <= 4; rib++) {
     const t = rib / 4.2;
     const rx = t * (canopyWidth * 0.5);
-    const ry = Math.cos(t * Math.PI * 0.5) * archRise - 0.03;
-    const frontBowZ = Math.cos(t * Math.PI * 0.5) * 0.42;
+    const ry = Math.cos(t * Math.PI * 0.5) * archRise - 0.035;
+    const frontBowZ = Math.cos(t * Math.PI * 0.5) * 0.56;
     const ribDepth = canopyDepth + frontBowZ - 0.08;
     addCustomMatPart(
       canopyGroup,
-      new THREE.BoxGeometry(0.075, 0.095, ribDepth),
+      new THREE.BoxGeometry(0.085, 0.11, ribDepth),
       brushedBrassMat,
       [rx, ry, frontBowZ * 0.5],
       [0, 0, 0],
@@ -3170,18 +3264,18 @@ export function buildCoastalBeachClub3D(
   // Curved brushed-brass inner shade-slat header over the rear bartender aisle (NO WOOD)
   addCustomMatPart(
     canopyGroup,
-    new RoundedBoxGeometry(5.6, 0.09, 1.45, 2, 0.04),
+    new RoundedBoxGeometry(7.45, 0.11, 1.9, 2, 0.045),
     brushedBrassMat,
-    [0, archRise + 0.14, -1.35],
+    [0, archRise + 0.16, -1.8],
     [0, 0, 0],
     { castShadow: true, receiveShadow: true },
   );
 
-  // 8 Luxury Brass & Tan-Leather Barstools scaled for the 3.31m avatar & 1.76m bar counter
-  const stoolCount = 8;
+  // 8 Avatar-Proportioned Luxury Brass & Tan-Leather Barstools (1:1 synced with BEACH_CLUB_COCKTAIL_BAR_SEAT_SPOTS)
+  const stoolCount = bar.stoolCount;
   for (let s = 0; s < stoolCount; s++) {
-    const a = 0.1 + (s / (stoolCount - 1)) * (Math.PI - 0.2);
-    const r = uRadius + 1.02;
+    const a = 0.14 + (s / (stoolCount - 1)) * (Math.PI - 0.28);
+    const r = bar.stoolRadiusM;
     const sx = Math.cos(a) * r;
     const sz = Math.sin(a) * r + uCenterZ;
     const stool = new THREE.Group();
@@ -3189,15 +3283,15 @@ export function buildCoastalBeachClub3D(
     stool.rotation.y = -a + Math.PI / 2;
     barGrp.add(stool);
 
-    addCustomMatPart(stool, new THREE.CylinderGeometry(0.3, 0.33, 0.05, 14), brushedBrassMat, [0, 0.025, 0]);
-    addCustomMatPart(stool, new THREE.CylinderGeometry(0.046, 0.054, 1.12, 10), brushedBrassMat, [0, 0.58, 0]);
-    addCustomMatPart(stool, new THREE.TorusGeometry(0.22, 0.022, 8, 16), brushedBrassMat, [0, 0.44, 0], [Math.PI / 2, 0, 0]);
-    addWorldPart(stool, new RoundedBoxGeometry(0.58, 0.12, 0.52, 2, 0.04), '#c2936b', [0, 1.18, 0], [0, 0, 0], {
+    addCustomMatPart(stool, new THREE.CylinderGeometry(0.36, 0.39, 0.06, 16), brushedBrassMat, [0, 0.03, 0]);
+    addCustomMatPart(stool, new THREE.CylinderGeometry(0.056, 0.066, 1.06, 12), brushedBrassMat, [0, 0.55, 0]);
+    addCustomMatPart(stool, new THREE.TorusGeometry(0.26, 0.026, 8, 18), brushedBrassMat, [0, 0.42, 0], [Math.PI / 2, 0, 0]);
+    addWorldPart(stool, new RoundedBoxGeometry(0.72, 0.14, 0.66, 2, 0.045), '#c2936b', [0, 1.12, 0], [0, 0, 0], {
       strokeW: 0.008,
       castShadow: true,
     });
     // Backrest sits on outer (+Z) edge of stool so guests sit facing inward toward the bar counter!
-    addWorldPart(stool, new RoundedBoxGeometry(0.58, 0.4, 0.1, 2, 0.035), '#c2936b', [0, 1.42, 0.22], [0, 0, 0], {
+    addWorldPart(stool, new RoundedBoxGeometry(0.72, 0.46, 0.12, 2, 0.04), '#c2936b', [0, 1.38, 0.28], [0, 0, 0], {
       strokeW: 0.008,
       castShadow: true,
     });

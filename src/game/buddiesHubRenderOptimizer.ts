@@ -1210,13 +1210,18 @@ export function shouldStepCharacterDetailThisFrame(
   isAnimatedAction: boolean,
 ): boolean {
   if (isLocalPlayer) return true;
-  // Within 26m: full 60Hz fidelity (100% crisp close interactions & plaza chat)
-  if (distSqToCamera <= 26 * 26) return true;
-  // Mid-range 26m..48m: active motion runs at 30Hz, idle at 20Hz
-  if (distSqToCamera <= 48 * 48) {
+  // Within 16m: full 60Hz fidelity (100% crisp close interactions & plaza chat)
+  if (distSqToCamera <= 16 * 16) return true;
+  // Near-mid range 16m..30m: active motion runs at 30Hz, idle/sitting at 20Hz
+  if (distSqToCamera <= 30 * 30) {
     const stride = isAnimatedAction ? 2 : 3;
     return (frameTick + unitIndex) % stride === 0;
   }
-  // Far range > 48m: stride 4 (~15Hz)
-  return (frameTick + unitIndex) % 4 === 0;
+  // Mid-far range 30m..46m: active motion runs at 20Hz, idle/sitting at 12Hz
+  if (distSqToCamera <= 46 * 46) {
+    const stride = isAnimatedAction ? 3 : 5;
+    return (frameTick + unitIndex) % stride === 0;
+  }
+  // Far range > 46m: stride 6 (~10Hz)
+  return (frameTick + unitIndex) % 6 === 0;
 }

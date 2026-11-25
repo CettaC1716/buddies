@@ -138,6 +138,24 @@ export function HudWeatherAndTimeControl({
   }, []);
 
   useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('hud-corner-popover-state', {
+        detail: { id: `weather-${contextId}`, isOpen },
+      }),
+    );
+  }, [contextId, isOpen]);
+
+  useEffect(() => {
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent('hud-corner-popover-state', {
+          detail: { id: `weather-${contextId}`, isOpen: false },
+        }),
+      );
+    };
+  }, [contextId]);
+
+  useEffect(() => {
     if (!isOpen) return;
     const onPointerDownOutside = (e: PointerEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
@@ -201,8 +219,8 @@ export function HudWeatherAndTimeControl({
           onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
           className={`absolute ${popoverAlign === 'left' ? 'left-0' : 'right-0'} ${
-            popoverPlacement === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2'
-          } z-50 w-[min(316px,calc(100vw-1.5rem))] max-h-[min(76dvh,540px)] overflow-y-auto rounded-[24px] sm:rounded-[28px] bg-gradient-to-b from-[#171d2c]/88 via-[#111622]/86 to-[#0c101a]/90 text-white border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)]`}
+            popoverPlacement === 'bottom' ? 'top-full mt-2.5' : 'bottom-full mb-2.5'
+          } z-50 w-[316px] max-h-[82vh] overflow-y-auto rounded-[28px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 text-white border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)]`}
         >
           {/* Top Clock + Weather Header (matching BLITZ OS translucent dark glass header) */}
           <div className="px-4 pt-3.5 pb-3 border-b border-white/12">

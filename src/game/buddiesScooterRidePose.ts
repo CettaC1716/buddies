@@ -53,6 +53,34 @@ export function kickScooterStrideLengthM(speedMps: number): number {
   return Math.max(2.4, Math.min(4.6, 1.7 + speedMps * 0.38));
 }
 
+/**
+ * Progressive multi-kick acceleration rate (world units / s^2) for the push kick scooter.
+ * Builds speed across ~2.5-3.2s (3-4 visible kick strokes) from standstill through low
+ * and medium speeds before the rider tucks both feet onto the deck at high speed.
+ */
+export function computePushKickScooterAccelRate(params: {
+  speedMps: number;
+  rideTargetMps: number;
+  rideMaxSpeedMps: number;
+  pushDistanceM: number;
+  isCruisingCoast: boolean;
+  isBoosting: boolean;
+  hasDirectionalInput: boolean;
+}): number {
+  if (params.rideTargetMps <= params.speedMps) {
+    return params.hasDirectionalInput ? 16 : 6.2;
+  }
+  const stride = kickScooterStrideLengthM(Math.max(1.0, Math.abs(params.speedMps)));
+  const kickPhase = (((params.pushDistanceM % stride) + stride) % stride) / stride;
+  const kickContactSurge =
+    !params.isCruisingCoast && kickPhase < 0.44
+      ? 0.84 + 0.46 * Math.sin((kickPhase / 0.44) * Math.PI)
+      : 0.72;
+  const speedRatio = clamp01(params.speedMps / Math.max(0.5, params.rideMaxSpeedMps));
+  const basePushAccel = (params.isBoosting ? 2.85 : 2.15) - speedRatio * 0.45;
+  return Math.max(1.35, basePushAccel * kickContactSurge);
+}
+
 const CONTACT_FRACTION = 0.42;
 
 export function computeKickScooterRidePose(
@@ -240,11 +268,20 @@ export function computeScooterRiderRigPose(
   const steerAngleRad = clampNumber(params.steerAngleRad ?? 0, -0.45, 0.45);
   const spec = params.spec ?? DEFAULT_SCOOTER_SPECS[kind];
 
-  const cosS = Math.cos(steerAngleRad);
-  const sinS = Math.sin(steerAngleRad);
+  const gripSweepRad = 0;
+  const leftGripAngle = steerAngleRad + gripSweepRad;
+  const rightGripAngle = steerAngleRad - gripSweepRad;
   // +steer turns front wheel LEFT (+X), so left grip (+X bar outward) sweeps back (-Z)
-  const leftGripBarAxisLocal: ScooterPoseVec3 = { x: cosS, y: 0, z: -sinS };
-  const rightGripBarAxisLocal: ScooterPoseVec3 = { x: -cosS, y: 0, z: sinS };
+  const leftGripBarAxisLocal: ScooterPoseVec3 = {
+    x: Math.cos(leftGripAngle),
+    y: 0,
+    z: -Math.sin(leftGripAngle),
+  };
+  const rightGripBarAxisLocal: ScooterPoseVec3 = {
+    x: -Math.cos(rightGripAngle),
+    y: 0,
+    z: Math.sin(rightGripAngle),
+  };
 
   const leftGripScooter = computeSteeredGripInScooterRoot(
     spec,
@@ -260,12 +297,13 @@ export function computeScooterRiderRigPose(
   if (kind === 'electric_scooter_bike') {
     const seatLiftY = spec.seatLiftY;
     const seatBackOffsetZ = spec.seatBackOffsetZ;
-    const leanFactor = 0.24 + 0.14 * clampNumber(absSpeed / 9.0, 0, 1);
-    const leanRollZ = clampNumber(-steerAngleRad * leanFactor, -0.13, 0.13) * blend;
-    const torsoPitchRad = 0.16 + 0.04 * clampNumber(absSpeed / 10.0, 0, 1);
-    const floorboardY = 0.245 * spec.modelScale;
-    const floorboardStanceX = 0.12 * spec.modelScale;
-    const floorboardForwardZ = 0.08 * spec.modelScale;
+    const speedNorm = clampNumber(absSpeed / 9.5, 0, 1);
+    const leanFactor = 0.22 + 0.16 * speedNorm;
+    const leanRollZ = clampNumber(-steerAngleRad * leanFactor, -0.14, 0.14) * blend;
+    const torsoPitchRad = 0.20 + 0.06 * speedNorm;
+    const floorboardY = 0.246 * spec.modelScale;
+    const floorboardStanceX = 0.095 * spec.modelScale;
+    const floorboardForwardZ = 0.015 * spec.modelScale;
 
     return {
       kind,
@@ -275,7 +313,7 @@ export function computeScooterRiderRigPose(
       leanRollZ,
       steerAngleRad,
       torsoPitchRad,
-      torsoYawRad: steerAngleRad * 0.48,
+      torsoYawRad: steerAngleRad * 0.45,
       headLookYawRad: steerAngleRad * 0.65,
       leftGripBodyLocal: {
         x: leftGripScooter.x,
@@ -301,9 +339,9 @@ export function computeScooterRiderRigPose(
       },
       leftFootPitchRad: 0,
       rightFootPitchRad: 0,
-      leftFootYawRad: 0.08,
-      rightFootYawRad: -0.08,
-      fingerGripCurl: 0.92,
+      leftFootYawRad: 0.06,
+      rightFootYawRad: -0.06,
+      fingerGripCurl: 0.94,
       pushPhase: 0,
       dipY: 0,
       supportHipX: -1.18,
@@ -324,7 +362,7 @@ export function computeScooterRiderRigPose(
 
   const isBraking = Boolean(params.isBraking && absSpeed > 0.35);
   const defaultPushActivity =
-    isBraking || absSpeed < 0.22
+    isBraking || absSpeed < 0.22 || absSpeed >= 5.3
       ? 0
       : params.isThrottleActive === false && absSpeed > 0.35
         ? 0
@@ -340,9 +378,10 @@ export function computeScooterRiderRigPose(
   let idleDipY = lerpNumber(0.22, 0.10, coastBlend);
   let idleRightSole: ScooterPoseVec3 = lerpVec3(
     { x: -0.27, y: 0.0, z: -0.04 },
-    { x: -0.04, y: deckTopY, z: -0.24 },
+    { x: -0.042, y: deckTopY, z: -0.28 },
     coastBlend,
   );
+  const idleRightYaw = isBraking ? -0.04 : lerpNumber(-0.08, -0.22, coastBlend);
   let idleRightPitch = 0;
   if (isBraking) {
     idleDipY = 0.14;
@@ -454,7 +493,7 @@ export function computeScooterRiderRigPose(
     leftFootPitchRad: 0,
     rightFootPitchRad,
     leftFootYawRad: 0.14,
-    rightFootYawRad: lerpNumber(-0.08, -0.04, pushActivity),
+    rightFootYawRad: lerpNumber(idleRightYaw, -0.04, pushActivity),
     fingerGripCurl: 0.90,
     pushPhase,
     dipY,

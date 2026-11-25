@@ -3,7 +3,6 @@ import {
   type AmbientSoundscapeInput,
   computeAmbientSoundscapeMix,
   computeAmbientWaveCycleEnvelope,
-  computeFootstepSynthSpec,
   type FootstepSurfaceType,
 } from './buddiesAmbientAudioRules';
 
@@ -461,10 +460,54 @@ class SoundEngine {
   private nextSongbirdAtMs = 0;
   private nextSeagullAtMs = 0;
 
+  // Synthesized Urban Vehicle Audio Engine (Electric Scooter Matic, Push Kick Scooter, City Tram)
+  private vehicleGraphReady = false;
+  private vehicleBusGain: GainNode | null = null;
+  private vehiclePinkSource: AudioBufferSourceNode | null = null;
+  private vehicleBrownSource: AudioBufferSourceNode | null = null;
+
+  // Electric Scooter Bike (EV Hub Motor + Gentle Inverter + Tire-on-Asphalt)
+  private eScooterMotorOsc1: OscillatorNode | null = null;
+  private eScooterMotorOsc2: OscillatorNode | null = null;
+  private eScooterMotorLpf: BiquadFilterNode | null = null;
+  private eScooterMotorGain: GainNode | null = null;
+  private eScooterInverterOsc: OscillatorNode | null = null;
+  private eScooterInverterGain: GainNode | null = null;
+  private eScooterTireBpf: BiquadFilterNode | null = null;
+  private eScooterTireGain: GainNode | null = null;
+  private lastEScooterParamMs = 0;
+
+  // Push Kick Scooter (Polyurethane Wheel Pavement Rumble + Bearing Whirr)
+  private pushScooterRumbleLpf: BiquadFilterNode | null = null;
+  private pushScooterRumbleGain: GainNode | null = null;
+  private pushScooterWhirBpf: BiquadFilterNode | null = null;
+  private pushScooterWhirGain: GainNode | null = null;
+  private lastPushScooterParamMs = 0;
+
+  // City Tram (Electric Streetcar Traction Motor + Inverter + Steel Rail Rumble + Brake Hiss)
+  private tramTractionOsc1: OscillatorNode | null = null;
+  private tramTractionOsc2: OscillatorNode | null = null;
+  private tramTractionLpf: BiquadFilterNode | null = null;
+  private tramTractionGain: GainNode | null = null;
+  private tramInverterOsc: OscillatorNode | null = null;
+  private tramInverterGain: GainNode | null = null;
+  private tramRailLpf: BiquadFilterNode | null = null;
+  private tramRailBpf: BiquadFilterNode | null = null;
+  private tramRailGain: GainNode | null = null;
+  private tramBrakeBpf: BiquadFilterNode | null = null;
+  private tramBrakeGain: GainNode | null = null;
+  private lastTramParamMs = 0;
+
   private get effectiveAmbientBusGain(): number {
     return this._muted || this._sfxVolume <= 0 || this._masterVolume <= 0
       ? 0
       : 0.44 * this._sfxVolume * this._masterVolume;
+  }
+
+  private get effectiveVehicleBusGain(): number {
+    return this._muted || this._sfxVolume <= 0 || this._masterVolume <= 0
+      ? 0
+      : 0.92 * this._sfxVolume * this._masterVolume;
   }
 
   private get effectiveSfxGain(): number {
@@ -496,6 +539,7 @@ class SoundEngine {
       }
     }
     this.syncAmbientBusGain();
+    this.syncVehicleBusGain();
   }
 
   /** Music-only mute: silences the BGM buses and session tracks while
@@ -548,6 +592,7 @@ class SoundEngine {
       );
     }
     this.syncAmbientBusGain();
+    this.syncVehicleBusGain();
   }
 
   public setMusicVolume(vol: number): void {
@@ -583,6 +628,7 @@ class SoundEngine {
       );
     }
     this.syncAmbientBusGain();
+    this.syncVehicleBusGain();
     this.syncSessionMusicPlayback();
   }
 
@@ -2073,6 +2119,7 @@ class SoundEngine {
       this.stopLoop(key);
     }
     this.silenceAmbientBeds();
+    this.silenceVehicleSynthLoops();
   }
 
   private isThrottled(tag: string, throttleMs: number): boolean {
@@ -3857,93 +3904,14 @@ class SoundEngine {
   }
 
   /**
-   * Synthesizes a light, surface-matched footstep foley transient synchronized to stride phase:
-   * - `'sand'`: soft damp/granular crunch (`1.1-2.4kHz`, no sub thud)
-   * - `'grass'`: crisp airy meadow rustle (`2.5-3.9kHz`)
-   * - `'wood'`: warm hollow timber plank tap (`185->94Hz` body + grain)
-   * - `'stone_road'`: tight rubber sneaker tap (`158->74Hz` + crisp click)
-   * - `'water'`: soft shallow wade ripple
+   * Footstep audio disabled by design to prevent unwanted foley and main-thread Web Audio overhead.
    */
   public playSurfaceFootstep(
-    surface: FootstepSurfaceType,
-    speedNorm = 0.65,
-    stepParity = 0,
+    _surface: FootstepSurfaceType,
+    _speedNorm = 0.65,
+    _stepParity = 0,
   ): void {
-    if (this._muted || this._sfxVolume <= 0 || this._masterVolume <= 0) return;
-    if (this.isThrottled('ambient-surface-footstep', 145)) return;
-    const ctx = this.ensureCtx();
-    if (!ctx || ctx.state !== 'running') return;
-    const outNode = this.getMasterBusNode(ctx);
-
-    const spec = computeFootstepSynthSpec(surface, speedNorm, stepParity);
-    const now = ctx.currentTime;
-    const pitchJitter = 0.93 + Math.random() * 0.14;
-    const levelJitter = 0.88 + Math.random() * 0.24;
-
-    const panner = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
-    if (panner) {
-      panner.pan.setValueAtTime(spec.panOffset, now);
-      panner.connect(outNode);
-    }
-    const dest: AudioNode = panner || outNode;
-
-    // 1. Primary surface texture grain / brush from Pink Noise
-    const noiseSrc = ctx.createBufferSource();
-    noiseSrc.buffer = this.ensurePinkNoiseBuffer(ctx);
-    noiseSrc.playbackRate.setValueAtTime(pitchJitter, now);
-
-    const bpf = ctx.createBiquadFilter();
-    bpf.type = spec.noiseFilterType;
-    bpf.frequency.setValueAtTime(spec.noiseFreqHz * pitchJitter, now);
-    bpf.Q.setValueAtTime(spec.noiseQ, now);
-
-    const nGain = ctx.createGain();
-    nGain.gain.setValueAtTime(0.0001, now);
-    nGain.gain.linearRampToValueAtTime(spec.noiseGain * levelJitter, now + 0.008);
-    nGain.gain.exponentialRampToValueAtTime(0.0002, now + spec.noiseDurationSec);
-
-    let pendingDisconnects = spec.bodyGain > 0.002 ? 2 : 1;
-    const releasePanner = () => {
-      pendingDisconnects -= 1;
-      if (pendingDisconnects <= 0) {
-        panner?.disconnect();
-      }
-    };
-
-    noiseSrc.connect(bpf);
-    bpf.connect(nGain);
-    nGain.connect(dest);
-    noiseSrc.onended = () => {
-      bpf.disconnect();
-      nGain.disconnect();
-      releasePanner();
-    };
-    noiseSrc.start(now, Math.random() * 0.65, spec.noiseDurationSec + 0.02);
-
-    // 2. Subtle sole contact body (prominent on boardwalk timber & stone, near-silent on sand/grass)
-    if (spec.bodyGain > 0.002) {
-      const osc = ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(spec.bodyFreqStartHz * pitchJitter, now);
-      osc.frequency.exponentialRampToValueAtTime(
-        Math.max(40, spec.bodyFreqEndHz * pitchJitter),
-        now + spec.bodyDurationSec,
-      );
-
-      const bGain = ctx.createGain();
-      bGain.gain.setValueAtTime(0.0001, now);
-      bGain.gain.linearRampToValueAtTime(spec.bodyGain * levelJitter, now + 0.004);
-      bGain.gain.exponentialRampToValueAtTime(0.0002, now + spec.bodyDurationSec);
-
-      osc.connect(bGain);
-      bGain.connect(dest);
-      osc.onended = () => {
-        bGain.disconnect();
-        releasePanner();
-      };
-      osc.start(now);
-      osc.stop(now + spec.bodyDurationSec + 0.015);
-    }
+    // Intentionally disabled
   }
 
   public disposeAmbientSoundscape(): void {
@@ -3989,6 +3957,668 @@ class SoundEngine {
     this.ambientGraphReady = false;
     this.nextSongbirdAtMs = 0;
     this.nextSeagullAtMs = 0;
+    this.disposeVehicleLoops();
+  }
+
+  public disposeVehicleLoops(): void {
+    const stopAndDisconnect = (node: OscillatorNode | AudioBufferSourceNode | null) => {
+      if (!node) return;
+      try {
+        node.stop();
+        node.disconnect();
+      } catch {
+        // ignore if already stopped
+      }
+    };
+    stopAndDisconnect(this.vehiclePinkSource);
+    stopAndDisconnect(this.vehicleBrownSource);
+    stopAndDisconnect(this.eScooterMotorOsc1);
+    stopAndDisconnect(this.eScooterMotorOsc2);
+    stopAndDisconnect(this.eScooterInverterOsc);
+    stopAndDisconnect(this.tramTractionOsc1);
+    stopAndDisconnect(this.tramTractionOsc2);
+    stopAndDisconnect(this.tramInverterOsc);
+
+    this.eScooterMotorLpf?.disconnect();
+    this.eScooterMotorGain?.disconnect();
+    this.eScooterInverterGain?.disconnect();
+    this.eScooterTireBpf?.disconnect();
+    this.eScooterTireGain?.disconnect();
+    this.pushScooterRumbleLpf?.disconnect();
+    this.pushScooterRumbleGain?.disconnect();
+    this.pushScooterWhirBpf?.disconnect();
+    this.pushScooterWhirGain?.disconnect();
+    this.tramTractionLpf?.disconnect();
+    this.tramTractionGain?.disconnect();
+    this.tramInverterGain?.disconnect();
+    this.tramRailLpf?.disconnect();
+    this.tramRailBpf?.disconnect();
+    this.tramRailGain?.disconnect();
+    this.tramBrakeBpf?.disconnect();
+    this.tramBrakeGain?.disconnect();
+    this.vehicleBusGain?.disconnect();
+
+    this.vehiclePinkSource = null;
+    this.vehicleBrownSource = null;
+    this.eScooterMotorOsc1 = null;
+    this.eScooterMotorOsc2 = null;
+    this.eScooterMotorLpf = null;
+    this.eScooterMotorGain = null;
+    this.eScooterInverterOsc = null;
+    this.eScooterInverterGain = null;
+    this.eScooterTireBpf = null;
+    this.eScooterTireGain = null;
+    this.pushScooterRumbleLpf = null;
+    this.pushScooterRumbleGain = null;
+    this.pushScooterWhirBpf = null;
+    this.pushScooterWhirGain = null;
+    this.tramTractionOsc1 = null;
+    this.tramTractionOsc2 = null;
+    this.tramTractionLpf = null;
+    this.tramTractionGain = null;
+    this.tramInverterOsc = null;
+    this.tramInverterGain = null;
+    this.tramRailLpf = null;
+    this.tramRailBpf = null;
+    this.tramRailGain = null;
+    this.tramBrakeBpf = null;
+    this.tramBrakeGain = null;
+    this.vehicleBusGain = null;
+    this.vehicleGraphReady = false;
+  }
+
+  // ============================================================================
+  // URBAN VEHICLE SYNTHESIS ENGINE (E-SCOOTER MATIC, PUSH SCOOTER, CITY TRAM)
+  // ============================================================================
+
+  private syncVehicleBusGain(): void {
+    if (this.ctx && this.vehicleBusGain) {
+      this.vehicleBusGain.gain.setTargetAtTime(
+        this.effectiveVehicleBusGain,
+        this.ctx.currentTime,
+        0.05,
+      );
+    }
+  }
+
+  private silenceVehicleSynthLoops(): void {
+    if (!this.ctx || !this.vehicleGraphReady) return;
+    const now = this.ctx.currentTime;
+    this.eScooterMotorGain?.gain.setTargetAtTime(0, now, 0.05);
+    this.eScooterInverterGain?.gain.setTargetAtTime(0, now, 0.05);
+    this.eScooterTireGain?.gain.setTargetAtTime(0, now, 0.05);
+    this.pushScooterRumbleGain?.gain.setTargetAtTime(0, now, 0.05);
+    this.pushScooterWhirGain?.gain.setTargetAtTime(0, now, 0.05);
+    this.tramTractionGain?.gain.setTargetAtTime(0, now, 0.06);
+    this.tramInverterGain?.gain.setTargetAtTime(0, now, 0.06);
+    this.tramRailGain?.gain.setTargetAtTime(0, now, 0.06);
+    this.tramBrakeGain?.gain.setTargetAtTime(0, now, 0.06);
+  }
+
+  private ensureVehicleGraph(ctx: AudioContext): boolean {
+    if (this.vehicleGraphReady) return true;
+    if (
+      typeof ctx.createOscillator !== 'function' ||
+      typeof ctx.createBufferSource !== 'function' ||
+      typeof ctx.createBiquadFilter !== 'function' ||
+      typeof ctx.createGain !== 'function'
+    ) {
+      return false;
+    }
+
+    const now = ctx.currentTime;
+    const bus = ctx.createGain();
+    bus.gain.setValueAtTime(this.effectiveVehicleBusGain, now);
+    bus.connect(ctx.destination);
+    this.vehicleBusGain = bus;
+
+    const pinkBuf = this.createSeamlessStereoNoiseBuffer(ctx, 'pink', 4.0);
+    const brownBuf = this.createSeamlessStereoNoiseBuffer(ctx, 'brown', 4.0);
+
+    const pinkSrc = ctx.createBufferSource();
+    pinkSrc.buffer = pinkBuf;
+    pinkSrc.loop = true;
+
+    const brownSrc = ctx.createBufferSource();
+    brownSrc.buffer = brownBuf;
+    brownSrc.loop = true;
+
+    // 1. Electric Scooter Bike (EV Hub Motor + Gentle Inverter + Rubber Tire Roll)
+    const eMotorOsc1 = ctx.createOscillator();
+    eMotorOsc1.type = 'sine';
+    eMotorOsc1.frequency.setValueAtTime(84, now);
+
+    const eMotorOsc2 = ctx.createOscillator();
+    eMotorOsc2.type = 'triangle';
+    eMotorOsc2.frequency.setValueAtTime(168, now);
+
+    const eMotorOsc2Gain = ctx.createGain();
+    eMotorOsc2Gain.gain.setValueAtTime(0.32, now);
+
+    const eMotorLpf = ctx.createBiquadFilter();
+    eMotorLpf.type = 'lowpass';
+    eMotorLpf.frequency.setValueAtTime(580, now);
+    eMotorLpf.Q.setValueAtTime(0.9, now);
+
+    const eMotorGain = ctx.createGain();
+    eMotorGain.gain.setValueAtTime(0, now);
+
+    eMotorOsc1.connect(eMotorLpf);
+    eMotorOsc2.connect(eMotorOsc2Gain);
+    eMotorOsc2Gain.connect(eMotorLpf);
+    eMotorLpf.connect(eMotorGain);
+    eMotorGain.connect(bus);
+
+    const eInvOsc = ctx.createOscillator();
+    eInvOsc.type = 'sine';
+    eInvOsc.frequency.setValueAtTime(560, now);
+
+    const eInvGain = ctx.createGain();
+    eInvGain.gain.setValueAtTime(0, now);
+    eInvOsc.connect(eInvGain);
+    eInvGain.connect(bus);
+
+    const eTireBpf = ctx.createBiquadFilter();
+    eTireBpf.type = 'bandpass';
+    eTireBpf.frequency.setValueAtTime(420, now);
+    eTireBpf.Q.setValueAtTime(1.1, now);
+
+    const eTireGain = ctx.createGain();
+    eTireGain.gain.setValueAtTime(0, now);
+    pinkSrc.connect(eTireBpf);
+    eTireBpf.connect(eTireGain);
+    eTireGain.connect(bus);
+
+    // 2. Push Kick Scooter (Polyurethane Wheel Rolling Rumble + Bearing Whirr — zero electric whine)
+    const pRumbleLpf = ctx.createBiquadFilter();
+    pRumbleLpf.type = 'lowpass';
+    pRumbleLpf.frequency.setValueAtTime(240, now);
+    pRumbleLpf.Q.setValueAtTime(0.8, now);
+
+    const pRumbleGain = ctx.createGain();
+    pRumbleGain.gain.setValueAtTime(0, now);
+    pinkSrc.connect(pRumbleLpf);
+    pRumbleLpf.connect(pRumbleGain);
+    pRumbleGain.connect(bus);
+
+    const pWhirBpf = ctx.createBiquadFilter();
+    pWhirBpf.type = 'bandpass';
+    pWhirBpf.frequency.setValueAtTime(720, now);
+    pWhirBpf.Q.setValueAtTime(1.5, now);
+
+    const pWhirGain = ctx.createGain();
+    pWhirGain.gain.setValueAtTime(0, now);
+    pinkSrc.connect(pWhirBpf);
+    pWhirBpf.connect(pWhirGain);
+    pWhirGain.connect(bus);
+
+    // 3. City Tram (Streetcar Traction Motor + Inverter Whirr + Steel Rail Rumble + Pneumatic Brake Hiss)
+    const tMotorOsc1 = ctx.createOscillator();
+    tMotorOsc1.type = 'sine';
+    tMotorOsc1.frequency.setValueAtTime(68, now);
+
+    const tMotorOsc2 = ctx.createOscillator();
+    tMotorOsc2.type = 'triangle';
+    tMotorOsc2.frequency.setValueAtTime(136, now);
+
+    const tMotorOsc2Gain = ctx.createGain();
+    tMotorOsc2Gain.gain.setValueAtTime(0.36, now);
+
+    const tMotorLpf = ctx.createBiquadFilter();
+    tMotorLpf.type = 'lowpass';
+    tMotorLpf.frequency.setValueAtTime(480, now);
+    tMotorLpf.Q.setValueAtTime(0.85, now);
+
+    const tMotorGain = ctx.createGain();
+    tMotorGain.gain.setValueAtTime(0, now);
+
+    tMotorOsc1.connect(tMotorLpf);
+    tMotorOsc2.connect(tMotorOsc2Gain);
+    tMotorOsc2Gain.connect(tMotorLpf);
+    tMotorLpf.connect(tMotorGain);
+    tMotorGain.connect(bus);
+
+    const tInvOsc = ctx.createOscillator();
+    tInvOsc.type = 'sine';
+    tInvOsc.frequency.setValueAtTime(210, now);
+
+    const tInvGain = ctx.createGain();
+    tInvGain.gain.setValueAtTime(0, now);
+    tInvOsc.connect(tInvGain);
+    tInvGain.connect(bus);
+
+    const tRailLpf = ctx.createBiquadFilter();
+    tRailLpf.type = 'lowpass';
+    tRailLpf.frequency.setValueAtTime(220, now);
+    tRailLpf.Q.setValueAtTime(0.95, now);
+
+    const tRailBpf = ctx.createBiquadFilter();
+    tRailBpf.type = 'bandpass';
+    tRailBpf.frequency.setValueAtTime(440, now);
+    tRailBpf.Q.setValueAtTime(1.65, now);
+
+    const tRailGain = ctx.createGain();
+    tRailGain.gain.setValueAtTime(0, now);
+    brownSrc.connect(tRailLpf);
+    tRailLpf.connect(tRailGain);
+    pinkSrc.connect(tRailBpf);
+    tRailBpf.connect(tRailGain);
+    tRailGain.connect(bus);
+
+    const tBrakeBpf = ctx.createBiquadFilter();
+    tBrakeBpf.type = 'bandpass';
+    tBrakeBpf.frequency.setValueAtTime(1550, now);
+    tBrakeBpf.Q.setValueAtTime(2.1, now);
+
+    const tBrakeGain = ctx.createGain();
+    tBrakeGain.gain.setValueAtTime(0, now);
+    pinkSrc.connect(tBrakeBpf);
+    tBrakeBpf.connect(tBrakeGain);
+    tBrakeGain.connect(bus);
+
+    pinkSrc.start(now);
+    brownSrc.start(now);
+    eMotorOsc1.start(now);
+    eMotorOsc2.start(now);
+    eInvOsc.start(now);
+    tMotorOsc1.start(now);
+    tMotorOsc2.start(now);
+    tInvOsc.start(now);
+
+    this.vehiclePinkSource = pinkSrc;
+    this.vehicleBrownSource = brownSrc;
+    this.eScooterMotorOsc1 = eMotorOsc1;
+    this.eScooterMotorOsc2 = eMotorOsc2;
+    this.eScooterMotorLpf = eMotorLpf;
+    this.eScooterMotorGain = eMotorGain;
+    this.eScooterInverterOsc = eInvOsc;
+    this.eScooterInverterGain = eInvGain;
+    this.eScooterTireBpf = eTireBpf;
+    this.eScooterTireGain = eTireGain;
+    this.pushScooterRumbleLpf = pRumbleLpf;
+    this.pushScooterRumbleGain = pRumbleGain;
+    this.pushScooterWhirBpf = pWhirBpf;
+    this.pushScooterWhirGain = pWhirGain;
+    this.tramTractionOsc1 = tMotorOsc1;
+    this.tramTractionOsc2 = tMotorOsc2;
+    this.tramTractionLpf = tMotorLpf;
+    this.tramTractionGain = tMotorGain;
+    this.tramInverterOsc = tInvOsc;
+    this.tramInverterGain = tInvGain;
+    this.tramRailLpf = tRailLpf;
+    this.tramRailBpf = tRailBpf;
+    this.tramRailGain = tRailGain;
+    this.tramBrakeBpf = tBrakeBpf;
+    this.tramBrakeGain = tBrakeGain;
+    this.vehicleGraphReady = true;
+    return true;
+  }
+
+  /**
+   * Smooth brushless EV hub motor + gentle e-matic inverter + rubber tire roll
+   * for `electric_scooter_bike`.
+   */
+  public updateElectricScooterLoop(
+    speedMps: number,
+    isThrottleActive: boolean,
+    isBraking: boolean,
+    isActive = true,
+  ): void {
+    if (this._muted || this._sfxVolume <= 0 || this._masterVolume <= 0 || !isActive) {
+      if (this.ctx && this.vehicleGraphReady) {
+        const now = this.ctx.currentTime;
+        this.eScooterMotorGain?.gain.setTargetAtTime(0, now, 0.05);
+        this.eScooterInverterGain?.gain.setTargetAtTime(0, now, 0.05);
+        this.eScooterTireGain?.gain.setTargetAtTime(0, now, 0.05);
+      }
+      return;
+    }
+    if (!this.userInteracted && !this.ctx) return;
+    const ctx = this.ensureCtx();
+    if (!ctx || ctx.state !== 'running') return;
+
+    const nowMs = performance.now();
+    if (nowMs - this.lastEScooterParamMs < 28) return;
+    this.lastEScooterParamMs = nowMs;
+
+    if (!this.ensureVehicleGraph(ctx)) return;
+
+    const p = computeElectricScooterAudioParams(speedMps, isThrottleActive, isBraking);
+    const now = ctx.currentTime;
+    const ramp = 0.065;
+
+    this.eScooterMotorOsc1?.frequency.setTargetAtTime(p.motorFreqHz, now, ramp);
+    this.eScooterMotorOsc2?.frequency.setTargetAtTime(p.motorFreqHz * 2, now, ramp);
+    this.eScooterMotorLpf?.frequency.setTargetAtTime(420 + p.speedNorm * 380, now, ramp);
+    this.eScooterMotorGain?.gain.setTargetAtTime(p.motorGain, now, ramp);
+
+    this.eScooterInverterOsc?.frequency.setTargetAtTime(p.inverterFreqHz, now, ramp);
+    this.eScooterInverterGain?.gain.setTargetAtTime(p.inverterGain, now, ramp);
+
+    this.eScooterTireBpf?.frequency.setTargetAtTime(p.tireCutoffHz, now, ramp);
+    this.eScooterTireGain?.gain.setTargetAtTime(p.tireGain, now, ramp);
+  }
+
+  /**
+   * Subtle futuristic two-tone EV scooter startup chime on mount.
+   */
+  public playElectricScooterMountChime(): void {
+    if (this._muted || this._sfxVolume <= 0 || this._masterVolume <= 0) return;
+    const ctx = this.ensureCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const out = this.getOutputNode(ctx);
+    const notes = [698.46, 880.0]; // F5 -> A5
+    notes.forEach((hz, idx) => {
+      const t0 = now + idx * 0.065;
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(hz, t0);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(0.065, t0 + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0005, t0 + 0.14);
+      osc.connect(g);
+      g.connect(out);
+      osc.start(t0);
+      osc.stop(t0 + 0.16);
+    });
+  }
+
+  /**
+   * Clean polyurethane wheel-on-pavement rolling rumble & bearing whirr
+   * for `push_kick_scooter` (no electric motor whine).
+   */
+  public updatePushScooterLoop(speedMps: number, isActive = true): void {
+    if (this._muted || this._sfxVolume <= 0 || this._masterVolume <= 0 || !isActive) {
+      if (this.ctx && this.vehicleGraphReady) {
+        const now = this.ctx.currentTime;
+        this.pushScooterRumbleGain?.gain.setTargetAtTime(0, now, 0.05);
+        this.pushScooterWhirGain?.gain.setTargetAtTime(0, now, 0.05);
+      }
+      return;
+    }
+    if (!this.userInteracted && !this.ctx) return;
+    const ctx = this.ensureCtx();
+    if (!ctx || ctx.state !== 'running') return;
+
+    const nowMs = performance.now();
+    if (nowMs - this.lastPushScooterParamMs < 28) return;
+    this.lastPushScooterParamMs = nowMs;
+
+    if (!this.ensureVehicleGraph(ctx)) return;
+
+    const p = computePushScooterAudioParams(speedMps);
+    const now = ctx.currentTime;
+    const ramp = 0.06;
+
+    this.pushScooterRumbleLpf?.frequency.setTargetAtTime(p.rumbleCutoffHz, now, ramp);
+    this.pushScooterRumbleGain?.gain.setTargetAtTime(p.rumbleGain, now, ramp);
+    this.pushScooterWhirBpf?.frequency.setTargetAtTime(p.wheelWhirHz, now, ramp);
+    this.pushScooterWhirGain?.gain.setTargetAtTime(p.wheelWhirGain, now, ramp);
+  }
+
+  /**
+   * Friendly aluminum handlebar bell ding when mounting the push scooter.
+   */
+  public playPushScooterMountBell(): void {
+    if (this._muted || this._sfxVolume <= 0 || this._masterVolume <= 0) return;
+    const ctx = this.ensureCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const out = this.getOutputNode(ctx);
+    const freqs = [1975.5, 3951.0];
+    freqs.forEach((hz, idx) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(hz, now);
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.linearRampToValueAtTime(idx === 0 ? 0.075 : 0.025, now + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0004, now + (idx === 0 ? 0.28 : 0.16));
+      osc.connect(g);
+      g.connect(out);
+      osc.start(now);
+      osc.stop(now + 0.3);
+    });
+  }
+
+  /**
+   * Realistic sneaker-on-asphalt kick stroke (heel plant + sole push scrape) for push scooter.
+   */
+  public playPushScooterKickStroke(speedNorm = 0.4): void {
+    if (this._muted || this._sfxVolume <= 0 || this._masterVolume <= 0) return;
+    if (this.isThrottled('push-scooter-kick-stroke', 140)) return;
+    const ctx = this.ensureCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const out = this.getOutputNode(ctx);
+    const scale = clamp(0.65 + speedNorm * 0.35, 0.5, 1.0);
+    const jitter = 0.94 + Math.random() * 0.12;
+
+    // 1. Soft sneaker sole heel tap
+    const thumpOsc = ctx.createOscillator();
+    const thumpGain = ctx.createGain();
+    thumpOsc.type = 'triangle';
+    thumpOsc.frequency.setValueAtTime(148 * jitter, now);
+    thumpOsc.frequency.exponentialRampToValueAtTime(56, now + 0.055);
+    thumpGain.gain.setValueAtTime(0.0001, now);
+    thumpGain.gain.linearRampToValueAtTime(0.09 * scale, now + 0.005);
+    thumpGain.gain.exponentialRampToValueAtTime(0.0005, now + 0.065);
+    thumpOsc.connect(thumpGain);
+    thumpGain.connect(out);
+    thumpOsc.start(now);
+    thumpOsc.stop(now + 0.075);
+
+    // 2. Crisp asphalt push brush
+    const noiseSrc = ctx.createBufferSource();
+    noiseSrc.buffer = this.ensurePinkNoiseBuffer(ctx);
+    const bpf = ctx.createBiquadFilter();
+    bpf.type = 'bandpass';
+    bpf.frequency.setValueAtTime(980 * jitter, now + 0.01);
+    bpf.frequency.exponentialRampToValueAtTime(460, now + 0.11);
+    bpf.Q.setValueAtTime(1.5, now + 0.01);
+
+    const brushGain = ctx.createGain();
+    brushGain.gain.setValueAtTime(0.0001, now + 0.01);
+    brushGain.gain.linearRampToValueAtTime(0.085 * scale, now + 0.028);
+    brushGain.gain.exponentialRampToValueAtTime(0.0005, now + 0.12);
+
+    noiseSrc.connect(bpf);
+    bpf.connect(brushGain);
+    brushGain.connect(out);
+    noiseSrc.start(now + 0.01, Math.random() * 0.4, 0.13);
+  }
+
+  /**
+   * Soft hollow deck step-on thock when raising pushing foot onto the rear scooter deck to coast.
+   */
+  public playPushScooterDeckStep(): void {
+    if (this._muted || this._sfxVolume <= 0 || this._masterVolume <= 0) return;
+    if (this.isThrottled('push-scooter-deck-step', 160)) return;
+    const ctx = this.ensureCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const out = this.getOutputNode(ctx);
+
+    const deckOsc = ctx.createOscillator();
+    const deckGain = ctx.createGain();
+    deckOsc.type = 'triangle';
+    deckOsc.frequency.setValueAtTime(188, now);
+    deckOsc.frequency.exponentialRampToValueAtTime(78, now + 0.065);
+    deckGain.gain.setValueAtTime(0.0001, now);
+    deckGain.gain.linearRampToValueAtTime(0.085, now + 0.004);
+    deckGain.gain.exponentialRampToValueAtTime(0.0004, now + 0.075);
+    deckOsc.connect(deckGain);
+    deckGain.connect(out);
+    deckOsc.start(now);
+    deckOsc.stop(now + 0.085);
+  }
+
+  /**
+   * Subtle pavement seam tick when push scooter wheels roll over sidewalk joints.
+   */
+  public playPushScooterSeamTick(speedNorm = 0.5): void {
+    if (this._muted || this._sfxVolume <= 0 || this._masterVolume <= 0) return;
+    if (this.isThrottled('push-scooter-seam', 110)) return;
+    const ctx = this.ensureCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const out = this.getOutputNode(ctx);
+
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(340 + speedNorm * 140, now);
+    osc.frequency.exponentialRampToValueAtTime(125, now + 0.022);
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(0.022 + speedNorm * 0.018, now + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0004, now + 0.026);
+    osc.connect(g);
+    g.connect(out);
+    osc.start(now);
+    osc.stop(now + 0.032);
+  }
+
+  /**
+   * Electric City Streetcar / Tram continuous traction motor, inverter hum,
+   * steel-rail bogie rumble, and smooth braking air hiss (supports cabin & spatial exterior mix).
+   */
+  public updateTramMovementLoop(
+    speedMps: number,
+    isAboard: boolean,
+    isBraking: boolean,
+    spatialGain = 1.0,
+    isActive = true,
+  ): void {
+    if (
+      this._muted ||
+      this._sfxVolume <= 0 ||
+      this._masterVolume <= 0 ||
+      !isActive ||
+      (!isAboard && spatialGain <= 0.015)
+    ) {
+      if (this.ctx && this.vehicleGraphReady) {
+        const now = this.ctx.currentTime;
+        this.tramTractionGain?.gain.setTargetAtTime(0, now, 0.06);
+        this.tramInverterGain?.gain.setTargetAtTime(0, now, 0.06);
+        this.tramRailGain?.gain.setTargetAtTime(0, now, 0.06);
+        this.tramBrakeGain?.gain.setTargetAtTime(0, now, 0.06);
+      }
+      return;
+    }
+    if (!this.userInteracted && !this.ctx) return;
+    const ctx = this.ensureCtx();
+    if (!ctx || ctx.state !== 'running') return;
+
+    const nowMs = performance.now();
+    if (nowMs - this.lastTramParamMs < 32) return;
+    this.lastTramParamMs = nowMs;
+
+    if (!this.ensureVehicleGraph(ctx)) return;
+
+    const p = computeCityTramAudioParams(speedMps, isAboard, isBraking, spatialGain);
+    const now = ctx.currentTime;
+    const ramp = 0.08;
+
+    this.tramTractionOsc1?.frequency.setTargetAtTime(p.tractionFreqHz, now, ramp);
+    this.tramTractionOsc2?.frequency.setTargetAtTime(p.tractionFreqHz * 2, now, ramp);
+    this.tramTractionLpf?.frequency.setTargetAtTime(340 + p.speedNorm * 280, now, ramp);
+    this.tramTractionGain?.gain.setTargetAtTime(p.tractionGain, now, ramp);
+
+    this.tramInverterOsc?.frequency.setTargetAtTime(p.inverterFreqHz, now, ramp);
+    this.tramInverterGain?.gain.setTargetAtTime(p.inverterGain, now, ramp);
+
+    this.tramRailLpf?.frequency.setTargetAtTime(p.railRumbleCutoffHz, now, ramp);
+    this.tramRailBpf?.frequency.setTargetAtTime(p.railBandHz, now, ramp);
+    this.tramRailGain?.gain.setTargetAtTime(p.railRumbleGain, now, ramp);
+
+    this.tramBrakeGain?.gain.setTargetAtTime(p.brakeGain, now, ramp);
+  }
+
+  /**
+   * Classic brass streetcar / tram bell ("TING-TING!") on boarding & station departure.
+   */
+  public playTramBell(rings = 2, spatialGain = 1.0): void {
+    if (this._muted || this._sfxVolume <= 0 || this._masterVolume <= 0) return;
+    const atten = clamp(spatialGain, 0, 1);
+    if (atten <= 0.02) return;
+    if (this.isThrottled('city-tram-bell', 350)) return;
+    const ctx = this.ensureCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const out = this.getOutputNode(ctx);
+    const strikeCount = clamp(Math.round(rings), 1, 3);
+    const harmonics = [
+      { ratio: 1.0, weight: 1.0, decay: 0.42 },
+      { ratio: 2.18, weight: 0.42, decay: 0.28 },
+      { ratio: 3.34, weight: 0.18, decay: 0.18 },
+    ];
+    const baseHz = 1046.5; // C6 warm bronze gong
+
+    for (let s = 0; s < strikeCount; s++) {
+      const t0 = now + s * 0.135;
+      for (const h of harmonics) {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(baseHz * h.ratio, t0);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.linearRampToValueAtTime(0.095 * h.weight * atten, t0 + 0.004);
+        g.gain.exponentialRampToValueAtTime(0.0004, t0 + h.decay);
+        osc.connect(g);
+        g.connect(out);
+        osc.start(t0);
+        osc.stop(t0 + h.decay + 0.02);
+      }
+    }
+  }
+
+  /**
+   * Authentic double-bogie steel rail-joint "ka-clack ... ka-clack" when City Tram rolls along tracks.
+   */
+  public playTramRailClack(speedNorm = 0.7, spatialGain = 1.0): void {
+    if (this._muted || this._sfxVolume <= 0 || this._masterVolume <= 0) return;
+    const atten = clamp(spatialGain, 0, 1);
+    if (atten <= 0.03) return;
+    if (this.isThrottled('city-tram-rail-clack', 220)) return;
+    const ctx = this.ensureCtx();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const out = this.getOutputNode(ctx);
+    const s = clamp(speedNorm, 0.15, 1.0);
+    const axleGapSec = clamp(0.19 - s * 0.06, 0.11, 0.2);
+
+    for (let bogie = 0; bogie < 2; bogie++) {
+      const t0 = now + bogie * axleGapSec;
+      // Low steel rail thump
+      const thumpOsc = ctx.createOscillator();
+      const thumpGain = ctx.createGain();
+      thumpOsc.type = 'triangle';
+      thumpOsc.frequency.setValueAtTime(bogie === 0 ? 132 : 122, t0);
+      thumpOsc.frequency.exponentialRampToValueAtTime(46, t0 + 0.065);
+      thumpGain.gain.setValueAtTime(0.0001, t0);
+      thumpGain.gain.linearRampToValueAtTime(0.11 * s * atten, t0 + 0.004);
+      thumpGain.gain.exponentialRampToValueAtTime(0.0004, t0 + 0.075);
+      thumpOsc.connect(thumpGain);
+      thumpGain.connect(out);
+      thumpOsc.start(t0);
+      thumpOsc.stop(t0 + 0.085);
+
+      // Damped metallic rail click
+      const railOsc = ctx.createOscillator();
+      const railGain = ctx.createGain();
+      railOsc.type = 'sine';
+      railOsc.frequency.setValueAtTime(bogie === 0 ? 540 : 510, t0);
+      railOsc.frequency.exponentialRampToValueAtTime(290, t0 + 0.045);
+      railGain.gain.setValueAtTime(0.0001, t0);
+      railGain.gain.linearRampToValueAtTime(0.042 * s * atten, t0 + 0.003);
+      railGain.gain.exponentialRampToValueAtTime(0.0004, t0 + 0.055);
+      railOsc.connect(railGain);
+      railGain.connect(out);
+      railOsc.start(t0);
+      railOsc.stop(t0 + 0.065);
+    }
   }
 }
 
@@ -4078,5 +4708,105 @@ export function computeBuildBoxAudioGain(
   return isPlayerAction ? distGain : distGain * 0.45;
 }
 
+export interface ElectricScooterAudioParams {
+  speedNorm: number;
+  motorFreqHz: number;
+  inverterFreqHz: number;
+  tireCutoffHz: number;
+  motorGain: number;
+  inverterGain: number;
+  tireGain: number;
+}
+
+export function computeElectricScooterAudioParams(
+  speedMps: number,
+  isThrottleActive: boolean,
+  isBraking: boolean,
+): ElectricScooterAudioParams {
+  const absSpeed = Math.abs(speedMps);
+  const speedNorm = clamp(absSpeed / 12.5, 0, 1);
+  const motorFreqHz = 84 + speedNorm * 148 + (isThrottleActive ? 10 : 0);
+  const inverterFreqHz = 560 + speedNorm * 780;
+  const tireCutoffHz = 360 + speedNorm * 680;
+  const motorGain =
+    absSpeed > 0.12
+      ? 0.026 + speedNorm * 0.075 + (isThrottleActive ? 0.016 : 0)
+      : isThrottleActive
+        ? 0.01
+        : 0;
+  const inverterGain =
+    absSpeed > 0.18
+      ? 0.007 + speedNorm * 0.02 + (isBraking && absSpeed > 1.1 ? 0.01 : 0)
+      : 0;
+  const tireGain = absSpeed > 0.2 ? 0.01 + speedNorm * 0.058 : 0;
+  return {
+    speedNorm,
+    motorFreqHz,
+    inverterFreqHz,
+    tireCutoffHz,
+    motorGain,
+    inverterGain,
+    tireGain,
+  };
+}
+
+export interface PushScooterAudioParams {
+  speedNorm: number;
+  rumbleCutoffHz: number;
+  wheelWhirHz: number;
+  rumbleGain: number;
+  wheelWhirGain: number;
+}
+
+export function computePushScooterAudioParams(speedMps: number): PushScooterAudioParams {
+  const absSpeed = Math.abs(speedMps);
+  const speedNorm = clamp(absSpeed / 8.5, 0, 1);
+  return {
+    speedNorm,
+    rumbleCutoffHz: 210 + speedNorm * 340,
+    wheelWhirHz: 620 + speedNorm * 760,
+    rumbleGain: absSpeed > 0.14 ? 0.014 + speedNorm * 0.072 : 0,
+    wheelWhirGain: absSpeed > 0.25 ? 0.007 + speedNorm * 0.048 : 0,
+  };
+}
+
+export interface CityTramAudioParams {
+  speedNorm: number;
+  attenuation: number;
+  tractionFreqHz: number;
+  inverterFreqHz: number;
+  railRumbleCutoffHz: number;
+  railBandHz: number;
+  tractionGain: number;
+  inverterGain: number;
+  railRumbleGain: number;
+  brakeGain: number;
+}
+
+export function computeCityTramAudioParams(
+  speedMps: number,
+  isAboard: boolean,
+  isBraking: boolean,
+  spatialGain = 1.0,
+): CityTramAudioParams {
+  const absSpeed = Math.abs(speedMps);
+  const speedNorm = clamp(absSpeed / 8.2, 0, 1);
+  const attenuation = clamp(isAboard ? 1.0 : spatialGain, 0, 1);
+  return {
+    speedNorm,
+    attenuation,
+    tractionFreqHz: 68 + speedNorm * 98,
+    inverterFreqHz: 210 + speedNorm * 225,
+    railRumbleCutoffHz: 180 + speedNorm * 310,
+    railBandHz: 380 + speedNorm * 360,
+    tractionGain: attenuation * (absSpeed > 0.12 ? 0.022 + speedNorm * 0.085 : isAboard ? 0.012 : 0),
+    inverterGain: attenuation * (absSpeed > 0.2 ? 0.01 + speedNorm * 0.038 : 0),
+    railRumbleGain: attenuation * (absSpeed > 0.15 ? 0.02 + speedNorm * 0.105 : 0),
+    brakeGain:
+      attenuation * (isBraking && absSpeed > 0.35 ? clamp(0.016 + speedNorm * 0.042, 0, 0.058) : 0),
+  };
+}
+
 export const soundEngine = new SoundEngine();
+
 

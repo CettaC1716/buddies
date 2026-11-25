@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Backpack,
   Bike,
+  Camera,
   ChevronRight,
   Fish,
   Gift,
@@ -21,8 +22,14 @@ import {
 } from '../game/buddiesUrbanScooterRules';
 import {
   PROFILE_IDENTITY_UPDATED_EVENT,
+  readStoredAvatarPhotoUrl,
   readStoredStatusCoverPhotoUrl,
 } from './CharacterProfileModal';
+import {
+  resolveNpcCitizenIdFromEntity,
+  resolveNpcPhotoUrl,
+  useNpcPortraitVersion,
+} from '../game/npcPortraitRegistry';
 import { RoleBadgeCircle } from './RoleBadgeCircle';
 import {
   getAnyRoleBadgeSpec,
@@ -61,6 +68,8 @@ export interface HudBottomAvatarDockProps {
   onOpenScooterShowroom: () => void;
   onToggleFishingRod: () => void;
   onToggleScooterKind: (kind: UrbanScooterKind) => void;
+  isSelfieCameraOpen?: boolean;
+  onOpenSelfieCamera?: () => void;
 }
 
 const PORTRAIT_FRAME_GRADIENTS: Record<
@@ -99,10 +108,17 @@ function getDockPhotoCropClassName(url: string): string {
   if (url.includes('#crop=center')) {
     return 'object-cover object-center scale-110';
   }
+  if (url.startsWith('data:image/')) {
+    return 'object-cover object-center';
+  }
   return 'object-cover object-top';
 }
 
 function resolveEntityPortraitUrl(entity: NearbyEntityUser): string {
+  const npcCitizenId = resolveNpcCitizenIdFromEntity(entity);
+  if (npcCitizenId) {
+    return resolveNpcPhotoUrl(npcCitizenId, 'avatar');
+  }
   const lower = cleanCharacterName(entity.name).toLowerCase();
   const isFemale =
     entity.gender === 'female' ||
@@ -159,10 +175,13 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
   onOpenScooterShowroom,
   onToggleFishingRod,
   onToggleScooterKind,
+  isSelfieCameraOpen = false,
+  onOpenSelfieCamera,
 }) => {
+  useNpcPortraitVersion();
   const [dockCategory, setDockCategory] = useState<'bag' | 'scooter'>('bag');
-  const [customCoverUrl, setCustomCoverUrl] = useState<string>(() =>
-    readStoredStatusCoverPhotoUrl(),
+  const [customCoverUrl, setCustomCoverUrl] = useState<string>(
+    () => readStoredAvatarPhotoUrl() || readStoredStatusCoverPhotoUrl(),
   );
   const [roleBadgeId, setRoleBadgeId] = useState<PlayerRoleBadgeId>(() =>
     readStoredRoleBadge(),
@@ -170,7 +189,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
 
   useEffect(() => {
     const syncProfileIdentity = () => {
-      setCustomCoverUrl(readStoredStatusCoverPhotoUrl());
+      setCustomCoverUrl(readStoredAvatarPhotoUrl() || readStoredStatusCoverPhotoUrl());
       setRoleBadgeId(readStoredRoleBadge());
     };
     window.addEventListener(PROFILE_IDENTITY_UPDATED_EVENT, syncProfileIdentity);
@@ -290,7 +309,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                 ? `${displayName} · Interactions`
                 : `${displayName} · Open Profile`
             }
-            className={`relative w-10 h-10 rounded-xl bg-[#0d1118]/80 backdrop-blur-sm border shadow-[0_8px_22px_rgba(0,0,0,0.45)] overflow-hidden cursor-pointer transition-transform active:scale-95 ${PORTRAIT_FRAME_GRADIENTS[displayTone]} ${
+            className={`relative w-10 h-10 rounded-xl bg-[#111622]/86 border shadow-[0_8px_22px_rgba(0,0,0,0.45)] overflow-hidden cursor-pointer transition-transform active:scale-95 ${PORTRAIT_FRAME_GRADIENTS[displayTone]} ${
               showTargetInteractionBar ? 'ring-2 ring-white/60' : ''
             }`}
           >
@@ -324,7 +343,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
         {showTargetInteractionBar && targetEntity ? (
           <div
             data-dock-target-interaction-bar="true"
-            className="h-10 px-2 rounded-2xl bg-[#0d1118]/82 backdrop-blur-sm border border-sky-300/40 shadow-[0_8px_24px_rgba(0,0,0,0.45)] flex items-center gap-1.5 overflow-x-auto no-scrollbar"
+            className="h-10 px-2 rounded-2xl bg-[#111622]/86 border border-sky-300/40 shadow-[0_8px_24px_rgba(0,0,0,0.45)] flex items-center gap-1.5 overflow-x-auto no-scrollbar"
           >
             <button
               type="button"
@@ -387,7 +406,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
             </button>
           </div>
         ) : (
-          <div className="h-10 px-2 rounded-2xl bg-[#0d1118]/72 backdrop-blur-sm border border-white/18 shadow-[0_8px_24px_rgba(0,0,0,0.4)] flex items-center gap-1.5 min-w-0">
+          <div className="h-10 px-2 rounded-2xl bg-[#111622]/86 border border-white/22 shadow-[0_8px_24px_rgba(0,0,0,0.45)] flex items-center gap-1.5 min-w-0">
             <button
               type="button"
               onClick={() => {
@@ -426,6 +445,26 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
             >
               <Fish className="w-3.5 h-3.5 stroke-[2.2]" />
             </button>
+
+            {onOpenSelfieCamera && (
+              <button
+                type="button"
+                data-dock-quick-selfie-camera="true"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  onOpenSelfieCamera();
+                }}
+                aria-label="City Selfie Camera"
+                aria-pressed={isSelfieCameraOpen}
+                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all ${
+                  isSelfieCameraOpen
+                    ? 'bg-gradient-to-br from-emerald-400 to-teal-500 text-white ring-1 ring-white'
+                    : 'bg-rose-500/35 border border-rose-300/45 text-rose-100'
+                }`}
+              >
+                <Camera className="w-3.5 h-3.5 stroke-[2.2]" />
+              </button>
+            )}
 
             <button
               type="button"
@@ -513,7 +552,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
             }
             className={`group relative ${
               isTabletDock ? 'w-[58px] h-[78px]' : 'w-[72px] h-[94px]'
-            } rounded-2xl bg-[#0d1118]/75 backdrop-blur-sm border shadow-[0_12px_34px_rgba(0,0,0,0.48)] overflow-hidden cursor-pointer transition-all active:scale-95 ${PORTRAIT_FRAME_GRADIENTS[displayTone]} ${
+            } rounded-2xl bg-[#111622]/86 border shadow-[0_12px_34px_rgba(0,0,0,0.48)] overflow-hidden cursor-pointer transition-all active:scale-95 ${PORTRAIT_FRAME_GRADIENTS[displayTone]} ${
               showTargetInteractionBar ? 'ring-2 ring-white/60' : ''
             }`}
           >
@@ -569,12 +608,12 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
             {/* Pill 1: Clean Name Only (full room so name never truncates) */}
             <div
               data-dock-character-pill={hasTarget ? 'target' : 'self'}
-              className={`flex-1 min-w-0 h-full px-3 rounded-2xl backdrop-blur-sm border shadow-[0_8px_24px_rgba(0,0,0,0.34)] flex items-center justify-between gap-1.5 transition-all ${
+              className={`flex-1 min-w-0 h-full px-3 rounded-2xl border shadow-[0_8px_24px_rgba(0,0,0,0.4)] flex items-center justify-between gap-1.5 transition-all ${
                 hasTarget
                   ? showTargetInteractionBar
                     ? 'bg-sky-500/25 border-sky-300/65 ring-1 ring-sky-300/40'
-                    : 'bg-[#0d1118]/72 border-sky-300/45 hover:border-sky-300/75'
-                  : 'bg-[#0d1118]/58 border-white/15 hover:border-white/25'
+                    : 'bg-[#111622]/86 border-sky-300/45 hover:border-sky-300/75'
+                  : 'bg-[#111622]/86 border-white/22 hover:border-white/32'
               }`}
             >
               {targetEntity ? (
@@ -654,7 +693,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
             <div
               data-dock-mode-switcher="true"
               data-dock-mode-switcher-disabled={isPairedModeActive ? 'true' : 'false'}
-              className="shrink-0 h-full px-1.5 rounded-2xl bg-[#0d1118]/62 backdrop-blur-sm border border-white/15 shadow-[0_8px_24px_rgba(0,0,0,0.34)] flex items-center gap-1.5"
+              className="shrink-0 h-full px-1.5 rounded-2xl bg-[#111622]/86 border border-white/22 shadow-[0_8px_24px_rgba(0,0,0,0.4)] flex items-center gap-1.5"
             >
               <button
                 type="button"
@@ -708,7 +747,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
           {showTargetInteractionBar && targetEntity ? (
             <div
               data-dock-target-interaction-bar="true"
-              className="w-full h-[52px] px-2.5 rounded-2xl bg-[#0d1118]/74 backdrop-blur-sm border border-sky-300/35 shadow-[0_10px_30px_rgba(0,0,0,0.48)] flex items-center justify-between gap-1.5"
+              className="w-full h-[52px] px-2.5 rounded-2xl bg-[#111622]/86 border border-sky-300/35 shadow-[0_10px_30px_rgba(0,0,0,0.48)] flex items-center justify-between gap-1.5"
             >
               <div className="flex items-center gap-2">
                 {/* 1. View Profile (Sky-Blue Glossy Button) */}
@@ -799,7 +838,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
           ) : dockCategory === 'scooter' ? (
             <div
               data-dock-scooter-bar="true"
-              className="w-full h-[52px] px-2.5 rounded-2xl bg-[#0d1118]/64 backdrop-blur-sm border border-white/15 shadow-[0_10px_30px_rgba(0,0,0,0.44)] flex items-center justify-between gap-2"
+              className="w-full h-[52px] px-2.5 rounded-2xl bg-[#111622]/86 border border-white/22 shadow-[0_10px_30px_rgba(0,0,0,0.45)] flex items-center justify-between gap-2"
             >
               <div className="flex items-center gap-2">
                 {URBAN_SCOOTER_CATALOG_ITEMS.map((scooter) => {
@@ -894,7 +933,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
           ) : (
             <div
               data-dock-bag-bar="true"
-              className="w-full h-[52px] px-2.5 rounded-2xl bg-[#0d1118]/64 backdrop-blur-sm border border-white/15 shadow-[0_10px_30px_rgba(0,0,0,0.44)] flex items-center justify-between gap-2"
+              className="w-full h-[52px] px-2.5 rounded-2xl bg-[#111622]/86 border border-white/22 shadow-[0_10px_30px_rgba(0,0,0,0.45)] flex items-center justify-between gap-2"
             >
               <div className="flex items-center gap-2">
                 {/* 1. Quick Bag Item: Fishing Rod (Cyan-Sky Glossy Button) */}
@@ -919,6 +958,28 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                     <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-lime-300 border-2 border-[#0d1118]" />
                   )}
                 </button>
+
+                {/* 2. Quick Bag Item: City Selfie Camera (Coral-Rose Glossy Button) */}
+                {onOpenSelfieCamera && (
+                  <button
+                    type="button"
+                    data-dock-quick-selfie-camera="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      onOpenSelfieCamera();
+                    }}
+                    title="City Selfie Camera"
+                    aria-label="City Selfie Camera"
+                    aria-pressed={isSelfieCameraOpen}
+                    className={`relative w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer ${
+                      isSelfieCameraOpen
+                        ? 'bg-gradient-to-br from-emerald-400 to-teal-500 text-white ring-2 ring-white shadow-[0_4px_14px_rgba(16,185,129,0.55)]'
+                        : 'bg-gradient-to-br from-rose-400 to-pink-600 hover:brightness-110 border border-rose-200/50 text-white shadow-[0_4px_12px_rgba(244,63,94,0.42)]'
+                    }`}
+                  >
+                    <Camera className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+                  </button>
+                )}
               </div>
 
               {/* 2. Open Full Personal Bag Shortcut (Emerald-Teal Glossy Button) */}

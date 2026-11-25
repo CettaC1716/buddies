@@ -45,19 +45,22 @@ describe('buddiesGraphicsSettings', () => {
     const balanced = resolveGraphicsQualityProfile('balanced', 2, false);
     assert.equal(balanced.fixedDpr, 1.0);
     assert.equal(balanced.shadowsEnabled, true);
-    assert.equal(balanced.shadowMapRes, 1536);
+    assert.equal(balanced.shadowMapRes, 1024);
     assert.equal(balanced.foliageShadowsEnabled, false);
+    assert.equal(balanced.hudBackdropBlurEnabled, false);
 
     const high = resolveGraphicsQualityProfile('high', 2, false);
     assert.equal(high.fixedDpr, 1.5);
     assert.equal(high.shadowsEnabled, true);
-    assert.equal(high.shadowMapRes, 2048);
-    assert.equal(high.foliageShadowsEnabled, true);
+    assert.equal(high.shadowMapRes, 1536);
+    assert.equal(high.foliageShadowsEnabled, false);
 
     const adaptive = resolveGraphicsQualityProfile('adaptive', 2, false);
     assert.equal(adaptive.dprCap, 1.25);
     assert.equal(adaptive.shadowsEnabled, true);
-    assert.equal(adaptive.shadowMapRes, 2048);
+    assert.equal(adaptive.shadowMapRes, 1024);
+    assert.equal(adaptive.foliageShadowsEnabled, false);
+    assert.equal(adaptive.hudBackdropBlurEnabled, false);
   });
 
   it('persists and restores graphics quality from local device storage', () => {

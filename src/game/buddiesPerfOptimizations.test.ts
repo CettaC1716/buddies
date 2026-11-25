@@ -56,7 +56,7 @@ test('evaluateShadowMapRefreshDecision locks to integer texel multiple and throt
   });
   assert.equal(microStep.shouldUpdate, false);
 
-  // Walking > 0.25m on the very next frame after last update is throttled until min interval (2 frames)
+  // Walking > 0.25m on the very next frame after last update is throttled until min interval (3 frames)
   const throttledWalk = evaluateShadowMapRefreshDecision({
     finalLookX: 0.4,
     finalLookZ: 0,
@@ -71,26 +71,9 @@ test('evaluateShadowMapRefreshDecision locks to integer texel multiple and throt
     maxStationaryIntervalFrames: 12,
     smoothedFrameMs: 16,
   });
-  // Frame 2 is <= 2 (initial warm-up), test at frame 11 with last update at frame 10
+  // Frame 2 is <= 2 (initial warm-up), test at frame 11 & 12 with last update at frame 10
   assert.equal(throttledWalk.shouldUpdate, true);
   const throttledMidGame = evaluateShadowMapRefreshDecision({
-    finalLookX: 0.4,
-    finalLookZ: 0,
-    shadowLightRight: right,
-    shadowLightUp: up,
-    shadowLightBack: back,
-    shadowTexelWorldSize: texel,
-    prevSnappedShadowX: init.snappedLookX,
-    prevSnappedShadowZ: init.snappedLookZ,
-    frameTickCount: 11,
-    lastShadowUpdateFrame: 10,
-    maxStationaryIntervalFrames: 12,
-    smoothedFrameMs: 16,
-  });
-  assert.equal(throttledMidGame.shouldUpdate, false);
-
-  // Two frames later (frame 12) it updates and snaps to exact multiple of 6*texel
-  const refreshedWalk = evaluateShadowMapRefreshDecision({
     finalLookX: 0.4,
     finalLookZ: 0,
     shadowLightRight: right,
@@ -104,8 +87,25 @@ test('evaluateShadowMapRefreshDecision locks to integer texel multiple and throt
     maxStationaryIntervalFrames: 12,
     smoothedFrameMs: 16,
   });
+  assert.equal(throttledMidGame.shouldUpdate, false);
+
+  // Three frames later (frame 13) it updates and snaps to exact multiple of 8*texel
+  const refreshedWalk = evaluateShadowMapRefreshDecision({
+    finalLookX: 0.4,
+    finalLookZ: 0,
+    shadowLightRight: right,
+    shadowLightUp: up,
+    shadowLightBack: back,
+    shadowTexelWorldSize: texel,
+    prevSnappedShadowX: init.snappedLookX,
+    prevSnappedShadowZ: init.snappedLookZ,
+    frameTickCount: 13,
+    lastShadowUpdateFrame: 10,
+    maxStationaryIntervalFrames: 12,
+    smoothedFrameMs: 16,
+  });
   assert.equal(refreshedWalk.shouldUpdate, true);
-  const ratio = refreshedWalk.snappedLookX / (texel * 6);
+  const ratio = refreshedWalk.snappedLookX / (texel * 8);
   assert.ok(Math.abs(ratio - Math.round(ratio)) < 1e-6);
 
   // Teleport (> 3m jump) updates immediately even 1 frame later
@@ -344,9 +344,9 @@ test('computeAdaptiveShadowMapRes scales shadow map between 2048/1536/1024 on GP
   assert.equal(aerial.nextRes, 1024);
   assert.equal(aerial.changed, true);
 
-  // Step down 2048 -> 1536 when smoothedFrameMs > 20.5
+  // Step down 2048 -> 1536 when smoothedFrameMs > 17.5
   const down1 = computeAdaptiveShadowMapRes({
-    smoothedFrameMs: 22.0,
+    smoothedFrameMs: 19.0,
     currentRes: 2048,
     isSoftwareGl: false,
     isFullMapOverview: false,
@@ -379,9 +379,9 @@ test('computeAdaptiveShadowMapRes scales shadow map between 2048/1536/1024 on GP
   assert.equal(down2.nextRes, 1024);
   assert.equal(down2.changed, true);
 
-  // Recovers smoothly 1024 -> 1536 -> 2048 when GPU has plenty of headroom (< 13.5ms)
+  // Recovers smoothly 1024 -> 1536 when GPU has high headroom (< 11.5ms) and caps adaptive auto-upscale at 1536
   const up1 = computeAdaptiveShadowMapRes({
-    smoothedFrameMs: 12.0,
+    smoothedFrameMs: 10.5,
     currentRes: 1024,
     isSoftwareGl: false,
     isFullMapOverview: false,
@@ -389,20 +389,20 @@ test('computeAdaptiveShadowMapRes scales shadow map between 2048/1536/1024 on GP
   });
   assert.equal(up1.nextRes, 1536);
   assert.equal(up1.changed, true);
-  assert.equal(up1.nextCooldownFrames, 150);
+  assert.equal(up1.nextCooldownFrames, 180);
 
   const up2 = computeAdaptiveShadowMapRes({
-    smoothedFrameMs: 11.5,
+    smoothedFrameMs: 10.0,
     currentRes: 1536,
     isSoftwareGl: false,
     isFullMapOverview: false,
     cooldownFrames: 0,
   });
-  assert.equal(up2.nextRes, 2048);
-  assert.equal(up2.changed, true);
+  assert.equal(up2.nextRes, 1536);
+  assert.equal(up2.changed, false);
 });
 
-test('shouldEnableFoliageShadows uses hysteresis and disables in aerial overview or software GL', () => {
+test('shouldEnableFoliageShadows keeps heavy tree canopy shadow proxies disabled for steady FPS', () => {
   assert.equal(
     shouldEnableFoliageShadows({
       smoothedFrameMs: 14,
@@ -421,48 +421,18 @@ test('shouldEnableFoliageShadows uses hysteresis and disables in aerial overview
     }),
     false,
   );
-  // Stays enabled at moderate frame times <= 24ms
   assert.equal(
     shouldEnableFoliageShadows({
-      smoothedFrameMs: 21,
-      currentlyEnabled: true,
-      isSoftwareGl: false,
-      isFullMapOverview: false,
-    }),
-    true,
-  );
-  // Disables above 24ms
-  assert.equal(
-    shouldEnableFoliageShadows({
-      smoothedFrameMs: 25.5,
-      currentlyEnabled: true,
-      isSoftwareGl: false,
-      isFullMapOverview: false,
-    }),
-    false,
-  );
-  // Hysteresis: remains disabled at 20ms until frame time recovers below 17.5ms
-  assert.equal(
-    shouldEnableFoliageShadows({
-      smoothedFrameMs: 20.0,
+      smoothedFrameMs: 12,
       currentlyEnabled: false,
       isSoftwareGl: false,
       isFullMapOverview: false,
     }),
     false,
-  );
-  assert.equal(
-    shouldEnableFoliageShadows({
-      smoothedFrameMs: 16.0,
-      currentlyEnabled: false,
-      isSoftwareGl: false,
-      isFullMapOverview: false,
-    }),
-    true,
   );
 });
 
-test('shouldEnableHudBackdropBlur disables compositor blur on software GL or >23ms frames with hysteresis', () => {
+test('shouldEnableHudBackdropBlur keeps per-frame compositor blur over WebGL disabled', () => {
   assert.equal(
     shouldEnableHudBackdropBlur({
       isSoftwareGl: true,
@@ -474,35 +444,10 @@ test('shouldEnableHudBackdropBlur disables compositor blur on software GL or >23
   assert.equal(
     shouldEnableHudBackdropBlur({
       isSoftwareGl: false,
-      smoothedFrameMs: 20.0,
-      currentlyEnabled: true,
-    }),
-    true,
-  );
-  assert.equal(
-    shouldEnableHudBackdropBlur({
-      isSoftwareGl: false,
-      smoothedFrameMs: 24.5,
-      currentlyEnabled: true,
-    }),
-    false,
-  );
-  // Hysteresis: stays off at 19.5ms until frame time recovers below 17ms
-  assert.equal(
-    shouldEnableHudBackdropBlur({
-      isSoftwareGl: false,
-      smoothedFrameMs: 19.5,
+      smoothedFrameMs: 12.0,
       currentlyEnabled: false,
     }),
     false,
-  );
-  assert.equal(
-    shouldEnableHudBackdropBlur({
-      isSoftwareGl: false,
-      smoothedFrameMs: 15.5,
-      currentlyEnabled: false,
-    }),
-    true,
   );
 });
 

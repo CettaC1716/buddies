@@ -96,9 +96,9 @@ export function resolveGraphicsQualityProfile(
         dprCap,
         fixedDpr,
         shadowsEnabled: !isSoftwareGl,
-        shadowMapRes: isSoftwareGl ? 1024 : 1536,
+        shadowMapRes: 1024,
         foliageShadowsEnabled: false,
-        hudBackdropBlurEnabled: !isSoftwareGl,
+        hudBackdropBlurEnabled: false,
       };
     }
     case 'high': {
@@ -110,8 +110,8 @@ export function resolveGraphicsQualityProfile(
         dprCap,
         fixedDpr,
         shadowsEnabled: !isSoftwareGl,
-        shadowMapRes: isSoftwareGl ? 1024 : 2048,
-        foliageShadowsEnabled: !isSoftwareGl,
+        shadowMapRes: isSoftwareGl ? 1024 : 1536,
+        foliageShadowsEnabled: false,
         hudBackdropBlurEnabled: !isSoftwareGl,
       };
     }
@@ -124,9 +124,9 @@ export function resolveGraphicsQualityProfile(
         dprCap,
         fixedDpr: null,
         shadowsEnabled: !isSoftwareGl,
-        shadowMapRes: isSoftwareGl ? 1024 : 2048,
-        foliageShadowsEnabled: !isSoftwareGl,
-        hudBackdropBlurEnabled: !isSoftwareGl,
+        shadowMapRes: 1024,
+        foliageShadowsEnabled: false,
+        hudBackdropBlurEnabled: false,
       };
     }
   }

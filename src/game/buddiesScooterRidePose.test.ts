@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   computeKickScooterRidePose,
+  computePushKickScooterAccelRate,
   computeScooterRiderRigPose,
   kickScooterStrideLengthM,
 } from './buddiesScooterRidePose';
@@ -84,9 +85,9 @@ test('electric_scooter_bike rig pose matches 2x saddle, floorboard, and steered 
   });
   closeTo(straight.seatLiftY, SCOOTER_RIDER_LIFT_BY_KIND_M.electric_scooter_bike, 1e-6);
   closeTo(straight.seatBackOffsetZ, SCOOTER_RIDER_BACK_OFFSET_BY_KIND_M.electric_scooter_bike, 1e-6);
-  assert.ok(straight.torsoPitchRad >= 0 && straight.torsoPitchRad <= 0.22, 'e-bike rider stays upright');
+  assert.ok(straight.torsoPitchRad >= 0 && straight.torsoPitchRad <= 0.28, 'e-bike rider leans forward naturally');
 
-  // Convert bodyGroup-local back into scooter-world coordinates at 1.48x real-world bike scale
+  // Convert bodyGroup-local back into scooter-world coordinates at 1.86x proportional bike scale
   const eScale = SCOOTER_RIDE_MODEL_SCALE_BY_KIND.electric_scooter_bike;
   const worldLeftGripY = straight.leftGripBodyLocal.y + straight.seatLiftY;
   const worldLeftGripZ = straight.leftGripBodyLocal.z + straight.seatBackOffsetZ;
@@ -96,7 +97,7 @@ test('electric_scooter_bike rig pose matches 2x saddle, floorboard, and steered 
 
   const worldLeftFootY = straight.leftFootSoleBodyLocal.y + straight.seatLiftY;
   const worldLeftFootZ = straight.leftFootSoleBodyLocal.z + straight.seatBackOffsetZ;
-  closeTo(worldLeftFootY, 0.245 * eScale, 1e-3);
+  closeTo(worldLeftFootY, 0.246 * eScale, 1e-3);
   assert.ok(worldLeftFootZ > -0.2 && worldLeftFootZ < 0.45, 'feet stay squarely on bike floorboard');
 
   // Turning left (+steer > 0) pulls left grip back, pushes right grip forward, leans left (<0 roll)
@@ -173,4 +174,87 @@ test('push_kick_scooter rig pose locks left foot on deck and grounds push stroke
     pushActivity: 0,
   });
   assert.ok(brake.rightFootSoleBodyLocal.z < -0.3 && brake.rightFootPitchRad < -0.1);
+
+  const highSpeedCruise = computeScooterRiderRigPose({
+    kind: 'push_kick_scooter',
+    distanceM: stride * 0.22,
+    speedMps: 6.5,
+    mountBlend: 1,
+    isThrottleActive: true,
+  });
+  assert.equal(highSpeedCruise.isPushing, false);
+  closeTo(highSpeedCruise.rightFootSoleBodyLocal.y + highSpeedCruise.seatLiftY, 0.228, 1e-3);
+  assert.ok(highSpeedCruise.rightFootSoleBodyLocal.z < -0.2);
+
+  // Medium speed (4.5 m/s) keeps actively pushing instead of cutting off prematurely
+  const mediumSpeedPush = computeScooterRiderRigPose({
+    kind: 'push_kick_scooter',
+    distanceM: stride * 0.22,
+    speedMps: 4.5,
+    mountBlend: 1,
+    isThrottleActive: true,
+  });
+  assert.equal(mediumSpeedPush.isPushing, true);
+});
+
+test('electric_scooter_bike uses straight zero-sweep grip axes matching push_kick_scooter hand alignment', () => {
+  const bikeStraight = computeScooterRiderRigPose({
+    kind: 'electric_scooter_bike',
+    distanceM: 0,
+    speedMps: 0,
+    mountBlend: 1,
+    steerAngleRad: 0,
+  });
+  const kickStraight = computeScooterRiderRigPose({
+    kind: 'push_kick_scooter',
+    distanceM: 0,
+    speedMps: 0,
+    mountBlend: 1,
+    steerAngleRad: 0,
+  });
+  closeTo(bikeStraight.leftGripBarAxisLocal.x, kickStraight.leftGripBarAxisLocal.x, 1e-6);
+  closeTo(bikeStraight.leftGripBarAxisLocal.z, kickStraight.leftGripBarAxisLocal.z, 1e-6);
+  closeTo(bikeStraight.rightGripBarAxisLocal.x, kickStraight.rightGripBarAxisLocal.x, 1e-6);
+  closeTo(bikeStraight.rightGripBarAxisLocal.z, kickStraight.rightGripBarAxisLocal.z, 1e-6);
+});
+
+test('push_kick_scooter speed ramps across multiple kick cycles from rest to high-speed deck tuck', () => {
+  let speed = 0;
+  let distance = 0;
+  let isCruisingCoast = false;
+  let prevCycle = -1;
+  let kickStrokes = 0;
+  let elapsedSec = 0;
+  const dt = 1 / 60;
+  const maxSpeed = 6.5;
+
+  while (elapsedSec < 5.0 && !isCruisingCoast) {
+    const accel = computePushKickScooterAccelRate({
+      speedMps: speed,
+      rideTargetMps: maxSpeed,
+      rideMaxSpeedMps: maxSpeed,
+      pushDistanceM: distance,
+      isCruisingCoast,
+      isBoosting: false,
+      hasDirectionalInput: true,
+    });
+    speed = Math.min(maxSpeed, speed + accel * dt);
+    distance += speed * dt;
+    elapsedSec += dt;
+
+    const stride = kickScooterStrideLengthM(Math.max(1.0, speed));
+    const cycleIdx = Math.floor(distance / stride);
+    const phase = (((distance % stride) + stride) % stride) / stride;
+    if (cycleIdx !== prevCycle && phase >= 0.04 && phase <= 0.38 && speed > 0.35) {
+      prevCycle = cycleIdx;
+      kickStrokes++;
+    }
+    if (!isCruisingCoast && speed >= 5.3 && phase >= 0.42) {
+      isCruisingCoast = true;
+    }
+  }
+
+  assert.equal(isCruisingCoast, true, 'rider eventually reaches cruising speed and tucks onto deck');
+  assert.ok(elapsedSec >= 2.2 && elapsedSec <= 4.2, `expected multi-second ramp, got ${elapsedSec.toFixed(2)}s`);
+  assert.ok(kickStrokes >= 2, `expected multiple visible kick strokes during acceleration, got ${kickStrokes}`);
 });

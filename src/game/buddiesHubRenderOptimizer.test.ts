@@ -383,11 +383,11 @@ test('lighting hygiene, district chunk cull radius, and avatar LOD cadence behav
     0,
   );
 
-  // Foreground character always updates at 60Hz; far character throttles to stride 4 (15Hz)
-  for (let f = 0; f < 4; f++) {
+  // Foreground character always updates at 60Hz; far character (>46m) throttles to stride 6 (~10Hz)
+  for (let f = 0; f < 6; f++) {
     assert.equal(shouldStepCharacterDetailThisFrame(10 * 10, f, 1, false, false), true);
   }
-  const farUpdates = [0, 1, 2, 3].filter((f) =>
+  const farUpdates = [0, 1, 2, 3, 4, 5].filter((f) =>
     shouldStepCharacterDetailThisFrame(55 * 55, f, 2, false, false),
   );
   assert.equal(farUpdates.length, 1);

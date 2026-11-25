@@ -17,7 +17,7 @@ test('classifyFootstepSurface resolves distinct surfaces cleanly across map habi
 
   // SE Beachfront Boardwalk (+0.82m), Stilt Cabin deck (+0.96m), and indoor wooden home
   assert.equal(classifyFootstepSurface(85.0, 72.0), 'wood');
-  assert.equal(classifyFootstepSurface(132.4, 85.0), 'wood');
+  assert.equal(classifyFootstepSurface(131.6, 95.2), 'wood');
   assert.equal(classifyFootstepSurface(0.0, 0.0, 'house_interior'), 'wood');
 
   // Central Park Terrazzo vs Manicured Oasis Meadow & Fountain water

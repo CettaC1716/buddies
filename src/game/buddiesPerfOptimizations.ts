@@ -37,8 +37,8 @@ export function evaluateShadowMapRefreshDecision(
   input: ShadowRefreshInput,
 ): ShadowRefreshDecision {
   // Exact integer multiple of shadowTexelWorldSize preserves rock-solid texel locking
-  // while avoiding shadow re-renders on tiny 3.5cm micro-steps.
-  const snapTexelStride = 6;
+  // while avoiding shadow re-renders on tiny micro-steps.
+  const snapTexelStride = 8;
   const snapStep = Math.max(1e-4, input.shadowTexelWorldSize * snapTexelStride);
 
   const projU =
@@ -85,9 +85,9 @@ export function evaluateShadowMapRefreshDecision(
     return { shouldUpdate: true, snappedLookX, snappedLookY, snappedLookZ };
   }
 
-  // Adaptive movement cadence: 30Hz (every 2 frames) when fast, 15-20Hz (every 3-4 frames) under GPU load
+  // Adaptive movement cadence: 20Hz (every 3 frames) when fast, 10-15Hz (every 4-6 frames) under GPU load
   const moveMinIntervalFrames =
-    input.smoothedFrameMs > 26 ? 4 : input.smoothedFrameMs > 19 ? 3 : 2;
+    input.smoothedFrameMs > 24 ? 6 : input.smoothedFrameMs > 18 ? 4 : 3;
 
   if (shadowMoved && framesSinceLast >= moveMinIntervalFrames) {
     return { shouldUpdate: true, snappedLookX, snappedLookY, snappedLookZ };
@@ -344,7 +344,7 @@ export function computeAdaptiveShadowMapRes(
   }
 
   const curIdx = Math.max(0, ADAPTIVE_SHADOW_RES_LADDER.indexOf(input.currentRes));
-  if (input.smoothedFrameMs > 20.5 && curIdx > 0) {
+  if (input.smoothedFrameMs > 17.5 && curIdx > 0) {
     const nextRes = ADAPTIVE_SHADOW_RES_LADDER[curIdx - 1];
     return {
       nextRes,
@@ -353,12 +353,13 @@ export function computeAdaptiveShadowMapRes(
     };
   }
 
-  if (input.smoothedFrameMs < 13.5 && curIdx < ADAPTIVE_SHADOW_RES_LADDER.length - 1) {
+  // Cap adaptive auto-upscale at 1536 even with high GPU headroom (< 11.5ms) to keep shadow passes fast
+  if (input.smoothedFrameMs < 11.5 && curIdx < 1) {
     const nextRes = ADAPTIVE_SHADOW_RES_LADDER[curIdx + 1];
     return {
       nextRes,
       changed: nextRes !== input.currentRes,
-      nextCooldownFrames: 150,
+      nextCooldownFrames: 180,
     };
   }
 
@@ -377,17 +378,11 @@ export interface FoliageShadowPolicyInput {
 }
 
 /**
- * Disables tree crown shadow proxies in aerial City View or under heavy GPU frame times
- * (> 24ms), re-enabling cleanly with hysteresis (< 17.5ms) so shadows never flicker on/off.
+ * Keeps heavy tree canopy shadow proxies disabled for steady FPS (architectural & terrain
+ * shadows remain crisp without rasterizing thousands of canopy triangles into the depth map).
  */
-export function shouldEnableFoliageShadows(input: FoliageShadowPolicyInput): boolean {
-  if (input.isSoftwareGl || input.isFullMapOverview) {
-    return false;
-  }
-  if (input.currentlyEnabled) {
-    return input.smoothedFrameMs <= 24.0;
-  }
-  return input.smoothedFrameMs < 17.5;
+export function shouldEnableFoliageShadows(_input: FoliageShadowPolicyInput): boolean {
+  return false;
 }
 
 export interface HudBackdropBlurPolicyInput {
@@ -397,16 +392,9 @@ export interface HudBackdropBlurPolicyInput {
 }
 
 /**
- * Keeps frosted-glass HUD backdrop-blur active when rendering smoothly, and
- * cleanly disables per-frame compositor blur over WebGL on software GL or
- * sustained GPU load (> 23ms), re-enabling with hysteresis (< 17ms).
+ * Disables per-frame CSS backdrop-filter compositor blur over the WebGL viewport to prevent
+ * GPU/compositor stalls across HUD panels and overlays.
  */
-export function shouldEnableHudBackdropBlur(input: HudBackdropBlurPolicyInput): boolean {
-  if (input.isSoftwareGl) {
-    return false;
-  }
-  if (input.currentlyEnabled) {
-    return input.smoothedFrameMs <= 23.0;
-  }
-  return input.smoothedFrameMs < 17.0;
+export function shouldEnableHudBackdropBlur(_input: HudBackdropBlurPolicyInput): boolean {
+  return false;
 }

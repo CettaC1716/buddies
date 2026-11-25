@@ -1669,25 +1669,25 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
   // 1A. Rounded Limestone/Travertine Walkway & Chamfered Promenade Stairs
   addBeachPart(
     seBeachGroup,
-    makeRoundedBoxGeo(2.8, 0.24, 57.5, 0.045, 2),
+    makeRoundedBoxGeo(2.60, 0.26, 57.5, 0.045, 2),
     '#d8d4c8',
-    [76.6, 0.12, 74.25],
+    [76.70, 0.11, 74.25],
     [0, 0, 0],
     0.020,
     coastalTravertineTex,
   );
   addBeachPart(
     seBeachGroup,
-    makeRoundedBoxGeo(0.38, 0.30, 57.7, 0.06, 2),
+    makeRoundedBoxGeo(0.36, 0.32, 57.7, 0.06, 2),
     '#9e9b93',
-    [75.22, 0.15, 74.25],
+    [75.20, 0.14, 74.25],
     [0, 0, 0],
     0.016,
     coastalTravertineTex,
   );
   addBeachPart(
     seBeachGroup,
-    makeRoundedBoxGeo(0.56, 0.22, 56.5, 0.04, 2),
+    makeRoundedBoxGeo(0.56, 0.20, 56.5, 0.04, 2),
     '#c4bfb4',
     [77.52, 0.35, 74.25],
     [0, 0, 0],
@@ -1696,7 +1696,7 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
   );
   addBeachPart(
     seBeachGroup,
-    makeRoundedBoxGeo(0.56, 0.22, 56.5, 0.04, 2),
+    makeRoundedBoxGeo(0.56, 0.20, 56.5, 0.04, 2),
     '#c89d6c',
     [77.82, 0.56, 74.25],
     [0, 0, 0],
@@ -1745,18 +1745,18 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
   // 1B. Elevated Weathered Timber Boardwalk Deck (top y = +0.82m preserved)
   addBeachPart(
     seBeachGroup,
-    makeRoundedBoxGeo(14.2, 0.24, 56.5, 0.045, 2),
+    makeRoundedBoxGeo(14.2, 0.22, 56.5, 0.045, 2),
     '#c89d6c',
-    [85.1, BOARDWALK_Y - 0.12, 74.25],
+    [85.1, BOARDWALK_Y - 0.11, 74.25],
     [0, 0, 0],
     0.020,
     boardwalkDeckTex,
   );
   addBeachPart(
     seBeachGroup,
-    makeRoundedBoxGeo(14.42, 0.32, 56.72, 0.05, 2),
+    makeRoundedBoxGeo(14.42, 0.22, 56.72, 0.05, 2),
     '#9e7448',
-    [85.1, BOARDWALK_Y - 0.28, 74.25],
+    [85.1, BOARDWALK_Y - 0.34, 74.25],
     [0, 0, 0],
     0.018,
     coastalTimberTex,
@@ -2460,8 +2460,8 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
   // =========================================================================
   const lifeguardGrp = new THREE.Group();
   lifeguardGrp.name = 'CoastalLifeguardWatchtower';
-  lifeguardGrp.position.set(116.5, -1.0, 67.5);
-  lifeguardGrp.rotation.y = Math.PI / 2;
+  lifeguardGrp.position.set(123.6, -2.0, 95.2);
+  lifeguardGrp.rotation.y = Math.PI;
   lifeguardGrp.scale.setScalar(1.58);
   seBeachGroup.add(lifeguardGrp);
 
@@ -2647,31 +2647,32 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
     BEACHFRONT_STILT_CABIN_SPEC.baseSandY,
     BEACHFRONT_STILT_CABIN_SPEC.centerZ,
   );
+  stiltCabinGrp.rotation.y = -Math.PI / 2;
   seBeachGroup.add(stiltCabinGrp);
 
   {
     const c = BEACHFRONT_STILT_CABIN_SPEC;
     const deckY = c.deckTopY - c.baseSandY;
-    const dMinX = c.deckMinX - c.centerX; // -3.7
-    const dMaxX = c.deckMaxX - c.centerX; // +4.8
-    const dMinZ = c.deckMinZ - c.centerZ; // -4.0
-    const dMaxZ = c.deckMaxZ - c.centerZ; // +4.0
+    const dMinX = c.deckMinZ - c.centerZ; // -3.7 (North front veranda in world Z)
+    const dMaxX = c.deckMaxZ - c.centerZ; // +4.8 (South ocean balcony in world Z)
+    const dMinZ = c.centerX - c.deckMaxX; // -4.0 (East flank in world X)
+    const dMaxZ = c.centerX - c.deckMinX; // +4.0 (West flank in world X)
     const dMidX = (dMinX + dMaxX) * 0.5; // +0.55
     const dMidZ = (dMinZ + dMaxZ) * 0.5; // 0.0
     const dW = dMaxX - dMinX; // 8.5
     const dD = dMaxZ - dMinZ; // 8.0
 
-    const cabMinX = c.cabinBodyMinX - c.centerX; // -1.6
-    const cabMaxX = c.cabinBodyMaxX - c.centerX; // +2.5
-    const cabMinZ = c.cabinBodyMinZ - c.centerZ; // -3.2
-    const cabMaxZ = c.cabinBodyMaxZ - c.centerZ; // +1.6
+    const cabMinX = c.cabinBodyMinZ - c.centerZ; // -1.6
+    const cabMaxX = c.cabinBodyMaxZ - c.centerZ; // +2.5
+    const cabMinZ = c.centerX - c.cabinBodyMaxX; // -3.2
+    const cabMaxZ = c.centerX - c.cabinBodyMinX; // +1.6
     const cabMidX = (cabMinX + cabMaxX) * 0.5; // +0.45
     const cabMidZ = (cabMinZ + cabMaxZ) * 0.5; // -0.8
     const cabW = cabMaxX - cabMinX; // 4.1
     const cabD = cabMaxZ - cabMinZ; // 4.8
 
-    const stMinZ = c.stairMinZ - c.centerZ; // -2.0
-    const stMaxZ = c.stairMaxZ - c.centerZ; // +0.4
+    const stMinZ = c.centerX - c.stairMaxX; // -2.0
+    const stMaxZ = c.centerX - c.stairMinX; // +0.4
     const stMidZ = (stMinZ + stMaxZ) * 0.5; // -0.8
     const stW = stMaxZ - stMinZ; // 2.4
 
@@ -2785,7 +2786,7 @@ export function buildSouthEastCoastalBeachfront3D<TWind>(
       stiltCabinGrp,
       makeMitredFrameExtrudeGeo(dW, dD, 0.22, 0.15, 0.018),
       '#f5e2cc',
-      [dMidX, deckY - 0.075, dMidZ],
+      [dMidX, deckY - 0.066, dMidZ],
       [0, 0, 0],
       0,
       coastalTimberTex,

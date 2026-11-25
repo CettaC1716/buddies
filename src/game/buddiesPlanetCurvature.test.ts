@@ -646,28 +646,28 @@ test('createUnifiedWaterSurfaceMaterial configures Beer-Lambert depth, Voronoi f
   }
 });
 
-test('BEACHFRONT_STILT_CABIN_SPEC provides walkable elevated deck, West stairs, and East ocean balcony', () => {
+test('BEACHFRONT_STILT_CABIN_SPEC provides walkable elevated deck, North stairs, and South ocean balcony', () => {
   const c = BEACHFRONT_STILT_CABIN_SPEC;
-  assert.equal(c.centerX, 132.4);
-  assert.equal(c.centerZ, 85.2);
+  assert.equal(c.centerX, 131.6);
+  assert.equal(c.centerZ, 95.2);
   assert.equal(c.baseSandY, -2.0);
   assert.equal(c.deckTopY, -1.04);
 
-  // West veranda & East overwater balcony sit cleanly at -1.04m (+0.96m above -2.00m Box 2 sand) and pass embankment walkability
-  assert.equal(isPointOnBeachfrontStiltCabinDeck(129.6, 84.4), true);
-  assert.equal(isPointOnBeachfrontStiltCabinDeck(136.0, 85.2), true);
-  assert.equal(evaluateBeachfrontStiltCabinElevation(136.0, 85.2), c.deckTopY);
-  assert.equal(getBaseProceduralGroundElevation(136.0, 85.2), c.deckTopY);
+  // North veranda & South-East overwater balcony sit cleanly at -1.04m (+0.96m above -2.00m Box 2 sand) and pass embankment walkability
+  assert.equal(isPointOnBeachfrontStiltCabinDeck(132.4, 92.4), true);
+  assert.equal(isPointOnBeachfrontStiltCabinDeck(134.8, 98.8), true);
+  assert.equal(evaluateBeachfrontStiltCabinElevation(134.8, 98.8), c.deckTopY);
+  assert.equal(getBaseProceduralGroundElevation(134.8, 98.8), c.deckTopY);
   assert.ok(
-    evaluateOuterEmbankmentSdf(136.0, 85.2) < 0,
-    'East ocean-facing balcony of BeachfrontStiltTimberCabin should remain walkable',
+    evaluateOuterEmbankmentSdf(134.8, 98.8) < 0,
+    'South-East ocean-facing balcony of BeachfrontStiltTimberCabin should remain walkable',
   );
 
   // Outside cabin deck over open ocean stays blocked by outer embankment SDF
-  assert.equal(isPointOnBeachfrontStiltCabinDeck(138.5, 85.2), false);
-  assert.ok(evaluateOuterEmbankmentSdf(138.5, 85.2) > 0);
+  assert.equal(isPointOnBeachfrontStiltCabinDeck(138.5, 95.2), false);
+  assert.ok(evaluateOuterEmbankmentSdf(138.5, 95.2) > 0);
 
-  // West sand-to-porch staircase ramps smoothly from baseSandY (-2.00m) -> deckTopY (-1.04m)
+  // North sand-to-porch staircase ramps smoothly from baseSandY (-2.00m) -> deckTopY (-1.04m)
   const stairMidX = (c.stairMinX + c.stairMaxX) * 0.5;
   const stairMidZ = (c.stairMinZ + c.stairMaxZ) * 0.5;
   const expectedMidElev = (c.baseSandY + c.deckTopY) * 0.5;
@@ -706,20 +706,20 @@ test('buildStaticWorldStructuresList registers cabin body and railings while kee
         Math.abs(z - s.z) < s.halfZ,
     );
 
-  assert.equal(hitsCabinCollider(132.8, 84.4), true, 'Interior cabin room must remain solid');
-  assert.equal(hitsCabinCollider(128.2, 84.4), false, 'West stair entry must stay unobstructed');
-  assert.equal(hitsCabinCollider(129.6, 84.4), false, 'West front veranda must stay unobstructed');
-  assert.equal(hitsCabinCollider(136.0, 85.2), false, 'East ocean-facing balcony must stay unobstructed');
+  assert.equal(hitsCabinCollider(132.4, 95.6), true, 'Interior cabin room must remain solid');
+  assert.equal(hitsCabinCollider(132.4, 91.0), false, 'North stair entry must stay unobstructed');
+  assert.equal(hitsCabinCollider(132.4, 92.4), false, 'North front veranda must stay unobstructed');
+  assert.equal(hitsCabinCollider(131.6, 98.8), false, 'South ocean-facing balcony must stay unobstructed');
 });
 
-test('Underwater ecology avoids BeachfrontStiltTimberCabin piling footprint [130.5..137.5] x [81.5..89.0]', () => {
-  assert.equal(isPointClearOfPierAndQuay(133.5, 85.2, 0), false);
-  assert.equal(isPointClearOfPierAndQuay(139.0, 85.2, 0), true);
+test('Underwater ecology avoids BeachfrontStiltTimberCabin piling footprint [127.6..135.6] x [91.5..100.0]', () => {
+  assert.equal(isPointClearOfPierAndQuay(132.4, 95.2, 0), false);
+  assert.equal(isPointClearOfPierAndQuay(139.0, 95.2, 0), true);
 
   const { pebbles, coralsAndKelp } = generateUnderwaterEcologyPlacements();
   for (const sample of [...pebbles, ...coralsAndKelp]) {
     const insideCabinFootprint =
-      sample.x >= 130.5 && sample.x <= 137.5 && sample.z >= 81.5 && sample.z <= 89.0;
+      sample.x >= 127.6 && sample.x <= 135.6 && sample.z >= 91.5 && sample.z <= 100.0;
     assert.equal(
       insideCabinFootprint,
       false,

@@ -152,7 +152,7 @@ export const NearWalletSelectorModal: React.FC<NearWalletSelectorModalProps> = (
         <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-3.5 border-b border-white/12 shrink-0">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-sky-300/90">
-              Buddies Blitz
+              Cerria
             </div>
             <h2 className="mt-0.5 text-lg sm:text-xl font-semibold tracking-tight text-white leading-tight">
               Connect Wallet

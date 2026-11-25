@@ -276,6 +276,9 @@ export function createDefaultCafeAssetStyler(): CafeAssetStyler {
   const outlineMat = new THREE.MeshBasicMaterial({
     color: '#12121e',
     side: THREE.BackSide,
+    polygonOffset: true,
+    polygonOffsetFactor: 2,
+    polygonOffsetUnits: 2,
   });
   const matCache = new Map<string, THREE.Material>();
 
@@ -3766,7 +3769,7 @@ export function buildLShapedGlasshouseArchitecture(
   ]);
   lFloorShape.closePath();
   const rawFloorGeo = new THREE.ExtrudeGeometry(lFloorShape, {
-    depth: 0.04,
+    depth: 0.032,
     bevelEnabled: false,
   });
   rawFloorGeo.rotateX(-Math.PI / 2);
@@ -3803,7 +3806,7 @@ export function buildLShapedGlasshouseArchitecture(
     const halfLen = 0.50;
     const halfWid = 0.135;
     const cos45 = Math.SQRT1_2;
-    const plankY = cfg.floorY + 0.055;
+    const plankY = cfg.floorY + 0.058;
 
     let colIdx = 0;
     for (let gx = allMinX + 0.35; gx <= allMaxX - 0.35; gx += colPitch) {
