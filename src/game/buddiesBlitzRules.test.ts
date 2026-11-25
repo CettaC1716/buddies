@@ -6092,8 +6092,8 @@ test('Island citizens roam the entire map with multi-district activities and val
   assert.equal(mira.runOverrideClip, 'mira_run.001');
   assert.equal(mira.sitOverrideClip, 'mira_sit.001');
   assert.ok(
-    mira.equippedHairUrl && mira.equippedTorsoUrl && mira.equippedLegsUrl && mira.equippedFeetUrl,
-    'Mira uses full 4-piece modular outfit GLBs',
+    !mira.equippedHairUrl && !mira.equippedTorsoUrl && !mira.equippedLegsUrl && !mira.equippedFeetUrl,
+    'Mira wears her baked outfit from mira.glb (no modular pieces)',
   );
   assert.equal(bima.disableClothingTint, true);
   assert.equal(bima.idleOverrideClip, 'bima_idle.001');
@@ -6125,7 +6125,7 @@ test('Island citizens roam the entire map with multi-district activities and val
   assert.equal(tari.runOverrideClip, 'tari_run.001');
   assert.equal(tari.baseGlbVariant, 'player');
   assert.equal(tari.disableClothingTint, true);
-  assert.equal(tari.equippedCostumeUrl, '/assets/outfit/tari/tari-costume.glb');
+  assert.equal(tari.equippedCostumeUrl, undefined);
   assert.equal(tari.sitOverrideClip, 'tari_sit.001');
   assert.equal(
     tari.waypoints.some((w) => w.activity === 'fishing'),

@@ -5075,7 +5075,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         npc.preset.id === 'city_plaza_raka'
           ? ambientMaleGlb
           : npc.preset.id === 'city_plaza_nadia'
-            ? ambientFemaleGlb
+            ? (assets?.nadiaCustomGlb ?? citizenGlbs.nadiaCustomGlb)
             : npc.preset.id === 'citizen_mira'
               ? (assets?.miraCustomGlb ?? citizenGlbs.miraCustomGlb)
               : npc.preset.id === 'citizen_tari'

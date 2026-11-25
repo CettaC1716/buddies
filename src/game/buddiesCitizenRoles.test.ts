@@ -39,10 +39,10 @@ test('Citizen roster covers all 8 Coral Island-inspired villagers and resolves m
   assert.equal(mira.appearance.walkOverrideClip, 'mira_walk.001');
   assert.equal(mira.appearance.runOverrideClip, 'mira_run.001');
   assert.equal(mira.appearance.sitOverrideClip, 'mira_sit.001');
-  assert.ok(mira.appearance.equippedHairUrl);
-  assert.ok(mira.appearance.equippedTorsoUrl);
-  assert.ok(mira.appearance.equippedLegsUrl);
-  assert.ok(mira.appearance.equippedFeetUrl);
+  assert.equal(mira.appearance.equippedHairUrl, undefined);
+  assert.equal(mira.appearance.equippedTorsoUrl, undefined);
+  assert.equal(mira.appearance.equippedLegsUrl, undefined);
+  assert.equal(mira.appearance.equippedFeetUrl, undefined);
   const bima = getCitizenProfile('citizen_bima');
   assert.ok(bima);
   assert.equal(bima.roleBadge, 'RIDER');

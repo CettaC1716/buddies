@@ -503,10 +503,6 @@ export const CITIZEN_PROFILES: readonly CitizenProfile[] = [
     appearance: {
       modelVariant: 'female',
       baseGlbVariant: 'player',
-      equippedHairUrl: '/assets/outfit/mira/blitz_hair_draped_hair_1_43391F7E.glb',
-      equippedTorsoUrl: '/assets/outfit/mira/blitz_torso_resort_modern_6_5DC8FAA4.glb',
-      equippedLegsUrl: '/assets/outfit/mira/blitz_legs_dspastelgothdistressed_shorts_DDA37A46.glb',
-      equippedFeetUrl: '/assets/outfit/mira/blitz_feet_elska_sneakers_705A72B0.glb',
       clothingTintHex: '#c026d3',
       idleOverrideClip: 'mira_idle.001',
       walkOverrideClip: 'mira_walk.001',
@@ -643,7 +639,6 @@ export const CITIZEN_PROFILES: readonly CitizenProfile[] = [
     appearance: {
       modelVariant: 'female',
       baseGlbVariant: 'player',
-      equippedCostumeUrl: '/assets/outfit/tari/tari-costume.glb',
       clothingTintHex: '#0d9488',
       idleOverrideClip: 'tari_idle.001',
       walkOverrideClip: 'tari_walk.001',

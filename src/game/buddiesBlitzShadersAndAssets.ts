@@ -5906,6 +5906,7 @@ export interface LoadedBlitzAssets {
   tariCustomGlb?: GLTF | null;
   bimaCustomGlb?: GLTF | null;
   kenjiCustomGlb?: GLTF | null;
+  nadiaCustomGlb?: GLTF | null;
   ar99AssaultGltf: GLTF | null;
   fishingRodGltf: GLTF | null;
   sleepingClip: THREE.AnimationClip | null;
@@ -5965,18 +5966,21 @@ let loadedMiraCustomGlb: GLTF | null = null;
 let loadedTariCustomGlb: GLTF | null = null;
 let loadedBimaCustomGlb: GLTF | null = null;
 let loadedKenjiCustomGlb: GLTF | null = null;
+let loadedNadiaCustomGlb: GLTF | null = null;
 
 export function getCachedLoadedCitizenGlbs(): {
   miraCustomGlb: GLTF | null;
   tariCustomGlb: GLTF | null;
   bimaCustomGlb: GLTF | null;
   kenjiCustomGlb: GLTF | null;
+  nadiaCustomGlb: GLTF | null;
 } {
   return {
     miraCustomGlb: cachedLoadedBlitzAssets?.miraCustomGlb ?? loadedMiraCustomGlb,
     tariCustomGlb: cachedLoadedBlitzAssets?.tariCustomGlb ?? loadedTariCustomGlb,
     bimaCustomGlb: cachedLoadedBlitzAssets?.bimaCustomGlb ?? loadedBimaCustomGlb,
     kenjiCustomGlb: cachedLoadedBlitzAssets?.kenjiCustomGlb ?? loadedKenjiCustomGlb,
+    nadiaCustomGlb: cachedLoadedBlitzAssets?.nadiaCustomGlb ?? loadedNadiaCustomGlb,
   };
 }
 
@@ -6400,8 +6404,8 @@ export async function loadAllRealBlitzAssets(
       return gltf;
     },
   );
-  const hanaCustomGlbPromise = loadOptionalGltf('/assets/avatars/blitz-female-04.glb');
-  const kaiCustomGlbPromise = loadOptionalGltf('/assets/avatars/blitz-male-03.glb');
+  const hanaCustomGlbPromise = loadOptionalGltf('/assets/avatars/hana.glb');
+  const kaiCustomGlbPromise = loadOptionalGltf('/assets/avatars/kai.glb');
   const ambientFemaleNpcGlbPromise = loadOptionalGltf('/assets/avatars/blitz-female-01.glb').then(
     (gltf) => {
       if (gltf?.scene) {
@@ -6418,7 +6422,7 @@ export async function loadAllRealBlitzAssets(
       return gltf;
     },
   );
-  const miraCustomGlbPromise = loadOptionalGltf('/assets/avatars/blitz-female-02.glb').then(
+  const miraCustomGlbPromise = loadOptionalGltf('/assets/avatars/mira.glb').then(
     (gltf) => {
       if (gltf?.scene) {
         gltf.scene.userData.useMixamoLocomotionSuite = true;
@@ -6427,7 +6431,7 @@ export async function loadAllRealBlitzAssets(
       return gltf;
     },
   );
-  const tariCustomGlbPromise = loadOptionalGltf('/assets/avatars/blitz-female-03.glb').then(
+  const tariCustomGlbPromise = loadOptionalGltf('/assets/avatars/tari.glb').then(
     (gltf) => {
       if (gltf?.scene) {
         gltf.scene.userData.useMixamoLocomotionSuite = true;
@@ -6436,7 +6440,7 @@ export async function loadAllRealBlitzAssets(
       return gltf;
     },
   );
-  const bimaCustomGlbPromise = loadOptionalGltf('/assets/avatars/blitz-male-02.glb').then(
+  const bimaCustomGlbPromise = loadOptionalGltf('/assets/avatars/bima.glb').then(
     (gltf) => {
       if (gltf?.scene) {
         gltf.scene.userData.useMixamoLocomotionSuite = true;
@@ -6445,12 +6449,21 @@ export async function loadAllRealBlitzAssets(
       return gltf;
     },
   );
-  const kenjiCustomGlbPromise = loadOptionalGltf('/assets/avatars/blitz-male-04.glb').then(
+  const kenjiCustomGlbPromise = loadOptionalGltf('/assets/avatars/kenji.glb').then(
     (gltf) => {
       if (gltf?.scene) {
         gltf.scene.userData.useMixamoLocomotionSuite = true;
       }
       loadedKenjiCustomGlb = gltf;
+      return gltf;
+    },
+  );
+  const nadiaCustomGlbPromise = loadOptionalGltf('/assets/avatars/nadia.glb').then(
+    (gltf) => {
+      if (gltf?.scene) {
+        gltf.scene.userData.useMixamoLocomotionSuite = true;
+      }
+      loadedNadiaCustomGlb = gltf;
       return gltf;
     },
   );
@@ -6585,6 +6598,7 @@ export async function loadAllRealBlitzAssets(
     tariCustomGlbPromise,
     bimaCustomGlbPromise,
     kenjiCustomGlbPromise,
+    nadiaCustomGlbPromise,
     loadOptionalGltf('/assets/ar99-assault.glb'),
     fishingRodPromise,
     trackAssetTask(
@@ -6662,6 +6676,7 @@ export async function loadAllRealBlitzAssets(
       tariCustomGlb,
       bimaCustomGlb,
       kenjiCustomGlb,
+      nadiaCustomGlb,
       ar99AssaultGltf,
       fishingRodGltf,
       playerTrackPoints,
@@ -6734,6 +6749,7 @@ export async function loadAllRealBlitzAssets(
         tariCustomGlb,
         bimaCustomGlb,
         kenjiCustomGlb,
+        nadiaCustomGlb,
         ar99AssaultGltf,
         fishingRodGltf,
         playerTrackPoints,
