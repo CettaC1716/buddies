@@ -496,17 +496,17 @@ export type TypedChatTogethernessIntent = 'walk' | 'ride' | 'end' | null;
 
 const END_TOGETHERNESS_PATTERNS: readonly RegExp[] = [
   /\b(get off|drop me off|drop off here|stop walking|end walk|end ride|part ways)\b/i,
-  /\b(turun sini|turun di sini|turun dulu|berhenti di sini|stop di sini|sampai sini dulu|udah dulu jalan|selesai jalan)\b/i,
+  /\b(turun(\s+di)?\s*sini|turun\s+dulu|turun\s+yuk|turun\s+ya|berhenti\s+di\s+sini|stop\s+di\s+sini|sampai\s+sini\s+dulu|udah\s+dulu\s+jalan|selesai\s+jalan)/i,
 ];
 
 const RIDE_TOGETHER_PATTERNS: readonly RegExp[] = [
-  /\b(ride together|ride along|go for a ride|take a ride|hop on|ride with me|scooter ride|want a ride)\b/i,
-  /\b(bonceng|boncengan|naik motor|naik skuter|naik scooter|ikut naik|keliling naik)\b/i,
+  /\b(ride together|ride along|go for a ride|take a ride|hop on|ride with me|scooter ride|want a ride|get on my (scooter|bike|motor))\b/i,
+  /\b(bonceng\w*|naik\s+(motor\w*|skuter\w*|scooter\w*|vespa\w*|sepeda\s*motor\w*)|ikut\s+naik|keliling\s+naik|sini\s+naik|ayo\s+naik|yuk\s+naik)/i,
 ];
 
 const WALK_TOGETHER_PATTERNS: readonly RegExp[] = [
   /\b(walk together|go for a walk|take a walk|walk with me|stroll together|let'?s walk|wanna walk)\b/i,
-  /\b(jalan bareng|jalan-jalan|jalan bersama|temenin jalan|temani jalan|ikut jalan|ayo jalan|mau jalan)\b/i,
+  /\b(jalan\s+bareng|jalan-jalan|jalan\s+bersama|temen\w*\s+jalan|teman\w*\s+jalan|ikut\s+jalan|ayo\s+jalan|yuk\s+jalan|mau\s+jalan)/i,
 ];
 
 /**

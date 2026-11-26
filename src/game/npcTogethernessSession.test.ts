@@ -333,6 +333,9 @@ test('natural typed chat intent detects Indonesian & English walk/ride/end phras
   assert.equal(detectChatTogethernessIntent('jalan bareng yuk!'), 'walk');
   assert.equal(detectChatTogethernessIntent('want to go for a walk together?'), 'walk');
   assert.equal(detectChatTogethernessIntent('bonceng yuk keliling kota'), 'ride');
+  assert.equal(detectChatTogethernessIntent('yuk naik motorku'), 'ride');
+  assert.equal(detectChatTogethernessIntent('sini naik motorku'), 'ride');
+  assert.equal(detectChatTogethernessIntent('boncengin yuk'), 'ride');
   assert.equal(detectChatTogethernessIntent('wanna ride along on my scooter?'), 'ride');
   assert.equal(detectChatTogethernessIntent('turun di sini ya'), 'end');
   assert.equal(detectChatTogethernessIntent('let us get off here'), 'end');
