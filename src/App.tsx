@@ -13150,6 +13150,7 @@ export default function App() {
         onMintFishAsNft={handleMintCaughtFishNft}
         onListFishNftOnMarket={handleListFishNftOnMarket}
         onBuyFishNftFromMarket={handleBuyFishNftFromMarket}
+        accountKey={dailyMissionsAccountKey}
         npcClosenessStore={npcClosenessStore}
         ownedApparelIds={ownedApparelIds}
         ownedCafeFoodIds={ownedCafeFoodIds}
@@ -14889,6 +14890,7 @@ export default function App() {
       <CitizenDialogueModal
         isOpen={isCitizenDialogueOpen && hud.worldMode !== 'warzone'}
         citizenId={activeCitizenId}
+        accountKey={dailyMissionsAccountKey}
         openSeq={citizenOpenSeq}
         initialTab={citizenInitialTab}
         friendshipStore={citizenFriendshipStore}

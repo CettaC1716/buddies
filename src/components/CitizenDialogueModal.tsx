@@ -41,6 +41,12 @@ import {
 import type { NpcEmotionTag } from '../game/npcPersonaRegistry';
 import { dispatchNpcEmotionReaction, sendNpcChatMessage } from '../game/npcTextChat';
 import {
+  appendNpcChatTurns,
+  clearNpcChatTranscript,
+  loadNpcChatTranscript,
+  splitTranscriptForDialogueUi,
+} from '../game/npcChatHistoryStore';
+import {
   GiftBoxBubbleSvg,
   InteractionRequestBubble,
   type NpcChatVisualPayload,
@@ -66,6 +72,7 @@ export interface NpcOwnedGiftOutcome {
 export interface CitizenDialogueModalProps {
   isOpen: boolean;
   citizenId: CitizenId | null;
+  accountKey?: string;
   openSeq?: number;
   initialTab?: 'sesi_chat' | 'gift' | 'directory';
   friendshipStore: CitizenFriendshipStore;
@@ -112,6 +119,7 @@ interface CitizenChatEntry {
 export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   isOpen,
   citizenId,
+  accountKey = 'guest',
   openSeq = 0,
   initialTab = 'sesi_chat',
   friendshipStore,
@@ -209,14 +217,25 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
     activeRequestIdRef.current += 1;
     setIsNpcThinking(false);
     setActiveTab(initialTab);
-    setChatHistory([]);
     setGiftFeedback(null);
-    const greetingText = buildOpeningGreeting(profile);
-    setNpcFullText(greetingText);
-    setNpcTypedText('');
-    // Reset thread cleanly when opening or switching citizens.
+    const savedTranscript = loadNpcChatTranscript(accountKey, profile.id);
+    if (savedTranscript.length > 0) {
+      const { history, latestNpcText } = splitTranscriptForDialogueUi(savedTranscript);
+      setChatHistory(history);
+      setNpcFullText(latestNpcText);
+      setNpcTypedText(latestNpcText);
+      window.setTimeout(() => {
+        chatScrollEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+      }, 30);
+    } else {
+      setChatHistory([]);
+      const greetingText = buildOpeningGreeting(profile);
+      setNpcFullText(greetingText);
+      setNpcTypedText('');
+    }
+    // Restore persisted transcript (or show opening greeting when empty) on open or citizen switch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, citizenId, openSeq, initialTab]);
+  }, [isOpen, citizenId, accountKey, openSeq, initialTab]);
 
   // Typewriter effect matching Hana/Kai chat drawer cadence
   useEffect(() => {
@@ -240,14 +259,18 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
         text: prevNpcText,
       });
     }
+    const playerTurnId = `player-${Date.now()}-${chatHistory.length}`;
     nextEntries.push({
-      id: `player-${Date.now()}-${chatHistory.length}`,
+      id: playerTurnId,
       role: 'player',
       text: trimmed,
     });
     const updatedHistory = [...chatHistory, ...nextEntries];
     setChatHistory(updatedHistory);
     setActiveTab('sesi_chat');
+    appendNpcChatTurns(accountKey, profile.id, [
+      { id: playerTurnId, role: 'player', text: trimmed },
+    ]);
 
     // Ambient citizens (e.g. Raka) stay strictly scripted — NO AI calls.
     if (!namedNpcId) {
@@ -259,6 +282,7 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
         isRaining,
         talkedCount: record.totalTalks + chatHistory.length,
       });
+      appendNpcChatTurns(accountKey, profile.id, [{ role: 'npc', text: reply }]);
       setNpcFullText(reply);
       setNpcTypedText('');
       window.setTimeout(() => {
@@ -300,6 +324,7 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
               talkedCount: record.totalTalks + chatHistory.length,
             }).reply;
       onNpcConversationTurn?.(namedNpcId, result.closenessDelta, result.emotion);
+      appendNpcChatTurns(accountKey, profile.id, [{ role: 'npc', text: replyText }]);
       setNpcFullText(replyText);
       setNpcTypedText('');
       window.setTimeout(() => {
@@ -346,6 +371,14 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
         return next;
       });
       dispatchNpcEmotionReaction(namedNpcId, accepted ? 'happy' : 'shy');
+      appendNpcChatTurns(accountKey, profile?.id ?? namedNpcId, [
+        {
+          role: 'player',
+          text: 'Pair Pose?',
+          visual: { kind: 'interaction', emoji: '🤝✨', label: 'Pair Pose?' },
+        },
+        { role: 'npc', text: reply },
+      ]);
       setNpcFullText(reply);
       setNpcTypedText('');
       window.setTimeout(() => {
@@ -392,6 +425,14 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
         });
         return next;
       });
+      appendNpcChatTurns(accountKey, profile?.id ?? namedNpcId, [
+        {
+          role: 'player',
+          text: `Sent a gift: ${itemName}`,
+          visual: { kind: 'gift_box', itemName },
+        },
+        { role: 'npc', text: reply },
+      ]);
       setNpcFullText(reply);
       setNpcTypedText('');
       window.setTimeout(() => {
@@ -411,6 +452,7 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   const handleClearChat = () => {
     if (!profile) return;
     soundEngine.playUiClick();
+    clearNpcChatTranscript(accountKey, profile.id);
     activeRequestIdRef.current += 1;
     setIsNpcThinking(false);
     setChatHistory([]);

@@ -70,6 +70,12 @@ import {
 import type { NpcEmotionTag } from '../game/npcPersonaRegistry';
 import { dispatchNpcEmotionReaction, sendNpcChatMessage } from '../game/npcTextChat';
 import {
+  appendNpcChatTurns,
+  clearNpcChatTranscript,
+  loadNpcChatTranscript,
+  splitTranscriptForDialogueUi,
+} from '../game/npcChatHistoryStore';
+import {
   GiftBoxBubbleSvg,
   InteractionRequestBubble,
   type NpcChatVisualPayload,
@@ -265,6 +271,7 @@ interface NpcMerchantAndHouseModalProps {
     originStationId: CityTransitStationId,
   ) => void;
   onOpenExternalCatalog?: (tab?: 'house' | 'furniture' | 'market') => void;
+  accountKey?: string;
   npcClosenessStore?: NpcClosenessStore;
   ownedApparelIds?: readonly string[];
   ownedCafeFoodIds?: readonly string[];
@@ -503,6 +510,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   onOpenTeleportKioskFromPitch,
   onTeleportToDestination,
   onOpenExternalCatalog,
+  accountKey,
   npcClosenessStore,
   ownedApparelIds = [],
   ownedCafeFoodIds = [],
@@ -655,6 +663,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   };
 
   const npcShortName = merchantLocation === 'lobby_cafe' ? 'HANA' : 'KAI';
+  const activeMerchantNpcId: NpcId = merchantLocation === 'beach_house' ? 'kai' : 'hana';
+  const chatAccountKey = (accountKey ?? playerNearAccount ?? '').trim().toLowerCase() || 'guest';
 
   const buildInitialNpcGreeting = (): string => {
     const locLabel = merchantLocation === 'lobby_cafe' ? 'Central Plaza' : 'Beachfront Harbor';
@@ -700,15 +710,37 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     activeNpcRequestIdRef.current += 1;
   };
 
-  // Initial greeting when NPC modal opens
+  // Restore persisted transcript (or show initial greeting when empty) when NPC modal opens
   useEffect(() => {
     if (activeModalMode === 'npc_merchant') {
       setActiveTab('sesi_chat');
-      resetChatToGreeting();
+      const savedTranscript = loadNpcChatTranscript(chatAccountKey, activeMerchantNpcId);
+      if (savedTranscript.length > 0) {
+        const { history, latestNpcText } = splitTranscriptForDialogueUi(savedTranscript);
+        setChatHistory(history);
+        setNpcFullText(latestNpcText);
+        setNpcTypedText(latestNpcText);
+        setActivePropertyOfferBoth(null);
+        setLastPlayerMessage('');
+        setExchangeQuickMode(null);
+        setQuickSwapNearOverride(null);
+        setQuickLulAmountOverride(null);
+        setQuickHouseStyleOverride(undefined);
+        setQuickTeleportFocusId(null);
+        setIsNpcThinking(false);
+        activeNpcRequestIdRef.current += 1;
+        window.setTimeout(() => {
+          chatScrollEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+        }, 30);
+      } else {
+        resetChatToGreeting();
+      }
     }
   }, [
     activeModalMode,
     merchantLocation,
+    activeMerchantNpcId,
+    chatAccountKey,
     npcOpenSeq,
     walletConnected,
     hanaWelcomeNearClaimed,
@@ -818,6 +850,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
   const handleClearChat = () => {
     soundEngine.playUiClick();
+    clearNpcChatTranscript(chatAccountKey, activeMerchantNpcId);
     if (!tradeBusy && tradePhaseRef.current !== null) {
       endTrade();
       setTradeDoneInfo(null);
@@ -1078,11 +1111,15 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
           },
         ]
       : [...chatHistory];
+    const playerTurnId = `u-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const nextHistory = [
-      ...priorTurns.slice(-14),
-      { id: `u-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, role: 'player' as const, text },
+      ...priorTurns.slice(-39),
+      { id: playerTurnId, role: 'player' as const, text },
     ];
     setChatHistory(nextHistory);
+    appendNpcChatTurns(chatAccountKey, activeMerchantNpcId, [
+      { id: playerTurnId, role: 'player', text },
+    ]);
 
     const housingOfferLang = detectHousingPromptLang(text);
     const shouldOfferHomeInBubble =
@@ -1348,7 +1385,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         if (activeNpcRequestIdRef.current !== reqId) return;
         setIsNpcThinking(false);
         onNpcConversationTurn?.(activeNpcId, chatResult.closenessDelta, chatResult.emotion);
-        triggerNpcSpeech(chatResult.ok && chatResult.reply.trim() ? chatResult.reply.trim() : fallbackReply());
+        const finalReply =
+          chatResult.ok && chatResult.reply.trim() ? chatResult.reply.trim() : fallbackReply();
+        appendNpcChatTurns(chatAccountKey, activeNpcId, [{ role: 'npc', text: finalReply }]);
+        triggerNpcSpeech(finalReply);
         window.setTimeout(() => {
           chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
         }, 40);
@@ -1480,24 +1520,26 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             resolveAndOpenChatTx(data.action);
           }
           onNpcConversationTurn?.(activeNpcId, 1, 'happy');
-          triggerNpcSpeech(data.reply.trim());
+          const agentReply = data.reply.trim();
+          appendNpcChatTurns(chatAccountKey, activeNpcId, [{ role: 'npc', text: agentReply }]);
+          triggerNpcSpeech(agentReply);
         } else {
           const resolved = resolveAndOpenChatTx(null);
-          triggerNpcSpeech(
-            resolved
-              ? buildOfflineChatTransactionAck(resolved, text, merchantLocation, marketState)
-              : fallbackReply(),
-          );
+          const offlineReply = resolved
+            ? buildOfflineChatTransactionAck(resolved, text, merchantLocation, marketState)
+            : fallbackReply();
+          appendNpcChatTurns(chatAccountKey, activeNpcId, [{ role: 'npc', text: offlineReply }]);
+          triggerNpcSpeech(offlineReply);
         }
       } catch {
         if (activeNpcRequestIdRef.current !== reqId) return;
         setIsNpcThinking(false);
         const resolved = resolveAndOpenChatTx(null);
-        triggerNpcSpeech(
-          resolved
-            ? buildOfflineChatTransactionAck(resolved, text, merchantLocation, marketState)
-            : fallbackReply(),
-        );
+        const catchReply = resolved
+          ? buildOfflineChatTransactionAck(resolved, text, merchantLocation, marketState)
+          : fallbackReply();
+        appendNpcChatTurns(chatAccountKey, activeNpcId, [{ role: 'npc', text: catchReply }]);
+        triggerNpcSpeech(catchReply);
       }
       window.setTimeout(() => {
         chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -1549,6 +1591,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         return next;
       });
       dispatchNpcEmotionReaction(merchantNpcId, accepted ? 'happy' : 'shy');
+      appendNpcChatTurns(chatAccountKey, merchantNpcId, [
+        {
+          role: 'player',
+          text: 'Pair Pose?',
+          visual: { kind: 'interaction', emoji: '🤝✨', label: 'Pair Pose?' },
+        },
+        { role: 'npc', text: reply },
+      ]);
       setNpcFullText(reply);
       setNpcTypedText('');
       window.setTimeout(() => {
@@ -1595,6 +1645,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         });
         return next;
       });
+      appendNpcChatTurns(chatAccountKey, merchantNpcId, [
+        {
+          role: 'player',
+          text: `Sent a gift: ${itemName}`,
+          visual: { kind: 'gift_box', itemName },
+        },
+        { role: 'npc', text: reply },
+      ]);
       setNpcFullText(reply);
       setNpcTypedText('');
       window.setTimeout(() => {
