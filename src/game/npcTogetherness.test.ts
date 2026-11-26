@@ -10,11 +10,15 @@ import {
   CITY_LIFE_ANCHORS,
   CURATED_NPC_PAIR_POSES,
   ELECTRIC_SCOOTER_PASSENGER_SPEC,
+  RIDE_PASSENGER_HUG_POSE_SPEC,
+  applyScooterPillionHugPose,
   computeScooterPassengerTransform,
   getCityLifeAnchor,
   getTimeSlotWindowForHour,
   isHourInScheduleSlot,
   resolveNpcScheduledWaypoint,
+  resolveScooterBrakeOverride,
+  shouldAllowFramedDialogueCamera,
   startNpcPairPose,
   startNpcRideTogether,
   startNpcWalkTogether,
@@ -221,5 +225,57 @@ describe('npcTogetherness — walk-together, pair poses, and ride-together gatin
     assert.equal(tf.worldZ, 20);
     assert.equal(tf.bodyLiftY, ELECTRIC_SCOOTER_PASSENGER_SPEC.pillionLiftY);
     assert.equal(tf.rollZ, -0.08);
+  });
+
+  it('WS24 acceptance (a/b/c): brake overrides throttle to full stop, riding camera stays in chase view, pillion hard-anchored with seated hug pose', () => {
+    // (a) Brake always overrides throttle and decelerates to full stop (0 m/s)
+    const braked = resolveScooterBrakeOverride({
+      rawRideTargetMps: 9.5,
+      currentSpeedMps: 8.2,
+      isBrakeHeld: true,
+      isBikeRide: true,
+    });
+    assert.equal(braked.rideTargetMps, 0);
+    assert.equal(braked.isThrottleActive, false);
+    assert.equal(braked.isBraking, true);
+    assert.ok((braked.decelRateOverrideMps2 ?? 0) >= 24);
+
+    // (b) Opening Talk during active ride keeps chase camera (never framed dialogue camera)
+    assert.equal(shouldAllowFramedDialogueCamera({ isRidingTogether: true, scooterSpeedMps: 0 }), false);
+    assert.equal(shouldAllowFramedDialogueCamera({ isRidingTogether: true, scooterSpeedMps: 8.5 }), false);
+    assert.equal(shouldAllowFramedDialogueCamera({ isRidingTogether: false, scooterSpeedMps: 0 }), true);
+
+    // (c) Corner lean & slope pitch anchor + dedicated seated hugging pose in local bone space
+    assert.equal(RIDE_PASSENGER_HUG_POSE_SPEC.rideSessionOnly, true);
+    const cornerTf = computeScooterPassengerTransform({
+      driverX: 5,
+      driverZ: -12,
+      driverYaw: Math.PI / 3,
+      groundY: 1.2,
+      slopePitchX: 0.09,
+      leanRollZ: 0.24,
+    });
+    assert.equal(cornerTf.yaw, Math.PI / 3);
+    assert.equal(cornerTf.pitchX, 0.09);
+    assert.equal(cornerTf.rollZ, 0.24);
+
+    const makeBone = () => ({ rotation: { x: 0, y: 0.9, z: 0 } });
+    const bones = new Map<string, { rotation: { x: number; y: number; z: number } }>([
+      ['Hips', makeBone()],
+      ['Spine', makeBone()],
+      ['LeftArm', makeBone()],
+      ['RightArm', makeBone()],
+      ['LeftForeArm', makeBone()],
+      ['RightForeArm', makeBone()],
+      ['LeftUpLeg', makeBone()],
+      ['RightUpLeg', makeBone()],
+    ]);
+    applyScooterPillionHugPose({ customGlbController: { bones } }, 1.0);
+    // Hips locked forward (no independent root rotation); arms reaching forward around driver's waist
+    assert.equal(bones.get('Hips')!.rotation.y, 0);
+    assert.ok(bones.get('LeftArm')!.rotation.x < -0.5);
+    assert.ok(bones.get('RightArm')!.rotation.x < -0.5);
+    assert.ok(bones.get('LeftForeArm')!.rotation.y > 0.3);
+    assert.ok(bones.get('RightForeArm')!.rotation.y < -0.3);
   });
 });

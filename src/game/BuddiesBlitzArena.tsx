@@ -20,10 +20,13 @@ import {
 } from './npcClosenessEngine';
 import {
   NPC_TOGETHERNESS_COMMAND_EVENT,
+  applyScooterPillionHugPose,
   computeScooterPassengerTransform,
   dispatchNpcTogethernessState,
   getCuratedNpcPairPose,
   resolveNpcScheduledPatrolWaypoints,
+  resolveScooterBrakeOverride,
+  shouldAllowFramedDialogueCamera,
   stepNpcWalkTogether,
   type NpcTogethernessCommand,
   type SavedNpcAnchorTransform,
@@ -2888,6 +2891,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     const onCitizenDialogueOpenState = (ev: Event) => {
       const customEv = ev as CustomEvent<{ isOpen?: boolean; citizenId?: string | null }>;
       const nextId = customEv.detail?.isOpen ? (customEv.detail.citizenId ?? null) : null;
+      // WS24: Clear movement input state on every chat modal open/close transition so no keyup is ever swallowed.
+      resetAllPlayerMovementInputs();
       if (nextId !== activeCitizenDialogueId) {
         resetNpcPortraitInspectCamera();
       }
@@ -6334,38 +6339,60 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             activeRideTogether.citizenId === npc.preset.id &&
             activeRideTogether.phase === 'mounted' &&
             scooterRideState &&
-            scooterRideState.kind === 'electric_scooter_bike',
+            scooterRideState.kind === 'electric_scooter_bike' &&
+            playerUnit,
         );
         npc.shadowMesh.visible = !npc.isSitting;
-        if (isRidingPassengerNow && scooterRideState) {
+        if (isRidingPassengerNow && scooterRideState && playerUnit) {
+          // WS24 Defect 3: Hard-anchor passenger root to the scooter passenger transform every frame
+          // (exact position, yaw, slope pitch, and cornering lean roll — zero independent root rotation).
+          const pillionTf = computeScooterPassengerTransform({
+            driverX: playerUnit.x,
+            driverZ: playerUnit.z,
+            driverYaw: scooterRideState.yaw,
+            groundY: scooterRideState.groundY,
+            slopePitchX: scooterRideState.slopePitchX,
+            leanRollZ: scooterRideState.pose?.leanRollZ ?? 0,
+          });
           npc.bodyGroup.rotation.order = 'YXZ';
           npc.bodyGroup.rotation.set(
-            scooterRideState.slopePitchX,
-            renderYaw + Math.PI / 2,
-            scooterRideState.pose?.leanRollZ ?? 0,
+            pillionTf.pitchX,
+            pillionTf.yaw + Math.PI / 2,
+            pillionTf.rollZ,
           );
-          if (npc.rig.customGlbController?.clips.has('scooter_bike_idle.001')) {
-            npc.rig.activeSocialClipName = 'scooter_bike_idle.001';
+          npc.bodyGroup.position.y = 0;
+          applyPlanetCurvatureToObject(
+            npc.root,
+            pillionTf.worldX,
+            pillionTf.worldY + pillionTf.bodyLiftY,
+            pillionTf.worldZ,
+            planetPivotX,
+            planetPivotZ,
+            0,
+            kCurve,
+          );
+          if (npc.rig.activeSocialClipName === 'scooter_bike_idle.001') {
+            npc.rig.activeSocialClipName = undefined;
           }
         } else {
           npc.bodyGroup.rotation.set(0, renderYaw + Math.PI / 2, 0);
           if (npc.rig.activeSocialClipName === 'scooter_bike_idle.001') {
             npc.rig.activeSocialClipName = undefined;
           }
-        }
-        const sitLiftY = npc.isSitting ? npc.activeSeatLiftY + 0.178 : 0;
-        npc.bodyGroup.position.y = sitLiftY;
+          const sitLiftY = npc.isSitting ? npc.activeSeatLiftY + 0.178 : 0;
+          npc.bodyGroup.position.y = sitLiftY;
 
-        applyPlanetCurvatureToObject(
-          npc.root,
-          renderX,
-          groundY,
-          renderZ,
-          planetPivotX,
-          planetPivotZ,
-          0,
-          kCurve,
-        );
+          applyPlanetCurvatureToObject(
+            npc.root,
+            renderX,
+            groundY,
+            renderZ,
+            planetPivotX,
+            planetPivotZ,
+            0,
+            kCurve,
+          );
+        }
 
         npc.nameplate.sprite.visible = false;
 
@@ -6403,6 +6430,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           const shouldStepDetail =
             isTalkingWithPlayer ||
             isPairedNpcNow ||
+            isRidingPassengerNow ||
             shouldStepCharacterDetailThisFrame(
               distFromFocus * distFromFocus,
               npcAnimLodTick,
@@ -6444,6 +6472,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             if (!isCurrentlyFishing) {
               npc.rig.weaponRigGroup.visible = false;
               npc.rig.pistolGroup.visible = false;
+            }
+            if (isRidingPassengerNow) {
+              applyScooterPillionHugPose(npc.rig, timeSec);
             }
           }
         } else if (npc.rig.customGlbController) {
@@ -6577,8 +6608,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               pillionTf.rollZ,
             );
           }
-          if (mNpc.npcRig.customGlbController?.clips.has('scooter_bike_idle.001')) {
-            mNpc.npcRig.activeSocialClipName = 'scooter_bike_idle.001';
+          if (mNpc.npcRig.activeSocialClipName === 'scooter_bike_idle.001') {
+            mNpc.npcRig.activeSocialClipName = undefined;
           }
           updateCharacterWeaponStance(
             mNpc.npcRig,
@@ -6599,7 +6630,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             1.0,
             pillionTf.yaw,
             0,
-            true,
+            activeRideTogether.phase === 'mounted',
             false,
             false,
             null,
@@ -6607,6 +6638,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             'chair',
             null,
           );
+          if (activeRideTogether.phase === 'mounted') {
+            applyScooterPillionHugPose(mNpc.npcRig, timeSec);
+          }
         }
       } else if (
         activeWalkTogether &&
@@ -23869,7 +23903,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         !parkViewMode &&
         nukeStrikeState.phase === 'idle' &&
         !activeTramRideCutscene?.active &&
-        !mountedTank
+        !mountedTank &&
+        shouldAllowFramedDialogueCamera({
+          isRidingTogether: Boolean(activeRideTogether),
+          scooterSpeedMps: scooterRideState?.speed ?? 0,
+        })
           ? activeCitizenDialogueId
           : null;
       const activeCitizenPortraitNpc = desiredPortraitCitizenId
@@ -26094,29 +26132,45 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             } else {
               st.steer *= Math.pow(0.001, dt);
             }
-            const rideRate = isBikeRide
-              ? rideTarget > st.speed
-                ? 9
-                : 17
-              : computePushKickScooterAccelRate({
-                  speedMps: st.speed,
-                  rideTargetMps: rideTarget,
-                  rideMaxSpeedMps: rideMaxSpeed,
-                  pushDistanceM: st.pushDistanceM,
-                  isCruisingCoast: st.isCruisingCoast,
-                  isBoosting,
-                  hasDirectionalInput: rideInputLen > 0.01,
-                });
+            // WS24 Defect 1: Brake input (Space or simultaneous forward+reverse) ALWAYS overrides throttle
+            // so the scooter reliably decelerates to a full 0 m/s stop with passenger seated.
+            const isExplicitScooterBrake = Boolean(
+              keys['Space'] ||
+                ((keys['KeyW'] || keys['ArrowUp']) && (keys['KeyS'] || keys['ArrowDown'])),
+            );
+            const brakeResolved = resolveScooterBrakeOverride({
+              rawRideTargetMps: rideTarget,
+              currentSpeedMps: st.speed,
+              isBrakeHeld: isExplicitScooterBrake,
+              isBikeRide,
+            });
+            rideTarget = brakeResolved.rideTargetMps;
+            const rideRate =
+              brakeResolved.decelRateOverrideMps2 !== null
+                ? brakeResolved.decelRateOverrideMps2
+                : isBikeRide
+                  ? rideTarget > st.speed
+                    ? 9
+                    : 17
+                  : computePushKickScooterAccelRate({
+                      speedMps: st.speed,
+                      rideTargetMps: rideTarget,
+                      rideMaxSpeedMps: rideMaxSpeed,
+                      pushDistanceM: st.pushDistanceM,
+                      isCruisingCoast: st.isCruisingCoast,
+                      isBoosting,
+                      hasDirectionalInput: rideInputLen > 0.01,
+                    });
             st.speed += Math.max(
               -rideRate * dt,
               Math.min(rideRate * dt, rideTarget - st.speed),
             );
-            if (rideTarget === 0 && Math.abs(st.speed) < 0.02) st.speed = 0;
+            if (rideTarget === 0 && Math.abs(st.speed) < 0.04) st.speed = 0;
             const rideDist = st.speed * dt;
             st.pushDistanceM += Math.max(0, rideDist);
             st.mountBlend = Math.min(1, st.mountBlend + dt / 0.25);
-            st.isThrottleActive = rideTarget > 0.05;
-            st.isBraking = rideTarget < -0.05;
+            st.isThrottleActive = brakeResolved.isThrottleActive;
+            st.isBraking = brakeResolved.isBraking;
             let targetPushAct = 0;
             if (st.kind === 'push_kick_scooter') {
               if (st.isBraking || !st.isThrottleActive) {
@@ -39787,6 +39841,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     const onNpcTogethernessCommand = (ev: Event) => {
       const cmd = (ev as CustomEvent<NpcTogethernessCommand>).detail;
       if (!cmd || !playerUnit || !playerUnit.alive) return;
+      // WS24 Defect 1: Clear movement keys on every togetherness session transition so throttle can never stick.
+      resetAllPlayerMovementInputs();
 
       if (cmd.type === 'end_walk') {
         endWalkTogetherNow();

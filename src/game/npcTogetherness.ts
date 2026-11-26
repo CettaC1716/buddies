@@ -1113,3 +1113,179 @@ export function dispatchNpcTogethernessState(state: NpcTogethernessStateSnapshot
     );
   }
 }
+
+// ============================================================================
+// WS24 — RIDE-TOGETHER FIXES: FULL-STOP BRAKE, RIDING CAMERA & PILLION HUG POSE
+// ============================================================================
+
+export const RIDE_PASSENGER_HUG_POSE_SPEC = {
+  id: 'ride_pillion_seated_hug_loop',
+  label: 'Seated Pillion Hug',
+  category: 'hug' as const,
+  rideSessionOnly: true as const,
+} as const;
+
+/**
+ * WS24 Defect 1: Brake input ALWAYS overrides throttle and brings the scooter
+ * cleanly to a full stop (0 m/s) while both driver and passenger remain seated.
+ */
+export function resolveScooterBrakeOverride(params: {
+  rawRideTargetMps: number;
+  currentSpeedMps: number;
+  isBrakeHeld: boolean;
+  isBikeRide: boolean;
+}): {
+  rideTargetMps: number;
+  isBraking: boolean;
+  isThrottleActive: boolean;
+  decelRateOverrideMps2: number | null;
+} {
+  if (params.isBrakeHeld) {
+    return {
+      rideTargetMps: 0,
+      isBraking: params.currentSpeedMps > 0.05,
+      isThrottleActive: false,
+      decelRateOverrideMps2: params.isBikeRide ? 26 : 18,
+    };
+  }
+  return {
+    rideTargetMps: params.rawRideTargetMps,
+    isBraking: params.rawRideTargetMps < -0.05,
+    isThrottleActive: params.rawRideTargetMps > 0.05,
+    decelRateOverrideMps2: null,
+  };
+}
+
+/**
+ * WS24 Defect 2: Framed dialogue camera is allowed ONLY when not in a ride session
+ * (and stationary). Opening Talk during a ride shows the chat panel ONLY and keeps
+ * the normal riding/chase camera + steering untouched.
+ */
+export function shouldAllowFramedDialogueCamera(params: {
+  isRidingTogether: boolean;
+  scooterSpeedMps?: number;
+}): boolean {
+  if (params.isRidingTogether) return false;
+  if (typeof params.scooterSpeedMps === 'number' && Math.abs(params.scooterSpeedMps) > 0.25) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * WS24 Defect 3: Dedicated looped seated hugging pose for the pillion passenger.
+ * Operates strictly in local bone space (never rotates the passenger root) so her
+ * root stays hard-anchored to `computeScooterPassengerTransform` through turns & leans:
+ * - Arms reach forward and curve inward holding the driver's waist
+ * - Spine leans slightly forward with gentle breathing motion
+ * - Legs straddle the pillion seat with knees bent cleanly
+ */
+export function applyScooterPillionHugPose(
+  rig: {
+    customGlbController?: {
+      bones?: Map<string, { rotation: { x: number; y: number; z: number } }>;
+    } | null;
+    leftArmPivot?: { rotation: { x: number; y: number; z: number } } | null;
+    rightArmPivot?: { rotation: { x: number; y: number; z: number } } | null;
+    leftLegPivot?: { rotation: { x: number; y: number; z: number } } | null;
+    rightLegPivot?: { rotation: { x: number; y: number; z: number } } | null;
+  } | null | undefined,
+  timeSec: number,
+): void {
+  if (!rig) return;
+  const breath = Math.sin(timeSec * 2.2) * 0.018;
+  const bones = rig.customGlbController?.bones;
+  if (bones && bones.size > 0) {
+    const getBone = (names: readonly string[]) => {
+      for (const n of names) {
+        const b = bones.get(n);
+        if (b) return b;
+      }
+      return undefined;
+    };
+
+    // Keep hips/pelvis locked strictly forward in local space (zero independent root rotation)
+    const hips = getBone(['Hips', 'PelvisRoot', 'mixamorigHips']);
+    if (hips) {
+      hips.rotation.y = 0;
+    }
+
+    // Gentle forward lean toward driver's back
+    const spine = getBone(['Spine', 'Spine1', 'mixamorigSpine', 'mixamorigSpine1']);
+    if (spine) {
+      spine.rotation.x = 0.2 + breath;
+      spine.rotation.y = 0;
+      spine.rotation.z = 0;
+    }
+    const chest = getBone(['Spine2', 'Chest', 'mixamorigSpine2']);
+    if (chest) {
+      chest.rotation.x = 0.12 + breath * 0.6;
+      chest.rotation.y = 0;
+    }
+
+    // Arms reaching forward & wrapping inward around driver's waist
+    const leftArm = getBone(['LeftArm', 'mixamorigLeftArm', 'UpperArm_L']);
+    if (leftArm) {
+      leftArm.rotation.x = -0.82;
+      leftArm.rotation.y = 0.28;
+      leftArm.rotation.z = -0.35;
+    }
+    const rightArm = getBone(['RightArm', 'mixamorigRightArm', 'UpperArm_R']);
+    if (rightArm) {
+      rightArm.rotation.x = -0.82;
+      rightArm.rotation.y = -0.28;
+      rightArm.rotation.z = 0.35;
+    }
+    const leftForeArm = getBone(['LeftForeArm', 'mixamorigLeftForeArm', 'LowerArm_L']);
+    if (leftForeArm) {
+      leftForeArm.rotation.x = -0.45;
+      leftForeArm.rotation.y = 0.58;
+      leftForeArm.rotation.z = 0.18;
+    }
+    const rightForeArm = getBone(['RightForeArm', 'mixamorigRightForeArm', 'LowerArm_R']);
+    if (rightForeArm) {
+      rightForeArm.rotation.x = -0.45;
+      rightForeArm.rotation.y = -0.58;
+      rightForeArm.rotation.z = -0.18;
+    }
+
+    // Legs straddling pillion seat cleanly
+    const leftUpLeg = getBone(['LeftUpLeg', 'mixamorigLeftUpLeg', 'Thigh_L']);
+    if (leftUpLeg) {
+      leftUpLeg.rotation.x = -1.05;
+      leftUpLeg.rotation.z = -0.28;
+    }
+    const rightUpLeg = getBone(['RightUpLeg', 'mixamorigRightUpLeg', 'Thigh_R']);
+    if (rightUpLeg) {
+      rightUpLeg.rotation.x = -1.05;
+      rightUpLeg.rotation.z = 0.28;
+    }
+    const leftLeg = getBone(['LeftLeg', 'mixamorigLeftLeg', 'Shin_L']);
+    if (leftLeg) {
+      leftLeg.rotation.x = 1.18;
+    }
+    const rightLeg = getBone(['RightLeg', 'mixamorigRightLeg', 'Shin_R']);
+    if (rightLeg) {
+      rightLeg.rotation.x = 1.18;
+    }
+    return;
+  }
+
+  // Fallback for procedural capsule rigs
+  if (rig.leftArmPivot) {
+    rig.leftArmPivot.rotation.x = -0.85 + breath;
+    rig.leftArmPivot.rotation.z = -0.22;
+  }
+  if (rig.rightArmPivot) {
+    rig.rightArmPivot.rotation.x = -0.85 + breath;
+    rig.rightArmPivot.rotation.z = 0.22;
+  }
+  if (rig.leftLegPivot) {
+    rig.leftLegPivot.rotation.x = -1.0;
+    rig.leftLegPivot.rotation.z = -0.22;
+  }
+  if (rig.rightLegPivot) {
+    rig.rightLegPivot.rotation.x = -1.0;
+    rig.rightLegPivot.rotation.z = 0.22;
+  }
+}
