@@ -1,0 +1,1019 @@
+import {
+  findPathAStar,
+  type AStarNavGrid,
+  type CityAmbientNpcActivity,
+  type CityAmbientNpcWaypoint,
+} from './buddiesBlitzRules';
+import {
+  canPairPose,
+  canRideTogether,
+  canWalkTogether,
+  npcIdToCitizenId,
+  recordNpcSharedActivity,
+  resolveNpcId,
+  type ClosenessMutationResult,
+  type NpcClosenessStore,
+  type NpcId,
+} from './npcClosenessEngine';
+import {
+  getNpcPersona,
+  type NpcScheduleSlot,
+  type NpcTimeSlotWindow,
+} from './npcPersonaRegistry';
+import { ensureAllNpcPersonasRegistered } from './personas/index';
+import type { UrbanScooterKind } from './buddiesUrbanScooterRules';
+import type { CitizenId } from './buddiesCitizenRoles';
+
+/**
+ * NPC Togetherness Mechanics + Deterministic Schedule & Emotion Clip Hooks (Foundation F3)
+ * ========================================================================================
+ * - Walk-together (gated by F1 `canWalkTogether`)
+ * - Pair poses using verified TRUE paired clips (`*_initiate.glb` + `*_receive.glb`, gated by F1 `canPairPose`)
+ * - Ride-together as passenger on the 2-up `electric_scooter_bike` pillion (gated by F1 `canRideTogether`)
+ * - Verified City Anchor Registry & deterministic persona schedule lookup (LLM never decides movement)
+ * - Verified emotion reaction clip resolution with expressive-idle fallback
+ *
+ * IMPORTANT: No closeness numbers, bars, hearts, or tier labels are ever exposed in UI copy.
+ */
+
+// ============================================================================
+// 1. VERIFIED CITY ANCHOR REGISTRY & DETERMINISTIC SCHEDULE LOOKUP
+// ============================================================================
+
+export interface CityLifeAnchor {
+  readonly id: string;
+  readonly label: string;
+  readonly x: number;
+  readonly z: number;
+  readonly yaw: number;
+  readonly activity: CityAmbientNpcActivity;
+  readonly seatLiftY?: number;
+  readonly district: string;
+}
+
+/**
+ * Verified, collision-audited city anchor coordinates matching `CITY_AMBIENT_NPC_PRESETS`
+ * and `CITIZEN_PROFILES`. Persona packs (`src/game/personas/<npc>.ts`) reference these IDs
+ * in their deterministic `schedule` arrays.
+ */
+export const CITY_LIFE_ANCHORS: Readonly<Record<string, CityLifeAnchor>> = {
+  glasshouse_cafe_counter: {
+    id: 'glasshouse_cafe_counter',
+    label: 'Glasshouse Cafe Counter',
+    x: -90.55,
+    z: 20.8,
+    yaw: -Math.PI / 2,
+    activity: 'cafe_hangout',
+    district: 'glasshouse_cafe',
+  },
+  glasshouse_cafe_terrace: {
+    id: 'glasshouse_cafe_terrace',
+    label: 'Glasshouse Cafe Terrace',
+    x: -87.45,
+    z: 16.2,
+    yaw: -Math.PI * 0.45,
+    activity: 'cafe_hangout',
+    district: 'glasshouse_cafe',
+  },
+  glasshouse_cafe_patio_north: {
+    id: 'glasshouse_cafe_patio_north',
+    label: 'Glasshouse Patio North',
+    x: -86.55,
+    z: 13.3,
+    yaw: 0.0,
+    activity: 'cafe_hangout',
+    district: 'glasshouse_cafe',
+  },
+  glasshouse_cafe_patio_mid: {
+    id: 'glasshouse_cafe_patio_mid',
+    label: 'Glasshouse Patio Center',
+    x: -86.55,
+    z: 15.2,
+    yaw: 0.0,
+    activity: 'cafe_hangout',
+    district: 'glasshouse_cafe',
+  },
+  glasshouse_cafe_patio_south: {
+    id: 'glasshouse_cafe_patio_south',
+    label: 'Glasshouse Patio South',
+    x: -86.55,
+    z: 19.1,
+    yaw: 0.0,
+    activity: 'cafe_hangout',
+    district: 'glasshouse_cafe',
+  },
+  fashion_boutique_front: {
+    id: 'fashion_boutique_front',
+    label: 'Fashion Boutique',
+    x: -97.05,
+    z: 4.9,
+    yaw: Math.PI,
+    activity: 'sightseeing',
+    district: 'central_plaza',
+  },
+  fashion_boutique_window: {
+    id: 'fashion_boutique_window',
+    label: 'Fashion Boutique Window',
+    x: -101.25,
+    z: 5.3,
+    yaw: Math.PI,
+    activity: 'sightseeing',
+    district: 'central_plaza',
+  },
+  interior_studio_front: {
+    id: 'interior_studio_front',
+    label: 'Interior Studio',
+    x: -95.65,
+    z: -4.9,
+    yaw: Math.PI,
+    activity: 'sightseeing',
+    district: 'central_plaza',
+  },
+  scooter_showroom_front: {
+    id: 'scooter_showroom_front',
+    label: 'Urban Scooter Showroom',
+    x: -100.25,
+    z: -14.8,
+    yaw: Math.PI,
+    activity: 'sightseeing',
+    district: 'central_plaza',
+  },
+  scooter_display_lane: {
+    id: 'scooter_display_lane',
+    label: 'Scooter Display Lane',
+    x: -93.85,
+    z: -11.0,
+    yaw: Math.PI,
+    activity: 'sightseeing',
+    district: 'central_plaza',
+  },
+  plaza_bench_north: {
+    id: 'plaza_bench_north',
+    label: 'Central Plaza Bench (North)',
+    x: -81.23,
+    z: -16.05,
+    yaw: Math.PI,
+    activity: 'sit_relax',
+    seatLiftY: 0.02,
+    district: 'central_plaza',
+  },
+  plaza_bench_mid: {
+    id: 'plaza_bench_mid',
+    label: 'Central Plaza Bench (Mid)',
+    x: -81.23,
+    z: -17.65,
+    yaw: Math.PI,
+    activity: 'sit_relax',
+    seatLiftY: 0.02,
+    district: 'central_plaza',
+  },
+  plaza_bench_south: {
+    id: 'plaza_bench_south',
+    label: 'Central Plaza Bench (South)',
+    x: -81.23,
+    z: -24.85,
+    yaw: Math.PI,
+    activity: 'sit_relax',
+    seatLiftY: 0.02,
+    district: 'central_plaza',
+  },
+  clock_tower_bench: {
+    id: 'clock_tower_bench',
+    label: 'Clock Tower Bench',
+    x: -86.24,
+    z: -30.41,
+    yaw: 0.0,
+    activity: 'sit_relax',
+    seatLiftY: -0.05,
+    district: 'central_plaza',
+  },
+  oasis_bench_north: {
+    id: 'oasis_bench_north',
+    label: 'Oasis Lake Bench (North)',
+    x: -44.2,
+    z: -2.0,
+    yaw: 0.0,
+    activity: 'sit_relax',
+    seatLiftY: 0.0,
+    district: 'nw_fishing_lake',
+  },
+  oasis_bench_south: {
+    id: 'oasis_bench_south',
+    label: 'Oasis Lake Bench (South)',
+    x: -44.2,
+    z: 2.0,
+    yaw: 0.0,
+    activity: 'sit_relax',
+    seatLiftY: 0.0,
+    district: 'nw_fishing_lake',
+  },
+  nw_lake_shore: {
+    id: 'nw_lake_shore',
+    label: 'NW Oasis Lake Shore',
+    x: -42.5,
+    z: -8.5,
+    yaw: 0.0,
+    activity: 'fishing',
+    district: 'nw_fishing_lake',
+  },
+  nw_lake_north_bank: {
+    id: 'nw_lake_north_bank',
+    label: 'NW Lake North Bank',
+    x: -28.0,
+    z: -16.0,
+    yaw: -Math.PI / 2,
+    activity: 'fishing',
+    district: 'nw_fishing_lake',
+  },
+  tennis_courtside: {
+    id: 'tennis_courtside',
+    label: 'Tennis Club Courtside',
+    x: -80.4,
+    z: 50.6,
+    yaw: Math.PI,
+    activity: 'sightseeing',
+    district: 'central_plaza',
+  },
+  tennis_promenade: {
+    id: 'tennis_promenade',
+    label: 'Tennis Club Promenade',
+    x: -77.2,
+    z: 50.6,
+    yaw: Math.PI,
+    activity: 'sightseeing',
+    district: 'central_plaza',
+  },
+  tennis_south_gate: {
+    id: 'tennis_south_gate',
+    label: 'Tennis Club South Gate',
+    x: -88.8,
+    z: 64.2,
+    yaw: Math.PI / 2,
+    activity: 'sightseeing',
+    district: 'central_plaza',
+  },
+  grand_casino_foyer: {
+    id: 'grand_casino_foyer',
+    label: 'Grand Casino Foyer',
+    x: -77.2,
+    z: -70.6,
+    yaw: Math.PI,
+    activity: 'sightseeing',
+    district: 'central_plaza',
+  },
+  grand_casino_valet: {
+    id: 'grand_casino_valet',
+    label: 'Grand Casino Valet Walk',
+    x: -77.2,
+    z: -60.5,
+    yaw: Math.PI * 0.75,
+    activity: 'sightseeing',
+    district: 'central_plaza',
+  },
+  casino_bench_north: {
+    id: 'casino_bench_north',
+    label: 'Casino Promenade Bench (North)',
+    x: -78.59,
+    z: -56.6,
+    yaw: 0.0,
+    activity: 'sit_relax',
+    seatLiftY: 0.12,
+    district: 'central_plaza',
+  },
+  casino_bench_south: {
+    id: 'casino_bench_south',
+    label: 'Casino Promenade Bench (South)',
+    x: -78.59,
+    z: -84.6,
+    yaw: 0.0,
+    activity: 'sit_relax',
+    seatLiftY: 0.12,
+    district: 'central_plaza',
+  },
+  hana_cafe_station: {
+    id: 'hana_cafe_station',
+    label: 'Hana Glasshouse Cafe',
+    x: -91.5,
+    z: 21.0,
+    yaw: 0.0,
+    activity: 'cafe_hangout',
+    district: 'glasshouse_cafe',
+  },
+  kai_fish_market_pier: {
+    id: 'kai_fish_market_pier',
+    label: 'Kai Fish Market Pier',
+    x: 84.85,
+    z: 65.65,
+    yaw: -Math.PI / 2,
+    activity: 'fishing',
+    district: 'beachfront_pier',
+  },
+} as const;
+
+export const CITY_LIFE_ANCHOR_IDS: readonly string[] = Object.keys(CITY_LIFE_ANCHORS);
+
+export function getCityLifeAnchor(anchorId: string | null | undefined): CityLifeAnchor | null {
+  if (!anchorId || typeof anchorId !== 'string') return null;
+  const key = anchorId.trim().toLowerCase();
+  return CITY_LIFE_ANCHORS[key] ?? null;
+}
+
+export function normalizeWorldClockHour(hour: number): number {
+  if (!Number.isFinite(hour)) return 12;
+  return ((hour % 24) + 24) % 24;
+}
+
+/**
+ * Deterministic mapping of 24h world clock to `NpcTimeSlotWindow`:
+ * - morning:   06:00 .. 12:00
+ * - afternoon: 12:00 .. 17:00
+ * - evening:   17:00 .. 21:00
+ * - night:     21:00 .. 06:00
+ */
+export function getTimeSlotWindowForHour(hour: number): NpcTimeSlotWindow {
+  const h = normalizeWorldClockHour(hour);
+  if (h >= 6 && h < 12) return 'morning';
+  if (h >= 12 && h < 17) return 'afternoon';
+  if (h >= 17 && h < 21) return 'evening';
+  return 'night';
+}
+
+/**
+ * Evaluates whether a world-clock hour falls inside an `NpcScheduleSlot`.
+ * Uses explicit `startHour`/`endHour` when provided (handling midnight wrap cleanly),
+ * otherwise falls back to the slot's `window`.
+ */
+export function isHourInScheduleSlot(hour: number, slot: NpcScheduleSlot): boolean {
+  const h = normalizeWorldClockHour(hour);
+  if (
+    typeof slot.startHour === 'number' &&
+    Number.isFinite(slot.startHour) &&
+    typeof slot.endHour === 'number' &&
+    Number.isFinite(slot.endHour)
+  ) {
+    const start = normalizeWorldClockHour(slot.startHour);
+    const end = slot.endHour === 24 ? 24 : normalizeWorldClockHour(slot.endHour);
+    if (start === end) return true;
+    if (start < end) {
+      return h >= start && h < end;
+    }
+    // Midnight wrap (e.g. startHour: 21, endHour: 6)
+    return h >= start || h < end;
+  }
+  return getTimeSlotWindowForHour(h) === slot.window;
+}
+
+export interface ResolvedNpcScheduleTarget {
+  npcId: NpcId;
+  slot: NpcScheduleSlot;
+  anchor: CityLifeAnchor;
+  waypoint: CityAmbientNpcWaypoint;
+}
+
+/**
+ * Deterministic persona schedule lookup for the city-life NPC loop.
+ * - Reads `getNpcPersona(npcId)?.schedule`.
+ * - Returns `null` when the persona has no schedule entries or no matching anchor,
+ *   signaling the arena to keep the existing default `CITY_AMBIENT_NPC_PRESETS` loop.
+ * - Strictly rule-based and deterministic (LLM never decides NPC movement).
+ */
+export function resolveNpcScheduledWaypoint(
+  rawNpcId: string,
+  timeOfDayHours: number,
+  explicitSchedule?: readonly NpcScheduleSlot[],
+): ResolvedNpcScheduleTarget | null {
+  const npcId = resolveNpcId(rawNpcId);
+  if (!npcId) return null;
+
+  let schedule = explicitSchedule;
+  if (!schedule) {
+    ensureAllNpcPersonasRegistered();
+    schedule = getNpcPersona(npcId)?.schedule;
+  }
+  if (!schedule || schedule.length === 0) return null;
+
+  const matchedSlot = schedule.find((slot) => isHourInScheduleSlot(timeOfDayHours, slot));
+  if (!matchedSlot) return null;
+
+  const anchor =
+    getCityLifeAnchor(matchedSlot.anchorId) ?? getCityLifeAnchor(matchedSlot.waypointId);
+  if (!anchor) return null;
+
+  return {
+    npcId,
+    slot: matchedSlot,
+    anchor,
+    waypoint: {
+      x: anchor.x,
+      z: anchor.z,
+      yaw: anchor.yaw,
+      activity: anchor.activity,
+      moveMode: 'walk',
+      label: matchedSlot.activityLabel.trim() || anchor.label,
+      durationSec: 22.0,
+      seatLiftY: anchor.seatLiftY,
+    },
+  };
+}
+
+// ============================================================================
+// 2. VERIFIED EMOTION CLIP RESOLUTION (WITH EXPRESSIVE IDLE FALLBACK)
+// ============================================================================
+
+export interface ResolvedEmotionClipPlan {
+  kind: 'rig_clip' | 'external_glb' | 'expressive_idle';
+  clipName: string;
+  externalGlbUrl?: string;
+}
+
+/**
+ * Resolves a requested emotion clip against the target rig's verified clip map.
+ * - If `requestedClipName` is a `/assets/animations/...glb` path, requests dynamic GLB load.
+ * - If `requestedClipName` exists in `availableRigClips`, plays it directly.
+ * - Otherwise falls back cleanly to expressive idle (`idleOverrideClip` -> `'idle.001'`).
+ */
+export function resolveVerifiedNpcEmotionClip(params: {
+  requestedClipName: string | null | undefined;
+  availableRigClips: ReadonlySet<string> | ReadonlyMap<string, unknown> | null | undefined;
+  idleOverrideClip?: string | null;
+}): ResolvedEmotionClipPlan {
+  const hasClip = (name: string): boolean => {
+    if (!params.availableRigClips) return false;
+    return params.availableRigClips.has(name);
+  };
+
+  const trimmed = typeof params.requestedClipName === 'string' ? params.requestedClipName.trim() : '';
+  if (trimmed.startsWith('/assets/animations/') && trimmed.endsWith('.glb')) {
+    return {
+      kind: 'external_glb',
+      clipName: `emotion_${trimmed.split('/').pop()?.replace(/\.glb$/i, '') ?? 'clip'}`,
+      externalGlbUrl: trimmed,
+    };
+  }
+  if (trimmed && hasClip(trimmed)) {
+    return {
+      kind: 'rig_clip',
+      clipName: trimmed,
+    };
+  }
+
+  const idleOverride =
+    typeof params.idleOverrideClip === 'string' ? params.idleOverrideClip.trim() : '';
+  if (idleOverride && hasClip(idleOverride)) {
+    return {
+      kind: 'expressive_idle',
+      clipName: idleOverride,
+    };
+  }
+
+  return {
+    kind: 'expressive_idle',
+    clipName: 'idle.001',
+  };
+}
+
+// ============================================================================
+// 3. CURATED TRUE PAIRED POSES (FROM public/assets/animations/paired/)
+// ============================================================================
+
+export interface CuratedNpcPairPose {
+  readonly id: string;
+  readonly label: string;
+  readonly initiateGlbUrl: string;
+  readonly receiveGlbUrl: string;
+  /** Always true: every entry uses a real paired initiate+receive GLB duo on PelvisRoot. */
+  readonly isTruePairedClip: true;
+}
+
+export const CURATED_NPC_PAIR_POSES: readonly CuratedNpcPairPose[] = [
+  {
+    id: 'anim_paired_44f22885_interpose_selfies05',
+    label: 'Duo Selfie',
+    initiateGlbUrl: '/assets/animations/paired/44F22885__interpose_selfies05_initiate.glb',
+    receiveGlbUrl: '/assets/animations/paired/44F22885__interpose_selfies05_receive.glb',
+    isTruePairedClip: true,
+  },
+  {
+    id: 'anim_paired_4697a186_interpose_best_mates09',
+    label: 'Best Mates',
+    initiateGlbUrl: '/assets/animations/paired/4697A186__interpose_best_mates09_initiate.glb',
+    receiveGlbUrl: '/assets/animations/paired/4697A186__interpose_best_mates09_receive.glb',
+    isTruePairedClip: true,
+  },
+  {
+    id: 'anim_paired_6b155d4a_interpose_sider_hug01',
+    label: 'Side Hug',
+    initiateGlbUrl: '/assets/animations/paired/6B155D4A__interpose_sider_hug01_initiate.glb',
+    receiveGlbUrl: '/assets/animations/paired/6B155D4A__interpose_sider_hug01_receive.glb',
+    isTruePairedClip: true,
+  },
+  {
+    id: 'anim_paired_2f102a8e_interpose_editorial_fashion05',
+    label: 'Photo Shoot',
+    initiateGlbUrl: '/assets/animations/paired/2F102A8E__interpose_editorial_fashion05_initiate.glb',
+    receiveGlbUrl: '/assets/animations/paired/2F102A8E__interpose_editorial_fashion05_receive.glb',
+    isTruePairedClip: true,
+  },
+  {
+    id: 'anim_paired_fc456930_interpose_girlygreet01',
+    label: 'Friendly Wave',
+    initiateGlbUrl: '/assets/animations/paired/FC456930__interpose_girlygreet01_initiate.glb',
+    receiveGlbUrl: '/assets/animations/paired/FC456930__interpose_girlygreet01_receive.glb',
+    isTruePairedClip: true,
+  },
+] as const;
+
+export function getCuratedNpcPairPose(poseId?: string | null): CuratedNpcPairPose {
+  if (poseId) {
+    const found = CURATED_NPC_PAIR_POSES.find((p) => p.id === poseId);
+    if (found) return found;
+  }
+  return CURATED_NPC_PAIR_POSES[0];
+}
+
+// ============================================================================
+// 4. TOGETHERNESS SESSIONS & GATING (WALK, PAIR POSE, RIDE TOGETHER)
+// ============================================================================
+
+export interface SavedNpcAnchorTransform {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+}
+
+export interface NpcWalkTogetherSession {
+  npcId: NpcId;
+  citizenId: CitizenId;
+  startedAtMs: number;
+  /** Optional saved world anchor (used for stationary merchants Hana/Kai so they return cleanly). */
+  savedAnchor?: SavedNpcAnchorTransform;
+}
+
+export interface NpcPairPoseSession {
+  npcId: NpcId;
+  citizenId: CitizenId;
+  pose: CuratedNpcPairPose;
+  startedAtMs: number;
+}
+
+export interface NpcRideTogetherSession {
+  npcId: NpcId;
+  citizenId: CitizenId;
+  scooterKind: 'electric_scooter_bike';
+  startedAtMs: number;
+  savedAnchor?: SavedNpcAnchorTransform;
+}
+
+export interface TogethernessActionResult<TSession> {
+  allowed: boolean;
+  reason?: 'unknown_npc' | 'not_unlocked' | 'requires_electric_scooter_bike';
+  message: string;
+  session: TSession | null;
+  closenessResult: ClosenessMutationResult | null;
+}
+
+export function startNpcWalkTogether(
+  store: NpcClosenessStore,
+  rawNpcId: string,
+  options: {
+    nowMs?: number;
+    dateKey?: string;
+    savedAnchor?: SavedNpcAnchorTransform;
+  } = {},
+): TogethernessActionResult<NpcWalkTogetherSession> {
+  const npcId = resolveNpcId(rawNpcId);
+  if (!npcId) {
+    return {
+      allowed: false,
+      reason: 'unknown_npc',
+      message: 'This person cannot walk with you right now.',
+      session: null,
+      closenessResult: null,
+    };
+  }
+  const nowMs = options.nowMs ?? Date.now();
+  if (!canWalkTogether(store, npcId, nowMs)) {
+    return {
+      allowed: false,
+      reason: 'not_unlocked',
+      message: 'Spend a little more time together first.',
+      session: null,
+      closenessResult: null,
+    };
+  }
+  const closenessResult = recordNpcSharedActivity(store, npcId, 'walk_together', {
+    nowMs,
+    dateKey: options.dateKey,
+  });
+  return {
+    allowed: true,
+    message: 'Walking together! Lead the way.',
+    session: {
+      npcId,
+      citizenId: npcIdToCitizenId(npcId),
+      startedAtMs: nowMs,
+      savedAnchor: options.savedAnchor,
+    },
+    closenessResult,
+  };
+}
+
+export function startNpcPairPose(
+  store: NpcClosenessStore,
+  rawNpcId: string,
+  options: {
+    poseId?: string;
+    nowMs?: number;
+    dateKey?: string;
+  } = {},
+): TogethernessActionResult<NpcPairPoseSession> {
+  const npcId = resolveNpcId(rawNpcId);
+  if (!npcId) {
+    return {
+      allowed: false,
+      reason: 'unknown_npc',
+      message: 'This person cannot take a pair photo right now.',
+      session: null,
+      closenessResult: null,
+    };
+  }
+  const nowMs = options.nowMs ?? Date.now();
+  if (!canPairPose(store, npcId, nowMs)) {
+    return {
+      allowed: false,
+      reason: 'not_unlocked',
+      message: 'Get to know each other a bit better first.',
+      session: null,
+      closenessResult: null,
+    };
+  }
+  const pose = getCuratedNpcPairPose(options.poseId);
+  const closenessResult = recordNpcSharedActivity(store, npcId, 'pair_pose', {
+    nowMs,
+    dateKey: options.dateKey,
+  });
+  return {
+    allowed: true,
+    message: `Ready for a ${pose.label} photo!`,
+    session: {
+      npcId,
+      citizenId: npcIdToCitizenId(npcId),
+      pose,
+      startedAtMs: nowMs,
+    },
+    closenessResult,
+  };
+}
+
+export function startNpcRideTogether(
+  store: NpcClosenessStore,
+  rawNpcId: string,
+  options: {
+    scooterKind?: UrbanScooterKind | null;
+    nowMs?: number;
+    dateKey?: string;
+    savedAnchor?: SavedNpcAnchorTransform;
+  } = {},
+): TogethernessActionResult<NpcRideTogetherSession> {
+  const npcId = resolveNpcId(rawNpcId);
+  if (!npcId) {
+    return {
+      allowed: false,
+      reason: 'unknown_npc',
+      message: 'This person cannot ride with you right now.',
+      session: null,
+      closenessResult: null,
+    };
+  }
+  const nowMs = options.nowMs ?? Date.now();
+  if (!canRideTogether(store, npcId, nowMs)) {
+    return {
+      allowed: false,
+      reason: 'not_unlocked',
+      message: 'Spend more time together before taking a scooter ride.',
+      session: null,
+      closenessResult: null,
+    };
+  }
+  if (options.scooterKind && options.scooterKind !== 'electric_scooter_bike') {
+    return {
+      allowed: false,
+      reason: 'requires_electric_scooter_bike',
+      message: 'Hop on your electric scooter bike to ride together.',
+      session: null,
+      closenessResult: null,
+    };
+  }
+  const closenessResult = recordNpcSharedActivity(store, npcId, 'ride_together', {
+    nowMs,
+    dateKey: options.dateKey,
+  });
+  return {
+    allowed: true,
+    message: 'Hopped on behind you — let us cruise!',
+    session: {
+      npcId,
+      citizenId: npcIdToCitizenId(npcId),
+      scooterKind: 'electric_scooter_bike',
+      startedAtMs: nowMs,
+      savedAnchor: options.savedAnchor,
+    },
+    closenessResult,
+  };
+}
+
+// ============================================================================
+// 5. WALK-TOGETHER WAYPOINT / FOLLOW-STEERING STEPPER
+// ============================================================================
+
+export interface WalkTogetherStepInput {
+  npcX: number;
+  npcZ: number;
+  npcYaw: number;
+  wasMoving: boolean;
+  playerX: number;
+  playerZ: number;
+  playerYaw: number;
+  playerSpeedMps: number;
+  dt: number;
+  navGrid?: AStarNavGrid | null;
+  navPath?: Array<{ x: number; z: number }>;
+  navWaypointIndex?: number;
+  replanTimerSec?: number;
+  /** Desired comfortable follow gap in meters (default 1.95). */
+  followDistanceM?: number;
+  /** Auto-end walk if player teleports or moves beyond this distance (default 48m). */
+  maxTetherDistanceM?: number;
+}
+
+export interface WalkTogetherStepResult {
+  x: number;
+  z: number;
+  yaw: number;
+  speedMps: number;
+  isMoving: boolean;
+  shouldEndWalk: boolean;
+  navPath: Array<{ x: number; z: number }>;
+  navWaypointIndex: number;
+  replanTimerSec: number;
+}
+
+function normalizeAngleRad(angle: number): number {
+  let a = angle;
+  while (a > Math.PI) a -= Math.PI * 2;
+  while (a < -Math.PI) a += Math.PI * 2;
+  return a;
+}
+
+/**
+ * Pure deterministic follow-stepper for Walk-Together mode:
+ * - Follows the player along the existing A* `navGrid` at natural walking pace (1.65..2.6 m/s)
+ * - Smoothly pauses with hysteresis when the player stops within comfortable social distance
+ * - Faces toward the player while paused
+ * - Auto-ends if the player moves beyond `maxTetherDistanceM` (e.g. fast-travel)
+ */
+export function stepNpcWalkTogether(input: WalkTogetherStepInput): WalkTogetherStepResult {
+  const dt = Math.max(0, Math.min(0.25, Number.isFinite(input.dt) ? input.dt : 0));
+  const followDist = input.followDistanceM ?? 1.95;
+  const maxTether = input.maxTetherDistanceM ?? 48.0;
+  const stopRadius = Math.max(1.2, followDist - 0.15);
+  const resumeRadius = followDist + 0.55;
+
+  const dxToPlayer = input.playerX - input.npcX;
+  const dzToPlayer = input.playerZ - input.npcZ;
+  const distToPlayer = Math.hypot(dxToPlayer, dzToPlayer);
+
+  if (distToPlayer > maxTether) {
+    return {
+      x: input.npcX,
+      z: input.npcZ,
+      yaw: input.npcYaw,
+      speedMps: 0,
+      isMoving: false,
+      shouldEndWalk: true,
+      navPath: [],
+      navWaypointIndex: 0,
+      replanTimerSec: 0,
+    };
+  }
+
+  const desiredPause = input.wasMoving
+    ? distToPlayer <= stopRadius
+    : distToPlayer <= resumeRadius;
+
+  if (desiredPause) {
+    const facePlayerYaw =
+      distToPlayer > 0.05 ? Math.atan2(-dzToPlayer, dxToPlayer) : input.npcYaw;
+    const dYaw = normalizeAngleRad(facePlayerYaw - input.npcYaw);
+    const maxTurn = 6.5 * dt;
+    const nextYaw = input.npcYaw + Math.max(-maxTurn, Math.min(maxTurn, dYaw));
+    return {
+      x: input.npcX,
+      z: input.npcZ,
+      yaw: nextYaw,
+      speedMps: 0,
+      isMoving: false,
+      shouldEndWalk: false,
+      navPath: [],
+      navWaypointIndex: 0,
+      replanTimerSec: 0,
+    };
+  }
+
+  // Target a spot slightly behind-side of the player so the NPC walks alongside cleanly
+  const backX = -Math.cos(input.playerYaw);
+  const backZ = Math.sin(input.playerYaw);
+  const targetX = input.playerX + backX * (followDist * 0.65);
+  const targetZ = input.playerZ + backZ * (followDist * 0.65);
+
+  let navPath = input.navPath ?? [];
+  let navWaypointIndex = input.navWaypointIndex ?? 0;
+  let replanTimerSec = Math.max(0, (input.replanTimerSec ?? 0) - dt);
+
+  if (input.navGrid && (navPath.length === 0 || replanTimerSec <= 0)) {
+    const planned = findPathAStar(
+      input.navGrid,
+      input.npcX,
+      input.npcZ,
+      targetX,
+      targetZ,
+    );
+    if (planned && planned.waypoints.length > 0) {
+      navPath = planned.waypoints;
+      navWaypointIndex = 0;
+    } else {
+      navPath = [{ x: targetX, z: targetZ }];
+      navWaypointIndex = 0;
+    }
+    replanTimerSec = 0.65;
+  }
+
+  let steerX = targetX;
+  let steerZ = targetZ;
+  if (navPath.length > 0) {
+    while (navWaypointIndex < navPath.length - 1) {
+      const wp = navPath[navWaypointIndex];
+      if (Math.hypot(wp.x - input.npcX, wp.z - input.npcZ) <= 0.95) {
+        navWaypointIndex++;
+      } else {
+        break;
+      }
+    }
+    const activeWp = navPath[Math.min(navWaypointIndex, navPath.length - 1)];
+    if (activeWp) {
+      steerX = activeWp.x;
+      steerZ = activeWp.z;
+    }
+  }
+
+  const sdx = steerX - input.npcX;
+  const sdz = steerZ - input.npcZ;
+  const sDist = Math.hypot(sdx, sdz);
+  if (sDist < 0.05) {
+    return {
+      x: input.npcX,
+      z: input.npcZ,
+      yaw: input.npcYaw,
+      speedMps: 0,
+      isMoving: false,
+      shouldEndWalk: false,
+      navPath,
+      navWaypointIndex,
+      replanTimerSec,
+    };
+  }
+
+  // Smooth walking pace: 1.65 m/s normally, gently catches up to 2.75 m/s if further behind
+  const catchUpBonus = Math.max(0, Math.min(1.1, (distToPlayer - 3.2) * 0.25));
+  const targetWalkSpeed = Math.max(
+    1.55,
+    Math.min(2.75, Math.max(1.65, input.playerSpeedMps * 0.92) + catchUpBonus),
+  );
+  const stepDist = Math.min(targetWalkSpeed * dt, Math.max(0, distToPlayer - stopRadius * 0.85));
+  const dirX = sdx / sDist;
+  const dirZ = sdz / sDist;
+  const nextX = input.npcX + dirX * stepDist;
+  const nextZ = input.npcZ + dirZ * stepDist;
+
+  const desiredYaw = Math.atan2(-dirZ, dirX);
+  const dYaw = normalizeAngleRad(desiredYaw - input.npcYaw);
+  const maxTurn = 7.5 * dt;
+  const nextYaw = input.npcYaw + Math.max(-maxTurn, Math.min(maxTurn, dYaw));
+
+  return {
+    x: nextX,
+    z: nextZ,
+    yaw: nextYaw,
+    speedMps: dt > 1e-4 ? stepDist / dt : targetWalkSpeed,
+    isMoving: stepDist > 1e-4,
+    shouldEndWalk: false,
+    navPath,
+    navWaypointIndex,
+    replanTimerSec,
+  };
+}
+
+// ============================================================================
+// 6. RIDE-TOGETHER PASSENGER PILLION TRANSFORM (2-UP ELECTRIC SCOOTER BIKE)
+// ============================================================================
+
+/**
+ * Calibrated passenger pillion placement for `electric_scooter_bike` (2-up contoured saddle:
+ * rider bucket at local z=-0.44 / y=0.57; passenger pillion behind at local z=-0.98 / y=0.655).
+ * Uses the verified `scooter_bike_idle.001` seated clip (fallback: `sitOverrideClip` / `sitting.001`).
+ */
+export const ELECTRIC_SCOOTER_PASSENGER_SPEC = {
+  pillionBackOffsetM: -0.98,
+  pillionLiftY: 0.655,
+  preferredClipNames: ['scooter_bike_idle.001', 'sitting.001'] as const,
+} as const;
+
+export interface ScooterPassengerTransformInput {
+  driverX: number;
+  driverZ: number;
+  driverYaw: number;
+  groundY: number;
+  slopePitchX: number;
+  leanRollZ: number;
+}
+
+export interface ScooterPassengerTransformResult {
+  worldX: number;
+  worldY: number;
+  worldZ: number;
+  bodyLiftY: number;
+  yaw: number;
+  pitchX: number;
+  rollZ: number;
+}
+
+/**
+ * Computes exact world-space pillion seat position and lean/pitch orientation
+ * for an NPC passenger riding behind the player on `electric_scooter_bike`.
+ */
+export function computeScooterPassengerTransform(
+  input: ScooterPassengerTransformInput,
+): ScooterPassengerTransformResult {
+  const fwdX = Math.cos(input.driverYaw);
+  const fwdZ = -Math.sin(input.driverYaw);
+  const backOffset = ELECTRIC_SCOOTER_PASSENGER_SPEC.pillionBackOffsetM;
+  return {
+    worldX: input.driverX + fwdX * backOffset,
+    worldY: input.groundY,
+    worldZ: input.driverZ + fwdZ * backOffset,
+    bodyLiftY: ELECTRIC_SCOOTER_PASSENGER_SPEC.pillionLiftY,
+    yaw: input.driverYaw,
+    pitchX: input.slopePitchX,
+    rollZ: input.leanRollZ,
+  };
+}
+
+// ============================================================================
+// 7. DOM EVENT BUS FOR ARENA <-> APP / MODAL COORDINATION
+// ============================================================================
+
+export const NPC_TOGETHERNESS_COMMAND_EVENT = 'npc-togetherness-command';
+export const NPC_TOGETHERNESS_STATE_EVENT = 'npc-togetherness-state';
+
+export type NpcTogethernessCommand =
+  | { type: 'start_walk'; npcId: NpcId }
+  | { type: 'end_walk' }
+  | { type: 'start_pair_pose'; npcId: NpcId; poseId?: string }
+  | { type: 'stop_pair_pose' }
+  | { type: 'start_ride'; npcId: NpcId }
+  | { type: 'end_ride' };
+
+export interface NpcTogethernessStateSnapshot {
+  walkingNpcId: NpcId | null;
+  pairPoseNpcId: NpcId | null;
+  pairPoseLabel: string | null;
+  ridingNpcId: NpcId | null;
+}
+
+export const EMPTY_NPC_TOGETHERNESS_STATE: NpcTogethernessStateSnapshot = {
+  walkingNpcId: null,
+  pairPoseNpcId: null,
+  pairPoseLabel: null,
+  ridingNpcId: null,
+};
+
+export function dispatchNpcTogethernessCommand(command: NpcTogethernessCommand): void {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(
+      new CustomEvent<NpcTogethernessCommand>(NPC_TOGETHERNESS_COMMAND_EVENT, {
+        detail: command,
+      }),
+    );
+  }
+}
+
+export function dispatchNpcTogethernessState(state: NpcTogethernessStateSnapshot): void {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(
+      new CustomEvent<NpcTogethernessStateSnapshot>(NPC_TOGETHERNESS_STATE_EVENT, {
+        detail: state,
+      }),
+    );
+  }
+}

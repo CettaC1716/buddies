@@ -49,11 +49,19 @@ import {
 import { soundEngine } from '../game/audio';
 import {
   canLongConversation,
+  canPairPose,
+  canRideTogether,
+  canWalkTogether,
   createEmptyNpcClosenessStore,
   getNpcClosenessBand,
   type NpcClosenessStore,
   type NpcId,
 } from '../game/npcClosenessEngine';
+import {
+  CURATED_NPC_PAIR_POSES,
+  EMPTY_NPC_TOGETHERNESS_STATE,
+  type NpcTogethernessStateSnapshot,
+} from '../game/npcTogetherness';
 import {
   canGiftNpcToday,
   getGiftCatalogItem,
@@ -265,6 +273,10 @@ interface NpcMerchantAndHouseModalProps {
     itemInput: GiftItemInput,
     fishInstanceId?: string,
   ) => { accepted: boolean; reactionLine: string; itemName: string };
+  npcTogethernessState?: NpcTogethernessStateSnapshot;
+  onToggleNpcWalkTogether?: (npcId: NpcId) => void;
+  onTriggerNpcPairPose?: (npcId: NpcId, poseId?: string) => void;
+  onToggleNpcRideTogether?: (npcId: NpcId) => void;
 }
 
 /* Kai chat-trade language pack: the card and Kai's short scripted lines
@@ -491,10 +503,15 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   ownedCafeFoodIds = [],
   onNpcConversationTurn,
   onGiveNpcOwnedGift,
+  npcTogethernessState = EMPTY_NPC_TOGETHERNESS_STATE,
+  onToggleNpcWalkTogether,
+  onTriggerNpcPairPose,
+  onToggleNpcRideTogether,
 }) => {
   const [activeTab, setActiveTab] = useState<'sesi_chat' | 'transaksi' | 'katalog' | 'fish_market' | 'gift'>(
     'sesi_chat',
   );
+  const [showMerchantPairPosePicker, setShowMerchantPairPosePicker] = useState<boolean>(false);
   const [merchantGiftFeedback, setMerchantGiftFeedback] = useState<{
     npcId: NpcId;
     reactionLine: string;
@@ -2755,8 +2772,113 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 <div ref={chatScrollEndRef} />
               </div>
 
-              {/* Quick Question Chips + Clear Chat (No phone footer) */}
+              {/* Quick Question Chips + Togetherness Actions (plain English, zero closeness UI) + Clear Chat */}
               <div className="pt-2 border-t border-white/12 shrink-0 space-y-1.5">
+                {(() => {
+                  const merchantNpcId: NpcId = merchantLocation === 'beach_house' ? 'kai' : 'hana';
+                  const closenessStore = npcClosenessStore ?? createEmptyNpcClosenessStore();
+                  const showWalk =
+                    (canWalkTogether(closenessStore, merchantNpcId) ||
+                      npcTogethernessState.walkingNpcId === merchantNpcId) &&
+                    Boolean(onToggleNpcWalkTogether);
+                  const showPair =
+                    (canPairPose(closenessStore, merchantNpcId) ||
+                      npcTogethernessState.pairPoseNpcId === merchantNpcId) &&
+                    Boolean(onTriggerNpcPairPose);
+                  const showRide =
+                    (canRideTogether(closenessStore, merchantNpcId) ||
+                      npcTogethernessState.ridingNpcId === merchantNpcId) &&
+                    Boolean(onToggleNpcRideTogether);
+                  if (!showWalk && !showPair && !showRide) return null;
+                  return (
+                    <div className="space-y-1.5 pb-1 border-b border-white/10" data-merchant-togetherness-actions="true">
+                      <div className="flex flex-wrap gap-1.5">
+                        {showWalk && onToggleNpcWalkTogether && (
+                          <button
+                            type="button"
+                            data-npc-walk-together-btn="true"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              onToggleNpcWalkTogether(merchantNpcId);
+                            }}
+                            className={`px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors ${
+                              npcTogethernessState.walkingNpcId === merchantNpcId
+                                ? 'bg-amber-500/30 hover:bg-amber-500/45 text-amber-100 border border-amber-300/45'
+                                : 'bg-sky-500/25 hover:bg-sky-500/40 text-sky-100 border border-sky-300/35'
+                            }`}
+                          >
+                            {npcTogethernessState.walkingNpcId === merchantNpcId
+                              ? 'End walk'
+                              : 'Ask to walk together'}
+                          </button>
+                        )}
+                        {showPair && onTriggerNpcPairPose && (
+                          <button
+                            type="button"
+                            data-npc-pair-pose-btn="true"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              if (npcTogethernessState.pairPoseNpcId === merchantNpcId) {
+                                setShowMerchantPairPosePicker(false);
+                                onTriggerNpcPairPose(merchantNpcId);
+                              } else {
+                                setShowMerchantPairPosePicker((prev) => !prev);
+                              }
+                            }}
+                            className={`px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors ${
+                              npcTogethernessState.pairPoseNpcId === merchantNpcId
+                                ? 'bg-amber-500/30 hover:bg-amber-500/45 text-amber-100 border border-amber-300/45'
+                                : 'bg-violet-500/25 hover:bg-violet-500/40 text-violet-100 border border-violet-300/35'
+                            }`}
+                          >
+                            {npcTogethernessState.pairPoseNpcId === merchantNpcId
+                              ? 'Stop photo pose'
+                              : 'Take a pair photo'}
+                          </button>
+                        )}
+                        {showRide && onToggleNpcRideTogether && (
+                          <button
+                            type="button"
+                            data-npc-ride-together-btn="true"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              onToggleNpcRideTogether(merchantNpcId);
+                            }}
+                            className={`px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors ${
+                              npcTogethernessState.ridingNpcId === merchantNpcId
+                                ? 'bg-amber-500/30 hover:bg-amber-500/45 text-amber-100 border border-amber-300/45'
+                                : 'bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-100 border border-emerald-300/35'
+                            }`}
+                          >
+                            {npcTogethernessState.ridingNpcId === merchantNpcId
+                              ? 'End ride'
+                              : 'Ask to ride together'}
+                          </button>
+                        )}
+                      </div>
+                      {showMerchantPairPosePicker &&
+                        npcTogethernessState.pairPoseNpcId !== merchantNpcId &&
+                        onTriggerNpcPairPose && (
+                          <div className="flex flex-wrap gap-1 pt-0.5">
+                            {CURATED_NPC_PAIR_POSES.map((pose) => (
+                              <button
+                                key={pose.id}
+                                type="button"
+                                onClick={() => {
+                                  soundEngine.playUiClick();
+                                  setShowMerchantPairPosePicker(false);
+                                  onTriggerNpcPairPose(merchantNpcId, pose.id);
+                                }}
+                                className="px-2 py-0.5 rounded-lg bg-white/12 hover:bg-white/22 border border-white/15 text-[10px] font-medium text-white/90 cursor-pointer transition-colors"
+                              >
+                                {pose.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                    </div>
+                  );
+                })()}
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {(
                     [

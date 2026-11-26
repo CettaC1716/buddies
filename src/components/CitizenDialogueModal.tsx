@@ -19,12 +19,20 @@ import {
 import type { CaughtFishItem } from '../game/buddiesFishingMarket';
 import {
   canLongConversation,
+  canPairPose,
+  canRideTogether,
+  canWalkTogether,
   createEmptyNpcClosenessStore,
   getNpcClosenessBand,
   resolveNpcId,
   type NpcClosenessStore,
   type NpcId,
 } from '../game/npcClosenessEngine';
+import {
+  CURATED_NPC_PAIR_POSES,
+  EMPTY_NPC_TOGETHERNESS_STATE,
+  type NpcTogethernessStateSnapshot,
+} from '../game/npcTogetherness';
 import {
   canGiftNpcToday,
   getGiftCatalogItem,
@@ -80,6 +88,10 @@ export interface CitizenDialogueModalProps {
     closenessDelta: number,
     emotion: NpcEmotionTag,
   ) => void;
+  npcTogethernessState?: NpcTogethernessStateSnapshot;
+  onToggleNpcWalkTogether?: (npcId: NpcId) => void;
+  onTriggerNpcPairPose?: (npcId: NpcId, poseId?: string) => void;
+  onToggleNpcRideTogether?: (npcId: NpcId) => void;
   onVisitDirectoryCitizen: (profile: CitizenProfile) => void;
 }
 
@@ -113,10 +125,15 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   onGiveFishGift,
   onGiveNpcOwnedGift,
   onNpcConversationTurn,
+  npcTogethernessState = EMPTY_NPC_TOGETHERNESS_STATE,
+  onToggleNpcWalkTogether,
+  onTriggerNpcPairPose,
+  onToggleNpcRideTogether,
   onVisitDirectoryCitizen,
 }) => {
   useNpcPortraitVersion();
   const [activeTab, setActiveTab] = useState<CitizenChatTab>('sesi_chat');
+  const [showPairPosePicker, setShowPairPosePicker] = useState<boolean>(false);
   const [chatHistory, setChatHistory] = useState<CitizenChatEntry[]>([]);
   const [npcFullText, setNpcFullText] = useState<string>('');
   const [npcTypedText, setNpcTypedText] = useState<string>('');
@@ -541,8 +558,111 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                   <div ref={chatScrollEndRef} />
                 </div>
 
-                {/* Quick-Reply Choices + Clear Chat */}
+                {/* Quick-Reply Choices + Togetherness Actions (plain English, zero closeness UI) + Clear Chat */}
                 <div className="px-3.5 py-2.5 border-t border-white/10 shrink-0 bg-black/15 space-y-1.5">
+                  {namedNpcId &&
+                    (canPairPose(effectiveClosenessStore, namedNpcId) ||
+                      canWalkTogether(effectiveClosenessStore, namedNpcId) ||
+                      canRideTogether(effectiveClosenessStore, namedNpcId) ||
+                      npcTogethernessState.walkingNpcId === namedNpcId ||
+                      npcTogethernessState.pairPoseNpcId === namedNpcId ||
+                      npcTogethernessState.ridingNpcId === namedNpcId) && (
+                      <div className="space-y-1.5 pb-1 border-b border-white/10" data-npc-togetherness-actions="true">
+                        <div className="flex flex-wrap gap-1.5">
+                          {(canWalkTogether(effectiveClosenessStore, namedNpcId) ||
+                            npcTogethernessState.walkingNpcId === namedNpcId) &&
+                            onToggleNpcWalkTogether && (
+                              <button
+                                type="button"
+                                data-npc-walk-together-btn="true"
+                                onClick={() => {
+                                  soundEngine.playUiClick();
+                                  onToggleNpcWalkTogether(namedNpcId);
+                                }}
+                                className={`px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors ${
+                                  npcTogethernessState.walkingNpcId === namedNpcId
+                                    ? 'bg-amber-500/30 hover:bg-amber-500/45 text-amber-100 border border-amber-300/45'
+                                    : 'bg-sky-500/25 hover:bg-sky-500/40 text-sky-100 border border-sky-300/35'
+                                }`}
+                              >
+                                {npcTogethernessState.walkingNpcId === namedNpcId
+                                  ? 'End walk'
+                                  : 'Ask to walk together'}
+                              </button>
+                            )}
+
+                          {(canPairPose(effectiveClosenessStore, namedNpcId) ||
+                            npcTogethernessState.pairPoseNpcId === namedNpcId) &&
+                            onTriggerNpcPairPose && (
+                              <button
+                                type="button"
+                                data-npc-pair-pose-btn="true"
+                                onClick={() => {
+                                  soundEngine.playUiClick();
+                                  if (npcTogethernessState.pairPoseNpcId === namedNpcId) {
+                                    setShowPairPosePicker(false);
+                                    onTriggerNpcPairPose(namedNpcId);
+                                  } else {
+                                    setShowPairPosePicker((prev) => !prev);
+                                  }
+                                }}
+                                className={`px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors ${
+                                  npcTogethernessState.pairPoseNpcId === namedNpcId
+                                    ? 'bg-amber-500/30 hover:bg-amber-500/45 text-amber-100 border border-amber-300/45'
+                                    : 'bg-violet-500/25 hover:bg-violet-500/40 text-violet-100 border border-violet-300/35'
+                                }`}
+                              >
+                                {npcTogethernessState.pairPoseNpcId === namedNpcId
+                                  ? 'Stop photo pose'
+                                  : 'Take a pair photo'}
+                              </button>
+                            )}
+
+                          {(canRideTogether(effectiveClosenessStore, namedNpcId) ||
+                            npcTogethernessState.ridingNpcId === namedNpcId) &&
+                            onToggleNpcRideTogether && (
+                              <button
+                                type="button"
+                                data-npc-ride-together-btn="true"
+                                onClick={() => {
+                                  soundEngine.playUiClick();
+                                  onToggleNpcRideTogether(namedNpcId);
+                                }}
+                                className={`px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors ${
+                                  npcTogethernessState.ridingNpcId === namedNpcId
+                                    ? 'bg-amber-500/30 hover:bg-amber-500/45 text-amber-100 border border-amber-300/45'
+                                    : 'bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-100 border border-emerald-300/35'
+                                }`}
+                              >
+                                {npcTogethernessState.ridingNpcId === namedNpcId
+                                  ? 'End ride'
+                                  : 'Ask to ride together'}
+                              </button>
+                            )}
+                        </div>
+
+                        {showPairPosePicker &&
+                          npcTogethernessState.pairPoseNpcId !== namedNpcId &&
+                          onTriggerNpcPairPose && (
+                            <div className="flex flex-wrap gap-1 pt-0.5">
+                              {CURATED_NPC_PAIR_POSES.map((pose) => (
+                                <button
+                                  key={pose.id}
+                                  type="button"
+                                  onClick={() => {
+                                    soundEngine.playUiClick();
+                                    setShowPairPosePicker(false);
+                                    onTriggerNpcPairPose(namedNpcId, pose.id);
+                                  }}
+                                  className="px-2 py-0.5 rounded-lg bg-white/12 hover:bg-white/22 border border-white/15 text-[10px] font-medium text-white/90 cursor-pointer transition-colors"
+                                >
+                                  {pose.label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                      </div>
+                    )}
                   <div className="flex flex-col gap-1.5">
                     {quickPrompts.map((prompt) => (
                       <button

@@ -277,6 +277,15 @@ import {
 import { ensureAllNpcPersonasRegistered } from './game/personas/index';
 import { dispatchNpcEmotionReaction } from './game/npcTextChat';
 import {
+  EMPTY_NPC_TOGETHERNESS_STATE,
+  NPC_TOGETHERNESS_STATE_EVENT,
+  dispatchNpcTogethernessCommand,
+  startNpcPairPose,
+  startNpcRideTogether,
+  startNpcWalkTogether,
+  type NpcTogethernessStateSnapshot,
+} from './game/npcTogetherness';
+import {
   FAMILY_MEMBER_CONTRACT_PLANS,
   FAMILY_MEMBER_ORDER_SPECS,
   HOUSE_OWNERSHIP_PRICE_RESPITE,
@@ -1139,6 +1148,80 @@ export default function App() {
     }
     return ids;
   }, [cafeConsumerState.activeItem, cafeConsumerState.queuedItems]);
+
+  const [npcTogethernessState, setNpcTogethernessState] =
+    useState<NpcTogethernessStateSnapshot>(EMPTY_NPC_TOGETHERNESS_STATE);
+  const npcTogethernessStateRef = useRef<NpcTogethernessStateSnapshot>(npcTogethernessState);
+  npcTogethernessStateRef.current = npcTogethernessState;
+
+  useEffect(() => {
+    const onTogethernessState = (ev: Event) => {
+      const detail = (ev as CustomEvent<NpcTogethernessStateSnapshot>).detail;
+      if (!detail) return;
+      npcTogethernessStateRef.current = detail;
+      setNpcTogethernessState(detail);
+    };
+    window.addEventListener(NPC_TOGETHERNESS_STATE_EVENT, onTogethernessState);
+    return () => window.removeEventListener(NPC_TOGETHERNESS_STATE_EVENT, onTogethernessState);
+  }, []);
+
+  const handleNpcWalkTogetherToggle = useCallback((npcId: NpcId) => {
+    if (npcTogethernessStateRef.current.walkingNpcId === npcId) {
+      dispatchNpcTogethernessCommand({ type: 'end_walk' });
+      return;
+    }
+    const res = startNpcWalkTogether(npcClosenessStoreRef.current, npcId);
+    if (!res.allowed || !res.closenessResult) return;
+    npcClosenessStoreRef.current = res.closenessResult.store;
+    setNpcClosenessStore(res.closenessResult.store);
+    saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
+    dispatchNpcTogethernessCommand({ type: 'start_walk', npcId });
+    setIsCitizenDialogueOpen(false);
+    if (activeSpecialModal === 'npc_merchant') {
+      setActiveSpecialModal('none');
+      window.dispatchEvent(new CustomEvent('close-npc-ui'));
+    }
+  }, [activeSpecialModal]);
+
+  const handleNpcPairPoseTrigger = useCallback((npcId: NpcId, poseId?: string) => {
+    if (npcTogethernessStateRef.current.pairPoseNpcId === npcId && !poseId) {
+      dispatchNpcTogethernessCommand({ type: 'stop_pair_pose' });
+      return;
+    }
+    const res = startNpcPairPose(npcClosenessStoreRef.current, npcId, { poseId });
+    if (!res.allowed || !res.closenessResult) return;
+    npcClosenessStoreRef.current = res.closenessResult.store;
+    setNpcClosenessStore(res.closenessResult.store);
+    saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
+    dispatchNpcTogethernessCommand({
+      type: 'start_pair_pose',
+      npcId,
+      poseId: res.session?.pose.id,
+    });
+    setIsCitizenDialogueOpen(false);
+    if (activeSpecialModal === 'npc_merchant') {
+      setActiveSpecialModal('none');
+      window.dispatchEvent(new CustomEvent('close-npc-ui'));
+    }
+  }, [activeSpecialModal]);
+
+  const handleNpcRideTogetherToggle = useCallback((npcId: NpcId) => {
+    if (npcTogethernessStateRef.current.ridingNpcId === npcId) {
+      dispatchNpcTogethernessCommand({ type: 'end_ride' });
+      return;
+    }
+    const res = startNpcRideTogether(npcClosenessStoreRef.current, npcId);
+    if (!res.allowed || !res.closenessResult) return;
+    npcClosenessStoreRef.current = res.closenessResult.store;
+    setNpcClosenessStore(res.closenessResult.store);
+    saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
+    dispatchNpcTogethernessCommand({ type: 'start_ride', npcId });
+    setIsCitizenDialogueOpen(false);
+    if (activeSpecialModal === 'npc_merchant') {
+      setActiveSpecialModal('none');
+      window.dispatchEvent(new CustomEvent('close-npc-ui'));
+    }
+  }, [activeSpecialModal]);
 
   const loadDailyMissionsFromStorage = useCallback((acctKey: string): DailyMissionsState => {
     const todayKey = getLocalDailyDateKey();
@@ -12949,6 +13032,10 @@ export default function App() {
         ownedCafeFoodIds={ownedCafeFoodIds}
         onNpcConversationTurn={handleNpcConversationTurn}
         onGiveNpcOwnedGift={handleGiveNpcOwnedGift}
+        npcTogethernessState={npcTogethernessState}
+        onToggleNpcWalkTogether={handleNpcWalkTogetherToggle}
+        onTriggerNpcPairPose={handleNpcPairPoseTrigger}
+        onToggleNpcRideTogether={handleNpcRideTogetherToggle}
       />
 
       {/* =====================================================================
@@ -14486,6 +14573,33 @@ export default function App() {
           void refreshFishMarketplaceFromChainAndDb();
         }}
       />
+      {(npcTogethernessState.walkingNpcId || npcTogethernessState.ridingNpcId) &&
+        hud.worldMode !== 'warzone' && (
+          <div
+            data-npc-togetherness-pill="true"
+            className="fixed top-[max(0.75rem,var(--safe-top))] left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/85 border border-white/20 text-white shadow-lg backdrop-blur-md pointer-events-auto"
+          >
+            <span className="text-xs font-medium text-white/90">
+              {npcTogethernessState.ridingNpcId
+                ? `Riding with ${getNpcPersona(npcTogethernessState.ridingNpcId)?.displayName ?? npcTogethernessState.ridingNpcId}`
+                : `Walking with ${getNpcPersona(npcTogethernessState.walkingNpcId ?? '')?.displayName ?? npcTogethernessState.walkingNpcId}`}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                soundEngine.playUiClick();
+                if (npcTogethernessState.ridingNpcId) {
+                  dispatchNpcTogethernessCommand({ type: 'end_ride' });
+                } else {
+                  dispatchNpcTogethernessCommand({ type: 'end_walk' });
+                }
+              }}
+              className="px-2.5 py-0.5 rounded-full bg-amber-500/30 hover:bg-amber-500/45 border border-amber-300/45 text-amber-100 text-[11px] font-semibold cursor-pointer transition-colors"
+            >
+              {npcTogethernessState.ridingNpcId ? 'End ride' : 'End walk'}
+            </button>
+          </div>
+        )}
       <CitizenDialogueModal
         isOpen={isCitizenDialogueOpen && hud.worldMode !== 'warzone'}
         citizenId={activeCitizenId}
@@ -14500,6 +14614,10 @@ export default function App() {
         playerName={playerDisplayName}
         onNpcConversationTurn={handleNpcConversationTurn}
         onGiveNpcOwnedGift={handleGiveNpcOwnedGift}
+        npcTogethernessState={npcTogethernessState}
+        onToggleNpcWalkTogether={handleNpcWalkTogetherToggle}
+        onTriggerNpcPairPose={handleNpcPairPoseTrigger}
+        onToggleNpcRideTogether={handleNpcRideTogetherToggle}
         isRaining={weatherCondition === 'hujan'}
         daytimePhase={
           lightingPreset === 'night'

@@ -13,6 +13,26 @@ import {
 import { createNpcPortraitStudio } from './npcPortraitStudio';
 import type { CitizenId } from './buddiesCitizenRoles';
 import {
+  npcIdToCitizenId,
+  resolveNpcId,
+  type NpcId,
+} from './npcClosenessEngine';
+import {
+  subscribeNpcEmotionReaction,
+  type NpcEmotionReactionDetail,
+} from './npcTextChat';
+import {
+  NPC_TOGETHERNESS_COMMAND_EVENT,
+  computeScooterPassengerTransform,
+  dispatchNpcTogethernessState,
+  getCuratedNpcPairPose,
+  resolveNpcScheduledWaypoint,
+  resolveVerifiedNpcEmotionClip,
+  stepNpcWalkTogether,
+  type NpcTogethernessCommand,
+  type SavedNpcAnchorTransform,
+} from './npcTogetherness';
+import {
   isPlayerRoleBadgeId,
   readStoredProfileIdentity,
   readStoredRoleBadge,
@@ -2734,6 +2754,35 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     let activePairedSession: ActivePairedInteractionSession | null = null;
     let activeQuickPoseState: { id: string; name: string; clipKey: string } | null = null;
     let pairedSessionSeq = 0;
+    let activeWalkTogether: {
+      npcId: NpcId;
+      citizenId: CitizenId;
+      navPath: Array<{ x: number; z: number }>;
+      navWaypointIndex: number;
+      replanTimerSec: number;
+      wasMoving: boolean;
+      walkCycle: number;
+      savedMerchantAnchor?: SavedNpcAnchorTransform;
+    } | null = null;
+    let activeRideTogether: {
+      npcId: NpcId;
+      citizenId: CitizenId;
+      savedMerchantAnchor?: SavedNpcAnchorTransform;
+    } | null = null;
+    const npcEmotionReactions = new Map<
+      CitizenId,
+      { clipName: string; expiresAtMs: number; seq: number }
+    >();
+    let npcEmotionReactionSeq = 0;
+    const emitTogethernessStateSnapshot = () => {
+      const pairNpcId = activePairedSession ? resolveNpcId(activePairedSession.targetId) : null;
+      dispatchNpcTogethernessState({
+        walkingNpcId: activeWalkTogether?.npcId ?? null,
+        pairPoseNpcId: pairNpcId,
+        pairPoseLabel: pairNpcId ? activePairedSession?.animLabel ?? null : null,
+        ridingNpcId: activeRideTogether?.npcId ?? null,
+      });
+    };
     let citizenPortraitState: {
       citizenId: string;
       frontDirX: number;
@@ -5303,6 +5352,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       shouldShowAmbientNpcs: boolean,
       portraitOverride?: { citizenId: string; faceCamYaw: number } | null,
       isFlyInLightweightMode = false,
+      worldClockHour = 12,
     ) => {
       npcAnimLodTick++;
       if (!shouldShowAmbientNpcs) {
@@ -5514,8 +5564,101 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             activePairedSession.partnerKind === 'ambient_npc' &&
             activePairedSession.targetId === npc.preset.id,
         );
+        const isRidingWithPlayer = Boolean(
+          activeRideTogether &&
+            activeRideTogether.citizenId === npc.preset.id &&
+            scooterRideState &&
+            scooterRideState.kind === 'electric_scooter_bike' &&
+            playerUnit &&
+            playerUnit.alive,
+        );
+        const isWalkingWithPlayer = Boolean(
+          activeWalkTogether &&
+            activeWalkTogether.citizenId === npc.preset.id &&
+            playerUnit &&
+            playerUnit.alive &&
+            worldModeRef.current !== 'warzone' &&
+            npcCameraMode === 'none',
+        );
         let stepped: ReturnType<typeof stepCityAmbientNpcSchedule>;
-        if (isPairedWithPlayer && activePairedSession) {
+        if (isRidingWithPlayer && scooterRideState && playerUnit) {
+          const pillionTf = computeScooterPassengerTransform({
+            driverX: playerUnit.x,
+            driverZ: playerUnit.z,
+            driverYaw: scooterRideState.yaw,
+            groundY: scooterRideState.groundY,
+            slopePitchX: scooterRideState.slopePitchX,
+            leanRollZ: scooterRideState.pose?.leanRollZ ?? 0,
+          });
+          stepped = {
+            x: pillionTf.worldX,
+            z: pillionTf.worldZ,
+            yaw: pillionTf.yaw,
+            speedMps: 0,
+            isMoving: false,
+            isSitting: true,
+            activeActivity: 'sit_relax',
+            activeStatusLabel: 'RIDING TOGETHER',
+            activeSeatLiftY: pillionTf.bodyLiftY - 0.178,
+            activeHoldingCafeItemId: null,
+            waypointIdx: npc.waypointIdx,
+            pauseTimer: 0,
+            navPath: [],
+            navWaypointIndex: 0,
+            navPathGoalKey: '',
+            stuckTimer: 0,
+            lastProgressX: pillionTf.worldX,
+            lastProgressZ: pillionTf.worldZ,
+            avoidSide: 0,
+            avoidTimer: 0,
+          };
+        } else if (isWalkingWithPlayer && activeWalkTogether && playerUnit) {
+          const walkRes = stepNpcWalkTogether({
+            npcX: npc.x,
+            npcZ: npc.z,
+            npcYaw: npc.yaw,
+            wasMoving: activeWalkTogether.wasMoving,
+            playerX: playerUnit.x,
+            playerZ: playerUnit.z,
+            playerYaw: playerUnit.yaw,
+            playerSpeedMps: Math.hypot(playerUnit.vx, playerUnit.vz),
+            dt,
+            navGrid: pedestrianNavGrid,
+            navPath: activeWalkTogether.navPath,
+            navWaypointIndex: activeWalkTogether.navWaypointIndex,
+            replanTimerSec: activeWalkTogether.replanTimerSec,
+          });
+          activeWalkTogether.navPath = walkRes.navPath;
+          activeWalkTogether.navWaypointIndex = walkRes.navWaypointIndex;
+          activeWalkTogether.replanTimerSec = walkRes.replanTimerSec;
+          activeWalkTogether.wasMoving = walkRes.isMoving;
+          if (walkRes.shouldEndWalk) {
+            activeWalkTogether = null;
+            emitTogethernessStateSnapshot();
+          }
+          stepped = {
+            x: walkRes.x,
+            z: walkRes.z,
+            yaw: walkRes.yaw,
+            speedMps: walkRes.speedMps,
+            isMoving: walkRes.isMoving,
+            isSitting: false,
+            activeActivity: 'walk_patrol',
+            activeStatusLabel: 'WALKING TOGETHER',
+            activeSeatLiftY: 0,
+            activeHoldingCafeItemId: null,
+            waypointIdx: npc.waypointIdx,
+            pauseTimer: 0,
+            navPath: walkRes.navPath,
+            navWaypointIndex: walkRes.navWaypointIndex,
+            navPathGoalKey: 'walk_together',
+            stuckTimer: 0,
+            lastProgressX: walkRes.x,
+            lastProgressZ: walkRes.z,
+            avoidSide: 0,
+            avoidTimer: 0,
+          };
+        } else if (isPairedWithPlayer && activePairedSession) {
           stepped = {
             x: activePairedSession.anchorX,
             z: activePairedSession.anchorZ,
@@ -5680,8 +5823,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               eastSignalState: eastTrafficSignalState,
             });
 
+          // Deterministic persona schedule lookup (LLM never decides movement):
+          // uses `getNpcPersona(npcId)?.schedule` when populated; falls back to default preset when empty.
+          const scheduledPersonaTarget = resolveNpcScheduledWaypoint(
+            npc.preset.id,
+            worldClockHour,
+          );
+          const effectiveSchedulePreset = scheduledPersonaTarget
+            ? {
+                ...npc.preset,
+                waypoints: [scheduledPersonaTarget.waypoint],
+              }
+            : npc.preset;
+
           stepped = stepCityAmbientNpcSchedule({
-            preset: npc.preset,
+            preset: effectiveSchedulePreset,
             x: npc.x,
             z: npc.z,
             yaw: npc.yaw,
@@ -6016,8 +6172,29 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         );
         const renderYaw = npc.isSitting ? seatFacingYaw : stepped.yaw;
 
+        const isRidingPassengerNow = Boolean(
+          activeRideTogether &&
+            activeRideTogether.citizenId === npc.preset.id &&
+            scooterRideState &&
+            scooterRideState.kind === 'electric_scooter_bike',
+        );
         npc.shadowMesh.visible = !npc.isSitting;
-        npc.bodyGroup.rotation.set(0, renderYaw + Math.PI / 2, 0);
+        if (isRidingPassengerNow && scooterRideState) {
+          npc.bodyGroup.rotation.order = 'YXZ';
+          npc.bodyGroup.rotation.set(
+            scooterRideState.slopePitchX,
+            renderYaw + Math.PI / 2,
+            scooterRideState.pose?.leanRollZ ?? 0,
+          );
+          if (npc.rig.customGlbController?.clips.has('scooter_bike_idle.001')) {
+            npc.rig.activeSocialClipName = 'scooter_bike_idle.001';
+          }
+        } else {
+          npc.bodyGroup.rotation.set(0, renderYaw + Math.PI / 2, 0);
+          if (npc.rig.activeSocialClipName === 'scooter_bike_idle.001') {
+            npc.rig.activeSocialClipName = undefined;
+          }
+        }
         const sitLiftY = npc.isSitting ? npc.activeSeatLiftY + 0.178 : 0;
         npc.bodyGroup.position.y = sitLiftY;
 
@@ -6113,6 +6290,161 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           }
         } else if (npc.rig.customGlbController) {
           npc.rig.customGlbController.lastStepTimeMs = nowMs;
+        }
+      }
+
+      // Merchant NPC (Hana / Kai) walk-together & ride-together updates
+      if (
+        activeRideTogether &&
+        (activeRideTogether.npcId === 'hana' || activeRideTogether.npcId === 'kai') &&
+        scooterRideState &&
+        scooterRideState.kind === 'electric_scooter_bike' &&
+        playerUnit &&
+        playerUnit.alive
+      ) {
+        const mNpc = activeRideTogether.npcId === 'hana' ? lobbyCafeNpc : beachHouseNpc;
+        if (mNpc?.npcGrp && mNpc?.npcRig) {
+          const pillionTf = computeScooterPassengerTransform({
+            driverX: playerUnit.x,
+            driverZ: playerUnit.z,
+            driverYaw: scooterRideState.yaw,
+            groundY: scooterRideState.groundY,
+            slopePitchX: scooterRideState.slopePitchX,
+            leanRollZ: scooterRideState.pose?.leanRollZ ?? 0,
+          });
+          mNpc.npcGrp.position.set(
+            pillionTf.worldX,
+            pillionTf.worldY + pillionTf.bodyLiftY,
+            pillionTf.worldZ,
+          );
+          mNpc.npcGrp.rotation.order = 'YXZ';
+          mNpc.npcGrp.rotation.set(
+            pillionTf.pitchX,
+            pillionTf.yaw + Math.PI / 2,
+            pillionTf.rollZ,
+          );
+          if (mNpc.npcRig.customGlbController?.clips.has('scooter_bike_idle.001')) {
+            mNpc.npcRig.activeSocialClipName = 'scooter_bike_idle.001';
+          }
+          updateCharacterWeaponStance(
+            mNpc.npcRig,
+            'unarmed',
+            0,
+            false,
+            false,
+            0,
+            0,
+            0,
+            'right',
+            0,
+            0,
+            0.76,
+            0,
+            true,
+            'front',
+            1.0,
+            pillionTf.yaw,
+            0,
+            true,
+            false,
+            false,
+            null,
+            'idle',
+            'chair',
+            null,
+          );
+        }
+      } else if (
+        activeWalkTogether &&
+        (activeWalkTogether.npcId === 'hana' || activeWalkTogether.npcId === 'kai') &&
+        playerUnit &&
+        playerUnit.alive &&
+        worldModeRef.current !== 'warzone' &&
+        npcCameraMode === 'none'
+      ) {
+        const mNpc = activeWalkTogether.npcId === 'hana' ? lobbyCafeNpc : beachHouseNpc;
+        if (mNpc?.npcGrp && mNpc?.npcRig) {
+          const curYaw = mNpc.npcGrp.rotation.y - Math.PI / 2;
+          const walkRes = stepNpcWalkTogether({
+            npcX: mNpc.npcGrp.position.x,
+            npcZ: mNpc.npcGrp.position.z,
+            npcYaw: curYaw,
+            wasMoving: activeWalkTogether.wasMoving,
+            playerX: playerUnit.x,
+            playerZ: playerUnit.z,
+            playerYaw: playerUnit.yaw,
+            playerSpeedMps: Math.hypot(playerUnit.vx, playerUnit.vz),
+            dt,
+            navGrid: pedestrianNavGrid,
+            navPath: activeWalkTogether.navPath,
+            navWaypointIndex: activeWalkTogether.navWaypointIndex,
+            replanTimerSec: activeWalkTogether.replanTimerSec,
+          });
+          activeWalkTogether.navPath = walkRes.navPath;
+          activeWalkTogether.navWaypointIndex = walkRes.navWaypointIndex;
+          activeWalkTogether.replanTimerSec = walkRes.replanTimerSec;
+          activeWalkTogether.wasMoving = walkRes.isMoving;
+          if (walkRes.isMoving) {
+            activeWalkTogether.walkCycle += dt * Math.max(1.2, walkRes.speedMps) * 3.1;
+          }
+          if (walkRes.shouldEndWalk) {
+            if (activeWalkTogether.savedMerchantAnchor) {
+              const a = activeWalkTogether.savedMerchantAnchor;
+              mNpc.npcGrp.position.set(a.x, a.y, a.z);
+              mNpc.npcGrp.rotation.set(0, a.yaw, 0);
+            }
+            activeWalkTogether = null;
+            emitTogethernessStateSnapshot();
+          } else {
+            const groundY = getTerrainElevation(walkRes.x, walkRes.z);
+            mNpc.npcGrp.position.set(walkRes.x, groundY, walkRes.z);
+            mNpc.npcGrp.rotation.set(0, walkRes.yaw + Math.PI / 2, 0);
+            updateCharacterWeaponStance(
+              mNpc.npcRig,
+              'unarmed',
+              activeWalkTogether.walkCycle,
+              walkRes.isMoving,
+              false,
+              0,
+              0,
+              0,
+              'right',
+              0,
+              0,
+              0.76,
+              0,
+              true,
+              'front',
+              1.0,
+              walkRes.yaw,
+              walkRes.speedMps,
+              false,
+              false,
+              false,
+              null,
+              'idle',
+              'chair',
+              null,
+            );
+          }
+        }
+      }
+
+      // Expire timed chat/gift emotion reactions cleanly so rigs return to expressive idle
+      if (npcEmotionReactions.size > 0) {
+        for (const [citizenId, reaction] of npcEmotionReactions.entries()) {
+          if (nowMs < reaction.expiresAtMs) continue;
+          npcEmotionReactions.delete(citizenId);
+          const rig =
+            citizenId === 'npc_hana'
+              ? lobbyCafeNpc?.npcRig
+              : citizenId === 'npc_kai'
+                ? beachHouseNpc?.npcRig
+                : cityAmbientNpcs.find((n) => n.preset.id === citizenId)?.rig ??
+                  (citizenId === 'citizen_mira' ? cafeMiraRig : null);
+          if (rig && rig.activeSocialClipName === reaction.clipName) {
+            rig.activeSocialClipName = undefined;
+          }
         }
       }
     };
@@ -12292,6 +12624,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             detail: { active: false, status: 'stopped' },
           }),
         );
+        emitTogethernessStateSnapshot();
       }
     };
 
@@ -12392,6 +12725,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           },
         }),
       );
+      emitTogethernessStateSnapshot();
     };
     let cachedStaticWorldStructures: StaticWorldStructureObb[] | null = null;
     let cachedStaticWorldStructuresKey = '';
@@ -16496,6 +16830,35 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         playerUnit.isSitting = false;
         playerUnit.bodyGroup.position.set(0, 0, 0);
         playerUnit.bodyGroup.rotation.set(0, playerUnit.yaw + Math.PI / 2, 0, 'YXZ');
+      }
+      if (activeRideTogether) {
+        const endingRide = activeRideTogether;
+        activeRideTogether = null;
+        if (
+          (endingRide.npcId === 'hana' || endingRide.npcId === 'kai') &&
+          endingRide.savedMerchantAnchor
+        ) {
+          const mNpc = endingRide.npcId === 'hana' ? lobbyCafeNpc : beachHouseNpc;
+          if (mNpc?.npcGrp) {
+            const a = endingRide.savedMerchantAnchor;
+            mNpc.npcGrp.position.set(a.x, a.y, a.z);
+            mNpc.npcGrp.rotation.set(0, a.yaw, 0);
+          }
+          if (mNpc?.npcRig?.activeSocialClipName === 'scooter_bike_idle.001') {
+            mNpc.npcRig.activeSocialClipName = undefined;
+          }
+        } else {
+          const ambientPassenger = cityAmbientNpcs.find(
+            (n) => n.preset.id === endingRide.citizenId,
+          );
+          if (ambientPassenger) {
+            ambientPassenger.bodyGroup.rotation.set(0, ambientPassenger.yaw + Math.PI / 2, 0);
+            if (ambientPassenger.rig.activeSocialClipName === 'scooter_bike_idle.001') {
+              ambientPassenger.rig.activeSocialClipName = undefined;
+            }
+          }
+        }
+        emitTogethernessStateSnapshot();
       }
       window.dispatchEvent(new CustomEvent('scooter-dismounted'));
     };
@@ -33090,6 +33453,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             }
           : null,
         npcCameraMode === 'fly_to_plaza',
+        currentWeatherEnv.timeOfDayHours,
       );
 
       // 3D-FISH. REAL-TIME CURVED-PLANET NYLON LINE, MINIATURE FLOAT & 3D LANDING LEAP:
@@ -38958,11 +39322,217 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       captureKioskCardThumbnails();
     }, 220);
 
+    const resolveNamedNpcRigForHook = (citizenId: CitizenId) => {
+      if (citizenId === 'npc_hana') return lobbyCafeNpc?.npcRig ?? null;
+      if (citizenId === 'npc_kai') return beachHouseNpc?.npcRig ?? null;
+      if (citizenId === 'citizen_mira' && npcCameraMode === 'cafe_interior' && cafeMiraRig) {
+        return cafeMiraRig;
+      }
+      return cityAmbientNpcs.find((n) => n.preset.id === citizenId)?.rig ?? null;
+    };
+
+    const endWalkTogetherNow = () => {
+      if (!activeWalkTogether) return;
+      const prev = activeWalkTogether;
+      activeWalkTogether = null;
+      if ((prev.npcId === 'hana' || prev.npcId === 'kai') && prev.savedMerchantAnchor) {
+        const mNpc = prev.npcId === 'hana' ? lobbyCafeNpc : beachHouseNpc;
+        if (mNpc?.npcGrp) {
+          const a = prev.savedMerchantAnchor;
+          mNpc.npcGrp.position.set(a.x, a.y, a.z);
+          mNpc.npcGrp.rotation.set(0, a.yaw, 0);
+        }
+      }
+      emitTogethernessStateSnapshot();
+    };
+
+    const endRideTogetherNow = () => {
+      if (!activeRideTogether) return;
+      const prev = activeRideTogether;
+      activeRideTogether = null;
+      if ((prev.npcId === 'hana' || prev.npcId === 'kai') && prev.savedMerchantAnchor) {
+        const mNpc = prev.npcId === 'hana' ? lobbyCafeNpc : beachHouseNpc;
+        if (mNpc?.npcGrp) {
+          const a = prev.savedMerchantAnchor;
+          mNpc.npcGrp.position.set(a.x, a.y, a.z);
+          mNpc.npcGrp.rotation.set(0, a.yaw, 0);
+        }
+        if (mNpc?.npcRig?.activeSocialClipName === 'scooter_bike_idle.001') {
+          mNpc.npcRig.activeSocialClipName = undefined;
+        }
+      } else {
+        const ambientPassenger = cityAmbientNpcs.find((n) => n.preset.id === prev.citizenId);
+        if (ambientPassenger) {
+          ambientPassenger.bodyGroup.rotation.set(0, ambientPassenger.yaw + Math.PI / 2, 0);
+          if (ambientPassenger.rig.activeSocialClipName === 'scooter_bike_idle.001') {
+            ambientPassenger.rig.activeSocialClipName = undefined;
+          }
+        }
+      }
+      emitTogethernessStateSnapshot();
+    };
+
+    const unsubscribeNpcEmotion = subscribeNpcEmotionReaction(
+      (detail: NpcEmotionReactionDetail) => {
+        const rig = resolveNamedNpcRigForHook(detail.citizenId);
+        if (!rig) return;
+        const plan = resolveVerifiedNpcEmotionClip({
+          requestedClipName: detail.clipName,
+          availableRigClips: rig.customGlbController?.clips,
+          idleOverrideClip: rig.idleClipOverrideName,
+        });
+        const seq = ++npcEmotionReactionSeq;
+        if (plan.kind === 'expressive_idle') {
+          npcEmotionReactions.delete(detail.citizenId);
+          if (
+            rig.activeSocialClipName &&
+            rig.activeSocialClipName !== 'scooter_bike_idle.001' &&
+            !activePairedSession
+          ) {
+            rig.activeSocialClipName = undefined;
+          }
+          return;
+        }
+        if (plan.kind === 'rig_clip') {
+          rig.activeSocialClipName = plan.clipName;
+          resetBuddyRigActionTime(rig, plan.clipName);
+          npcEmotionReactions.set(detail.citizenId, {
+            clipName: plan.clipName,
+            expiresAtMs: performance.now() + 3200,
+            seq,
+          });
+          return;
+        }
+        if (plan.kind === 'external_glb' && plan.externalGlbUrl) {
+          void loadAndAttachExternalStyleAnimationClip(
+            rig,
+            plan.externalGlbUrl,
+            plan.clipName,
+          ).then((clip) => {
+            if (!clip || isDisposed) return;
+            if (activePairedSession || activeRideTogether?.citizenId === detail.citizenId) return;
+            rig.activeSocialClipName = clip.name;
+            resetBuddyRigActionTime(rig, clip.name);
+            npcEmotionReactions.set(detail.citizenId, {
+              clipName: clip.name,
+              expiresAtMs: performance.now() + 3200,
+              seq,
+            });
+          });
+        }
+      },
+    );
+
+    const onNpcTogethernessCommand = (ev: Event) => {
+      const cmd = (ev as CustomEvent<NpcTogethernessCommand>).detail;
+      if (!cmd || !playerUnit || !playerUnit.alive) return;
+
+      if (cmd.type === 'end_walk') {
+        endWalkTogetherNow();
+        return;
+      }
+      if (cmd.type === 'stop_pair_pose') {
+        stopActivePairedInteraction(true);
+        return;
+      }
+      if (cmd.type === 'end_ride') {
+        endRideTogetherNow();
+        return;
+      }
+
+      if (cmd.type === 'start_walk') {
+        if (worldModeRef.current === 'warzone' || npcCameraMode !== 'none') return;
+        endRideTogetherNow();
+        stopActivePairedInteraction(true);
+        const citizenId = npcIdToCitizenId(cmd.npcId);
+        let savedMerchantAnchor: SavedNpcAnchorTransform | undefined;
+        if (cmd.npcId === 'hana' || cmd.npcId === 'kai') {
+          const mNpc = cmd.npcId === 'hana' ? lobbyCafeNpc : beachHouseNpc;
+          if (mNpc?.npcGrp) {
+            savedMerchantAnchor = {
+              x: mNpc.npcGrp.position.x,
+              y: mNpc.npcGrp.position.y,
+              z: mNpc.npcGrp.position.z,
+              yaw: mNpc.npcGrp.rotation.y,
+            };
+          }
+        }
+        activeWalkTogether = {
+          npcId: cmd.npcId,
+          citizenId,
+          navPath: [],
+          navWaypointIndex: 0,
+          replanTimerSec: 0,
+          wasMoving: false,
+          walkCycle: 0,
+          savedMerchantAnchor,
+        };
+        emitTogethernessStateSnapshot();
+        return;
+      }
+
+      if (cmd.type === 'start_pair_pose') {
+        endWalkTogetherNow();
+        endRideTogetherNow();
+        const citizenId = npcIdToCitizenId(cmd.npcId);
+        const pose = getCuratedNpcPairPose(cmd.poseId);
+        const isMerchant = cmd.npcId === 'hana' || cmd.npcId === 'kai';
+        const targetName =
+          cmd.npcId.charAt(0).toUpperCase() + cmd.npcId.slice(1);
+        void beginSynchronizedPairedPose({
+          partnerKind: isMerchant ? 'merchant_npc' : 'ambient_npc',
+          targetId: citizenId,
+          targetName,
+          animId: pose.id,
+          animLabel: pose.label,
+          initiateGlbUrl: pose.initiateGlbUrl,
+          receiveGlbUrl: pose.receiveGlbUrl,
+          role: 'initiate',
+          anchorX: playerUnit.x,
+          anchorZ: playerUnit.z,
+          anchorYaw: playerUnit.yaw,
+        });
+        return;
+      }
+
+      if (cmd.type === 'start_ride') {
+        if (worldModeRef.current === 'warzone' || npcCameraMode !== 'none') return;
+        endWalkTogetherNow();
+        stopActivePairedInteraction(true);
+        if (!scooterRideState || scooterRideState.kind !== 'electric_scooter_bike') {
+          handleEquipScooter('electric_scooter_bike');
+        }
+        if (!scooterRideState || scooterRideState.kind !== 'electric_scooter_bike') return;
+        const citizenId = npcIdToCitizenId(cmd.npcId);
+        let savedMerchantAnchor: SavedNpcAnchorTransform | undefined;
+        if (cmd.npcId === 'hana' || cmd.npcId === 'kai') {
+          const mNpc = cmd.npcId === 'hana' ? lobbyCafeNpc : beachHouseNpc;
+          if (mNpc?.npcGrp) {
+            savedMerchantAnchor = {
+              x: mNpc.npcGrp.position.x,
+              y: mNpc.npcGrp.position.y,
+              z: mNpc.npcGrp.position.z,
+              yaw: mNpc.npcGrp.rotation.y,
+            };
+          }
+        }
+        activeRideTogether = {
+          npcId: cmd.npcId,
+          citizenId,
+          savedMerchantAnchor,
+        };
+        emitTogethernessStateSnapshot();
+      }
+    };
+    window.addEventListener(NPC_TOGETHERNESS_COMMAND_EVENT, onNpcTogethernessCommand);
+
     emitHudImmediately();
     rafId = requestAnimationFrame(animate);
 
     return () => {
       isDisposed = true;
+      unsubscribeNpcEmotion();
+      window.removeEventListener(NPC_TOGETHERNESS_COMMAND_EVENT, onNpcTogethernessCommand);
       cancelAnimationFrame(rafId);
       cancelAnimationFrame(staggeredUpgradeRafId);
       window.clearTimeout(softwareGlTimerId);
