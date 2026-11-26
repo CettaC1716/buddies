@@ -9743,6 +9743,7 @@ export default function App() {
         onGameOver={handleGameOver}
         onTogglePause={handleTogglePause}
         onPreloadSceneReady={handlePreloadSceneReady}
+        playerSocialGraph={playerSocialGraph}
       />
 
       {/* Unified Blocking Preload Gate (0% to 100%) */}

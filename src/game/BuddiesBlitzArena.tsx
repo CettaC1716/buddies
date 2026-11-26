@@ -34,6 +34,11 @@ import {
   stepNpcApproachVehicleForRide,
 } from './npcTogethernessSession';
 import {
+  FRIEND_WORLD_RING_SPEC,
+  resolveRemoteAvatarFriendRing,
+} from './friendWorldRing';
+import type { PlayerSocialGraph } from './buddiesSocialGraph';
+import {
   createIdleNpcLingerState,
   resetNpcLingerTimer,
   stepNpcPostInteractionLinger,
@@ -724,6 +729,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
   onGameOver,
   onTogglePause,
   onPreloadSceneReady,
+  playerSocialGraph,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const gameStateRef = useRef<GameState>(gameState);
@@ -735,6 +741,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
   const onPreloadSceneReadyRef = useRef(onPreloadSceneReady);
   const lightingPresetRef = useRef<LightingPresetKey>(lightingPreset);
   const cameraFovModeRef = useRef<'webgl35' | 'ortho18'>(cameraFovMode);
+  const playerSocialGraphRef = useRef<PlayerSocialGraph | undefined>(playerSocialGraph);
+
+  useEffect(() => {
+    playerSocialGraphRef.current = playerSocialGraph;
+  }, [playerSocialGraph]);
 
   useEffect(() => {
     onPreloadSceneReadyRef.current = onPreloadSceneReady;
@@ -1227,6 +1238,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       teamRing: THREE.Mesh;
       ringMat: THREE.MeshBasicMaterial;
       innerFootDiscMat: THREE.MeshBasicMaterial;
+      friendRing: THREE.Mesh;
+      friendRingMat: THREE.MeshBasicMaterial;
       overheadCrateGroup: THREE.Group;
       nameplate: ReturnType<typeof createGlassmorphicNameplate>;
       saluteSign: RemoteSpeechBubbleBillboard;
@@ -12400,6 +12413,34 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       teamRing.scale.setScalar(0.845);
       root.add(teamRing);
 
+      // WS16: Mutual-friend blue radial ring at avatar base (same ring language as green selection ring)
+      const friendRingMat = new THREE.MeshBasicMaterial({
+        color: FRIEND_WORLD_RING_SPEC.colorHex,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: FRIEND_WORLD_RING_SPEC.opacity,
+        depthWrite: false,
+      });
+      const friendRing = new THREE.Mesh(
+        new THREE.RingGeometry(
+          FRIEND_WORLD_RING_SPEC.innerRadius,
+          FRIEND_WORLD_RING_SPEC.outerRadius,
+          FRIEND_WORLD_RING_SPEC.segments,
+        ),
+        friendRingMat,
+      );
+      friendRing.name = 'remotePlayerFriendRing';
+      friendRing.rotation.x = -Math.PI / 2;
+      friendRing.position.y = FRIEND_WORLD_RING_SPEC.groundOffsetY;
+      friendRing.visible = resolveRemoteAvatarFriendRing({
+        isLocalPlayer: false,
+        socialGraph: playerSocialGraphRef.current,
+        peerNearAccountId: peer.nearAccountId,
+        peerSessionId: peer.sessionId,
+        peerDisplayName: peer.displayName,
+      }).visible;
+      root.add(friendRing);
+
       const bodyGroup = new THREE.Group();
       bodyGroup.rotation.order = 'YXZ';
       bodyGroup.scale.setScalar(0.98);
@@ -12471,6 +12512,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         teamRing,
         ringMat,
         innerFootDiscMat,
+        friendRing,
+        friendRingMat,
         overheadCrateGroup,
         nameplate,
         saluteSign,
@@ -12537,6 +12580,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       av.teamRing.geometry.dispose();
       av.ringMat.dispose();
       av.innerFootDiscMat.dispose();
+      av.friendRing.geometry.dispose();
+      av.friendRingMat.dispose();
       const npMat = av.nameplate.sprite.material as THREE.MeshBasicMaterial;
       npMat.map?.dispose();
       npMat.dispose();
@@ -31774,6 +31819,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           }
           av.peer = peer;
           av.root.visible = true;
+
+          // WS16: Live mutual-friend blue radial ring (yields to green selection ring when selected)
+          const isTargetSelected =
+            characterSelectionRing.visible && selectedCharacterTarget?.root === av.root;
+          av.friendRing.visible =
+            !isTargetSelected &&
+            resolveRemoteAvatarFriendRing({
+              isLocalPlayer: false,
+              socialGraph: playerSocialGraphRef.current,
+              peerNearAccountId: peer.nearAccountId,
+              peerSessionId: peer.sessionId,
+              peerDisplayName: peer.displayName,
+            }).visible;
 
           if (peer.scooterKind !== av.scooterKind) {
             if (av.scooterHandle) {

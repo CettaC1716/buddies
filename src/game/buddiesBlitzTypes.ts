@@ -264,6 +264,8 @@ export interface HudSnapshot {
   clickToWalk?: ClickToWalkHudSummary;
 }
 
+import type { PlayerSocialGraph } from './buddiesSocialGraph';
+
 export interface BuddiesBlitzArenaProps {
   gameState: GameState;
   playMode: PlayMode;
@@ -278,6 +280,8 @@ export interface BuddiesBlitzArenaProps {
   onGameOver: (outcome: 'victory' | 'defeat', finalSnapshot: HudSnapshot) => void;
   onTogglePause: () => void;
   onPreloadSceneReady?: () => void;
+  /** Live source-of-truth friendship graph for WS16 mutual-friend blue radial ring. */
+  playerSocialGraph?: PlayerSocialGraph;
 }
 
 export interface WorldCrate {
