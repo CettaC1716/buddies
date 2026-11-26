@@ -38,6 +38,12 @@ import {
 } from '../game/buddiesProfileIdentity';
 import type { NearbyEntityUser } from './SocialChatModal';
 import { useAdaptiveViewport } from '../lib/useAdaptiveViewport';
+import { TogethernessDockIcon } from './TogethernessDockIcon';
+import { resolveNpcId } from '../game/npcClosenessEngine';
+import {
+  TOGETHERNESS_ACTION_LABELS,
+  type PendingDockChip,
+} from '../game/npcTogethernessRegistry';
 
 export interface HudBottomAvatarDockProps {
   playerDisplayName: string;
@@ -55,6 +61,11 @@ export interface HudBottomAvatarDockProps {
   hasOwnedPairedAnimations?: boolean;
   isPairedModeActive?: boolean;
   isNpcChatSessionActive?: boolean;
+  /** WS27: Live pending togetherness action chip negotiated in chat, rendered in this NPC's profile dock. */
+  pendingTogethernessChip?: PendingDockChip | null;
+  /** True on first appearance of this category so a one-time small label accompanies the icon. */
+  showPendingChipLabel?: boolean;
+  onTapPendingTogethernessChip?: () => void;
   onToggleTargetInteraction?: () => void;
   onClearTargetEntity?: () => void;
   onCycleTargetEntity?: () => void;
@@ -163,6 +174,9 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
   hasOwnedPairedAnimations = false,
   isPairedModeActive = false,
   isNpcChatSessionActive = false,
+  pendingTogethernessChip = null,
+  showPendingChipLabel = false,
+  onTapPendingTogethernessChip,
   onToggleTargetInteraction,
   onClearTargetEntity,
   onCycleTargetEntity,
@@ -203,8 +217,16 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
   }, []);
 
   const hasTarget = Boolean(targetEntity);
+  const matchingPendingChip: PendingDockChip | null =
+    targetEntity &&
+    targetEntity.isNpc &&
+    pendingTogethernessChip &&
+    resolveNpcId(String(targetEntity.id)) === pendingTogethernessChip.npcId
+      ? pendingTogethernessChip
+      : null;
   const showTargetInteractionBar = Boolean(
-    targetEntity && (isTargetInteractionOpen || isPairedModeActive),
+    targetEntity &&
+      (isTargetInteractionOpen || isPairedModeActive || Boolean(matchingPendingChip)),
   );
 
   const defaultSelfPortraitUrl =
@@ -398,6 +420,29 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                   <HeartHandshake className="w-3.5 h-3.5 stroke-[2.2]" />
                 </button>
               )}
+            {matchingPendingChip && onTapPendingTogethernessChip && (
+              <button
+                type="button"
+                data-target-action="togetherness_chip"
+                data-npc-dock-chip={matchingPendingChip.category}
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  onTapPendingTogethernessChip();
+                }}
+                aria-label={TOGETHERNESS_ACTION_LABELS[matchingPendingChip.category]}
+                title={TOGETHERNESS_ACTION_LABELS[matchingPendingChip.category]}
+                className={`h-7 ${
+                  showPendingChipLabel ? 'px-2 gap-1' : 'w-7'
+                } rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 text-white border border-emerald-200/70 shadow-[0_0_12px_rgba(16,185,129,0.55)] ring-1 ring-emerald-200/60 flex items-center justify-center shrink-0 cursor-pointer active:scale-95`}
+              >
+                <TogethernessDockIcon kind={matchingPendingChip.category} className="w-3.5 h-3.5 shrink-0" />
+                {showPendingChipLabel && (
+                  <span className="text-[9.5px] font-semibold whitespace-nowrap">
+                    {TOGETHERNESS_ACTION_LABELS[matchingPendingChip.category]}
+                  </span>
+                )}
+              </button>
+            )}
             <button
               type="button"
               data-target-action="close"
@@ -836,6 +881,31 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                       <HeartHandshake className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
                     </button>
                   )}
+
+                {/* 5. WS27: Pending Togetherness Action Chip (negotiated in chat, lives in NPC profile dock) */}
+                {matchingPendingChip && onTapPendingTogethernessChip && (
+                  <button
+                    type="button"
+                    data-target-action="togetherness_chip"
+                    data-npc-dock-chip={matchingPendingChip.category}
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      onTapPendingTogethernessChip();
+                    }}
+                    title={TOGETHERNESS_ACTION_LABELS[matchingPendingChip.category]}
+                    aria-label={TOGETHERNESS_ACTION_LABELS[matchingPendingChip.category]}
+                    className={`h-9 ${
+                      showPendingChipLabel ? 'px-2.5 gap-1.5' : 'w-9'
+                    } rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 hover:brightness-110 border border-emerald-200/75 text-white shadow-[0_0_16px_rgba(16,185,129,0.55)] ring-1 ring-emerald-200/60 flex items-center justify-center shrink-0 transition-all active:scale-95 cursor-pointer`}
+                  >
+                    <TogethernessDockIcon kind={matchingPendingChip.category} className="w-4 h-4 shrink-0" />
+                    {showPendingChipLabel && (
+                      <span className="text-[10px] font-semibold whitespace-nowrap">
+                        {TOGETHERNESS_ACTION_LABELS[matchingPendingChip.category]}
+                      </span>
+                    )}
+                  </button>
+                )}
               </div>
 
               {/* Return to Quick Items */}

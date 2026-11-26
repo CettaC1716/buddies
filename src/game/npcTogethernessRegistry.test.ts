@@ -6,7 +6,10 @@ import {
   type NpcClosenessStore,
   type NpcId,
 } from './npcClosenessEngine';
-import { stepNpcApproachVehicleForRide } from './npcTogethernessSession';
+import {
+  canStartDirectPairedPoseForTarget,
+  stepNpcApproachVehicleForRide,
+} from './npcTogethernessSession';
 import {
   CATEGORY_COOLDOWN_MS,
   DOCK_CHIP_EXPIRY_MS,
@@ -18,10 +21,14 @@ import {
   detectProgressiveChatIntent,
   evaluateProgressiveCategoryVerdict,
   filterPairedItemsForAcceptedCategory,
+  formatEmptyCategoryPickerMessage,
   getPairedCategoryCounts,
+  isPairedTargetStillInProximity,
   isPendingDockChipExpired,
   recordCompletedCategorySession,
+  resolveLiveNpcTargetEntity,
   resolvePairedAnimationCategory,
+  type PairedPoseCategory,
 } from './npcTogethernessRegistry';
 import type { WardrobeCatalogItem } from './buddiesWardrobeStudioRules';
 
@@ -295,4 +302,183 @@ test('Acceptance 5 + Addendum: Phone chat blocks all togetherness chips; pending
     }),
     true,
   );
+});
+
+test('WS27 acceptance: chip survives closing chat in NPC profile dock, expires on 3 turns / 90s / context break', () => {
+  const t0 = Date.UTC(2026, 10, 27, 4, 15, 0);
+  const store = buildStoreAtScore('tari', 88);
+  const pacing = createEmptyNpcPacingStore();
+
+  // Negotiate ride beside Tari
+  const intent = detectProgressiveChatIntent('yuk naik motorku keliling');
+  assert.equal(intent, 'ride');
+  const verdict = evaluateProgressiveCategoryVerdict({
+    store,
+    pacingStore: pacing,
+    npcId: 'tari',
+    category: 'ride',
+    isInPerson: true,
+    playerScooterKind: 'electric_scooter_bike',
+    nowMs: t0,
+  });
+  assert.equal(verdict.accepted, true);
+
+  const chip = createPendingDockChip('tari', 'ride', t0);
+
+  // Closing the chat modal does NOT kill the chip in Tari's profile dock
+  assert.equal(
+    isPendingDockChipExpired(chip, {
+      nowMs: t0 + 5_000,
+      isChatOpen: false,
+      isInPerson: true,
+      isInProximity: true,
+      activeNpcId: null,
+      playerScooterKind: 'electric_scooter_bike',
+    }),
+    false,
+  );
+
+  // Leaving proximity or switching to another NPC expires the chip
+  assert.equal(
+    isPendingDockChipExpired(chip, {
+      nowMs: t0 + 5_000,
+      isChatOpen: false,
+      isInPerson: true,
+      isInProximity: false,
+      activeNpcId: null,
+      playerScooterKind: 'electric_scooter_bike',
+    }),
+    true,
+  );
+  assert.equal(
+    isPendingDockChipExpired(chip, {
+      nowMs: t0 + 5_000,
+      isChatOpen: true,
+      isInPerson: true,
+      isInProximity: true,
+      activeNpcId: 'hana',
+      playerScooterKind: 'electric_scooter_bike',
+    }),
+    true,
+  );
+
+  // 3 other-topic turns silently expire the chip
+  let c: ReturnType<typeof createPendingDockChip> | null = chip;
+  c = advancePendingChipOtherTurn(c);
+  assert.ok(c);
+  c = advancePendingChipOtherTurn(c);
+  assert.ok(c);
+  c = advancePendingChipOtherTurn(c);
+  assert.equal(c, null);
+});
+
+test('WS26 acceptance & diagnostic chain: real target entity, empty-category copy, full hug + kiss chain at trusted band', () => {
+  const t0 = Date.UTC(2026, 10, 27, 4, 20, 0);
+  const store = buildStoreAtScore('tari', 90); // trusted band
+  const pacing = createEmptyNpcPacingStore();
+
+  const liveNearbyUsers = [
+    { id: 'citizen_tari', name: 'Tari', distance: 2.1, isNpc: true, gender: 'female' as const },
+    { id: 'npc_hana', name: 'Hana', distance: 3.4, isNpc: true, isMerchant: true, gender: 'female' as const },
+  ];
+
+  // Defect 1: resolveLiveNpcTargetEntity returns the exact live nearby entity (never fabricated)
+  const resolvedTari = resolveLiveNpcTargetEntity({
+    npcId: 'tari',
+    nearbyUsers: liveNearbyUsers,
+  });
+  assert.strictEqual(resolvedTari, liveNearbyUsers[0]);
+  assert.equal(
+    isPairedTargetStillInProximity({ target: resolvedTari, nearbyUsers: liveNearbyUsers }),
+    true,
+  );
+
+  // Alias id (npc_hana in nearbyUsers vs npc_cafe alias) still resolves real live entity & survives guard
+  const resolvedHana = resolveLiveNpcTargetEntity({
+    npcId: 'hana',
+    nearbyUsers: liveNearbyUsers,
+  });
+  assert.strictEqual(resolvedHana, liveNearbyUsers[1]);
+  assert.equal(
+    isPairedTargetStillInProximity({
+      target: { id: 'npc_cafe', isNpc: true },
+      nearbyUsers: liveNearbyUsers,
+    }),
+    true,
+  );
+
+  // Defect 2: Empty-category copy speaks plainly
+  assert.equal(
+    formatEmptyCategoryPickerMessage('hug'),
+    "You don't have any Hug animations yet — you can get them from the Animations catalog.",
+  );
+  assert.equal(
+    formatEmptyCategoryPickerMessage('kiss'),
+    "You don't have any Kiss animations yet — you can get them from the Animations catalog.",
+  );
+
+  // Full link-by-link chain for hug & kiss with test account at trusted band owning 1 hug + 1 kiss item
+  const ownedItems: WardrobeCatalogItem[] = [
+    { id: 'anim_paired_61a88358_interpose_hugs01', name: 'Warm Hug', subtitle: 'Hug' } as WardrobeCatalogItem,
+    { id: 'anim_paired_b49a5c2c_interpose_affection02', name: 'Sweet Affection', subtitle: 'Kiss' } as WardrobeCatalogItem,
+  ];
+
+  const categoriesToVerify: ReadonlyArray<{ category: PairedPoseCategory; prompt: string; expectedId: string }> = [
+    { category: 'hug', prompt: 'can I hug you?', expectedId: 'anim_paired_61a88358_interpose_hugs01' },
+    { category: 'kiss', prompt: 'can I kiss you?', expectedId: 'anim_paired_b49a5c2c_interpose_affection02' },
+  ];
+
+  for (const { category, prompt, expectedId } of categoriesToVerify) {
+    // 1. Intent detected
+    assert.equal(detectProgressiveChatIntent(prompt), category);
+    // 2. Verdict accepted
+    const verdict = evaluateProgressiveCategoryVerdict({
+      store,
+      pacingStore: pacing,
+      npcId: 'tari',
+      category,
+      isInPerson: true,
+      playerScooterKind: null,
+      nowMs: t0,
+    });
+    assert.equal(verdict.accepted, true);
+    // 3. Chip created & live in NPC profile dock
+    const chip = createPendingDockChip('tari', category, t0);
+    assert.equal(
+      isPendingDockChipExpired(chip, {
+        nowMs: t0 + 1000,
+        isChatOpen: false,
+        isInPerson: true,
+        isInProximity: true,
+        activeNpcId: null,
+        playerScooterKind: null,
+      }),
+      false,
+    );
+    // 4. Chip tap resolves real target entity & survives proximity guard
+    const target = resolveLiveNpcTargetEntity({
+      npcId: chip.npcId,
+      nearbyUsers: liveNearbyUsers,
+    });
+    assert.equal(isPairedTargetStillInProximity({ target, nearbyUsers: liveNearbyUsers }), true);
+    // 5. Picker lists filtered items for accepted category only
+    const filtered = filterPairedItemsForAcceptedCategory({
+      ownedPairedItems: ownedItems,
+      category,
+      currentBand: 'trusted',
+    });
+    assert.deepEqual(
+      filtered.map((i) => i.id),
+      [expectedId],
+    );
+    // 6. Item selected -> paired pose guard passes
+    assert.equal(
+      canStartDirectPairedPoseForTarget({
+        store,
+        targetId: target.id,
+        nowMs: t0,
+      }),
+      true,
+    );
+  }
 });

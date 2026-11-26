@@ -30,17 +30,11 @@ import {
   type NpcTogethernessStateSnapshot,
 } from '../game/npcTogetherness';
 import {
-  DOCK_SEEN_LABELS_STORAGE_KEY,
-  TOGETHERNESS_ACTION_LABELS,
-  advancePendingChipOtherTurn,
   createEmptyNpcPacingStore,
-  createPendingDockChip,
   detectProgressiveChatIntent,
   evaluateProgressiveCategoryVerdict,
-  isPendingDockChipExpired,
   type NpcPacingStore,
   type PairedPoseCategory,
-  type PendingDockChip,
   type TogethernessActionCategory,
 } from '../game/npcTogethernessRegistry';
 import { TogethernessDockIcon } from './TogethernessDockIcon';
@@ -135,6 +129,11 @@ export interface CitizenDialogueModalProps {
   ) => void | { accepted: boolean; replyLine?: string; ended?: boolean };
   onOpenCategoryPosePicker?: (npcId: NpcId, category: PairedPoseCategory) => void;
   onRecordTogethernessSession?: (npcId: NpcId, category: TogethernessActionCategory) => void;
+  /** WS27: Lifted pending dock chip callbacks owned by App (rendered in the world NPC profile dock). */
+  onAcceptTogethernessCategory?: (npcId: NpcId, category: TogethernessActionCategory) => void;
+  onDeclineTogethernessCategory?: (npcId: NpcId, category: TogethernessActionCategory) => void;
+  onOtherTopicChatTurn?: (npcId: NpcId) => void;
+  onClearPendingDockChip?: (npcId: NpcId) => void;
   onVisitDirectoryCitizen: (profile: CitizenProfile) => void;
 }
 
@@ -177,8 +176,12 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   onToggleNpcWalkTogether,
   onTriggerNpcPairPose,
   onToggleNpcRideTogether,
-  onOpenCategoryPosePicker,
-  onRecordTogethernessSession,
+  onOpenCategoryPosePicker: _onOpenCategoryPosePicker,
+  onRecordTogethernessSession: _onRecordTogethernessSession,
+  onAcceptTogethernessCategory,
+  onDeclineTogethernessCategory,
+  onOtherTopicChatTurn,
+  onClearPendingDockChip,
   onVisitDirectoryCitizen,
 }) => {
   useNpcPortraitVersion();
@@ -187,17 +190,6 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   const [npcFullText, setNpcFullText] = useState<string>('');
   const [npcTypedText, setNpcTypedText] = useState<string>('');
   const [isNpcThinking, setIsNpcThinking] = useState<boolean>(false);
-  const [pendingDockChip, setPendingDockChip] = useState<PendingDockChip | null>(null);
-  const [seenDockChipLabels, setSeenDockChipLabels] = useState<string[]>(() => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const raw = window.localStorage.getItem(DOCK_SEEN_LABELS_STORAGE_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
-    } catch {
-      return [];
-    }
-  });
   const effectivePacingStore = npcPacingStore ?? createEmptyNpcPacingStore();
   const [giftFeedback, setGiftFeedback] = useState<{
     citizenId: string;
@@ -214,27 +206,6 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   const profile = citizenId ? getCitizenProfile(citizenId) : null;
   const isNpcOpen = Boolean(isOpen && profile);
   const namedNpcId: NpcId | null = profile ? resolveNpcId(profile.id) : null;
-
-  // Addendum: Silently expire pending dock chip on 90s idle, modal close, phone mode, or dismount.
-  useEffect(() => {
-    if (!pendingDockChip) return;
-    const checkExpiry = () => {
-      if (
-        isPendingDockChipExpired(pendingDockChip, {
-          isChatOpen: isOpen,
-          isInPerson: !isPhoneChat,
-          isInProximity: true,
-          activeNpcId: namedNpcId,
-          playerScooterKind,
-        })
-      ) {
-        setPendingDockChip(null);
-      }
-    };
-    checkExpiry();
-    const timer = window.setInterval(checkExpiry, 1000);
-    return () => window.clearInterval(timer);
-  }, [pendingDockChip, isOpen, isPhoneChat, namedNpcId, playerScooterKind]);
   const effectiveClosenessStore = npcClosenessStore ?? createEmptyNpcClosenessStore();
 
   const todayKey = getCitizenLocalDateKey();
@@ -346,10 +317,10 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
     }
 
     // Progressive chat negotiation: detect togetherness intent and produce verdict-conditioned reply.
-    // Free text alone NEVER executes anything physically; on accept, ONE live icon chip appears in the dock.
+    // Free text alone NEVER executes anything physically; on accept, App surfaces ONE live icon chip in the NPC profile dock (WS27).
     const progressiveIntent = detectProgressiveChatIntent(trimmed);
     if (progressiveIntent === 'end' && !isPhoneChat) {
-      setPendingDockChip(null);
+      onClearPendingDockChip?.(namedNpcId);
       if (npcTogethernessState.ridingNpcId === namedNpcId && onToggleNpcRideTogether) {
         onToggleNpcRideTogether(namedNpcId);
         return;
@@ -367,13 +338,11 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
         isInPerson: !isPhoneChat,
         playerScooterKind,
       });
-      if (verdict.accepted) {
-        // Only ONE pending chip at a time; newest acceptance replaces any old chip
-        setPendingDockChip(createPendingDockChip(namedNpcId, progressiveIntent));
+      if (verdict.accepted && !isPhoneChat) {
+        // Only ONE pending chip at a time; newest acceptance replaces any old chip in the NPC profile dock
+        onAcceptTogethernessCategory?.(namedNpcId, progressiveIntent);
       } else {
-        setPendingDockChip((prev) =>
-          prev && prev.category === progressiveIntent ? null : prev,
-        );
+        onDeclineTogethernessCategory?.(namedNpcId, progressiveIntent);
       }
       appendNpcChatTurns(accountKey, profile.id, [{ role: 'npc', text: verdict.replyLine }]);
       setNpcFullText(verdict.replyLine);
@@ -384,8 +353,10 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
       return;
     }
 
-    // Non-intent turn on another topic: advance pending chip turn counter (silently expires at 3 turns)
-    setPendingDockChip((prev) => advancePendingChipOtherTurn(prev));
+    // Non-intent turn on another topic: advance pending chip turn counter in App (silently expires at 3 turns)
+    if (!isPhoneChat) {
+      onOtherTopicChatTurn?.(namedNpcId);
+    }
 
     // Named NPCs use server-side Gemini text chat (/api/npc-chat)
     const reqId = activeRequestIdRef.current + 1;
@@ -427,13 +398,13 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
         chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
       }, 40);
 
-      // Server-returned togetherness action surfaces the matching dock chip (never executes on free text alone)
+      // Server-returned togetherness action surfaces the matching NPC profile dock chip (never executes on free text alone)
       if (!isPhoneChat && result.action === 'ride_together') {
-        setPendingDockChip(createPendingDockChip(namedNpcId, 'ride'));
+        onAcceptTogethernessCategory?.(namedNpcId, 'ride');
       } else if (!isPhoneChat && result.action === 'walk_together') {
-        setPendingDockChip(createPendingDockChip(namedNpcId, 'walk'));
+        onAcceptTogethernessCategory?.(namedNpcId, 'walk');
       } else if (!isPhoneChat && result.action === 'end_togetherness') {
-        setPendingDockChip(null);
+        onClearPendingDockChip?.(namedNpcId);
         if (npcTogethernessState.ridingNpcId === namedNpcId && onToggleNpcRideTogether) {
           onToggleNpcRideTogether(namedNpcId);
         } else if (npcTogethernessState.walkingNpcId === namedNpcId && onToggleNpcWalkTogether) {
@@ -753,7 +724,7 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                   <div ref={chatScrollEndRef} />
                 </div>
 
-                {/* Icon-only Togetherness Action Dock (live pending chip + active session end icon; NEVER shown in phone chat) */}
+                {/* Active Togetherness Session Status + End-Session Control (pending chips live in the NPC profile dock per WS27; NEVER shown in phone chat) */}
                 <div className="px-3.5 py-2.5 border-t border-white/10 shrink-0 bg-black/15 space-y-1.5">
                   {namedNpcId && !isPhoneChat &&
                     (() => {
@@ -762,17 +733,6 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                         playerScooterKind,
                         togethernessState: npcTogethernessState,
                       });
-                      const activeChipValid =
-                        pendingDockChip &&
-                        !isPendingDockChipExpired(pendingDockChip, {
-                          isChatOpen: isOpen,
-                          isInPerson: !isPhoneChat,
-                          isInProximity: true,
-                          activeNpcId: namedNpcId,
-                          playerScooterKind,
-                        })
-                          ? pendingDockChip
-                          : null;
                       const showEndSession =
                         ctxOpts.showGetOffOption &&
                         Boolean(
@@ -783,60 +743,13 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                       const showStopPairPose =
                         npcTogethernessState.pairPoseNpcId === namedNpcId &&
                         Boolean(onTriggerNpcPairPose);
-                      if (!activeChipValid && !showEndSession && !showStopPairPose) return null;
-
-                      const markChipLabelSeen = (cat: string) => {
-                        if (seenDockChipLabels.includes(cat)) return;
-                        const next = [...seenDockChipLabels, cat];
-                        setSeenDockChipLabels(next);
-                        try {
-                          window.localStorage.setItem(
-                            DOCK_SEEN_LABELS_STORAGE_KEY,
-                            JSON.stringify(next),
-                          );
-                        } catch {
-                          // ignore storage quota errors
-                        }
-                      };
-
-                      const handlePendingChipClick = () => {
-                        if (!activeChipValid || !namedNpcId) return;
-                        soundEngine.playUiClick();
-                        // Re-validate all conditions at tap time
-                        if (
-                          isPendingDockChipExpired(activeChipValid, {
-                            isChatOpen: isOpen,
-                            isInPerson: !isPhoneChat,
-                            isInProximity: true,
-                            activeNpcId: namedNpcId,
-                            playerScooterKind,
-                          })
-                        ) {
-                          setPendingDockChip(null);
-                          return;
-                        }
-                        const cat = activeChipValid.category;
-                        markChipLabelSeen(cat);
-                        setPendingDockChip(null);
-
-                        if (cat === 'ride') {
-                          onRecordTogethernessSession?.(namedNpcId, 'ride');
-                          onToggleNpcRideTogether?.(namedNpcId);
-                        } else if (cat === 'walk') {
-                          onRecordTogethernessSession?.(namedNpcId, 'walk');
-                          onToggleNpcWalkTogether?.(namedNpcId);
-                        } else {
-                          onRecordTogethernessSession?.(namedNpcId, cat);
-                          onClose();
-                          onOpenCategoryPosePicker?.(namedNpcId, cat);
-                        }
-                      };
+                      if (!showEndSession && !showStopPairPose) return null;
 
                       return (
                         <div
                           className="space-y-1.5 pb-1 border-b border-white/10"
                           data-npc-togetherness-actions="true"
-                          data-npc-chat-action-dock="true"
+                          data-npc-chat-session-controls="true"
                         >
                           {(ctxOpts.isRidingWithThisNpc || ctxOpts.isWalkingWithThisNpc) && (
                             <div
@@ -850,21 +763,6 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                             </div>
                           )}
                           <div className="flex flex-wrap items-center gap-1.5">
-                            {activeChipValid && !showEndSession && (
-                              <button
-                                type="button"
-                                data-npc-dock-chip={activeChipValid.category}
-                                aria-label={TOGETHERNESS_ACTION_LABELS[activeChipValid.category]}
-                                title={TOGETHERNESS_ACTION_LABELS[activeChipValid.category]}
-                                onClick={handlePendingChipClick}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[10.5px] font-semibold cursor-pointer transition-all bg-emerald-500/30 hover:bg-emerald-500/45 text-emerald-100 border border-emerald-300/50 shadow-sm"
-                              >
-                                <TogethernessDockIcon kind={activeChipValid.category} className="w-4 h-4 shrink-0" />
-                                {!seenDockChipLabels.includes(activeChipValid.category) && (
-                                  <span>{TOGETHERNESS_ACTION_LABELS[activeChipValid.category]}</span>
-                                )}
-                              </button>
-                            )}
                             {showEndSession && (
                               <button
                                 type="button"
@@ -874,7 +772,6 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                                 title={ctxOpts.getOffLabel}
                                 onClick={() => {
                                   soundEngine.playUiClick();
-                                  markChipLabelSeen('end');
                                   if (ctxOpts.isRidingWithThisNpc) {
                                     onToggleNpcRideTogether?.(namedNpcId);
                                   } else {
@@ -884,9 +781,7 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                                 className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors bg-amber-500/30 hover:bg-amber-500/45 text-amber-100 border border-amber-300/45"
                               >
                                 <TogethernessDockIcon kind="end" className="w-4 h-4 shrink-0" />
-                                {!seenDockChipLabels.includes('end') && (
-                                  <span>{ctxOpts.getOffLabel}</span>
-                                )}
+                                <span>{ctxOpts.getOffLabel}</span>
                               </button>
                             )}
                             {showStopPairPose && onTriggerNpcPairPose && (

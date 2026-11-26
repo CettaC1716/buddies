@@ -15,6 +15,7 @@ import type { ClosenessBand } from '../game/npcClosenessEngine';
 import {
   PAIRED_CATEGORY_SPECS,
   filterPairedItemsForAcceptedCategory,
+  formatEmptyCategoryPickerMessage,
   type PairedPoseCategory,
 } from '../game/npcTogethernessRegistry';
 import type { WorldMultiplayerPairedPoseEvent } from '../lib/supabaseClient';
@@ -108,16 +109,21 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
     return counts;
   }, [ownedPairedItems]);
 
+  const baseCategoryItems = useMemo(
+    () =>
+      lockedCategory
+        ? filterPairedItemsForAcceptedCategory({
+            ownedPairedItems,
+            category: lockedCategory,
+            currentBand: npcClosenessBand ?? 'friendly',
+          })
+        : ownedPairedItems,
+    [ownedPairedItems, lockedCategory, npcClosenessBand],
+  );
+
   const filteredItems = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const baseItems = lockedCategory
-      ? filterPairedItemsForAcceptedCategory({
-          ownedPairedItems,
-          category: lockedCategory,
-          currentBand: npcClosenessBand ?? 'friendly',
-        })
-      : ownedPairedItems;
-    return baseItems.filter((item) => {
+    return baseCategoryItems.filter((item) => {
       if (!lockedCategory) {
         const sub = item.pairedAnim?.subKind ?? 'pose';
         if (subFilter !== 'all' && sub !== subFilter) return false;
@@ -129,7 +135,7 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
         (item.pairedAnim?.vibeTag ?? '').toLowerCase().includes(q)
       );
     });
-  }, [ownedPairedItems, lockedCategory, npcClosenessBand, subFilter, searchQuery]);
+  }, [baseCategoryItems, lockedCategory, subFilter, searchQuery]);
 
   const cleanTargetName = targetEntity
     ? targetEntity.name.replace(/\s*\((ANDA|YOU|KAMU)\)/gi, '').trim()
@@ -283,10 +289,15 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
 
                 {/* 3-Column Circular Orb Grid */}
                 {filteredItems.length === 0 ? (
-                  <div className="py-10 text-center text-xs text-white/55 px-2">
-                    {ownedPairedItems.length === 0
-                      ? 'No paired animations owned yet. Open Wardrobe → Style → Paired.'
-                      : 'No matching paired animations found.'}
+                  <div
+                    data-paired-empty-state="true"
+                    className="py-10 text-center text-xs text-white/65 px-3 leading-relaxed"
+                  >
+                    {lockedCategory && baseCategoryItems.length === 0
+                      ? formatEmptyCategoryPickerMessage(lockedCategory)
+                      : ownedPairedItems.length === 0
+                        ? 'No paired animations owned yet. Open Wardrobe → Style → Paired.'
+                        : 'No matching paired animations found.'}
                   </div>
                 ) : (
                   <div className="grid grid-cols-3 gap-x-2 gap-y-3.5 pb-2">

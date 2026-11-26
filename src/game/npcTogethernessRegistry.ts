@@ -2,6 +2,8 @@ import {
   getLocalClosenessDateKey,
   getNpcClosenessBand,
   getNpcClosenessRecord,
+  npcIdToCitizenId,
+  resolveNpcId,
   type ClosenessBand,
   type NpcClosenessStore,
   type NpcId,
@@ -524,7 +526,8 @@ export function isPendingDockChipExpired(
   chip: PendingDockChip | null,
   context: {
     nowMs?: number;
-    isChatOpen: boolean;
+    /** Optional legacy flag; closing the chat modal no longer kills the dock chip (WS27). */
+    isChatOpen?: boolean;
     isInPerson: boolean;
     isInProximity: boolean;
     activeNpcId: NpcId | null;
@@ -535,12 +538,108 @@ export function isPendingDockChipExpired(
   if (!chip) return true;
   const nowMs = context.nowMs ?? Date.now();
   const expiryMs = context.expiryMs ?? DOCK_CHIP_EXPIRY_MS;
-  if (!context.isChatOpen || !context.isInPerson || !context.isInProximity) return true;
-  if (context.activeNpcId !== chip.npcId) return true;
+  if (!context.isInPerson || !context.isInProximity) return true;
+  if (context.activeNpcId !== null && context.activeNpcId !== chip.npcId) return true;
   if (chip.otherTopicTurns >= DOCK_CHIP_MAX_OTHER_TURNS) return true;
   if (nowMs - chip.acceptedAtMs >= expiryMs) return true;
   if (chip.category === 'ride' && context.playerScooterKind !== 'electric_scooter_bike') {
     return true;
   }
   return false;
+}
+
+// ============================================================================
+// WS26 — REAL TARGET ENTITY RESOLUTION & EMPTY-CATEGORY PICKER COPY
+// ============================================================================
+
+export interface NearbyEntityLike {
+  id: string | number;
+  name: string;
+  distance: number;
+  team?: 'blue' | 'red';
+  status?: string;
+  isSelf?: boolean;
+  isNpc?: boolean;
+  isMerchant?: boolean;
+  merchantLocation?: 'lobby_cafe' | 'beach_house';
+  gender?: 'male' | 'female';
+}
+
+/**
+ * Resolves the real target entity for an NPC category pose picker or profile dock:
+ * 1. Exact or canonical NPC match in the live `nearbyUsers` list (same object the dock uses).
+ * 2. Matching `selectedTarget` if it resolves to the same NPC.
+ * 3. World-state fallback using the resolved canonical citizen id & profile name (never fabricated).
+ */
+export function resolveLiveNpcTargetEntity<T extends NearbyEntityLike>(params: {
+  npcId: NpcId;
+  nearbyUsers: readonly T[];
+  selectedTarget?: T | null;
+  fallbackName?: string;
+  fallbackGender?: 'male' | 'female';
+}): T {
+  const canonicalId = npcIdToCitizenId(params.npcId);
+  const fromNearby = params.nearbyUsers.find(
+    (u) =>
+      String(u.id) === canonicalId ||
+      resolveNpcId(String(u.id)) === params.npcId,
+  );
+  if (fromNearby) return fromNearby;
+
+  if (
+    params.selectedTarget &&
+    (String(params.selectedTarget.id) === canonicalId ||
+      resolveNpcId(String(params.selectedTarget.id)) === params.npcId)
+  ) {
+    return params.selectedTarget;
+  }
+
+  const displayName =
+    params.fallbackName?.trim() ||
+    params.npcId.charAt(0).toUpperCase() + params.npcId.slice(1);
+  return {
+    id: canonicalId,
+    name: displayName,
+    distance: 2,
+    team: 'blue',
+    status: 'Online',
+    isSelf: false,
+    isNpc: true,
+    gender:
+      params.fallbackGender ??
+      (params.npcId === 'kai' || params.npcId === 'bima' || params.npcId === 'kenji'
+        ? 'male'
+        : 'female'),
+  } as T;
+}
+
+/**
+ * Checks whether `target` is still within proximity in `nearbyUsers`.
+ * Matches exact id OR canonical NPC id so chat-opened NPC pickers survive the guard
+ * identically to dock-opened pickers (e.g. `npc_hana` vs `citizen_hana`).
+ */
+export function isPairedTargetStillInProximity(params: {
+  target: Pick<NearbyEntityLike, 'id' | 'isNpc'>;
+  nearbyUsers: readonly Pick<NearbyEntityLike, 'id' | 'distance'>[];
+  maxDistance?: number;
+}): boolean {
+  const maxDistance = params.maxDistance ?? 10.5;
+  const targetId = String(params.target.id);
+  const targetNpcId = params.target.isNpc ? resolveNpcId(targetId) : null;
+  return params.nearbyUsers.some((u) => {
+    if (u.distance > maxDistance) return false;
+    const uid = String(u.id);
+    if (uid === targetId) return true;
+    if (targetNpcId && resolveNpcId(uid) === targetNpcId) return true;
+    return false;
+  });
+}
+
+/**
+ * Plain-English empty-state copy when the player owns zero paired animations
+ * in an accepted category (WS26 Defect 2).
+ */
+export function formatEmptyCategoryPickerMessage(category: PairedPoseCategory): string {
+  const label = PAIRED_CATEGORY_SPECS[category].label;
+  return `You don't have any ${label} animations yet — you can get them from the Animations catalog.`;
 }

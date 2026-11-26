@@ -296,11 +296,18 @@ import {
 } from './game/npcPersonaRegistry';
 import { ensureAllNpcPersonasRegistered } from './game/personas/index';
 import {
+  DOCK_SEEN_LABELS_STORAGE_KEY,
   TOGETHERNESS_ACTION_LABELS,
+  advancePendingChipOtherTurn,
   createEmptyNpcPacingStore,
+  createPendingDockChip,
+  isPairedTargetStillInProximity,
+  isPendingDockChipExpired,
   recordCompletedCategorySession,
+  resolveLiveNpcTargetEntity,
   type NpcPacingStore,
   type PairedPoseCategory,
+  type PendingDockChip,
   type TogethernessActionCategory,
 } from './game/npcTogethernessRegistry';
 import { appendNpcChatTurns } from './game/npcChatHistoryStore';
@@ -2777,16 +2784,188 @@ export default function App() {
   }, []);
 
   // Automatically close the left-side Paired Interaction list if the target leaves interaction range
+  // WS26: Match by canonical NPC id as well as exact id so chat-opened NPC pickers survive identically to dock-opened ones.
   useEffect(() => {
     if (!pairedInteractTarget) return;
     if (pairedStatus?.active) return;
-    const stillNear = (hud.nearbyRadiusUsers ?? []).some(
-      (u) => String(u.id) === String(pairedInteractTarget.id) && u.distance <= 10.5,
-    );
+    const stillNear = isPairedTargetStillInProximity({
+      target: pairedInteractTarget,
+      nearbyUsers: hud.nearbyRadiusUsers ?? [],
+      maxDistance: 10.5,
+    });
     if (!stillNear) {
       setPairedInteractTarget(null);
+      setLockedPairedCategory(null);
     }
   }, [pairedInteractTarget, pairedStatus?.active, hud.nearbyRadiusUsers]);
+
+  // WS27: Pending togetherness chip state lifted from CitizenDialogueModal to App level so it renders
+  // in the world NPC profile dock and survives closing the chat modal (governed by 3 other-topic turns / 90s idle / context break).
+  const [pendingDockChip, setPendingDockChip] = useState<PendingDockChip | null>(null);
+  const [seenDockChipLabels, setSeenDockChipLabels] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = window.localStorage.getItem(DOCK_SEEN_LABELS_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const markDockChipLabelSeen = useCallback((cat: string) => {
+    setSeenDockChipLabels((prev) => {
+      if (prev.includes(cat)) return prev;
+      const next = [...prev, cat];
+      try {
+        window.localStorage.setItem(DOCK_SEEN_LABELS_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // ignore storage quota errors
+      }
+      return next;
+    });
+  }, []);
+
+  const recordNpcTogethernessSession = useCallback(
+    (npcId: NpcId, category: TogethernessActionCategory) => {
+      setNpcPacingStore((prev) =>
+        recordCompletedCategorySession({
+          pacingStore: prev,
+          npcId,
+          category,
+          baseClosenessDelta: category === 'ride' ? 8 : category === 'walk' ? 6 : 5,
+        }).pacingStore,
+      );
+      appendNpcChatTurns(dailyMissionsAccountKey, npcId, [
+        {
+          role: 'npc',
+          text: `Shared a ${TOGETHERNESS_ACTION_LABELS[category].toLowerCase()} moment together.`,
+          visual: {
+            kind: 'interaction',
+            label: TOGETHERNESS_ACTION_LABELS[category],
+          },
+        },
+      ]);
+    },
+    [dailyMissionsAccountKey],
+  );
+
+  // WS26: Resolve real target entity from live nearbyRadiusUsers (or world citizen profile) — never fabricated.
+  const openCategoryPosePickerForNpc = useCallback(
+    (npcId: NpcId, category: PairedPoseCategory) => {
+      const canonicalId = npcIdToCitizenId(npcId);
+      const citizenProfile = getCitizenProfile(canonicalId);
+      const persona = getNpcPersona(npcId);
+      const resolvedEntity = resolveLiveNpcTargetEntity<NearbyEntityUser>({
+        npcId,
+        nearbyUsers: hud.nearbyRadiusUsers ?? [],
+        selectedTarget: selectedTargetUser,
+        fallbackName: citizenProfile?.name ?? persona?.displayName,
+      });
+      setLockedPairedCategory(category);
+      setSelectedTargetUser(resolvedEntity);
+      setPairedInteractTarget(resolvedEntity);
+    },
+    [hud.nearbyRadiusUsers, selectedTargetUser],
+  );
+
+  // WS27: Lifecycle expiry for pending dock chip (90s idle, proximity loss, NPC switch, dismount, active session).
+  // Closing the chat modal does NOT kill the chip.
+  useEffect(() => {
+    if (!pendingDockChip) return;
+    const checkExpiry = () => {
+      const isAlreadyInSession =
+        npcTogethernessState.ridingNpcId === pendingDockChip.npcId ||
+        npcTogethernessState.walkingNpcId === pendingDockChip.npcId;
+      if (isAlreadyInSession) {
+        setPendingDockChip(null);
+        return;
+      }
+      const chattingNpcId =
+        isCitizenDialogueOpen && activeCitizenId
+          ? resolveNpcId(String(activeCitizenId))
+          : null;
+      const selectedNpcId =
+        selectedTargetUser?.isNpc ? resolveNpcId(String(selectedTargetUser.id)) : null;
+      const activeNpcId = chattingNpcId ?? selectedNpcId;
+      const isNearInWorld = (hud.nearbyRadiusUsers ?? []).some(
+        (u) => resolveNpcId(String(u.id)) === pendingDockChip.npcId && u.distance <= 10.5,
+      );
+      const isInProximity =
+        isNearInWorld || chattingNpcId === pendingDockChip.npcId;
+      if (
+        isPendingDockChipExpired(pendingDockChip, {
+          isInPerson: true,
+          isInProximity,
+          activeNpcId,
+          playerScooterKind: equippedScooterKind,
+        })
+      ) {
+        setPendingDockChip(null);
+      }
+    };
+    checkExpiry();
+    const timer = window.setInterval(checkExpiry, 1000);
+    return () => window.clearInterval(timer);
+  }, [
+    pendingDockChip,
+    hud.nearbyRadiusUsers,
+    isCitizenDialogueOpen,
+    activeCitizenId,
+    selectedTargetUser,
+    equippedScooterKind,
+    npcTogethernessState.ridingNpcId,
+    npcTogethernessState.walkingNpcId,
+  ]);
+
+  const handleTapPendingDockChip = useCallback(() => {
+    if (!pendingDockChip) return;
+    const chattingNpcId =
+      isCitizenDialogueOpen && activeCitizenId
+        ? resolveNpcId(String(activeCitizenId))
+        : null;
+    const isNearInWorld = (hud.nearbyRadiusUsers ?? []).some(
+      (u) => resolveNpcId(String(u.id)) === pendingDockChip.npcId && u.distance <= 10.5,
+    );
+    const isInProximity = isNearInWorld || chattingNpcId === pendingDockChip.npcId;
+    if (
+      isPendingDockChipExpired(pendingDockChip, {
+        isInPerson: true,
+        isInProximity,
+        activeNpcId: chattingNpcId,
+        playerScooterKind: equippedScooterKind,
+      })
+    ) {
+      setPendingDockChip(null);
+      return;
+    }
+    const { npcId, category } = pendingDockChip;
+    markDockChipLabelSeen(category);
+    setPendingDockChip(null);
+
+    if (category === 'ride') {
+      recordNpcTogethernessSession(npcId, 'ride');
+      handleNpcRideTogetherToggle(npcId);
+    } else if (category === 'walk') {
+      recordNpcTogethernessSession(npcId, 'walk');
+      handleNpcWalkTogetherToggle(npcId);
+    } else {
+      recordNpcTogethernessSession(npcId, category);
+      setIsCitizenDialogueOpen(false);
+      openCategoryPosePickerForNpc(npcId, category);
+    }
+  }, [
+    pendingDockChip,
+    isCitizenDialogueOpen,
+    activeCitizenId,
+    hud.nearbyRadiusUsers,
+    equippedScooterKind,
+    markDockChipLabelSeen,
+    recordNpcTogethernessSession,
+    handleNpcRideTogetherToggle,
+    handleNpcWalkTogetherToggle,
+    openCategoryPosePickerForNpc,
+  ]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const chatMessagesRef = useRef<ChatMessage[]>([]);
   const notifiedPrivateIdsRef = useRef<Set<string>>(new Set());
@@ -12467,9 +12646,26 @@ export default function App() {
                 }
                 return null;
               })();
-              // Never auto-switch the bottom dock on proximity; only switch after explicit press-and-hold interaction, active pair mode, or active NPC chat
+              // WS27: Keep the NPC profile dock anchored when a live pending togetherness chip exists
+              // (even after the player closes the chat modal).
+              const pendingChipNpcFallbackTarget: NearbyEntityUser | null = (() => {
+                if (!pendingDockChip) return null;
+                const canonicalId = npcIdToCitizenId(pendingDockChip.npcId);
+                const citizenProfile = getCitizenProfile(canonicalId);
+                const persona = getNpcPersona(pendingDockChip.npcId);
+                return resolveLiveNpcTargetEntity<NearbyEntityUser>({
+                  npcId: pendingDockChip.npcId,
+                  nearbyUsers: hud.nearbyRadiusUsers ?? [],
+                  selectedTarget: activeSelectedTarget,
+                  fallbackName: citizenProfile?.name ?? persona?.displayName,
+                });
+              })();
+              // Never auto-switch the bottom dock on proximity; only switch after explicit press-and-hold interaction, active pair mode, active NPC chat, or live pending togetherness chip
               const dockTargetEntity =
-                activeSelectedTarget ?? pairedInteractTarget ?? chattingNpcFallbackTarget;
+                activeSelectedTarget ??
+                pairedInteractTarget ??
+                chattingNpcFallbackTarget ??
+                pendingChipNpcFallbackTarget;
               const nearbyCycleList = (hud.nearbyRadiusUsers ?? []).filter(
                 (u) => String(u.id) !== '0' && u.distance <= 8.5,
               );
@@ -12531,6 +12727,11 @@ export default function App() {
                   isNpcChatSessionActive={
                     isCitizenDialogueOpen || activeSpecialModal === 'npc_merchant'
                   }
+                  pendingTogethernessChip={pendingDockChip}
+                  showPendingChipLabel={Boolean(
+                    pendingDockChip && !seenDockChipLabels.includes(pendingDockChip.category),
+                  )}
+                  onTapPendingTogethernessChip={handleTapPendingDockChip}
                   canCycleTargetEntity={canCycleNearby}
                   hasOwnedPairedAnimations={ownedPairedItems.length > 0}
                   onToggleTargetInteraction={() => {
@@ -15032,35 +15233,23 @@ export default function App() {
         onToggleNpcWalkTogether={handleNpcWalkTogetherToggle}
         onTriggerNpcPairPose={handleNpcPairPoseTrigger}
         onToggleNpcRideTogether={handleNpcRideTogetherToggle}
-        onRecordTogethernessSession={(npcId: NpcId, category: TogethernessActionCategory) => {
-          setNpcPacingStore((prev) =>
-            recordCompletedCategorySession({
-              pacingStore: prev,
-              npcId,
-              category,
-              baseClosenessDelta: category === 'ride' ? 8 : category === 'walk' ? 6 : 5,
-            }).pacingStore,
-          );
-          appendNpcChatTurns(dailyMissionsAccountKey, npcId, [
-            {
-              role: 'npc',
-              text: `Shared a ${TOGETHERNESS_ACTION_LABELS[category].toLowerCase()} moment together.`,
-              visual: {
-                kind: 'interaction',
-                label: TOGETHERNESS_ACTION_LABELS[category],
-              },
-            },
-          ]);
+        onRecordTogethernessSession={recordNpcTogethernessSession}
+        onOpenCategoryPosePicker={openCategoryPosePickerForNpc}
+        onAcceptTogethernessCategory={(npcId: NpcId, category: TogethernessActionCategory) => {
+          setPendingDockChip(createPendingDockChip(npcId, category));
         }}
-        onOpenCategoryPosePicker={(npcId: NpcId, category: PairedPoseCategory) => {
-          setLockedPairedCategory(category);
-          const citizenEntity: NearbyEntityUser = {
-            id: npcIdToCitizenId(npcId),
-            name: npcId.charAt(0).toUpperCase() + npcId.slice(1),
-            isNpc: true,
-            distance: 2,
-          };
-          setPairedInteractTarget(citizenEntity);
+        onDeclineTogethernessCategory={(npcId: NpcId, category: TogethernessActionCategory) => {
+          setPendingDockChip((prev) =>
+            prev && prev.npcId === npcId && prev.category === category ? null : prev,
+          );
+        }}
+        onOtherTopicChatTurn={(npcId: NpcId) => {
+          setPendingDockChip((prev) =>
+            prev && prev.npcId === npcId ? advancePendingChipOtherTurn(prev) : prev,
+          );
+        }}
+        onClearPendingDockChip={(npcId: NpcId) => {
+          setPendingDockChip((prev) => (prev && prev.npcId === npcId ? null : prev));
         }}
         isRaining={weatherCondition === 'hujan'}
         daytimePhase={
