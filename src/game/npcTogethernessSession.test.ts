@@ -9,6 +9,7 @@ import {
 import { EMPTY_NPC_TOGETHERNESS_STATE } from './npcTogetherness';
 import {
   canStartDirectPairedPoseForTarget,
+  detectChatTogethernessIntent,
   evaluateNpcGiftSubmission,
   evaluatePairedPoseRequest,
   evaluateTogethernessInvitation,
@@ -324,4 +325,16 @@ test('WS13 gift submission enforces 1-gift-per-day limit and always returns pers
     getNpcClosenessRecord(first.store, 'hana').score,
   );
 });
+
+test('natural typed chat intent detects Indonesian & English walk/ride/end phrases without false positives', () => {
+  assert.equal(detectChatTogethernessIntent('jalan bareng yuk!'), 'walk');
+  assert.equal(detectChatTogethernessIntent('want to go for a walk together?'), 'walk');
+  assert.equal(detectChatTogethernessIntent('bonceng yuk keliling kota'), 'ride');
+  assert.equal(detectChatTogethernessIntent('wanna ride along on my scooter?'), 'ride');
+  assert.equal(detectChatTogethernessIntent('turun di sini ya'), 'end');
+  assert.equal(detectChatTogethernessIntent('let us get off here'), 'end');
+  assert.equal(detectChatTogethernessIntent('halo, lagi ngapain hari ini?'), null);
+  assert.equal(detectChatTogethernessIntent('nice weather in the plaza today'), null);
+});
+
 

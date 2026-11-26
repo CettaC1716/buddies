@@ -488,3 +488,47 @@ export function evaluateNpcGiftSubmission(params: {
   };
 }
 
+// ============================================================================
+// NATURAL-LANGUAGE TYPED CHAT INTENT DETECTION (WALK / RIDE / END)
+// ============================================================================
+
+export type TypedChatTogethernessIntent = 'walk' | 'ride' | 'end' | null;
+
+const END_TOGETHERNESS_PATTERNS: readonly RegExp[] = [
+  /\b(get off|drop me off|drop off here|stop walking|end walk|end ride|part ways)\b/i,
+  /\b(turun sini|turun di sini|turun dulu|berhenti di sini|stop di sini|sampai sini dulu|udah dulu jalan|selesai jalan)\b/i,
+];
+
+const RIDE_TOGETHER_PATTERNS: readonly RegExp[] = [
+  /\b(ride together|ride along|go for a ride|take a ride|hop on|ride with me|scooter ride|want a ride)\b/i,
+  /\b(bonceng|boncengan|naik motor|naik skuter|naik scooter|ikut naik|keliling naik)\b/i,
+];
+
+const WALK_TOGETHER_PATTERNS: readonly RegExp[] = [
+  /\b(walk together|go for a walk|take a walk|walk with me|stroll together|let'?s walk|wanna walk)\b/i,
+  /\b(jalan bareng|jalan-jalan|jalan bersama|temenin jalan|temani jalan|ikut jalan|ayo jalan|mau jalan)\b/i,
+];
+
+/**
+ * Detects natural-language walk/ride/get-off invitations typed in chat
+ * (Indonesian or English) so togetherness feels organic and progressive
+ * rather than exposed as static buttons.
+ */
+export function detectChatTogethernessIntent(
+  rawText: string,
+): TypedChatTogethernessIntent {
+  const clean = (rawText || '').trim();
+  if (!clean) return null;
+  if (END_TOGETHERNESS_PATTERNS.some((re) => re.test(clean))) {
+    return 'end';
+  }
+  if (RIDE_TOGETHER_PATTERNS.some((re) => re.test(clean))) {
+    return 'ride';
+  }
+  if (WALK_TOGETHER_PATTERNS.some((re) => re.test(clean))) {
+    return 'walk';
+  }
+  return null;
+}
+
+

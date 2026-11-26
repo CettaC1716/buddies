@@ -26,12 +26,11 @@ import {
   type NpcId,
 } from '../game/npcClosenessEngine';
 import {
-  CURATED_NPC_PAIR_POSES,
   EMPTY_NPC_TOGETHERNESS_STATE,
   type NpcTogethernessStateSnapshot,
 } from '../game/npcTogetherness';
 import {
-  evaluatePairedPoseRequest,
+  detectChatTogethernessIntent,
   resolveChatTogethernessOptions,
 } from '../game/npcTogethernessSession';
 import type { UrbanScooterKind } from '../game/buddiesUrbanScooterRules';
@@ -159,8 +158,6 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
 }) => {
   useNpcPortraitVersion();
   const [activeTab, setActiveTab] = useState<CitizenChatTab>('sesi_chat');
-  const [showPairPosePicker, setShowPairPosePicker] = useState<boolean>(false);
-  const [showChatGiftPicker, setShowChatGiftPicker] = useState<boolean>(false);
   const [chatHistory, setChatHistory] = useState<CitizenChatEntry[]>([]);
   const [npcFullText, setNpcFullText] = useState<string>('');
   const [npcTypedText, setNpcTypedText] = useState<string>('');
@@ -302,6 +299,49 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
         chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
       }, 40);
       return;
+    }
+
+    // Natural typed togetherness invitation (walk / ride / get off) routed through WS12 engine
+    const typedIntent = detectChatTogethernessIntent(trimmed);
+    if (typedIntent === 'end') {
+      if (npcTogethernessState.ridingNpcId === namedNpcId && onToggleNpcRideTogether) {
+        onToggleNpcRideTogether(namedNpcId);
+        return;
+      }
+      if (npcTogethernessState.walkingNpcId === namedNpcId && onToggleNpcWalkTogether) {
+        onToggleNpcWalkTogether(namedNpcId);
+        return;
+      }
+    } else if (
+      typedIntent === 'ride' &&
+      npcTogethernessState.ridingNpcId !== namedNpcId &&
+      onToggleNpcRideTogether
+    ) {
+      const res = onToggleNpcRideTogether(namedNpcId);
+      if (res && !res.ended && res.replyLine) {
+        appendNpcChatTurns(accountKey, profile.id, [{ role: 'npc', text: res.replyLine }]);
+        setNpcFullText(res.replyLine);
+        setNpcTypedText('');
+        window.setTimeout(() => {
+          chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }, 40);
+        return;
+      }
+    } else if (
+      typedIntent === 'walk' &&
+      npcTogethernessState.walkingNpcId !== namedNpcId &&
+      onToggleNpcWalkTogether
+    ) {
+      const res = onToggleNpcWalkTogether(namedNpcId);
+      if (res && !res.ended && res.replyLine) {
+        appendNpcChatTurns(accountKey, profile.id, [{ role: 'npc', text: res.replyLine }]);
+        setNpcFullText(res.replyLine);
+        setNpcTypedText('');
+        window.setTimeout(() => {
+          chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }, 40);
+        return;
+      }
     }
 
     // Named NPCs use server-side Gemini text chat (/api/npc-chat)
@@ -669,12 +709,6 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                         playerScooterKind,
                         togethernessState: npcTogethernessState,
                       });
-                      const showPair = Boolean(onTriggerNpcPairPose);
-                      const showGift = Boolean(onGiveNpcOwnedGift);
-                      const showWalkInvite =
-                        ctxOpts.canInviteWalk && Boolean(onToggleNpcWalkTogether);
-                      const showRideInvite =
-                        ctxOpts.canInviteRide && Boolean(onToggleNpcRideTogether);
                       const showGetOff =
                         ctxOpts.showGetOffOption &&
                         Boolean(
@@ -682,105 +716,10 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                             ? onToggleNpcRideTogether
                             : onToggleNpcWalkTogether,
                         );
-                      if (!showGift && !showWalkInvite && !showRideInvite && !showGetOff && !showPair) {
-                        return null;
-                      }
-                      const recordGiftInChat = (
-                        itemName: string,
-                        reactionLine: string,
-                      ) => {
-                        setChatHistory((prev) => {
-                          const next = [...prev];
-                          if (npcFullText.trim()) {
-                            next.push({
-                              id: `npc_${Date.now()}_prev`,
-                              role: 'npc',
-                              text: npcFullText,
-                            });
-                          }
-                          next.push({
-                            id: `player_gift_${Date.now()}`,
-                            role: 'player',
-                            text: `Gave ${itemName}`,
-                            visual: {
-                              kind: 'gift_box',
-                              itemName,
-                            },
-                          });
-                          return next;
-                        });
-                        appendNpcChatTurns(accountKey, profile?.id ?? namedNpcId, [
-                          {
-                            role: 'player',
-                            text: `Gave ${itemName}`,
-                            visual: { kind: 'gift_box', itemName },
-                          },
-                          { role: 'npc', text: reactionLine },
-                        ]);
-                        setNpcFullText(reactionLine);
-                        setNpcTypedText('');
-                        window.setTimeout(() => {
-                          chatScrollEndRef.current?.scrollIntoView({
-                            behavior: 'smooth',
-                            block: 'end',
-                          });
-                        }, 30);
-                      };
-                      const dockFishItems = caughtFishBucket.filter((f) => !f.isMintedNft);
-                      const dockCatalogGifts = [
-                        ...ownedCafeFoodIds,
-                        ...ownedApparelIds,
-                        ...ownedMerchantItemIds,
-                      ]
-                        .map((id) => getGiftCatalogItem(id))
-                        .filter((it): it is NonNullable<typeof it> => Boolean(it));
-                      const recordInvitationInChat = (
-                        playerPromptText: string,
-                        emoji: string,
-                        replyLine: string,
-                      ) => {
-                        setChatHistory((prev) => {
-                          const next = [...prev];
-                          if (npcFullText.trim()) {
-                            next.push({
-                              id: `npc_${Date.now()}_prev`,
-                              role: 'npc',
-                              text: npcFullText,
-                            });
-                          }
-                          next.push({
-                            id: `player_invite_${Date.now()}`,
-                            role: 'player',
-                            text: playerPromptText,
-                            visual: {
-                              kind: 'interaction',
-                              emoji,
-                              label: playerPromptText,
-                            },
-                          });
-                          return next;
-                        });
-                        appendNpcChatTurns(accountKey, profile?.id ?? namedNpcId, [
-                          {
-                            role: 'player',
-                            text: playerPromptText,
-                            visual: {
-                              kind: 'interaction',
-                              emoji,
-                              label: playerPromptText,
-                            },
-                          },
-                          { role: 'npc', text: replyLine },
-                        ]);
-                        setNpcFullText(replyLine);
-                        setNpcTypedText('');
-                        window.setTimeout(() => {
-                          chatScrollEndRef.current?.scrollIntoView({
-                            behavior: 'smooth',
-                            block: 'end',
-                          });
-                        }, 30);
-                      };
+                      const showStopPairPose =
+                        npcTogethernessState.pairPoseNpcId === namedNpcId &&
+                        Boolean(onTriggerNpcPairPose);
+                      if (!showGetOff && !showStopPairPose) return null;
                       return (
                         <div
                           className="space-y-1.5 pb-1 border-b border-white/10"
@@ -799,24 +738,6 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                             </div>
                           )}
                           <div className="flex flex-wrap gap-1.5">
-                            {showGift && (
-                              <button
-                                type="button"
-                                data-npc-chat-dock-gift-btn="true"
-                                onClick={() => {
-                                  soundEngine.playUiClick();
-                                  setShowPairPosePicker(false);
-                                  setShowChatGiftPicker((prev) => !prev);
-                                }}
-                                className={`px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors ${
-                                  showChatGiftPicker
-                                    ? 'bg-rose-500/45 text-white border border-rose-200/60'
-                                    : 'bg-rose-500/25 hover:bg-rose-500/40 text-rose-100 border border-rose-300/35'
-                                }`}
-                              >
-                                Give Gift
-                              </button>
-                            )}
                             {showGetOff && (
                               <button
                                 type="button"
@@ -834,168 +755,20 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                                 {ctxOpts.getOffLabel}
                               </button>
                             )}
-
-                            {showWalkInvite && onToggleNpcWalkTogether && (
-                              <button
-                                type="button"
-                                data-npc-walk-together-btn="true"
-                                onClick={() => {
-                                  soundEngine.playUiClick();
-                                  const res = onToggleNpcWalkTogether(namedNpcId);
-                                  if (res && !res.ended && res.replyLine) {
-                                    recordInvitationInChat(
-                                      'Want to go for a walk together?',
-                                      '🚶',
-                                      res.replyLine,
-                                    );
-                                  }
-                                }}
-                                className="px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors bg-sky-500/25 hover:bg-sky-500/40 text-sky-100 border border-sky-300/35"
-                              >
-                                Invite for a walk
-                              </button>
-                            )}
-
-                            {showRideInvite && onToggleNpcRideTogether && (
-                              <button
-                                type="button"
-                                data-npc-ride-together-btn="true"
-                                onClick={() => {
-                                  soundEngine.playUiClick();
-                                  const res = onToggleNpcRideTogether(namedNpcId);
-                                  if (res && !res.ended && res.replyLine) {
-                                    recordInvitationInChat(
-                                      'Want to ride along with me?',
-                                      '🛵',
-                                      res.replyLine,
-                                    );
-                                  }
-                                }}
-                                className="px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-100 border border-emerald-300/35"
-                              >
-                                Invite to ride along
-                              </button>
-                            )}
-
-                            {showPair && onTriggerNpcPairPose && (
+                            {showStopPairPose && onTriggerNpcPairPose && (
                               <button
                                 type="button"
                                 data-npc-pair-pose-btn="true"
                                 onClick={() => {
                                   soundEngine.playUiClick();
-                                  setShowChatGiftPicker(false);
-                                  if (npcTogethernessState.pairPoseNpcId === namedNpcId) {
-                                    setShowPairPosePicker(false);
-                                    onTriggerNpcPairPose(namedNpcId);
-                                    return;
-                                  }
-                                  const poseDecision = evaluatePairedPoseRequest({
-                                    store: effectiveClosenessStore,
-                                    npcId: namedNpcId,
-                                  });
-                                  if (!poseDecision.accepted) {
-                                    setShowPairPosePicker(false);
-                                    recordInvitationInChat(
-                                      'Want to take a pair photo?',
-                                      '🤝✨',
-                                      poseDecision.replyLine,
-                                    );
-                                    return;
-                                  }
-                                  setShowPairPosePicker((prev) => !prev);
+                                  onTriggerNpcPairPose(namedNpcId);
                                 }}
-                                className={`px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors ${
-                                  npcTogethernessState.pairPoseNpcId === namedNpcId
-                                    ? 'bg-amber-500/30 hover:bg-amber-500/45 text-amber-100 border border-amber-300/45'
-                                    : 'bg-violet-500/25 hover:bg-violet-500/40 text-violet-100 border border-violet-300/35'
-                                }`}
+                                className="px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors bg-amber-500/30 hover:bg-amber-500/45 text-amber-100 border border-amber-300/45"
                               >
-                                {npcTogethernessState.pairPoseNpcId === namedNpcId
-                                  ? 'Stop photo pose'
-                                  : 'Paired Pose'}
+                                Stop photo pose
                               </button>
                             )}
                           </div>
-
-                          {showChatGiftPicker && onGiveNpcOwnedGift && (
-                            <div
-                              data-npc-chat-gift-picker="true"
-                              className="flex flex-wrap gap-1 pt-1 max-h-24 overflow-y-auto"
-                            >
-                              {dockFishItems.length === 0 && dockCatalogGifts.length === 0 ? (
-                                <span className="text-[10px] text-white/65 px-1">
-                                  No giftable items in your bag yet.
-                                </span>
-                              ) : (
-                                <>
-                                  {dockFishItems.slice(0, 6).map((fish) => (
-                                    <button
-                                      key={fish.id}
-                                      type="button"
-                                      onClick={() => {
-                                        soundEngine.playUiClick();
-                                        setShowChatGiftPicker(false);
-                                        const outcome = onGiveNpcOwnedGift(
-                                          namedNpcId,
-                                          {
-                                            speciesId: fish.speciesId,
-                                            isTrophy: fish.isTrophy,
-                                          },
-                                          fish.id,
-                                        );
-                                        recordGiftInChat(
-                                          outcome.itemName || fish.speciesName,
-                                          outcome.reactionLine,
-                                        );
-                                      }}
-                                      className="px-2 py-0.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/35 border border-rose-300/30 text-[10px] font-medium text-white/95 cursor-pointer transition-colors"
-                                    >
-                                      🐟 {fish.speciesName}
-                                    </button>
-                                  ))}
-                                  {dockCatalogGifts.slice(0, 10).map((item) => (
-                                    <button
-                                      key={item.itemId}
-                                      type="button"
-                                      onClick={() => {
-                                        soundEngine.playUiClick();
-                                        setShowChatGiftPicker(false);
-                                        const outcome = onGiveNpcOwnedGift(namedNpcId, item.itemId);
-                                        recordGiftInChat(
-                                          outcome.itemName || item.name,
-                                          outcome.reactionLine,
-                                        );
-                                      }}
-                                      className="px-2 py-0.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/35 border border-rose-300/30 text-[10px] font-medium text-white/95 cursor-pointer transition-colors"
-                                    >
-                                      🎁 {item.name}
-                                    </button>
-                                  ))}
-                                </>
-                              )}
-                            </div>
-                          )}
-
-                          {showPairPosePicker &&
-                            npcTogethernessState.pairPoseNpcId !== namedNpcId &&
-                            onTriggerNpcPairPose && (
-                              <div className="flex flex-wrap gap-1 pt-0.5">
-                                {CURATED_NPC_PAIR_POSES.map((pose) => (
-                                  <button
-                                    key={pose.id}
-                                    type="button"
-                                    onClick={() => {
-                                      soundEngine.playUiClick();
-                                      setShowPairPosePicker(false);
-                                      onTriggerNpcPairPose(namedNpcId, pose.id);
-                                    }}
-                                    className="px-2 py-0.5 rounded-lg bg-white/12 hover:bg-white/22 border border-white/15 text-[10px] font-medium text-white/90 cursor-pointer transition-colors"
-                                  >
-                                    {pose.label}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
                         </div>
                       );
                     })()}
