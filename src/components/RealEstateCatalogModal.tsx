@@ -48,7 +48,7 @@ import {
   getOrRenderFurniturePortraitUrl,
 } from './Furniture3dThumbnail';
 
-export type RealEstateCatalogTabId = 'house' | 'furniture' | 'market';
+export type RealEstateCatalogTabId = 'house' | 'shops' | 'furniture' | 'market';
 export type HouseStyleId = 'plaza_manor' | 'japanese_pavilion';
 
 export interface RealEstateCatalogModalProps {
@@ -188,8 +188,15 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
   onBuyPropertyListing,
   onCompletePropertyTransfer,
 }) => {
+  const catalogShopBuildingItems = useMemo(
+    () => MERCHANT_CATALOG_ITEMS.filter((item) => item.category === 'nft_shop_building'),
+    [],
+  );
   const catalogFurnitureItems = useMemo(
-    () => MERCHANT_CATALOG_ITEMS.filter((item) => item.category !== 'fishing_gear'),
+    () =>
+      MERCHANT_CATALOG_ITEMS.filter(
+        (item) => item.category !== 'fishing_gear' && item.category !== 'nft_shop_building',
+      ),
     [],
   );
 
@@ -739,6 +746,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
               {(
                 [
                   { id: 'house', label: 'House', Icon: Home },
+                  { id: 'shops', label: `Shop Buildings (${catalogShopBuildingItems.length})`, Icon: Store },
                   { id: 'furniture', label: 'Furniture', Icon: Sofa },
                   {
                     id: 'market',
@@ -778,9 +786,11 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
               <span>
                 {activeCatalogTab === 'house'
                   ? `${HOUSE_SERIES_CATALOG.length} Architectural Deeds`
-                  : activeCatalogTab === 'furniture'
-                    ? `${catalogFurnitureItems.length} Studio Items`
-                    : `${boardListings.length} Active Listings`}
+                  : activeCatalogTab === 'shops'
+                    ? `${catalogShopBuildingItems.length} Shop Building Forms`
+                    : activeCatalogTab === 'furniture'
+                      ? `${catalogFurnitureItems.length} Studio Items`
+                      : `${boardListings.length} Active Listings`}
               </span>
             </div>
           </div>
@@ -788,6 +798,133 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
       >
         {/* Main Scrollable Content Area */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+          {/* ===============================================================
+              TAB: SHOP BUILDINGS (3 Neutral Building Forms + Real Renders)
+             =============================================================== */}
+          {activeCatalogTab === 'shops' && (
+            <div data-catalog-shop-buildings-panel="true" className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                <div>
+                  <h3 className="text-lg font-bold text-white">Shop Buildings</h3>
+                  <p className="text-xs text-white/65">
+                    Own a building form and place it on any rented city lot. Empty neutral interior with customizable rooftop sign.
+                  </p>
+                </div>
+                <span className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-[11px] font-semibold text-emerald-300">
+                  Lot Rent: 50 RESPITE / 30 days
+                </span>
+              </div>
+
+              {actionFeedback && (
+                <div
+                  className={`rounded-xl px-3.5 py-2 text-xs font-medium border ${
+                    actionFeedback.ok
+                      ? 'bg-emerald-500/15 border-emerald-400/35 text-emerald-200'
+                      : 'bg-rose-500/15 border-rose-400/35 text-rose-200'
+                  }`}
+                >
+                  {actionFeedback.text}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {catalogShopBuildingItems.map((item) => {
+                  const ownedQty = countOwnedMerchantItems(ownedItemIds)[item.id] ?? 0;
+                  const canAfford = respiteBalance >= item.basePrice;
+                  return (
+                    <div
+                      key={item.id}
+                      data-shop-building-card={item.id}
+                      className="rounded-2xl bg-white/[0.06] border border-white/15 overflow-hidden flex flex-col justify-between shadow-sm"
+                    >
+                      <div>
+                        <div className="relative aspect-square bg-[#eef2f7] overflow-hidden">
+                          {item.renderImagePath && (
+                            <img
+                              src={item.renderImagePath}
+                              alt={item.name}
+                              draggable={false}
+                              className="w-full h-full object-contain p-2 select-none"
+                            />
+                          )}
+                          <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                            <span className="px-2.5 py-0.5 rounded-full bg-slate-900/80 text-white text-[10px] font-semibold">
+                              Shop Building
+                            </span>
+                            {item.footprintLabel && (
+                              <span className="px-2 py-0.5 rounded-full bg-white/90 text-slate-800 text-[10px] font-semibold">
+                                {item.footprintLabel}
+                              </span>
+                            )}
+                          </div>
+                          {ownedQty > 0 && (
+                            <span className="absolute top-2.5 right-2.5 px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
+                              Owned ×{ownedQty}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="p-4 space-y-2">
+                          <h4 className="text-base font-bold text-white leading-snug">
+                            {item.name}
+                          </h4>
+                          <p className="text-xs text-white/65 leading-relaxed">
+                            {item.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="px-4 pb-4 pt-2 flex items-center justify-between gap-2 border-t border-white/10">
+                        <div className="text-base font-mono font-bold text-white tabular-nums">
+                          {item.basePrice} RESPITE
+                        </div>
+                        <button
+                          type="button"
+                          disabled={isBuyingAsset || (!walletConnected ? false : !canAfford)}
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            if (!walletConnected) {
+                              onConnectWallet();
+                              return;
+                            }
+                            void (async () => {
+                              setIsBuyingAsset(true);
+                              setActionFeedback(null);
+                              try {
+                                const res = await onBuyMerchantItem(item, item.basePrice);
+                                setActionFeedback({
+                                  ok: res.ok,
+                                  text: res.ok
+                                    ? `Purchased ${item.name}! Find it in My Things → Properties.`
+                                    : 'Could not complete purchase.',
+                                });
+                              } finally {
+                                setIsBuyingAsset(false);
+                              }
+                            })();
+                          }}
+                          className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer ${
+                            !walletConnected
+                              ? 'bg-sky-500 hover:bg-sky-400 text-white'
+                              : canAfford && !isBuyingAsset
+                                ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+                                : 'bg-white/10 text-white/40 cursor-not-allowed'
+                          }`}
+                        >
+                          {!walletConnected
+                            ? 'Connect Wallet'
+                            : isBuyingAsset
+                              ? 'Buying...'
+                              : 'Buy Building'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* ===============================================================
               TAB 1: HOUSE DEEDS (Clean Bento Property Card + Bottom Selector Strip)
              =============================================================== */}
