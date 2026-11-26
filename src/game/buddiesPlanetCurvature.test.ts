@@ -282,10 +282,10 @@ test('evaluateBlitzGrassMask preserves zero grass inside the single intact Botto
   assert.ok(evaluateBlitzGrassMask(-53.5, 0.0) > 0.85);
   assert.ok(evaluateBlitzGrassMask(53.5, 0.0) > 0.85);
 
-  // 1. Intact Bottom-Left Model Estate Base (plotX = -45.0, z in [64.2..99.2]) & its front driveway spur (z = 57.0) have grassMask === 0.0
-  assert.equal(evaluateBlitzGrassMask(-45.0, 86.0), 0.0);
-  assert.equal(evaluateBlitzGrassMask(-45.0, 72.0), 0.0);
-  assert.equal(evaluateBlitzGrassMask(-45.0, 57.0), 0.0);
+  // 1. Former Bottom-Left Model Estate area (plotX = -45.0) is now clean lush green grass (> 0.85) after WS20 removal
+  assert.ok(evaluateBlitzGrassMask(-45.0, 86.0) > 0.85);
+  assert.ok(evaluateBlitzGrassMask(-45.0, 72.0) > 0.85);
+  assert.ok(evaluateBlitzGrassMask(-45.0, 64.0) > 0.85);
 
   // 2. All other 3 South Base Lots (-15.0, 15.0, 45.0) are emptied into flat lush green grass lots (> 0.85)
   for (const plotX of [-15.0, 15.0, 45.0]) {
@@ -420,13 +420,11 @@ test('Outer Tram Ring Sidewalk spans 4.40m matching main zebra crosswalks and su
     assert.equal(evaluateBlitzGrassMask(sx, sz), 0.0, `Expected zero grass at (${sx}, ${sz})`);
   }
 
-  // Exclusions: crossroads, gate drives, East Harbor spurs, Beachfront Halte, SE Beachfront walkway, NW Casino, West Plaza
+  // Exclusions: widened avenues (-60, 0, +60), East Harbor spurs, Beachfront Halte, SE Beachfront walkway, NW Casino, West Plaza
   for (const [ex, ez] of [
     [-60.0, -58.0],
-    [-45.0, -58.0],
-    [-30.0, 58.0],
-    [-15.0, 58.0],
     [0.0, -58.0],
+    [60.0, 58.0],
     [76.13, -15.0],
     [76.13, 15.0],
     [79.6, 29.5],

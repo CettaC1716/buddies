@@ -500,13 +500,12 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     float dBaseCenterAvenue = sdSegment2D(q, vec2(0.0, 52.0), vec2(0.0, 108.0));
     float dBaseEastOuter = sdSegment2D(q, vec2(60.0, 52.0), vec2(60.0, 108.0));
     float dBaseRear = sdSegment2D(q, vec2(-60.0, 108.0), vec2(96.0, 108.0));
-    float dGateDrive1 = sdSegment2D(q, vec2(-45.0, 52.0), vec2(-45.0, 64.2));
 
     float dOuterAndBaseRing = min(
       dTramRingRoad,
       min(
         min(dBaseWestOuter, min(dBaseCenterAvenue, dBaseEastOuter)) - 5.2,
-        min(min(dHarborTurn, dBaseRear) - 3.9, dGateDrive1 - 2.6)
+        min(dHarborTurn, dBaseRear) - 3.9
       )
     );
 
@@ -575,9 +574,8 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
   }
 
   float evalModelEstateBaseDirtSdf(vec2 p) {
-    float dPlot0 = sdRoundedBox2D(p, vec2(-45.0, 81.7), vec2(9.8, 17.5), 0.8);
-    float dSpur0 = sdSegment2D(p, vec2(-45.0, 64.2), vec2(-45.0, 52.0)) - 2.65;
-    return min(dPlot0, dSpur0);
+    // WS20: Legacy Model Estate on-map house & dirt clearing removed — return clean grass across all commercial blocks
+    return 999.0;
   }
 
   float evalOuterTramSidewalkSdf(vec2 p) {
@@ -587,15 +585,10 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     d = max(d, -sdRoundedBox2D(p, vec2(-86.965, -74.05), vec2(23.035, 35.95), 0.0));
     float az = abs(p.y);
     if (az > 54.0) {
-      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(-60.0, 59.5), vec2(3.93, 5.5), 0.0));
-      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(-30.0, 59.5), vec2(3.93, 5.5), 0.0));
-      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(0.0, 59.5), vec2(3.93, 5.5), 0.0));
-      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(30.0, 59.5), vec2(3.93, 5.5), 0.0));
-      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(60.0, 59.5), vec2(3.93, 5.5), 0.0));
-      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(-45.0, 59.5), vec2(2.63, 5.5), 0.0));
-      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(-15.0, 59.5), vec2(2.63, 5.5), 0.0));
-      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(15.0, 59.5), vec2(2.63, 5.5), 0.0));
-      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(45.0, 59.5), vec2(2.63, 5.5), 0.0));
+      // Widened commercial avenues 1 (-60), 3 (0), 5 (+60) with half-width 5.2m; continuous sidewalk across each block!
+      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(-60.0, 59.5), vec2(5.23, 5.5), 0.0));
+      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(0.0, 59.5), vec2(5.23, 5.5), 0.0));
+      d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(60.0, 59.5), vec2(5.23, 5.5), 0.0));
     }
     d = max(d, -sdRoundedBox2D(vec2(p.x, az), vec2(77.5, 15.0), vec2(4.0, 3.93), 0.0));
     d = max(d, -sdRoundedBox2D(p, vec2(85.01, 60.225), vec2(9.99, 14.775), 0.0));
@@ -23939,7 +23932,7 @@ export function createCurvedPlanetEnvironment(
             singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(60.0, 108.0), vec2(96.0, 108.0), 5.6, 4.6, gradP));
 
             // Model Estate Drive Spur (x = -45, |z| in [52.0..64.2])
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-45.0, 52.0), vec2(-45.0, 64.2), 4.6, 1.4, gradP));
+            // WS20: Removed legacy Model Estate driveway spur dash at x = -45.0
 
             // Grand Casino Semi-Circular Valet Drop-Off Loop Centerline Dashes (true arc-length + anisotropic AA)
             if (p.x <= -67.15 && p.y <= -60.5 && p.y >= -80.8) {
@@ -40579,7 +40572,11 @@ export function syncMilitaryBasePlotsVisuals(
   for (let i = 0; i < plotControllers.length && i < plots.length; i++) {
     const pc = plotControllers[i];
     const st = plots[i];
-    const isActivePlot = (team === 'blue' && i === 0) || Boolean(st.isModelEstate || st.isClaimedOnlineSession);
+    // WS20: Legacy on-map houses & walled base plots (including Model Estate) are removed from Safezone.
+    // Houses/apartments live in their own interior layer; city map plots are for shops only.
+    const isActivePlot = isSafezoneMode
+      ? false
+      : (team === 'blue' && i === 0) || Boolean(st.isModelEstate || st.isClaimedOnlineSession);
     pc.plotRoot.visible = isActivePlot;
     if (pc.plazaFloorGroup) pc.plazaFloorGroup.visible = isActivePlot;
     if (pc.bastionGroup) pc.bastionGroup.visible = isActivePlot && !isSafezoneMode;

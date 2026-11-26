@@ -468,13 +468,11 @@ export function evaluateRoadNetworkSdf(worldX: number, worldZ: number): number {
   const dBaseCenterAvenue = sdSegment2D(px, az, 0.0, 52.0, 0.0, 108.0);
   const dBaseEastOuter = sdSegment2D(px, az, 60.0, 52.0, 60.0, 108.0);
   const dBaseRear = sdSegment2D(px, az, -60.0, 108.0, 96.0, 108.0);
-  const dGateDrive1 = sdSegment2D(px, az, -45.0, 52.0, -45.0, 64.2);
 
   const dOuterAndBaseRing = Math.min(
     dTramRingRoad,
     Math.min(dBaseWestOuter, dBaseCenterAvenue, dBaseEastOuter) - 5.2,
     Math.min(dHarborTurn, dBaseRear) - 3.9,
-    dGateDrive1 - 2.6,
   );
 
   // 3. Central S-Curve Warzone Roads (cutting through Wind Farm, Forest, and East Warzone)
@@ -591,13 +589,9 @@ export function evaluateSeHarborSdf(
   return { concreteSdf, waterSdf };
 }
 
-function evalModelEstateBaseDirtSdf(px: number, pz: number): number {
-  // Only the single intact Bottom-Left Model Estate Base Plot (centered at x = -45.0, z = 81.7, hx = 9.8, hz = 17.5)
-  // and its Front Gate Driveway Spur leading from the gate (z = 64.2) to the Collector Road (z = 52.0).
-  // All other base areas are empty green grass lots.
-  const dPlot0 = sdRoundedBox2D(px, pz, -45.0, 81.7, 9.8, 17.5, 0.8);
-  const dSpur0 = sdSegment2D(px, pz, -45.0, 64.2, -45.0, 52.0) - 2.65;
-  return Math.min(dPlot0, dSpur0);
+function evalModelEstateBaseDirtSdf(_px: number, _pz: number): number {
+  // WS20: Legacy Model Estate on-map house & walled yard removed — return clean grass across all commercial lots.
+  return 999.0;
 }
 
 export const OUTER_TRAM_SIDEWALK_WIDTH_M = 4.4;
@@ -617,14 +611,11 @@ export function evaluateOuterTramSidewalkSdf(px: number, pz: number): number {
   d = Math.max(d, -sdRoundedBox2D(px, pz, -91.965, 0.0, 18.035, 110.0, 0.0));
   d = Math.max(d, -sdRoundedBox2D(px, pz, -86.965, -74.05, 23.035, 35.95, 0.0));
 
-  // Exclude N/S vertical complex crossroads (x = ±60, ±30, 0) & gate driveway spurs (x = ±45, ±15)
+  // Exclude widened N/S commercial avenues (x = -60, 0, +60, half-width 5.2m); continuous sidewalk across each block!
   const az = Math.abs(pz);
   if (az > 54.0) {
-    for (const rx of [-60.0, -30.0, 0.0, 30.0, 60.0] as const) {
-      d = Math.max(d, -sdRoundedBox2D(px, az, rx, 59.5, 3.93, 5.5, 0.0));
-    }
-    for (const gx of [-45.0, -15.0, 15.0, 45.0] as const) {
-      d = Math.max(d, -sdRoundedBox2D(px, az, gx, 59.5, 2.63, 5.5, 0.0));
+    for (const rx of [-60.0, 0.0, 60.0] as const) {
+      d = Math.max(d, -sdRoundedBox2D(px, az, rx, 59.5, 5.23, 5.5, 0.0));
     }
   }
 

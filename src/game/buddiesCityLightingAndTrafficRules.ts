@@ -438,9 +438,7 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   // Grand Casino Valet Entrance Piers (shifted west of widened Avenue 1 edge x=-65.2)
   { id: 'lamp_t2_casino_valet_s', tier: 2, district: 'grand_casino', x: -66.0, z: -59.4, rotY: Math.PI / 2 },
   { id: 'lamp_t2_casino_valet_n', tier: 2, district: 'grand_casino', x: -66.0, z: -81.3, rotY: Math.PI / 2 },
-  // Model Estate House Gateposts ONLY (intact house at -45, 81.7; zero empty-lot stray posts!)
-  { id: 'lamp_t2_res_blue0_w', tier: 2, district: 'residential', x: -49.2, z: 62.6, rotY: 0 },
-  { id: 'lamp_t2_res_blue0_e', tier: 2, district: 'residential', x: -40.8, z: 62.6, rotY: 0 },
+  // WS20: Removed legacy Model Estate gatepost lamps (lamp_t2_res_blue0_w / lamp_t2_res_blue0_e)
   // Beach Club Promenade Entry Piers & SE Beachfront Collinear Framing (x = 75.85 matches beach_lamp_1..4)
   { id: 'lamp_t2_beach_club_entry_n', tier: 2, district: 'beach_club', x: 78.85, z: -87.0, rotY: 0 },
   { id: 'lamp_t2_beach_club_entry_s', tier: 2, district: 'beach_club', x: 78.85, z: 35.5, rotY: 0 },

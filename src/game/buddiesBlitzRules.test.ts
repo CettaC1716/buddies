@@ -6014,15 +6014,15 @@ test('resolveOwnedHouseStyle, claimEmptyBasePlotWithNearGamepass, and syncMilita
   (mockGroup as unknown as { __plotControllers: typeof ctrls }).__plotControllers = ctrls;
 
   syncMilitaryBasePlotsVisuals(mockGroup, bluePlots, 'blue', true);
-  // blue_0 Model Estate -> Japanese Pavilion
-  assert.equal(ctrls[0].plazaManorBuilding.visible, false);
-  assert.equal(ctrls[0].lv1Building.visible, true);
-  // blue_1 claimed Plaza Manor -> Plaza Manor exterior
-  assert.equal(ctrls[1].plazaManorBuilding.visible, true);
-  assert.equal(ctrls[1].lv1Building.visible, false);
-  // blue_2 claimed Japanese Pavilion -> Japanese Pavilion exterior
-  assert.equal(ctrls[2].plazaManorBuilding.visible, false);
-  assert.equal(ctrls[2].lv1Building.visible, true);
+  // WS20: In Safezone, all legacy on-map houses & walled plots (including Model Estate) are hidden
+  assert.equal(ctrls[0].plotRoot.visible, false);
+  assert.equal(ctrls[1].plotRoot.visible, false);
+  assert.equal(ctrls[2].plotRoot.visible, false);
+  // In Warzone mode, active commander base plots remain visible
+  syncMilitaryBasePlotsVisuals(mockGroup, bluePlots, 'blue', false);
+  assert.equal(ctrls[0].plotRoot.visible, true);
+  assert.equal(ctrls[1].plotRoot.visible, true);
+  assert.equal(ctrls[2].plotRoot.visible, true);
   // blue_3 unclaimed -> hidden
   assert.equal(ctrls[3].plotRoot.visible, false);
   assert.equal(ctrls[3].plazaManorBuilding.visible, false);

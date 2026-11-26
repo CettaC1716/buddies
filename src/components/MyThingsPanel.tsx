@@ -61,6 +61,7 @@ export interface MyThingsPanelProps {
   onAddHouseAccountFunds: () => void;
   onCollectHouseAccount: () => void;
   onSyncHouseAccount: () => void;
+  onEnterOwnHouse?: () => void;
   caughtFishBucket: readonly CaughtFishItem[];
   playerListedFish: readonly FishNftMarketplaceListing[];
   recruitedFamilyMembers: readonly RecruitedFamilyMemberAgent[];
@@ -153,6 +154,7 @@ export const MyThingsPanel: React.FC<MyThingsPanelProps> = ({
   onAddHouseAccountFunds,
   onCollectHouseAccount,
   onSyncHouseAccount,
+  onEnterOwnHouse,
   caughtFishBucket,
   playerListedFish,
   recruitedFamilyMembers,
@@ -561,6 +563,20 @@ export const MyThingsPanel: React.FC<MyThingsPanelProps> = ({
                           Sync
                         </button>
                       </div>
+                    )}
+
+                    {onEnterOwnHouse && (
+                      <button
+                        type="button"
+                        data-enter-apartment-btn="true"
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          onEnterOwnHouse();
+                        }}
+                        className="w-full py-1.5 rounded-full text-[10px] font-bold bg-indigo-500 hover:bg-indigo-400 text-white cursor-pointer transition-colors"
+                      >
+                        Enter Apartment
+                      </button>
                     )}
 
                     {houseAccountFeedback && (

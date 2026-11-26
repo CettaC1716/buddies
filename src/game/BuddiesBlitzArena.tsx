@@ -23333,8 +23333,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       cityRentalLotsController.sync({
         isSafezoneMode: worldModeRef.current !== 'warzone',
         showOutdoor,
-        blueCommanderBases,
-        redCommanderBases,
+        // WS20: Legacy on-map Model Estate & residential houses removed in Safezone, so all 16 commercial lots render cleanly
+        blueCommanderBases: [],
+        redCommanderBases: [],
         rentedSlotIds: shopLotPlacementState.rentedSlotIds,
         lotStatusBySlotId: shopLotPlacementState.lotStatusBySlotId,
         placedBuildingBySlotId: shopLotPlacementState.placedBuildingBySlotId,
@@ -24361,8 +24362,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             });
           }
         };
-        pushActivePlotsGrassExclusions(blueCommanderBases, blueBase.hqX, blueBase.hqZ, 1);
-        pushActivePlotsGrassExclusions(redCommanderBases, redBase.hqX, redBase.hqZ, -1);
+        if (worldModeRef.current === 'warzone') {
+          pushActivePlotsGrassExclusions(blueCommanderBases, blueBase.hqX, blueBase.hqZ, 1);
+          pushActivePlotsGrassExclusions(redCommanderBases, redBase.hqX, redBase.hqZ, -1);
+        }
         for (let i = 0; i < activeMapProps.length; i++) {
           const mp = activeMapProps[i];
           if (!mp.alive || (mp.kind !== 'bench' && mp.kind !== 'recycle_bin')) continue;
@@ -32333,10 +32336,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         for (let i = 0; i < worldPickups.length; i++) {
           worldPickups[i].mesh.visible = false;
         }
-        // Keep all 8 White Tactical Kiosks visible on the 8 Residential House Plots across The City!
+        // WS20: Legacy on-map house plots & residential claim kiosks are removed in Safezone.
         for (const cp of [...blueBase.commanderPads, ...redBase.commanderPads]) {
           cp.padGroup.visible = false;
-          cp.kioskMesh.visible = true;
+          cp.kioskMesh.visible = false;
         }
         for (const pubPad of publicWarzonePads) {
           pubPad.padGroup.visible = false;
@@ -35740,7 +35743,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         !isKioskModalOpenCanvas &&
         !isRealEstateCatalogModalOpenDom &&
         distToModelHouseDoor <= PLAZA_MODEL_HOUSE_DOOR_TRIGGER.triggerRadius;
-      modelHouseDoorChevron.group.visible = showModelHouseDoorChevron;
+      // WS20: Legacy on-map Model Estate & claimed plot house doors removed; apartments are entered via My Things / Real Estate.
+      modelHouseDoorChevron.group.visible = false;
       if (showModelHouseDoorChevron) {
         const mhDoorTerrainY = getTerrainElevation(
           PLAZA_MODEL_HOUSE_DOOR_TRIGGER.x,
@@ -36359,7 +36363,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           }
         }
       }
-      houseExteriorDoorPad.group.visible = Boolean(visibleHouseDoorBeaconPos);
+      // WS20: Legacy on-map house exterior door beacon removed (apartments entered via My Things / Real Estate).
+      houseExteriorDoorPad.group.visible = false;
       if (visibleHouseDoorBeaconPos) {
         const hDoorTerrainY = getTerrainElevation(
           visibleHouseDoorBeaconPos.x,

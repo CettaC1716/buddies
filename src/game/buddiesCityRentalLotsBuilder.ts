@@ -19,6 +19,8 @@ export interface CityRentalLotNodeController {
   spec: CityRentalLotSpec;
   lotRoot: THREE.Group;
   emptyMarkerGroup: THREE.Group;
+  lotPavingMesh: THREE.Mesh;
+  kioskChevron: THREE.Mesh;
   shopBuildingGroup: THREE.Group;
   glbBuildingMount: THREE.Group;
   loadedGlbFormId: ShopBuildingFormId | null;
@@ -276,23 +278,22 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
     return m;
   };
 
-  // Shared Geometries for Low Open-Front Lot Boundaries (15.0m x 15.0m lot)
-  // Front edge is at local +Z = +7.5m (100% OPEN to sidewalk/road!).
-  // Low curb + low trimmed hedge along Rear (-Z = -7.32m), Left (-X = -7.32m), and Right (+X = +7.32m).
-  const rearCurbGeo = regGeo(new RoundedBoxGeometry(14.88, 0.14, 0.28, 1, 0.02));
-  const rearHedgeGeo = regGeo(new RoundedBoxGeometry(14.52, 0.34, 0.34, 2, 0.06));
-  const sideCurbGeo = regGeo(new RoundedBoxGeometry(0.28, 0.14, 14.2, 1, 0.02));
-  const sideHedgeGeo = regGeo(new RoundedBoxGeometry(0.34, 0.34, 13.6, 2, 0.06));
-  const cornerBollardGeo = regGeo(new RoundedBoxGeometry(0.38, 0.44, 0.38, 2, 0.04));
-  const frontThresholdPaverGeo = regGeo(new THREE.PlaneGeometry(14.2, 0.42));
-  frontThresholdPaverGeo.rotateX(-Math.PI * 0.5);
-
-  const frontWalkApronGeo = regGeo(new THREE.PlaneGeometry(6.4, 1.55));
-  frontWalkApronGeo.rotateX(-Math.PI * 0.5);
+  // Amendment 3: Per-building-form lot ground paving (14.4m x 14.4m inside 15m lot boundary; hidden when unbuilt so lot stays plain grass)
+  const lotPavingGeo = regGeo(new THREE.PlaneGeometry(14.4, 14.4));
+  lotPavingGeo.rotateX(-Math.PI * 0.5);
 
   const groundPlaqueBaseGeo = regGeo(new RoundedBoxGeometry(2.68, 0.12, 0.92, 1, 0.02));
   const groundPlaqueFaceGeo = regGeo(new THREE.PlaneGeometry(2.52, 0.8));
   groundPlaqueFaceGeo.rotateX(-Math.PI * 0.5);
+
+  // Shared Geometries for Centered Self-Service Claim Plot Kiosk (at exact lot center 0, 0, 0)
+  const kioskFootPadGeo = regGeo(new RoundedBoxGeometry(1.56, 0.12, 1.24, 2, 0.03));
+  const kioskPedestalGeo = regGeo(new RoundedBoxGeometry(0.92, 2.24, 0.52, 2, 0.04));
+  const kioskTopCapGeo = regGeo(new RoundedBoxGeometry(1.02, 0.14, 0.62, 2, 0.03));
+  const kioskBezelGeo = regGeo(new RoundedBoxGeometry(0.76, 1.04, 0.08, 2, 0.02));
+  const kioskScreenFaceGeo = regGeo(new THREE.PlaneGeometry(0.66, 0.92));
+  const kioskChevronGeo = regGeo(new THREE.ConeGeometry(0.16, 0.30, 3));
+  kioskChevronGeo.rotateX(Math.PI);
 
   // Highlight ring along the 15.0m x 15.0m perimeter
   const highlightNSGeo = regGeo(new THREE.PlaneGeometry(15.0, 0.28));
@@ -327,17 +328,76 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
   };
 
   // Shared Materials
-  const stoneCurbMat = regMat(new THREE.MeshLambertMaterial({ color: '#d6d1c4' }));
-  const lowHedgeMat = regMat(new THREE.MeshLambertMaterial({ color: '#2f7d44' }));
-  const paverApronMat = regMat(
-    new THREE.MeshBasicMaterial({
-      color: '#cbd5e1',
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
-    }),
-  );
   const plaqueBaseMat = regMat(new THREE.MeshLambertMaterial({ color: '#1e293b' }));
+  const kioskWhiteMat = regMat(new THREE.MeshLambertMaterial({ color: '#f1f5f9' }));
+  const kioskDarkTrimMat = regMat(new THREE.MeshLambertMaterial({ color: '#1e293b' }));
+  const kioskAccentMat = regMat(
+    new THREE.MeshBasicMaterial({ color: '#38bdf8' }),
+  );
+
+  // Amendment 3: Building-form styled lot paving materials (applied on placement, reverted to grass on removal/expiry)
+  const createBuildingFormPavingMat = (
+    baseHex: string,
+    groutHex: string,
+    accentHex: string,
+    tileCount: number,
+  ): THREE.MeshLambertMaterial => {
+    if (typeof document === 'undefined') {
+      return regMat(new THREE.MeshLambertMaterial({ color: baseHex }));
+    }
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 256;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = baseHex;
+      ctx.fillRect(0, 0, 256, 256);
+      const step = 256 / tileCount;
+      ctx.strokeStyle = groutHex;
+      ctx.lineWidth = 3;
+      for (let gx = 0; gx <= tileCount; gx++) {
+        ctx.beginPath();
+        ctx.moveTo(gx * step, 0);
+        ctx.lineTo(gx * step, 256);
+        ctx.stroke();
+      }
+      for (let gy = 0; gy <= tileCount; gy++) {
+        ctx.beginPath();
+        ctx.moveTo(0, gy * step);
+        ctx.lineTo(256, gy * step);
+        ctx.stroke();
+      }
+      ctx.fillStyle = accentHex;
+      ctx.globalAlpha = 0.24;
+      for (let gx = 0; gx < tileCount; gx++) {
+        for (let gy = 0; gy < tileCount; gy++) {
+          if ((gx + gy) % 2 === 0) {
+            ctx.fillRect(gx * step + 2, gy * step + 2, step - 4, step - 4);
+          }
+        }
+      }
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(3, 3);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    disposables.push(tex);
+    return regMat(
+      new THREE.MeshLambertMaterial({
+        map: tex,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
+      }),
+    );
+  };
+
+  const lotPavingMatByForm: Record<ShopBuildingFormId, THREE.MeshLambertMaterial> = {
+    glass_corner_3story: createBuildingFormPavingMat('#cbd5e1', '#94a3b8', '#e2e8f0', 4),
+    canopy_storefront_2story: createBuildingFormPavingMat('#dfd3c3', '#b8a99a', '#f0e6d8', 4),
+    brick_rooftop_deck: createBuildingFormPavingMat('#b8b2a6', '#78716c', '#d6d3d1', 6),
+  };
 
   const sharedShopMats = {
     stonePlinthMat: regMat(new THREE.MeshLambertMaterial({ color: '#94a3b8' })),
@@ -363,60 +423,95 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
     lotRoot.rotation.y = spec.facingYaw;
     rootGroup.add(lotRoot);
 
-    // 1. Open-Front Low Boundary Markers (Left, Right, and Rear edges ONLY; Front at +Z is open)
+    // 1. Flat White Ground Boundary Lines flush with terrain (NO 3D green hedges, NO protruding apron slabs)
     const boundaryGroup = new THREE.Group();
     boundaryGroup.name = `LotBoundary_${spec.slotId}`;
     lotRoot.add(boundaryGroup);
 
-    const rearCurb = new THREE.Mesh(rearCurbGeo, stoneCurbMat);
-    rearCurb.position.set(0, 0.07, -7.34);
-    boundaryGroup.add(rearCurb);
+    const whiteLineMat = regMat(
+      new THREE.MeshBasicMaterial({
+        color: '#ffffff',
+        transparent: true,
+        opacity: 0.88,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      }),
+    );
+    const whiteLineNSGeo = regGeo(new THREE.PlaneGeometry(15.0, 0.18));
+    whiteLineNSGeo.rotateX(-Math.PI * 0.5);
+    const whiteLineEWGeo = regGeo(new THREE.PlaneGeometry(0.18, 15.0));
+    whiteLineEWGeo.rotateX(-Math.PI * 0.5);
+    const frontWhiteSegmentGeo = regGeo(new THREE.PlaneGeometry(4.4, 0.18));
+    frontWhiteSegmentGeo.rotateX(-Math.PI * 0.5);
 
-    const rearHedge = new THREE.Mesh(rearHedgeGeo, lowHedgeMat);
-    rearHedge.position.set(0, 0.24, -7.34);
-    boundaryGroup.add(rearHedge);
+    // Rear white line (-Z = -7.41)
+    const rearLine = new THREE.Mesh(whiteLineNSGeo, whiteLineMat);
+    rearLine.position.set(0, 0.025, -7.41);
+    boundaryGroup.add(rearLine);
 
+    // Left & Right white lines (-X = -7.41, +X = +7.41)
     for (const xSign of [-1, 1]) {
-      const sCurb = new THREE.Mesh(sideCurbGeo, stoneCurbMat);
-      sCurb.position.set(xSign * 7.34, 0.07, -0.35);
-      boundaryGroup.add(sCurb);
+      const sideLine = new THREE.Mesh(whiteLineEWGeo, whiteLineMat);
+      sideLine.position.set(xSign * 7.41, 0.025, 0);
+      boundaryGroup.add(sideLine);
 
-      const sHedge = new THREE.Mesh(sideHedgeGeo, lowHedgeMat);
-      sHedge.position.set(xSign * 7.34, 0.24, -0.35);
-      boundaryGroup.add(sHedge);
-
-      // Low front corner stone markers framing the wide 14.3m open front entrance
-      const frontBollard = new THREE.Mesh(cornerBollardGeo, stoneCurbMat);
-      frontBollard.position.set(xSign * 7.31, 0.22, 7.31);
-      boundaryGroup.add(frontBollard);
-
-      const rearBollard = new THREE.Mesh(cornerBollardGeo, stoneCurbMat);
-      rearBollard.position.set(xSign * 7.31, 0.22, -7.31);
-      boundaryGroup.add(rearBollard);
+      // Front white corner returns leaving a 6.2m open vehicle entrance in the middle (+Z = +7.41)
+      const frontSeg = new THREE.Mesh(frontWhiteSegmentGeo, whiteLineMat);
+      frontSeg.position.set(xSign * 5.25, 0.025, 7.41);
+      boundaryGroup.add(frontSeg);
     }
 
-    // Flush Front Threshold Strip & Walk-In Sidewalk Connector Apron at +Z (zero fence!)
-    const frontThreshold = new THREE.Mesh(frontThresholdPaverGeo, paverApronMat);
-    frontThreshold.position.set(0, 0.022, 7.28);
-    boundaryGroup.add(frontThreshold);
-
-    const frontApron = new THREE.Mesh(frontWalkApronGeo, paverApronMat);
-    frontApron.position.set(0, 0.02, 8.26);
-    boundaryGroup.add(frontApron);
-
-    // 2. Resting Empty Land Presentation ("AVAILABLE · LOT X-0Y") placed near front-right corner
+    // 2. Resting Empty Land Presentation: Claim Plot Kiosk at exact center (0, 0, 0) of each kavling
     const emptyMarkerGroup = new THREE.Group();
     emptyMarkerGroup.name = `LotEmptyMarker_${spec.slotId}`;
     lotRoot.add(emptyMarkerGroup);
 
-    const plaqueBase = new THREE.Mesh(groundPlaqueBaseGeo, plaqueBaseMat);
-    plaqueBase.position.set(0, 0.06, 5.85);
-    emptyMarkerGroup.add(plaqueBase);
+    const claimKioskGroup = new THREE.Group();
+    claimKioskGroup.name = `LotClaimKiosk_${spec.slotId}`;
+    claimKioskGroup.position.set(0, 0, 0);
+    emptyMarkerGroup.add(claimKioskGroup);
+
+    const kioskFootPad = new THREE.Mesh(kioskFootPadGeo, kioskDarkTrimMat);
+    kioskFootPad.position.set(0, 0.06, 0);
+    kioskFootPad.receiveShadow = true;
+    claimKioskGroup.add(kioskFootPad);
+
+    const kioskPedestal = new THREE.Mesh(kioskPedestalGeo, kioskWhiteMat);
+    kioskPedestal.position.set(0, 1.24, 0);
+    kioskPedestal.castShadow = true;
+    kioskPedestal.receiveShadow = true;
+    claimKioskGroup.add(kioskPedestal);
+
+    const kioskTopCap = new THREE.Mesh(kioskTopCapGeo, kioskDarkTrimMat);
+    kioskTopCap.position.set(0, 2.40, 0);
+    claimKioskGroup.add(kioskTopCap);
+
+    const kioskBezel = new THREE.Mesh(kioskBezelGeo, kioskDarkTrimMat);
+    kioskBezel.position.set(0, 1.56, 0.25);
+    claimKioskGroup.add(kioskBezel);
 
     const availTex = createLotGroundPlaqueTexture(spec.shortCode, 'available', disposables);
     const statusSignMat = regMat(new THREE.MeshBasicMaterial({ map: availTex }));
+
+    const kioskScreen = new THREE.Mesh(kioskScreenFaceGeo, statusSignMat);
+    kioskScreen.position.set(0, 1.56, 0.295);
+    claimKioskGroup.add(kioskScreen);
+
+    const kioskChevron = new THREE.Mesh(kioskChevronGeo, kioskAccentMat);
+    kioskChevron.name = `LotClaimChevron_${spec.slotId}`;
+    kioskChevron.position.set(0, 2.86, 0);
+    claimKioskGroup.add(kioskChevron);
+
+    // Compact ground plaque directly in front of the centered Claim Kiosk
+    const plaqueBase = new THREE.Mesh(groundPlaqueBaseGeo, plaqueBaseMat);
+    plaqueBase.position.set(0, 0.06, 1.35);
+    emptyMarkerGroup.add(plaqueBase);
+
     const plaqueFace = new THREE.Mesh(groundPlaqueFaceGeo, statusSignMat);
-    plaqueFace.position.set(0, 0.125, 5.85);
+    plaqueFace.position.set(0, 0.125, 1.35);
     emptyMarkerGroup.add(plaqueFace);
 
     // 3. Standardized Compact Shop Building Shell (fallback while real GLB streams in)
@@ -436,6 +531,14 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
     glbBuildingMount.position.set(0, 0, STANDARD_SHOP_FOOTPRINT_SPEC.localDepthOffsetTowardRearM);
     glbBuildingMount.visible = false;
     lotRoot.add(glbBuildingMount);
+
+    // 3C. Amendment 3: Per-building-form Ground Paving (covers inner lot grass ONLY while a building is placed; reverts to plain grass on removal/expiry)
+    const lotPavingMesh = new THREE.Mesh(lotPavingGeo, lotPavingMatByForm.glass_corner_3story);
+    lotPavingMesh.name = `LotBuildingPaving_${spec.slotId}`;
+    lotPavingMesh.position.set(0, 0.018, 0);
+    lotPavingMesh.receiveShadow = true;
+    lotPavingMesh.visible = false;
+    lotRoot.add(lotPavingMesh);
 
     // 4. Interactive 3D Selection / Hover Highlight Border Ring
     const highlightGroup = new THREE.Group();
@@ -475,6 +578,8 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
       spec,
       lotRoot,
       emptyMarkerGroup,
+      lotPavingMesh,
+      kioskChevron,
       shopBuildingGroup,
       glbBuildingMount,
       loadedGlbFormId: null,
@@ -506,18 +611,30 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
   const bikeRackLoopGeo = regGeo(new THREE.TorusGeometry(0.28, 0.035, 6, 12, Math.PI));
 
   for (const strip of COMMERCIAL_SIDEWALK_STRIPS) {
-    const slabGeo = regGeo(new THREE.BoxGeometry(strip.widthM, 0.09, strip.lengthM));
-    const slab = new THREE.Mesh(slabGeo, sidewalkSlabMat);
-    slab.position.set(strip.centerX, 0.045, (strip.minZ + strip.maxZ) * 0.5);
-    slab.receiveShadow = true;
-    sidewalkGroup.add(slab);
+    const isNorth = strip.maxZ < 0;
+    const zSign = isNorth ? -1 : 1;
+    // Split each avenue sidewalk into 3 clean segments with 6.2m vehicle driveway cutouts centered on each lot (|z| = 70.5 & 89.5)
+    const segBoundsAbs: Array<[number, number]> = [
+      [60.3, 67.4],
+      [73.6, 86.4],
+      [92.6, 104.1],
+    ];
+    for (const [a, b] of segBoundsAbs) {
+      const segLen = b - a;
+      const segCenterZ = zSign * ((a + b) * 0.5);
+      const slabGeo = regGeo(new THREE.BoxGeometry(strip.widthM, 0.09, segLen));
+      const slab = new THREE.Mesh(slabGeo, sidewalkSlabMat);
+      slab.position.set(strip.centerX, 0.045, segCenterZ);
+      slab.receiveShadow = true;
+      sidewalkGroup.add(slab);
+    }
 
-    // Streetlamps, hardwood benches, planters, and bike racks along curb edge
+    // Place streetlamps, hardwood bench, planters, and bike racks strictly on the solid sidewalk segments (never blocking vehicle cutouts!)
     const curbOffset = strip.sideOfAvenue === 'east' ? -0.58 : 0.58;
     const fx = strip.centerX + curbOffset;
-    const zStops = [strip.minZ + 6, (strip.minZ + strip.maxZ) * 0.5, strip.maxZ - 6];
-    for (let zi = 0; zi < zStops.length; zi++) {
-      const fz = zStops[zi];
+    const solidFurnitureZ = [zSign * 63.8, zSign * 80.0, zSign * 98.4];
+    for (let zi = 0; zi < solidFurnitureZ.length; zi++) {
+      const fz = solidFurnitureZ[zi];
       const pole = new THREE.Mesh(lampPoleGeo, lampPostMat);
       pole.position.set(fx, 1.85, fz);
       sidewalkGroup.add(pole);
@@ -527,24 +644,35 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
       sidewalkGroup.add(globe);
 
       const planter = new THREE.Mesh(planterBoxGeo, planterPotMat);
-      planter.position.set(fx, 0.33, fz + 2.2);
+      planter.position.set(fx, 0.33, fz + zSign * 1.9);
       sidewalkGroup.add(planter);
 
       const bush = new THREE.Mesh(planterBushGeo, planterFoliageMat);
-      bush.position.set(fx, 0.72, fz + 2.2);
+      bush.position.set(fx, 0.72, fz + zSign * 1.9);
       sidewalkGroup.add(bush);
 
       if (zi === 1) {
         const bench = new THREE.Mesh(benchSeatGeo, benchWoodMat);
-        bench.position.set(fx, 0.45, fz - 2.6);
+        bench.position.set(fx, 0.45, fz - zSign * 2.4);
         sidewalkGroup.add(bench);
 
         for (let r = 0; r < 2; r++) {
           const rack = new THREE.Mesh(bikeRackLoopGeo, lampPostMat);
-          rack.position.set(fx, 0.12, fz + 4.4 + r * 0.65);
+          rack.position.set(fx, 0.12, fz + zSign * (3.8 + r * 0.65));
           sidewalkGroup.add(rack);
         }
       }
+    }
+  }
+
+  // Rear promenade wrapping sidewalks along |z| = 103.1 so city sidewalks wrap all 4 sides of every commercial block
+  const rearWrapSlabGeo = regGeo(new THREE.BoxGeometry(49.6, 0.09, 2.0));
+  for (const bx of [-30.0, 30.0]) {
+    for (const zSign of [-1, 1]) {
+      const rearWrap = new THREE.Mesh(rearWrapSlabGeo, sidewalkSlabMat);
+      rearWrap.position.set(bx, 0.045, zSign * 103.1);
+      rearWrap.receiveShadow = true;
+      sidewalkGroup.add(rearWrap);
     }
   }
 
@@ -644,6 +772,8 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
       const targetLogoUrl = params.billboardLogoUrlBySlotId?.[node.spec.slotId] ?? null;
 
       if (targetForm) {
+        node.lotPavingMesh.material = lotPavingMatByForm[targetForm];
+        node.lotPavingMesh.visible = true;
         if (node.loadedGlbFormId !== targetForm) {
           node.loadedGlbFormId = targetForm;
           node.appliedBillboardLogoUrl = null;
@@ -682,6 +812,7 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
           );
         }
       } else {
+        node.lotPavingMesh.visible = false;
         node.shopBuildingGroup.visible = false;
         node.glbBuildingMount.visible = false;
         if (node.loadedGlbFormId !== null) {
@@ -691,6 +822,10 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
       }
 
       node.emptyMarkerGroup.visible = !st.showShopBuilding;
+      if (node.emptyMarkerGroup.visible && typeof params.timeSec === 'number') {
+        node.kioskChevron.position.y = 2.86 + Math.sin(params.timeSec * 3.4 + i) * 0.08;
+        node.kioskChevron.rotation.y = params.timeSec * 1.4;
+      }
 
       const isSelected = params.selectedSlotId === node.spec.slotId;
       const isHovered = params.hoveredSlotId === node.spec.slotId;

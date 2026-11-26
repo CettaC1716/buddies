@@ -4822,22 +4822,10 @@ export default function App() {
 
   useEffect(() => {
     if (!isInsidePrivateHouse || isSampleHouseView) return;
-    if (!hud.nearClaimedTeam || hud.nearClaimedPlotIndex == null) return;
-    const entered = lastEnteredHousePlotRef.current;
-    const matchesClaimedPlot =
-      !entered ||
-      entered.viaStudio ||
-      (entered.team === hud.nearClaimedTeam && entered.plotIndex === hud.nearClaimedPlotIndex);
-    if (matchesClaimedPlot) {
-      completeDailyMission('visit_claimed_house');
-    }
-  }, [
-    isInsidePrivateHouse,
-    isSampleHouseView,
-    hud.nearClaimedTeam,
-    hud.nearClaimedPlotIndex,
-    completeDailyMission,
-  ]);
+    // WS20: Houses/apartments are now entered directly via My Things or Real Estate Catalog (no on-map plot required).
+    completeDailyMission('claim_plot_house');
+    completeDailyMission('visit_claimed_house');
+  }, [isInsidePrivateHouse, isSampleHouseView, completeDailyMission]);
 
   useEffect(() => {
     if (hud.worldMode === 'warzone') {
@@ -9495,6 +9483,12 @@ export default function App() {
             }
           })();
         }}
+        onEnterOwnHouse={() => {
+          setIsPersonalBagModalOpen(false);
+          setIsGearModalOpen(false);
+          closeSmartphone();
+          handleEnterOwnHouse();
+        }}
         onSyncHouseAccount={() => {
           void refreshOnChainDeedLedger();
         }}
@@ -9604,6 +9598,16 @@ export default function App() {
     if (isInsideBeautySalon) {
       dispatchBuddyAction('exitBeautySalon');
     }
+    if (missionId === 'claim_plot_house' || missionId === 'visit_claimed_house') {
+      // WS20: Reroute apartment missions directly to the player's apartment (or Real Estate Catalog if no deed yet).
+      if (hasHouseOwnership || Boolean(hud.nearHasGamepassNft)) {
+        handleEnterOwnHouse();
+      } else {
+        setRealEstateCatalogTab('house');
+        setIsRealEstateCatalogModalOpen(true);
+      }
+      return;
+    }
     if (hud.worldMode === 'warzone') return;
     const def = DAILY_MISSIONS_CATALOG.find((m) => m.id === missionId);
     let finalX = 0;
@@ -9641,20 +9645,6 @@ export default function App() {
     const hasScooter = ownedScooterIds.length > 0;
     let roadRoute = false;
     if (hasScooter && (missionId === 'meet_kai' || missionId === 'go_fishing')) {
-      guideStationId = null;
-      roadRoute = true;
-    } else if (hasScooter && missionId === 'visit_claimed_house') {
-      const claimedTeam = hud.nearClaimedTeam;
-      const claimedIdx = hud.nearClaimedPlotIndex;
-      if (claimedTeam && claimedIdx != null && claimedIdx >= 0 && claimedIdx <= 3) {
-        finalX = [-45, -15, 15, 45][claimedIdx];
-        finalZ = claimedTeam === 'blue' ? 73.45 : -73.45;
-        guideStationId = null;
-        roadRoute = true;
-      }
-    } else if (hasScooter && missionId === 'claim_plot_house') {
-      finalX = 6.5;
-      finalZ = -46.4;
       guideStationId = null;
       roadRoute = true;
     }
