@@ -16,12 +16,7 @@ import {
   NPC_EMOTION_TAGS,
 } from './npcPersonaRegistry';
 import { ensureAllNpcPersonasRegistered } from './personas/index';
-import {
-  dispatchNpcEmotionReaction,
-  sendNpcChatMessage,
-  subscribeNpcEmotionReaction,
-  type NpcEmotionReactionDetail,
-} from './npcTextChat';
+import { sendNpcChatMessage } from './npcTextChat';
 
 test('all 7 named NPC stub personas register cleanly and export valid emotion tags', () => {
   ensureAllNpcPersonasRegistered();
@@ -171,7 +166,7 @@ test('server system instruction enforces persona rules, flirt profile, and anti-
   assert.match(prompt, /Sam/);
 });
 
-test('client sendNpcChatMessage rejects ambient NPC and dispatches emotion reactions cleanly', async () => {
+test('client sendNpcChatMessage rejects ambient NPC cleanly', async () => {
   const ambient = await sendNpcChatMessage({
     npcId: 'city_plaza_raka',
     message: 'Hello!',
@@ -180,20 +175,4 @@ test('client sendNpcChatMessage rejects ambient NPC and dispatches emotion react
   });
   assert.equal(ambient.ok, false);
   assert.equal(ambient.npcId, null);
-
-  const received: NpcEmotionReactionDetail[] = [];
-  const unsubscribe = subscribeNpcEmotionReaction((detail) => {
-    received.push(detail);
-  });
-
-  const emitted = dispatchNpcEmotionReaction('citizen_kenji', 'proud');
-  unsubscribe();
-
-  assert.ok(emitted);
-  assert.equal(emitted.npcId, 'kenji');
-  assert.equal(emitted.citizenId, 'citizen_kenji');
-  assert.equal(emitted.emotion, 'proud');
-  assert.equal(emitted.clipName, null); // fallback = expressive idle
-  assert.equal(received.length, 1);
-  assert.equal(received[0].emotion, 'proud');
 });

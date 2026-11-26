@@ -15,7 +15,6 @@ import {
   getTimeSlotWindowForHour,
   isHourInScheduleSlot,
   resolveNpcScheduledWaypoint,
-  resolveVerifiedNpcEmotionClip,
   startNpcPairPose,
   startNpcRideTogether,
   startNpcWalkTogether,
@@ -106,44 +105,6 @@ describe('npcTogetherness — deterministic anchors & persona schedules', () => 
     const eveningTarget = resolveNpcScheduledWaypoint('mira', 19.0, schedule);
     assert.ok(eveningTarget);
     assert.equal(eveningTarget.anchor.id, 'oasis_bench_south');
-  });
-});
-
-describe('npcTogetherness — emotion clip verification & fallback', () => {
-  it('resolves rig clips, external animation GLBs, and falls back to expressive idle', () => {
-    const rigClips = new Set(['idle.001', 'mira_idle.001', 'eat_makan_ngobrol.001']);
-
-    const exact = resolveVerifiedNpcEmotionClip({
-      requestedClipName: 'eat_makan_ngobrol.001',
-      availableRigClips: rigClips,
-      idleOverrideClip: 'mira_idle.001',
-    });
-    assert.equal(exact.kind, 'rig_clip');
-    assert.equal(exact.clipName, 'eat_makan_ngobrol.001');
-
-    const external = resolveVerifiedNpcEmotionClip({
-      requestedClipName: '/assets/animations/action/1EB166FC__talking_01.glb',
-      availableRigClips: rigClips,
-      idleOverrideClip: 'mira_idle.001',
-    });
-    assert.equal(external.kind, 'external_glb');
-    assert.equal(external.externalGlbUrl, '/assets/animations/action/1EB166FC__talking_01.glb');
-
-    const missing = resolveVerifiedNpcEmotionClip({
-      requestedClipName: 'nonexistent_clip.001',
-      availableRigClips: rigClips,
-      idleOverrideClip: 'mira_idle.001',
-    });
-    assert.equal(missing.kind, 'expressive_idle');
-    assert.equal(missing.clipName, 'mira_idle.001');
-
-    const fallbackDefault = resolveVerifiedNpcEmotionClip({
-      requestedClipName: null,
-      availableRigClips: new Set(['idle.001']),
-      idleOverrideClip: 'missing_idle.001',
-    });
-    assert.equal(fallbackDefault.kind, 'expressive_idle');
-    assert.equal(fallbackDefault.clipName, 'idle.001');
   });
 });
 

@@ -282,7 +282,6 @@ import {
   type NpcEmotionTag,
 } from './game/npcPersonaRegistry';
 import { ensureAllNpcPersonasRegistered } from './game/personas/index';
-import { dispatchNpcEmotionReaction } from './game/npcTextChat';
 import {
   EMPTY_NPC_TOGETHERNESS_STATE,
   NPC_TOGETHERNESS_STATE_EVENT,
@@ -1129,14 +1128,13 @@ export default function App() {
   }, []);
 
   const handleNpcConversationTurn = useCallback(
-    (npcId: NpcId, closenessDelta: number, emotion: NpcEmotionTag) => {
+    (npcId: NpcId, closenessDelta: number, _emotion: NpcEmotionTag) => {
       const result = recordNpcConversation(npcClosenessStoreRef.current, npcId, {
         closenessDelta,
       });
       npcClosenessStoreRef.current = result.store;
       setNpcClosenessStore(result.store);
       saveNpcClosenessStore(dailyMissionsAccountRef.current, result.store);
-      dispatchNpcEmotionReaction(npcId, emotion);
     },
     [],
   );
@@ -1183,13 +1181,6 @@ export default function App() {
       if (fishInstanceId) {
         setCaughtFishBucket((prev) => prev.filter((item) => item.id !== fishInstanceId));
       }
-      const giftEmotion: NpcEmotionTag =
-        res.reactionTier === 'loved' || res.reactionTier === 'liked'
-          ? 'happy'
-          : res.reactionTier === 'disliked'
-            ? 'awkward'
-            : 'neutral';
-      dispatchNpcEmotionReaction(npcId, giftEmotion);
       return {
         accepted: true,
         reactionLine: pickPlainReaction(res.reactionTier),

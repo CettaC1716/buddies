@@ -1,6 +1,4 @@
-import type { CitizenId } from './buddiesCitizenRoles';
 import {
-  npcIdToCitizenId,
   resolveNpcId,
   type ClosenessBand,
   type NpcId,
@@ -14,14 +12,12 @@ import { ensureAllNpcPersonasRegistered } from './personas/index';
 import { resolveApiUrl } from '../lib/nearClient';
 
 /**
- * Client-side Gemini Text Chat + Emotion Reaction Hook (Foundation F2)
- * ====================================================================
+ * Client-side Gemini Text Chat (Foundation F2)
+ * ============================================
  * - Sends text chat turns for the 7 named NPCs to server-side `/api/npc-chat`.
  * - Never holds or exposes any API key in the browser.
- * - Exposes a clean emotion reaction event/callback bus (`dispatchNpcEmotionReaction`,
- *   `subscribeNpcEmotionReaction`, `NPC_EMOTION_REACTION_EVENT`) so F3 / Arena can
- *   play each NPC's mapped emotion animation (falling back to expressive idle when
- *   `clipName` is null).
+ * - Preserves the `emotion` tag on replies for dialogue tone/data; NPCs stay in
+ *   their natural idle during and after conversations (no emotion-clip playback).
  */
 
 export interface NpcTextChatHistoryTurn {
@@ -46,88 +42,6 @@ export interface NpcChatClientResult {
   emotion: NpcEmotionTag;
   closenessDelta: number;
   fallback: boolean;
-}
-
-export const NPC_EMOTION_REACTION_EVENT = 'npc-emotion-reaction';
-
-export interface NpcEmotionReactionDetail {
-  npcId: NpcId;
-  citizenId: CitizenId;
-  emotion: NpcEmotionTag;
-  /** Mapped clip name from `persona.emotionAnimations[emotion]`, or null for expressive idle fallback. */
-  clipName: string | null;
-  timestampMs: number;
-}
-
-export type NpcEmotionReactionListener = (detail: NpcEmotionReactionDetail) => void;
-
-const emotionListeners = new Set<NpcEmotionReactionListener>();
-
-/**
- * Resolves the verified animation clip name for `(npcId, emotion)`, or null to signal
- * expressive idle fallback.
- */
-export function resolveNpcEmotionClip(
-  rawNpcId: string,
-  emotion: NpcEmotionTag,
-): string | null {
-  ensureAllNpcPersonasRegistered();
-  const pack = getNpcPersona(rawNpcId);
-  if (!pack?.emotionAnimations) return null;
-  const clip = pack.emotionAnimations[emotion];
-  return typeof clip === 'string' && clip.trim().length > 0 ? clip.trim() : null;
-}
-
-/**
- * Subscribes to NPC emotion reactions triggered by F2 chat or gift replies.
- * Returns an unsubscribe function.
- */
-export function subscribeNpcEmotionReaction(
-  listener: NpcEmotionReactionListener,
-): () => void {
-  emotionListeners.add(listener);
-  return () => {
-    emotionListeners.delete(listener);
-  };
-}
-
-/**
- * Emits an NPC emotion reaction to all in-memory subscribers and as a DOM
- * `CustomEvent('npc-emotion-reaction')` for F3 / BuddiesBlitzArena to consume.
- */
-export function dispatchNpcEmotionReaction(
-  rawNpcId: string,
-  rawEmotion: unknown,
-): NpcEmotionReactionDetail | null {
-  const npcId = resolveNpcId(rawNpcId);
-  if (!npcId) return null;
-
-  const emotion = normalizeNpcEmotionTag(rawEmotion);
-  const detail: NpcEmotionReactionDetail = {
-    npcId,
-    citizenId: npcIdToCitizenId(npcId),
-    emotion,
-    clipName: resolveNpcEmotionClip(npcId, emotion),
-    timestampMs: Date.now(),
-  };
-
-  for (const listener of emotionListeners) {
-    try {
-      listener(detail);
-    } catch {
-      // Never let a consumer error break chat flow
-    }
-  }
-
-  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-    window.dispatchEvent(
-      new CustomEvent<NpcEmotionReactionDetail>(NPC_EMOTION_REACTION_EVENT, {
-        detail,
-      }),
-    );
-  }
-
-  return detail;
 }
 
 function buildClientFallback(

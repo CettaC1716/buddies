@@ -39,7 +39,7 @@ import {
   type GiftItemInput,
 } from '../game/npcGiftEngine';
 import type { NpcEmotionTag } from '../game/npcPersonaRegistry';
-import { dispatchNpcEmotionReaction, sendNpcChatMessage } from '../game/npcTextChat';
+import { sendNpcChatMessage } from '../game/npcTextChat';
 import {
   appendNpcChatTurns,
   clearNpcChatTranscript,
@@ -370,7 +370,6 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
         });
         return next;
       });
-      dispatchNpcEmotionReaction(namedNpcId, accepted ? 'happy' : 'shy');
       appendNpcChatTurns(accountKey, profile?.id ?? namedNpcId, [
         {
           role: 'player',

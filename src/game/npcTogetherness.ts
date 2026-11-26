@@ -569,63 +569,7 @@ export function resolveNpcScheduledPatrolWaypoints(
 }
 
 // ============================================================================
-// 2. VERIFIED EMOTION CLIP RESOLUTION (WITH EXPRESSIVE IDLE FALLBACK)
-// ============================================================================
-
-export interface ResolvedEmotionClipPlan {
-  kind: 'rig_clip' | 'external_glb' | 'expressive_idle';
-  clipName: string;
-  externalGlbUrl?: string;
-}
-
-/**
- * Resolves a requested emotion clip against the target rig's verified clip map.
- * - If `requestedClipName` is a `/assets/animations/...glb` path, requests dynamic GLB load.
- * - If `requestedClipName` exists in `availableRigClips`, plays it directly.
- * - Otherwise falls back cleanly to expressive idle (`idleOverrideClip` -> `'idle.001'`).
- */
-export function resolveVerifiedNpcEmotionClip(params: {
-  requestedClipName: string | null | undefined;
-  availableRigClips: ReadonlySet<string> | ReadonlyMap<string, unknown> | null | undefined;
-  idleOverrideClip?: string | null;
-}): ResolvedEmotionClipPlan {
-  const hasClip = (name: string): boolean => {
-    if (!params.availableRigClips) return false;
-    return params.availableRigClips.has(name);
-  };
-
-  const trimmed = typeof params.requestedClipName === 'string' ? params.requestedClipName.trim() : '';
-  if (trimmed.startsWith('/assets/animations/') && trimmed.endsWith('.glb')) {
-    return {
-      kind: 'external_glb',
-      clipName: `emotion_${trimmed.split('/').pop()?.replace(/\.glb$/i, '') ?? 'clip'}`,
-      externalGlbUrl: trimmed,
-    };
-  }
-  if (trimmed && hasClip(trimmed)) {
-    return {
-      kind: 'rig_clip',
-      clipName: trimmed,
-    };
-  }
-
-  const idleOverride =
-    typeof params.idleOverrideClip === 'string' ? params.idleOverrideClip.trim() : '';
-  if (idleOverride && hasClip(idleOverride)) {
-    return {
-      kind: 'expressive_idle',
-      clipName: idleOverride,
-    };
-  }
-
-  return {
-    kind: 'expressive_idle',
-    clipName: 'idle.001',
-  };
-}
-
-// ============================================================================
-// 3. CURATED TRUE PAIRED POSES (FROM public/assets/animations/paired/)
+// 2. CURATED TRUE PAIRED POSES (FROM public/assets/animations/paired/)
 // ============================================================================
 
 export interface CuratedNpcPairPose {

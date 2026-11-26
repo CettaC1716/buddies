@@ -68,7 +68,7 @@ import {
   type GiftItemInput,
 } from '../game/npcGiftEngine';
 import type { NpcEmotionTag } from '../game/npcPersonaRegistry';
-import { dispatchNpcEmotionReaction, sendNpcChatMessage } from '../game/npcTextChat';
+import { sendNpcChatMessage } from '../game/npcTextChat';
 import {
   appendNpcChatTurns,
   clearNpcChatTranscript,
@@ -1590,7 +1590,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         });
         return next;
       });
-      dispatchNpcEmotionReaction(merchantNpcId, accepted ? 'happy' : 'shy');
       appendNpcChatTurns(chatAccountKey, merchantNpcId, [
         {
           role: 'player',

@@ -18,16 +18,11 @@ import {
   type NpcId,
 } from './npcClosenessEngine';
 import {
-  subscribeNpcEmotionReaction,
-  type NpcEmotionReactionDetail,
-} from './npcTextChat';
-import {
   NPC_TOGETHERNESS_COMMAND_EVENT,
   computeScooterPassengerTransform,
   dispatchNpcTogethernessState,
   getCuratedNpcPairPose,
   resolveNpcScheduledPatrolWaypoints,
-  resolveVerifiedNpcEmotionClip,
   stepNpcWalkTogether,
   type NpcTogethernessCommand,
   type SavedNpcAnchorTransform,
@@ -2775,11 +2770,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       citizenId: CitizenId;
       savedMerchantAnchor?: SavedNpcAnchorTransform;
     } | null = null;
-    const npcEmotionReactions = new Map<
-      CitizenId,
-      { clipName: string; expiresAtMs: number; seq: number }
-    >();
-    let npcEmotionReactionSeq = 0;
     const emitTogethernessStateSnapshot = () => {
       const pairNpcId = activePairedSession ? resolveNpcId(activePairedSession.targetId) : null;
       dispatchNpcTogethernessState({
@@ -6491,24 +6481,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               'chair',
               null,
             );
-          }
-        }
-      }
-
-      // Expire timed chat/gift emotion reactions cleanly so rigs return to expressive idle
-      if (npcEmotionReactions.size > 0) {
-        for (const [citizenId, reaction] of npcEmotionReactions.entries()) {
-          if (nowMs < reaction.expiresAtMs) continue;
-          npcEmotionReactions.delete(citizenId);
-          const rig =
-            citizenId === 'npc_hana'
-              ? lobbyCafeNpc?.npcRig
-              : citizenId === 'npc_kai'
-                ? beachHouseNpc?.npcRig
-                : cityAmbientNpcs.find((n) => n.preset.id === citizenId)?.rig ??
-                  (citizenId === 'citizen_mira' ? cafeMiraRig : null);
-          if (rig && rig.activeSocialClipName === reaction.clipName) {
-            rig.activeSocialClipName = undefined;
           }
         }
       }
@@ -39390,15 +39362,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       captureKioskCardThumbnails();
     }, 220);
 
-    const resolveNamedNpcRigForHook = (citizenId: CitizenId) => {
-      if (citizenId === 'npc_hana') return lobbyCafeNpc?.npcRig ?? null;
-      if (citizenId === 'npc_kai') return beachHouseNpc?.npcRig ?? null;
-      if (citizenId === 'citizen_mira' && npcCameraMode === 'cafe_interior' && cafeMiraRig) {
-        return cafeMiraRig;
-      }
-      return cityAmbientNpcs.find((n) => n.preset.id === citizenId)?.rig ?? null;
-    };
-
     const endWalkTogetherNow = () => {
       if (!activeWalkTogether) return;
       const prev = activeWalkTogether;
@@ -39440,63 +39403,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       emitTogethernessStateSnapshot();
     };
 
-    const unsubscribeNpcEmotion = subscribeNpcEmotionReaction(
-      (detail: NpcEmotionReactionDetail) => {
-        const prevLinger = npcLingerStates.get(detail.citizenId);
-        if (prevLinger?.active || activeCitizenDialogueId === detail.citizenId) {
-          npcLingerStates.set(
-            detail.citizenId,
-            resetNpcLingerTimer(prevLinger ?? createIdleNpcLingerState(), detail.citizenId),
-          );
-        }
-        const rig = resolveNamedNpcRigForHook(detail.citizenId);
-        if (!rig) return;
-        const plan = resolveVerifiedNpcEmotionClip({
-          requestedClipName: detail.clipName,
-          availableRigClips: rig.customGlbController?.clips,
-          idleOverrideClip: rig.idleClipOverrideName,
-        });
-        const seq = ++npcEmotionReactionSeq;
-        if (plan.kind === 'expressive_idle') {
-          npcEmotionReactions.delete(detail.citizenId);
-          if (
-            rig.activeSocialClipName &&
-            rig.activeSocialClipName !== 'scooter_bike_idle.001' &&
-            !activePairedSession
-          ) {
-            rig.activeSocialClipName = undefined;
-          }
-          return;
-        }
-        if (plan.kind === 'rig_clip') {
-          rig.activeSocialClipName = plan.clipName;
-          resetBuddyRigActionTime(rig, plan.clipName);
-          npcEmotionReactions.set(detail.citizenId, {
-            clipName: plan.clipName,
-            expiresAtMs: performance.now() + 3200,
-            seq,
-          });
-          return;
-        }
-        if (plan.kind === 'external_glb' && plan.externalGlbUrl) {
-          void loadAndAttachExternalStyleAnimationClip(
-            rig,
-            plan.externalGlbUrl,
-            plan.clipName,
-          ).then((clip) => {
-            if (!clip || isDisposed) return;
-            if (activePairedSession || activeRideTogether?.citizenId === detail.citizenId) return;
-            rig.activeSocialClipName = clip.name;
-            resetBuddyRigActionTime(rig, clip.name);
-            npcEmotionReactions.set(detail.citizenId, {
-              clipName: clip.name,
-              expiresAtMs: performance.now() + 3200,
-              seq,
-            });
-          });
-        }
-      },
-    );
+    // WS10: Reset post-interaction linger timer when a gift is delivered to a lingering NPC.
+    const onNpcGiftSentForLinger = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ npcId?: string }>).detail;
+      const npcId = detail?.npcId ? resolveNpcId(detail.npcId) : null;
+      if (!npcId) return;
+      const citizenId = npcIdToCitizenId(npcId);
+      const prevLinger = npcLingerStates.get(citizenId);
+      if (prevLinger?.active || activeCitizenDialogueId === citizenId) {
+        npcLingerStates.set(
+          citizenId,
+          resetNpcLingerTimer(prevLinger ?? createIdleNpcLingerState(), citizenId),
+        );
+      }
+    };
+    window.addEventListener('npc-chat-gift-sent', onNpcGiftSentForLinger);
 
     const onNpcTogethernessCommand = (ev: Event) => {
       const cmd = (ev as CustomEvent<NpcTogethernessCommand>).detail;
@@ -39606,7 +39527,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
     return () => {
       isDisposed = true;
-      unsubscribeNpcEmotion();
+      window.removeEventListener('npc-chat-gift-sent', onNpcGiftSentForLinger);
       window.removeEventListener(NPC_TOGETHERNESS_COMMAND_EVENT, onNpcTogethernessCommand);
       cancelAnimationFrame(rafId);
       cancelAnimationFrame(staggeredUpgradeRafId);
