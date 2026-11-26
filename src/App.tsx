@@ -56,7 +56,6 @@ import {
   getCityTransitDestinationById,
   isIntactModelEstateBasePlot,
   resolveOnboardingAccountEntry,
-  resolveBottomChatSubmitTarget,
   type HouseArchitectureStyle,
   parseOptionalHouseArchitectureStyle,
   resolveOwnedHouseStyle,
@@ -67,6 +66,7 @@ import {
   type CityViewDistrictId,
   type CityViewTargetId,
 } from './game/buddiesBlitzRules';
+import { resolveBottomChatInputTarget } from './game/chatInputTargetResolver';
 import { soundEngine } from './game/audio';
 import { subscribeBlitz3dAssetProgress } from './game/buddiesBlitzShadersAndAssets';
 import {
@@ -12049,20 +12049,21 @@ export default function App() {
                 </button>
               )}
 
+              {(() => {
+                const bottomChatTarget = resolveBottomChatInputTarget({
+                  isMerchantNpcChatOpen: activeSpecialModal === 'npc_merchant',
+                  isCitizenNpcChatOpen: isCitizenChatBarMode,
+                  activeNpcName: activeNpcChatBarName,
+                  activeNpcBadgeLabel: activeNpcChatBarLabel,
+                  isPrivateChatSurfaceOpen: isSocialChatVisible,
+                  selectedPrivateUser,
+                });
+                const isNpcTarget = bottomChatTarget.kind === 'npc';
+                return (
               <form
-                aria-label={
-                  isAnyNpcChatBarMode
-                    ? 'NPC Dialogue Chat Input'
-                    : 'Social Talk Chat Input'
-                }
+                aria-label={bottomChatTarget.ariaLabel}
                 data-social-talk-bar="true"
-                data-chat-route={
-                  activeSpecialModal === 'npc_merchant'
-                    ? 'npc_merchant'
-                    : isCitizenChatBarMode
-                      ? 'citizen_dialogue'
-                      : 'social_world'
-                }
+                data-chat-route={bottomChatTarget.routeAttr}
                 onSubmit={(e) => {
                   e.preventDefault();
                   const trimmed = socialChatText.trim();
@@ -12075,27 +12076,38 @@ export default function App() {
                       document.querySelector(
                         '[data-citizen-chat-modal="true"][aria-hidden="false"]',
                       ) !== null);
-                  const target = resolveBottomChatSubmitTarget({
-                    activeSpecialModal:
+                  const submitTarget = resolveBottomChatInputTarget({
+                    isMerchantNpcChatOpen:
                       activeSpecialModal === 'npc_merchant' ||
-                      activeSpecialModalRef.current === 'npc_merchant'
-                        ? 'npc_merchant'
-                        : activeSpecialModal,
-                    isSocialChatModalOpen,
-                    hasSelectedPrivateUser: Boolean(selectedPrivateUser),
-                    hasDomNpcDialogOpen: isNpcDomOpen || isCitizenChatBarMode,
+                      activeSpecialModalRef.current === 'npc_merchant',
+                    isCitizenNpcChatOpen: isCitizenChatBarMode,
+                    hasDomNpcDialogOpen: isNpcDomOpen,
+                    activeNpcName: activeNpcChatBarName,
+                    activeNpcBadgeLabel: activeNpcChatBarLabel,
+                    isPrivateChatSurfaceOpen: isSocialChatVisible,
+                    selectedPrivateUser,
                   });
 
-                  if (target === 'npc_merchant') {
+                  if (submitTarget.kind === 'npc') {
                     // Strictly route ONLY to active NPC dialogue; never publish to world chat or speech bubbles.
                     window.dispatchEvent(
                       new CustomEvent(
-                        isCitizenChatBarMode
+                        submitTarget.channel === 'citizen_dialogue'
                           ? 'citizen-dialogue-user-chat'
                           : 'npc-merchant-user-chat',
                         { detail: { text: trimmed } },
                       ),
                     );
+                    setSocialChatText('');
+                    return;
+                  }
+
+                  if (submitTarget.kind === 'private') {
+                    // Strictly deliver to the selected private thread; never broadcast to world chat.
+                    publishPlayerSocialMessage({
+                      text: trimmed,
+                      recipient: submitTarget.recipient,
+                    });
                     setSocialChatText('');
                     return;
                   }
@@ -12109,30 +12121,23 @@ export default function App() {
                     return;
                   }
 
-                  if (target === 'private_chat' && selectedPrivateUser) {
-                    publishPlayerSocialMessage({
-                      text: trimmed,
-                      recipient: selectedPrivateUser,
-                    });
-                  } else {
-                    publishPlayerSocialMessage({ text: trimmed });
-                  }
+                  publishPlayerSocialMessage({ text: trimmed });
                   setSocialChatText('');
                 }}
                 className="w-full flex items-center gap-1.5 bg-[#111622]/86 border border-white/22 focus-within:border-white/35 shadow-[0_8px_28px_rgba(0,0,0,0.45)] px-2 py-1.5 rounded-full transition-colors"
               >
-                {isAnyNpcChatBarMode && (
+                {bottomChatTarget.kind === 'npc' && (
                   <span
                     data-social-chat-mode="npc"
                     className="px-2 py-0.5 rounded-full bg-amber-300/90 text-slate-950 text-[10px] font-semibold shrink-0"
                   >
-                    {activeNpcChatBarLabel}
+                    {bottomChatTarget.npcBadgeLabel}
                   </span>
                 )}
                 <input
                   type="text"
                   data-social-chat-input="true"
-                  maxLength={isAnyNpcChatBarMode ? 220 : 64}
+                  maxLength={bottomChatTarget.maxLength}
                   value={socialChatText}
                   onChange={(e) => setSocialChatText(e.target.value)}
                   onKeyDown={(e) => {
@@ -12141,32 +12146,24 @@ export default function App() {
                       e.currentTarget.blur();
                     }
                   }}
-                  placeholder={
-                    isAnyNpcChatBarMode
-                      ? activeSpecialModal === 'npc_merchant'
-                        ? `Ask ${activeNpcChatBarName} anything...`
-                        : `Chat with ${activeNpcChatBarName}...`
-                      : isSocialChatModalOpen && selectedPrivateUser
-                        ? `Whisper @${selectedPrivateUser.name}...`
-                        : 'Say something or /wave, /dance...'
-                  }
+                  placeholder={bottomChatTarget.placeholder}
                   className="flex-1 min-w-0 px-2.5 py-0.5 bg-transparent text-white placeholder:text-white/45 font-normal text-xs focus:outline-none"
                 />
                 <button
                   type="submit"
                   data-social-chat-send="true"
-                  title={isAnyNpcChatBarMode ? 'Ask' : 'Send message'}
-                  aria-label={isAnyNpcChatBarMode ? 'Ask' : 'Send'}
+                  title={isNpcTarget ? 'Ask' : 'Send message'}
+                  aria-label={isNpcTarget ? 'Ask' : 'Send'}
                   className={`h-7 px-2.5 rounded-full font-semibold text-[11px] flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition-all shrink-0 ${
-                    isAnyNpcChatBarMode
+                    isNpcTarget
                       ? 'bg-gradient-to-br from-amber-300 to-amber-500 hover:brightness-110 text-slate-950 shadow-[0_3px_10px_rgba(245,158,11,0.4)]'
                       : 'bg-gradient-to-br from-sky-400 to-blue-600 hover:brightness-110 border border-sky-200/45 text-white shadow-[0_3px_10px_rgba(56,189,248,0.42)]'
                   }`}
                 >
                   <Send className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
-                  {isAnyNpcChatBarMode && <span>Ask</span>}
+                  {isNpcTarget && <span>Ask</span>}
                 </button>
-                {!isAnyNpcChatBarMode && (
+                {!isNpcTarget && (
                   <button
                     type="button"
                     data-quick-pose-btn="true"
@@ -12201,7 +12198,7 @@ export default function App() {
                     <PersonStanding className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
                   </button>
                 )}
-                {!isAnyNpcChatBarMode && (
+                {!isNpcTarget && (
                   <button
                     type="button"
                     data-open-social-chat-btn="true"
@@ -12265,6 +12262,8 @@ export default function App() {
                   </button>
                 )}
               </form>
+                );
+              })()}
             </div>
           )}
 
