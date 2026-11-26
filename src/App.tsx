@@ -261,6 +261,7 @@ import {
 } from './game/buddiesDailyMissions';
 import {
   loadNpcClosenessStore,
+  npcIdToCitizenId,
   recordNpcConversation,
   resolveNpcId,
   saveNpcClosenessStore,
@@ -269,12 +270,10 @@ import {
 } from './game/npcClosenessEngine';
 import {
   getGiftCatalogItem,
-  giveGiftToNpc,
   loadNpcTreasuryStore,
   recordNpcTreasuryGift,
   saveNpcTreasuryStore,
   type GiftItemInput,
-  type GiftReactionTier,
   type NpcTreasuryStore,
 } from './game/npcGiftEngine';
 import {
@@ -291,6 +290,12 @@ import {
   startNpcWalkTogether,
   type NpcTogethernessStateSnapshot,
 } from './game/npcTogetherness';
+import {
+  canStartDirectPairedPoseForTarget,
+  evaluateNpcGiftSubmission,
+  evaluatePairedPoseRequest,
+  evaluateTogethernessInvitation,
+} from './game/npcTogethernessSession';
 import {
   FAMILY_MEMBER_CONTRACT_PLANS,
   FAMILY_MEMBER_ORDER_SPECS,
@@ -1141,37 +1146,29 @@ export default function App() {
 
   const handleGiveNpcOwnedGift = useCallback(
     (npcId: NpcId, itemInput: GiftItemInput, fishInstanceId?: string) => {
-      ensureAllNpcPersonasRegistered();
-      const res = giveGiftToNpc(npcClosenessStoreRef.current, npcId, itemInput);
-      const persona = getNpcPersona(npcId);
-      const pickPlainReaction = (tier: GiftReactionTier): string => {
-        const lines = persona?.giftReactionLines?.[tier];
-        if (lines && lines.length > 0) return lines[0];
-        if (tier === 'loved') return 'Thank you so much! I really love this.';
-        if (tier === 'liked') return 'That is really thoughtful of you, thank you!';
-        if (tier === 'disliked') return 'Thank you for bringing this by, though it is not quite my usual style.';
-        return 'Thank you for thinking of me!';
-      };
+      const outcome = evaluateNpcGiftSubmission({
+        store: npcClosenessStoreRef.current,
+        npcId,
+        itemInput,
+      });
 
-      if (!res.accepted) {
+      if (!outcome.accepted) {
         return {
           accepted: false,
-          reactionLine:
-            res.reason === 'already_gifted_today'
-              ? 'You already brought me a gift today. Let us save the next one for tomorrow!'
-              : 'Thanks, though I cannot take that item right now.',
-          itemName: res.itemName,
+          reactionLine: outcome.reactionLine,
+          itemName: outcome.itemName,
+          emotion: outcome.emotion,
         };
       }
 
-      npcClosenessStoreRef.current = res.store;
-      setNpcClosenessStore(res.store);
-      saveNpcClosenessStore(dailyMissionsAccountRef.current, res.store);
-      if (res.category) {
+      npcClosenessStoreRef.current = outcome.store;
+      setNpcClosenessStore(outcome.store);
+      saveNpcClosenessStore(dailyMissionsAccountRef.current, outcome.store);
+      if (outcome.category) {
         const nextTreasury = recordNpcTreasuryGift(npcTreasuryStoreRef.current, npcId, {
-          itemId: res.itemId,
-          itemName: res.itemName,
-          category: res.category,
+          itemId: outcome.itemId,
+          itemName: outcome.itemName,
+          category: outcome.category,
           giftedBy: dailyMissionsAccountRef.current,
         });
         npcTreasuryStoreRef.current = nextTreasury;
@@ -1183,8 +1180,9 @@ export default function App() {
       }
       return {
         accepted: true,
-        reactionLine: pickPlainReaction(res.reactionTier),
-        itemName: res.itemName,
+        reactionLine: outcome.reactionLine,
+        itemName: outcome.itemName,
+        emotion: outcome.emotion,
       };
     },
     [],
@@ -1203,6 +1201,7 @@ export default function App() {
     useState<NpcTogethernessStateSnapshot>(EMPTY_NPC_TOGETHERNESS_STATE);
   const npcTogethernessStateRef = useRef<NpcTogethernessStateSnapshot>(npcTogethernessState);
   npcTogethernessStateRef.current = npcTogethernessState;
+  const equippedScooterKindRef = useRef<UrbanScooterKind | null>(null);
 
   useEffect(() => {
     const onTogethernessState = (ev: Event) => {
@@ -1215,63 +1214,121 @@ export default function App() {
     return () => window.removeEventListener(NPC_TOGETHERNESS_STATE_EVENT, onTogethernessState);
   }, []);
 
-  const handleNpcWalkTogetherToggle = useCallback((npcId: NpcId) => {
-    if (npcTogethernessStateRef.current.walkingNpcId === npcId) {
-      dispatchNpcTogethernessCommand({ type: 'end_walk' });
-      return;
-    }
-    const res = startNpcWalkTogether(npcClosenessStoreRef.current, npcId);
-    if (!res.allowed || !res.closenessResult) return;
-    npcClosenessStoreRef.current = res.closenessResult.store;
-    setNpcClosenessStore(res.closenessResult.store);
-    saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
-    dispatchNpcTogethernessCommand({ type: 'start_walk', npcId });
-    setIsCitizenDialogueOpen(false);
-    if (activeSpecialModal === 'npc_merchant') {
-      setActiveSpecialModal('none');
-      window.dispatchEvent(new CustomEvent('close-npc-ui'));
-    }
-  }, [activeSpecialModal]);
+  const handleNpcWalkTogetherToggle = useCallback(
+    (npcId: NpcId): { accepted: boolean; replyLine?: string; ended?: boolean } => {
+      if (npcTogethernessStateRef.current.walkingNpcId === npcId) {
+        dispatchNpcTogethernessCommand({ type: 'end_walk' });
+        setIsCitizenDialogueOpen(false);
+        if (activeSpecialModal === 'npc_merchant') {
+          setActiveSpecialModal('none');
+          window.dispatchEvent(new CustomEvent('close-npc-ui'));
+        }
+        return { accepted: true, ended: true };
+      }
+      const decision = evaluateTogethernessInvitation({
+        store: npcClosenessStoreRef.current,
+        npcId,
+        kind: 'walk',
+        playerScooterKind: equippedScooterKindRef.current,
+      });
+      if (!decision.accepted) {
+        return { accepted: false, replyLine: decision.replyLine };
+      }
+      const res = startNpcWalkTogether(npcClosenessStoreRef.current, npcId);
+      if (!res.allowed || !res.closenessResult) {
+        return { accepted: false, replyLine: decision.replyLine };
+      }
+      npcClosenessStoreRef.current = res.closenessResult.store;
+      setNpcClosenessStore(res.closenessResult.store);
+      saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
+      dispatchNpcTogethernessCommand({ type: 'start_walk', npcId });
+      setIsCitizenDialogueOpen(false);
+      if (activeSpecialModal === 'npc_merchant') {
+        setActiveSpecialModal('none');
+        window.dispatchEvent(new CustomEvent('close-npc-ui'));
+      }
+      return { accepted: true, replyLine: decision.replyLine };
+    },
+    [activeSpecialModal],
+  );
 
-  const handleNpcPairPoseTrigger = useCallback((npcId: NpcId, poseId?: string) => {
-    if (npcTogethernessStateRef.current.pairPoseNpcId === npcId && !poseId) {
-      dispatchNpcTogethernessCommand({ type: 'stop_pair_pose' });
-      return;
-    }
-    const res = startNpcPairPose(npcClosenessStoreRef.current, npcId, { poseId });
-    if (!res.allowed || !res.closenessResult) return;
-    npcClosenessStoreRef.current = res.closenessResult.store;
-    setNpcClosenessStore(res.closenessResult.store);
-    saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
-    dispatchNpcTogethernessCommand({
-      type: 'start_pair_pose',
-      npcId,
-      poseId: res.session?.pose.id,
-    });
-    setIsCitizenDialogueOpen(false);
-    if (activeSpecialModal === 'npc_merchant') {
-      setActiveSpecialModal('none');
-      window.dispatchEvent(new CustomEvent('close-npc-ui'));
-    }
-  }, [activeSpecialModal]);
+  const handleNpcPairPoseTrigger = useCallback(
+    (
+      npcId: NpcId,
+      poseId?: string,
+    ): { accepted: boolean; replyLine?: string; ended?: boolean } => {
+      if (npcTogethernessStateRef.current.pairPoseNpcId === npcId && !poseId) {
+        dispatchNpcTogethernessCommand({ type: 'stop_pair_pose' });
+        return { accepted: true, ended: true };
+      }
+      const decision = evaluatePairedPoseRequest({
+        store: npcClosenessStoreRef.current,
+        npcId,
+      });
+      if (!decision.accepted) {
+        return { accepted: false, replyLine: decision.replyLine };
+      }
+      const res = startNpcPairPose(npcClosenessStoreRef.current, npcId, { poseId });
+      if (!res.allowed || !res.closenessResult) {
+        return { accepted: false, replyLine: decision.replyLine };
+      }
+      npcClosenessStoreRef.current = res.closenessResult.store;
+      setNpcClosenessStore(res.closenessResult.store);
+      saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
+      dispatchNpcTogethernessCommand({
+        type: 'start_pair_pose',
+        npcId,
+        poseId: res.session?.pose.id,
+      });
+      setIsCitizenDialogueOpen(false);
+      if (activeSpecialModal === 'npc_merchant') {
+        setActiveSpecialModal('none');
+        window.dispatchEvent(new CustomEvent('close-npc-ui'));
+      }
+      return { accepted: true, replyLine: decision.replyLine };
+    },
+    [activeSpecialModal],
+  );
 
-  const handleNpcRideTogetherToggle = useCallback((npcId: NpcId) => {
-    if (npcTogethernessStateRef.current.ridingNpcId === npcId) {
-      dispatchNpcTogethernessCommand({ type: 'end_ride' });
-      return;
-    }
-    const res = startNpcRideTogether(npcClosenessStoreRef.current, npcId);
-    if (!res.allowed || !res.closenessResult) return;
-    npcClosenessStoreRef.current = res.closenessResult.store;
-    setNpcClosenessStore(res.closenessResult.store);
-    saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
-    dispatchNpcTogethernessCommand({ type: 'start_ride', npcId });
-    setIsCitizenDialogueOpen(false);
-    if (activeSpecialModal === 'npc_merchant') {
-      setActiveSpecialModal('none');
-      window.dispatchEvent(new CustomEvent('close-npc-ui'));
-    }
-  }, [activeSpecialModal]);
+  const handleNpcRideTogetherToggle = useCallback(
+    (npcId: NpcId): { accepted: boolean; replyLine?: string; ended?: boolean } => {
+      if (npcTogethernessStateRef.current.ridingNpcId === npcId) {
+        dispatchNpcTogethernessCommand({ type: 'end_ride' });
+        setIsCitizenDialogueOpen(false);
+        if (activeSpecialModal === 'npc_merchant') {
+          setActiveSpecialModal('none');
+          window.dispatchEvent(new CustomEvent('close-npc-ui'));
+        }
+        return { accepted: true, ended: true };
+      }
+      const decision = evaluateTogethernessInvitation({
+        store: npcClosenessStoreRef.current,
+        npcId,
+        kind: 'ride',
+        playerScooterKind: equippedScooterKindRef.current,
+      });
+      if (!decision.accepted) {
+        return { accepted: false, replyLine: decision.replyLine };
+      }
+      const res = startNpcRideTogether(npcClosenessStoreRef.current, npcId, {
+        scooterKind: equippedScooterKindRef.current,
+      });
+      if (!res.allowed || !res.closenessResult) {
+        return { accepted: false, replyLine: decision.replyLine };
+      }
+      npcClosenessStoreRef.current = res.closenessResult.store;
+      setNpcClosenessStore(res.closenessResult.store);
+      saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
+      dispatchNpcTogethernessCommand({ type: 'start_ride', npcId });
+      setIsCitizenDialogueOpen(false);
+      if (activeSpecialModal === 'npc_merchant') {
+        setActiveSpecialModal('none');
+        window.dispatchEvent(new CustomEvent('close-npc-ui'));
+      }
+      return { accepted: true, replyLine: decision.replyLine };
+    },
+    [activeSpecialModal],
+  );
 
   const loadDailyMissionsFromStorage = useCallback((acctKey: string): DailyMissionsState => {
     const todayKey = getLocalDailyDateKey();
@@ -2024,6 +2081,7 @@ export default function App() {
   const isSocialChatVisible =
     isSocialChatModalOpen || isPhoneAppActive('messages') || isPhoneAppActive('contacts');
   const [equippedScooterKind, setEquippedScooterKind] = useState<UrbanScooterKind | null>(null);
+  equippedScooterKindRef.current = equippedScooterKind;
   const [myThingsTab, setMyThingsTab] = useState<MyThingsSectionId>('items');
   const [selectedPrivateUser, setSelectedPrivateUser] = useState<NearbyEntityUser | null>(null);
   const [unreadPrivateCount, setUnreadPrivateCount] = useState<number>(0);
@@ -12449,11 +12507,27 @@ export default function App() {
                     setPairedInteractTarget(null);
                     const namedGiftNpc = resolveNpcId(String(entity.id));
                     if (namedGiftNpc) {
+                      const isChattingWithThisNpc =
+                        (isCitizenDialogueOpen &&
+                          resolveNpcId(String(activeCitizenId)) === namedGiftNpc) ||
+                        (activeSpecialModal === 'npc_merchant' &&
+                          ((merchantLocation === 'beach_house' && namedGiftNpc === 'kai') ||
+                            (merchantLocation !== 'beach_house' && namedGiftNpc === 'hana')));
+                      // WS13: Never give silently outside chat; open chat session first if not open.
+                      if (!isChattingWithThisNpc) {
+                        closeSmartphone();
+                        if (namedGiftNpc === 'hana' || namedGiftNpc === 'kai') {
+                          setMerchantLocation(namedGiftNpc === 'kai' ? 'beach_house' : 'lobby_cafe');
+                          setActiveSpecialModal('npc_merchant');
+                        } else {
+                          openCitizenDialogueForId(npcIdToCitizenId(namedGiftNpc), 'sesi_chat');
+                        }
+                      }
                       const cleanName =
                         getNpcPersona(namedGiftNpc)?.displayName ??
                         entity.name.replace(/\s*\((ANDA|YOU|KAMU)\)/gi, '').trim();
                       setDockGiftPickerTarget((prev) =>
-                        prev && prev.npcId === namedGiftNpc
+                        prev && prev.npcId === namedGiftNpc && isChattingWithThisNpc
                           ? null
                           : { npcId: namedGiftNpc, displayName: cleanName, entity },
                       );
@@ -12476,14 +12550,24 @@ export default function App() {
                   }}
                   onInteractTarget={(entity) => {
                     const namedNpc = resolveNpcId(String(entity.id));
-                    const isChattingWithThisNpc =
-                      Boolean(namedNpc) &&
-                      ((isCitizenDialogueOpen &&
-                        resolveNpcId(String(activeCitizenId)) === namedNpc) ||
+                    if (namedNpc) {
+                      const isChattingWithThisNpc =
+                        (isCitizenDialogueOpen &&
+                          resolveNpcId(String(activeCitizenId)) === namedNpc) ||
                         (activeSpecialModal === 'npc_merchant' &&
                           ((merchantLocation === 'beach_house' && namedNpc === 'kai') ||
-                            (merchantLocation !== 'beach_house' && namedNpc === 'hana'))));
-                    if (isChattingWithThisNpc && namedNpc) {
+                            (merchantLocation !== 'beach_house' && namedNpc === 'hana')));
+                      // WS13: Relational paired pose with named NPCs ONLY runs through the chat session & closeness check.
+                      if (!isChattingWithThisNpc) {
+                        closeSmartphone();
+                        if (namedNpc === 'hana' || namedNpc === 'kai') {
+                          setMerchantLocation(namedNpc === 'kai' ? 'beach_house' : 'lobby_cafe');
+                          setActiveSpecialModal('npc_merchant');
+                        } else {
+                          openCitizenDialogueForId(npcIdToCitizenId(namedNpc), 'sesi_chat');
+                        }
+                        return;
+                      }
                       setDockGiftPickerTarget(null);
                       window.dispatchEvent(
                         new CustomEvent('npc-chat-interaction-request', {
@@ -13148,6 +13232,7 @@ export default function App() {
         onNpcConversationTurn={handleNpcConversationTurn}
         onGiveNpcOwnedGift={handleGiveNpcOwnedGift}
         npcTogethernessState={npcTogethernessState}
+        playerScooterKind={equippedScooterKind}
         onToggleNpcWalkTogether={handleNpcWalkTogetherToggle}
         onTriggerNpcPairPose={handleNpcPairPoseTrigger}
         onToggleNpcRideTogether={handleNpcRideTogetherToggle}
@@ -14167,69 +14252,53 @@ export default function App() {
             }
           }
 
-          items.push({
-            id: 'gift',
-            label: 'Send Gift',
-            icon: <Gift className="w-3.5 h-3.5" aria-hidden="true" />,
-            iconWrapClassName: 'bg-rose-100 text-rose-600',
-            onSelect: () => {
-              setIsPinTargetPopupOpen(false);
-              setIsTargetMenuExpanded(false);
-              setPairedInteractTarget(null);
-              const canonicalCitizen = resolveCanonicalCitizenId(String(dockEntity.id));
-              if (canonicalCitizen) {
-                closeSmartphone();
-                openCitizenDialogueForId(canonicalCitizen, 'gift');
-                return;
-              }
-              if (isMerchantEntity) {
-                closeSmartphone();
-                const location =
-                  dockEntity.merchantLocation ??
-                  (dockEntity.id === 'npc_beach' || dockEntity.id === 'npc_kai'
-                    ? 'beach_house'
-                    : 'lobby_cafe');
-                window.dispatchEvent(
-                  new CustomEvent('open-npc-merchant-ui', {
-                    detail: { location },
-                  }),
-                );
-                return;
-              }
-              const recipientHandle =
-                dockEntity.nearAccountId?.trim() || cleanEntityName;
-              if (recipientHandle) {
-                setRespiteTransferRecipient(recipientHandle);
-              }
-              setPersonalWalletTab('wallet');
-              openSmartphoneApp('wallet');
-            },
-          });
-
-          if (ownedPairedItems.length > 0) {
+          // WS13: Floating NPC tap menu contains entry points only (View Profile + Talk).
+          // Send Gift & Paired Interact live inside the NPC chat session, while human players keep them here.
+          if (!dockEntity.isNpc) {
             items.push({
-              id: 'paired_interact',
-              label: 'Paired Interact',
-              icon: <HeartHandshake className="w-3.5 h-3.5" aria-hidden="true" />,
-              iconWrapClassName: 'bg-fuchsia-100 text-fuchsia-700',
-              pillAccentClassName: 'border-fuchsia-200/95',
-              dataAttr: { 'data-nearby-entity-interact-btn': 'true' },
+              id: 'gift',
+              label: 'Send Gift',
+              icon: <Gift className="w-3.5 h-3.5" aria-hidden="true" />,
+              iconWrapClassName: 'bg-rose-100 text-rose-600',
               onSelect: () => {
                 setIsPinTargetPopupOpen(false);
-                closeSmartphone();
-                setIsQuickPoseModalOpen(false);
-                setSelectedTargetUser(dockEntity);
-                setIsTargetMenuExpanded(true);
-                setIsKioskModalOpen(false);
-                setIsProfileModalOpen(false);
-                setIsSocialChatModalOpen(false);
-                setIsPersonalWalletModalOpen(false);
-                setActiveSpecialModal('none');
-                setActiveTeleportKioskModal('none');
-                window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-                setPairedInteractTarget(dockEntity);
+                setIsTargetMenuExpanded(false);
+                setPairedInteractTarget(null);
+                const recipientHandle =
+                  dockEntity.nearAccountId?.trim() || cleanEntityName;
+                if (recipientHandle) {
+                  setRespiteTransferRecipient(recipientHandle);
+                }
+                setPersonalWalletTab('wallet');
+                openSmartphoneApp('wallet');
               },
             });
+
+            if (ownedPairedItems.length > 0) {
+              items.push({
+                id: 'paired_interact',
+                label: 'Paired Interact',
+                icon: <HeartHandshake className="w-3.5 h-3.5" aria-hidden="true" />,
+                iconWrapClassName: 'bg-fuchsia-100 text-fuchsia-700',
+                pillAccentClassName: 'border-fuchsia-200/95',
+                dataAttr: { 'data-nearby-entity-interact-btn': 'true' },
+                onSelect: () => {
+                  setIsPinTargetPopupOpen(false);
+                  closeSmartphone();
+                  setIsQuickPoseModalOpen(false);
+                  setSelectedTargetUser(dockEntity);
+                  setIsTargetMenuExpanded(true);
+                  setIsKioskModalOpen(false);
+                  setIsProfileModalOpen(false);
+                  setIsSocialChatModalOpen(false);
+                  setIsPersonalWalletModalOpen(false);
+                  setActiveSpecialModal('none');
+                  setActiveTeleportKioskModal('none');
+                  window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                  setPairedInteractTarget(dockEntity);
+                },
+              });
+            }
           }
 
           return items;
@@ -14374,6 +14443,16 @@ export default function App() {
               incomingInvite={!isDockBlockedByModal ? incomingPairedInvite : null}
               onSelectPairedAnimation={(entity, item) => {
                 if (!item.pairedAnim) return;
+                // WS13: Enforce closeness check for any named NPC target.
+                if (
+                  !canStartDirectPairedPoseForTarget({
+                    store: npcClosenessStoreRef.current,
+                    targetId: String(entity.id),
+                  })
+                ) {
+                  setPairedInteractTarget(null);
+                  return;
+                }
                 dispatchBuddyAction(
                   `requestPairedPose:${JSON.stringify({
                     targetId: entity.id,
@@ -14864,6 +14943,28 @@ export default function App() {
             </span>
             <button
               type="button"
+              data-npc-togetherness-talk-btn="true"
+              onClick={() => {
+                soundEngine.playUiClick();
+                const companionNpcId =
+                  npcTogethernessState.ridingNpcId ?? npcTogethernessState.walkingNpcId;
+                if (!companionNpcId) return;
+                if (companionNpcId === 'hana' || companionNpcId === 'kai') {
+                  setMerchantLocation(companionNpcId === 'kai' ? 'beach_house' : 'lobby_cafe');
+                  setActiveSpecialModal('npc_merchant');
+                } else {
+                  setActiveCitizenId(npcIdToCitizenId(companionNpcId));
+                  setCitizenInitialTab('sesi_chat');
+                  setCitizenOpenSeq((prev) => prev + 1);
+                  setIsCitizenDialogueOpen(true);
+                }
+              }}
+              className="px-2.5 py-0.5 rounded-full bg-sky-500/30 hover:bg-sky-500/45 border border-sky-300/45 text-sky-100 text-[11px] font-semibold cursor-pointer transition-colors"
+            >
+              Talk
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 soundEngine.playUiClick();
                 if (npcTogethernessState.ridingNpcId) {
@@ -14874,7 +14975,7 @@ export default function App() {
               }}
               className="px-2.5 py-0.5 rounded-full bg-amber-500/30 hover:bg-amber-500/45 border border-amber-300/45 text-amber-100 text-[11px] font-semibold cursor-pointer transition-colors"
             >
-              {npcTogethernessState.ridingNpcId ? 'End ride' : 'End walk'}
+              {npcTogethernessState.ridingNpcId ? 'Get off' : 'End walk'}
             </button>
           </div>
         )}
@@ -14894,6 +14995,7 @@ export default function App() {
         onNpcConversationTurn={handleNpcConversationTurn}
         onGiveNpcOwnedGift={handleGiveNpcOwnedGift}
         npcTogethernessState={npcTogethernessState}
+        playerScooterKind={equippedScooterKind}
         onToggleNpcWalkTogether={handleNpcWalkTogetherToggle}
         onTriggerNpcPairPose={handleNpcPairPoseTrigger}
         onToggleNpcRideTogether={handleNpcRideTogetherToggle}

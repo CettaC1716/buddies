@@ -49,8 +49,6 @@ import { soundEngine } from '../game/audio';
 import {
   canLongConversation,
   canPairPose,
-  canRideTogether,
-  canWalkTogether,
   createEmptyNpcClosenessStore,
   getNpcClosenessBand,
   type NpcClosenessStore,
@@ -61,6 +59,11 @@ import {
   EMPTY_NPC_TOGETHERNESS_STATE,
   type NpcTogethernessStateSnapshot,
 } from '../game/npcTogetherness';
+import {
+  evaluatePairedPoseRequest,
+  resolveChatTogethernessOptions,
+} from '../game/npcTogethernessSession';
+import type { UrbanScooterKind } from '../game/buddiesUrbanScooterRules';
 import {
   buildNpcPairPoseDecisionReply,
   canGiftNpcToday,
@@ -286,9 +289,17 @@ interface NpcMerchantAndHouseModalProps {
     fishInstanceId?: string,
   ) => { accepted: boolean; reactionLine: string; itemName: string };
   npcTogethernessState?: NpcTogethernessStateSnapshot;
-  onToggleNpcWalkTogether?: (npcId: NpcId) => void;
-  onTriggerNpcPairPose?: (npcId: NpcId, poseId?: string) => void;
-  onToggleNpcRideTogether?: (npcId: NpcId) => void;
+  playerScooterKind?: UrbanScooterKind | null;
+  onToggleNpcWalkTogether?: (
+    npcId: NpcId,
+  ) => void | { accepted: boolean; replyLine?: string; ended?: boolean };
+  onTriggerNpcPairPose?: (
+    npcId: NpcId,
+    poseId?: string,
+  ) => void | { accepted: boolean; replyLine?: string; ended?: boolean };
+  onToggleNpcRideTogether?: (
+    npcId: NpcId,
+  ) => void | { accepted: boolean; replyLine?: string; ended?: boolean };
 }
 
 /* Kai chat-trade language pack: the card and Kai's short scripted lines
@@ -517,6 +528,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   onNpcConversationTurn,
   onGiveNpcOwnedGift,
   npcTogethernessState = EMPTY_NPC_TOGETHERNESS_STATE,
+  playerScooterKind = null,
   onToggleNpcWalkTogether,
   onTriggerNpcPairPose,
   onToggleNpcRideTogether,
@@ -525,6 +537,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     'sesi_chat',
   );
   const [showMerchantPairPosePicker, setShowMerchantPairPosePicker] = useState<boolean>(false);
+  const [showMerchantChatGiftPicker, setShowMerchantChatGiftPicker] = useState<boolean>(false);
   const [merchantGiftFeedback, setMerchantGiftFeedback] = useState<{
     npcId: NpcId;
     reactionLine: string;
@@ -2920,39 +2933,209 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 {(() => {
                   const merchantNpcId: NpcId = merchantLocation === 'beach_house' ? 'kai' : 'hana';
                   const closenessStore = npcClosenessStore ?? createEmptyNpcClosenessStore();
+                  const ctxOpts = resolveChatTogethernessOptions({
+                    npcId: merchantNpcId,
+                    playerScooterKind,
+                    togethernessState: npcTogethernessState,
+                  });
+                  const showGift = Boolean(onGiveNpcOwnedGift);
                   const showWalk =
-                    (canWalkTogether(closenessStore, merchantNpcId) ||
-                      npcTogethernessState.walkingNpcId === merchantNpcId) &&
-                    Boolean(onToggleNpcWalkTogether);
-                  const showPair =
-                    (canPairPose(closenessStore, merchantNpcId) ||
-                      npcTogethernessState.pairPoseNpcId === merchantNpcId) &&
-                    Boolean(onTriggerNpcPairPose);
+                    ctxOpts.canInviteWalk && Boolean(onToggleNpcWalkTogether);
+                  const showPair = Boolean(onTriggerNpcPairPose);
                   const showRide =
-                    (canRideTogether(closenessStore, merchantNpcId) ||
-                      npcTogethernessState.ridingNpcId === merchantNpcId) &&
-                    Boolean(onToggleNpcRideTogether);
-                  if (!showWalk && !showPair && !showRide) return null;
+                    ctxOpts.canInviteRide && Boolean(onToggleNpcRideTogether);
+                  const showGetOff =
+                    ctxOpts.showGetOffOption &&
+                    Boolean(
+                      ctxOpts.isRidingWithThisNpc
+                        ? onToggleNpcRideTogether
+                        : onToggleNpcWalkTogether,
+                    );
+                  if (!showGift && !showWalk && !showPair && !showRide && !showGetOff) return null;
+                  const recordMerchantInvitation = (
+                    playerPromptText: string,
+                    emoji: string,
+                    replyLine: string,
+                  ) => {
+                    setChatHistory((prev) => {
+                      const next = [...prev];
+                      if (npcFullText.trim()) {
+                        next.push({
+                          id: `npc_${Date.now()}_prev`,
+                          role: 'npc',
+                          text: npcFullText,
+                        });
+                      }
+                      next.push({
+                        id: `player_invite_${Date.now()}`,
+                        role: 'player',
+                        text: playerPromptText,
+                        visual: {
+                          kind: 'interaction',
+                          emoji,
+                          label: playerPromptText,
+                        },
+                      });
+                      return next;
+                    });
+                    appendNpcChatTurns(chatAccountKey, merchantNpcId, [
+                      {
+                        role: 'player',
+                        text: playerPromptText,
+                        visual: {
+                          kind: 'interaction',
+                          emoji,
+                          label: playerPromptText,
+                        },
+                      },
+                      { role: 'npc', text: replyLine },
+                    ]);
+                    setNpcFullText(replyLine);
+                    setNpcTypedText('');
+                    window.setTimeout(() => {
+                      chatScrollEndRef.current?.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'end',
+                      });
+                    }, 30);
+                  };
+                  const recordMerchantGiftInChat = (
+                    itemName: string,
+                    reactionLine: string,
+                  ) => {
+                    setChatHistory((prev) => {
+                      const next = [...prev];
+                      if (npcFullText.trim()) {
+                        next.push({
+                          id: `npc_${Date.now()}_prev`,
+                          role: 'npc',
+                          text: npcFullText,
+                        });
+                      }
+                      next.push({
+                        id: `player_gift_${Date.now()}`,
+                        role: 'player',
+                        text: `Gave ${itemName}`,
+                        visual: { kind: 'gift_box', itemName },
+                      });
+                      return next;
+                    });
+                    appendNpcChatTurns(chatAccountKey, merchantNpcId, [
+                      {
+                        role: 'player',
+                        text: `Gave ${itemName}`,
+                        visual: { kind: 'gift_box', itemName },
+                      },
+                      { role: 'npc', text: reactionLine },
+                    ]);
+                    setNpcFullText(reactionLine);
+                    setNpcTypedText('');
+                    window.setTimeout(() => {
+                      chatScrollEndRef.current?.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'end',
+                      });
+                    }, 30);
+                  };
+                  const merchantFishItems = caughtFishBucket.filter((f) => !f.isMintedNft);
+                  const merchantCatalogGifts = [
+                    ...ownedCafeFoodIds,
+                    ...ownedApparelIds,
+                    ...ownedItemIds,
+                  ]
+                    .map((id) => getGiftCatalogItem(id))
+                    .filter((it): it is NonNullable<typeof it> => Boolean(it));
                   return (
-                    <div className="space-y-1.5 pb-1 border-b border-white/10" data-merchant-togetherness-actions="true">
+                    <div
+                      className="space-y-1.5 pb-1 border-b border-white/10"
+                      data-merchant-togetherness-actions="true"
+                      data-npc-chat-action-dock="true"
+                    >
+                      {(ctxOpts.isRidingWithThisNpc || ctxOpts.isWalkingWithThisNpc) && (
+                        <div
+                          data-npc-session-context-badge="true"
+                          className="text-[10px] font-semibold text-emerald-200/90 flex items-center gap-1.5"
+                        >
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                          {ctxOpts.isRidingWithThisNpc
+                            ? 'Riding together on your scooter bike'
+                            : 'Walking together'}
+                        </div>
+                      )}
                       <div className="flex flex-wrap gap-1.5">
+                        {showGift && (
+                          <button
+                            type="button"
+                            data-npc-chat-dock-gift-btn="true"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              setShowMerchantPairPosePicker(false);
+                              setShowMerchantChatGiftPicker((prev) => !prev);
+                            }}
+                            className={`px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors ${
+                              showMerchantChatGiftPicker
+                                ? 'bg-rose-500/45 text-white border border-rose-200/60'
+                                : 'bg-rose-500/25 hover:bg-rose-500/40 text-rose-100 border border-rose-300/35'
+                            }`}
+                          >
+                            Give Gift
+                          </button>
+                        )}
+                        {showGetOff && (
+                          <button
+                            type="button"
+                            data-npc-get-off-btn="true"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              if (ctxOpts.isRidingWithThisNpc) {
+                                onToggleNpcRideTogether?.(merchantNpcId);
+                              } else {
+                                onToggleNpcWalkTogether?.(merchantNpcId);
+                              }
+                            }}
+                            className="px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors bg-amber-500/30 hover:bg-amber-500/45 text-amber-100 border border-amber-300/45"
+                          >
+                            {ctxOpts.getOffLabel}
+                          </button>
+                        )}
                         {showWalk && onToggleNpcWalkTogether && (
                           <button
                             type="button"
                             data-npc-walk-together-btn="true"
                             onClick={() => {
                               soundEngine.playUiClick();
-                              onToggleNpcWalkTogether(merchantNpcId);
+                              const res = onToggleNpcWalkTogether(merchantNpcId);
+                              if (res && !res.ended && res.replyLine) {
+                                recordMerchantInvitation(
+                                  'Want to go for a walk together?',
+                                  '🚶',
+                                  res.replyLine,
+                                );
+                              }
                             }}
-                            className={`px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors ${
-                              npcTogethernessState.walkingNpcId === merchantNpcId
-                                ? 'bg-amber-500/30 hover:bg-amber-500/45 text-amber-100 border border-amber-300/45'
-                                : 'bg-sky-500/25 hover:bg-sky-500/40 text-sky-100 border border-sky-300/35'
-                            }`}
+                            className="px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors bg-sky-500/25 hover:bg-sky-500/40 text-sky-100 border border-sky-300/35"
                           >
-                            {npcTogethernessState.walkingNpcId === merchantNpcId
-                              ? 'End walk'
-                              : 'Ask to walk together'}
+                            Invite for a walk
+                          </button>
+                        )}
+                        {showRide && onToggleNpcRideTogether && (
+                          <button
+                            type="button"
+                            data-npc-ride-together-btn="true"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              const res = onToggleNpcRideTogether(merchantNpcId);
+                              if (res && !res.ended && res.replyLine) {
+                                recordMerchantInvitation(
+                                  'Want to ride along with me?',
+                                  '🛵',
+                                  res.replyLine,
+                                );
+                              }
+                            }}
+                            className="px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-100 border border-emerald-300/35"
+                          >
+                            Invite to ride along
                           </button>
                         )}
                         {showPair && onTriggerNpcPairPose && (
@@ -2961,12 +3144,26 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                             data-npc-pair-pose-btn="true"
                             onClick={() => {
                               soundEngine.playUiClick();
+                              setShowMerchantChatGiftPicker(false);
                               if (npcTogethernessState.pairPoseNpcId === merchantNpcId) {
                                 setShowMerchantPairPosePicker(false);
                                 onTriggerNpcPairPose(merchantNpcId);
-                              } else {
-                                setShowMerchantPairPosePicker((prev) => !prev);
+                                return;
                               }
+                              const poseDecision = evaluatePairedPoseRequest({
+                                store: closenessStore,
+                                npcId: merchantNpcId,
+                              });
+                              if (!poseDecision.accepted) {
+                                setShowMerchantPairPosePicker(false);
+                                recordMerchantInvitation(
+                                  'Want to take a pair photo?',
+                                  '🤝✨',
+                                  poseDecision.replyLine,
+                                );
+                                return;
+                              }
+                              setShowMerchantPairPosePicker((prev) => !prev);
                             }}
                             className={`px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors ${
                               npcTogethernessState.pairPoseNpcId === merchantNpcId
@@ -2976,29 +3173,68 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           >
                             {npcTogethernessState.pairPoseNpcId === merchantNpcId
                               ? 'Stop photo pose'
-                              : 'Take a pair photo'}
-                          </button>
-                        )}
-                        {showRide && onToggleNpcRideTogether && (
-                          <button
-                            type="button"
-                            data-npc-ride-together-btn="true"
-                            onClick={() => {
-                              soundEngine.playUiClick();
-                              onToggleNpcRideTogether(merchantNpcId);
-                            }}
-                            className={`px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors ${
-                              npcTogethernessState.ridingNpcId === merchantNpcId
-                                ? 'bg-amber-500/30 hover:bg-amber-500/45 text-amber-100 border border-amber-300/45'
-                                : 'bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-100 border border-emerald-300/35'
-                            }`}
-                          >
-                            {npcTogethernessState.ridingNpcId === merchantNpcId
-                              ? 'End ride'
-                              : 'Ask to ride together'}
+                              : 'Paired Pose'}
                           </button>
                         )}
                       </div>
+                      {showMerchantChatGiftPicker && onGiveNpcOwnedGift && (
+                        <div
+                          data-npc-chat-gift-picker="true"
+                          className="flex flex-wrap gap-1 pt-1 max-h-24 overflow-y-auto"
+                        >
+                          {merchantFishItems.length === 0 && merchantCatalogGifts.length === 0 ? (
+                            <span className="text-[10px] text-white/65 px-1">
+                              No giftable items in your bag yet.
+                            </span>
+                          ) : (
+                            <>
+                              {merchantFishItems.slice(0, 6).map((fish) => (
+                                <button
+                                  key={fish.id}
+                                  type="button"
+                                  onClick={() => {
+                                    soundEngine.playUiClick();
+                                    setShowMerchantChatGiftPicker(false);
+                                    const outcome = onGiveNpcOwnedGift(
+                                      merchantNpcId,
+                                      {
+                                        speciesId: fish.speciesId,
+                                        isTrophy: fish.isTrophy,
+                                      },
+                                      fish.id,
+                                    );
+                                    recordMerchantGiftInChat(
+                                      outcome.itemName || fish.speciesName,
+                                      outcome.reactionLine,
+                                    );
+                                  }}
+                                  className="px-2 py-0.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/35 border border-rose-300/30 text-[10px] font-medium text-white/95 cursor-pointer transition-colors"
+                                >
+                                  🐟 {fish.speciesName}
+                                </button>
+                              ))}
+                              {merchantCatalogGifts.slice(0, 10).map((item) => (
+                                <button
+                                  key={item.itemId}
+                                  type="button"
+                                  onClick={() => {
+                                    soundEngine.playUiClick();
+                                    setShowMerchantChatGiftPicker(false);
+                                    const outcome = onGiveNpcOwnedGift(merchantNpcId, item.itemId);
+                                    recordMerchantGiftInChat(
+                                      outcome.itemName || item.name,
+                                      outcome.reactionLine,
+                                    );
+                                  }}
+                                  className="px-2 py-0.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/35 border border-rose-300/30 text-[10px] font-medium text-white/95 cursor-pointer transition-colors"
+                                >
+                                  🎁 {item.name}
+                                </button>
+                              ))}
+                            </>
+                          )}
+                        </div>
+                      )}
                       {showMerchantPairPosePicker &&
                         npcTogethernessState.pairPoseNpcId !== merchantNpcId &&
                         onTriggerNpcPairPose && (

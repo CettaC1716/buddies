@@ -13,6 +13,7 @@ import {
 import { createNpcPortraitStudio } from './npcPortraitStudio';
 import type { CitizenId } from './buddiesCitizenRoles';
 import {
+  loadNpcClosenessStore,
   npcIdToCitizenId,
   resolveNpcId,
   type NpcId,
@@ -27,6 +28,11 @@ import {
   type NpcTogethernessCommand,
   type SavedNpcAnchorTransform,
 } from './npcTogetherness';
+import {
+  canStartDirectPairedPoseForTarget,
+  shouldForceEndTogethernessSession,
+  stepNpcApproachVehicleForRide,
+} from './npcTogethernessSession';
 import {
   createIdleNpcLingerState,
   resetNpcLingerTimer,
@@ -2768,6 +2774,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     let activeRideTogether: {
       npcId: NpcId;
       citizenId: CitizenId;
+      phase: 'approaching' | 'mounted';
+      approachElapsedSec: number;
       savedMerchantAnchor?: SavedNpcAnchorTransform;
     } | null = null;
     const emitTogethernessStateSnapshot = () => {
@@ -5611,7 +5619,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           npc.navPathGoalKey = '';
         }
         let stepped: ReturnType<typeof stepCityAmbientNpcSchedule>;
-        if (isRidingWithPlayer && scooterRideState && playerUnit) {
+        if (isRidingWithPlayer && activeRideTogether && scooterRideState && playerUnit) {
           const pillionTf = computeScooterPassengerTransform({
             driverX: playerUnit.x,
             driverZ: playerUnit.z,
@@ -5620,28 +5628,66 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             slopePitchX: scooterRideState.slopePitchX,
             leanRollZ: scooterRideState.pose?.leanRollZ ?? 0,
           });
-          stepped = {
-            x: pillionTf.worldX,
-            z: pillionTf.worldZ,
-            yaw: pillionTf.yaw,
-            speedMps: 0,
-            isMoving: false,
-            isSitting: true,
-            activeActivity: 'sit_relax',
-            activeStatusLabel: 'RIDING TOGETHER',
-            activeSeatLiftY: pillionTf.bodyLiftY - 0.178,
-            activeHoldingCafeItemId: null,
-            waypointIdx: npc.waypointIdx,
-            pauseTimer: 0,
-            navPath: [],
-            navWaypointIndex: 0,
-            navPathGoalKey: '',
-            stuckTimer: 0,
-            lastProgressX: pillionTf.worldX,
-            lastProgressZ: pillionTf.worldZ,
-            avoidSide: 0,
-            avoidTimer: 0,
-          };
+          if (activeRideTogether.phase === 'approaching') {
+            activeRideTogether.approachElapsedSec += dt;
+            const approach = stepNpcApproachVehicleForRide({
+              npcX: npc.x,
+              npcZ: npc.z,
+              npcYaw: npc.yaw,
+              pillionX: pillionTf.worldX,
+              pillionZ: pillionTf.worldZ,
+              dt,
+              elapsedSec: activeRideTogether.approachElapsedSec,
+            });
+            if (approach.reachedMount) {
+              activeRideTogether.phase = 'mounted';
+            }
+            stepped = {
+              x: approach.reachedMount ? pillionTf.worldX : approach.x,
+              z: approach.reachedMount ? pillionTf.worldZ : approach.z,
+              yaw: approach.reachedMount ? pillionTf.yaw : approach.yaw,
+              speedMps: approach.reachedMount ? 0 : approach.speedMps,
+              isMoving: !approach.reachedMount && approach.isMoving,
+              isSitting: approach.reachedMount,
+              activeActivity: approach.reachedMount ? 'sit_relax' : 'walk_patrol',
+              activeStatusLabel: 'RIDING TOGETHER',
+              activeSeatLiftY: approach.reachedMount ? pillionTf.bodyLiftY - 0.178 : 0,
+              activeHoldingCafeItemId: null,
+              waypointIdx: npc.waypointIdx,
+              pauseTimer: 0,
+              navPath: [],
+              navWaypointIndex: 0,
+              navPathGoalKey: '',
+              stuckTimer: 0,
+              lastProgressX: approach.x,
+              lastProgressZ: approach.z,
+              avoidSide: 0,
+              avoidTimer: 0,
+            };
+          } else {
+            stepped = {
+              x: pillionTf.worldX,
+              z: pillionTf.worldZ,
+              yaw: pillionTf.yaw,
+              speedMps: 0,
+              isMoving: false,
+              isSitting: true,
+              activeActivity: 'sit_relax',
+              activeStatusLabel: 'RIDING TOGETHER',
+              activeSeatLiftY: pillionTf.bodyLiftY - 0.178,
+              activeHoldingCafeItemId: null,
+              waypointIdx: npc.waypointIdx,
+              pauseTimer: 0,
+              navPath: [],
+              navWaypointIndex: 0,
+              navPathGoalKey: '',
+              stuckTimer: 0,
+              lastProgressX: pillionTf.worldX,
+              lastProgressZ: pillionTf.worldZ,
+              avoidSide: 0,
+              avoidTimer: 0,
+            };
+          }
         } else if (isWalkingWithPlayer && activeWalkTogether && playerUnit) {
           const walkRes = stepNpcWalkTogether({
             npcX: npc.x,
@@ -6230,6 +6276,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         const isRidingPassengerNow = Boolean(
           activeRideTogether &&
             activeRideTogether.citizenId === npc.preset.id &&
+            activeRideTogether.phase === 'mounted' &&
             scooterRideState &&
             scooterRideState.kind === 'electric_scooter_bike',
         );
@@ -6345,6 +6392,41 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           }
         } else if (npc.rig.customGlbController) {
           npc.rig.customGlbController.lastStepTimeMs = nowMs;
+        }
+      }
+
+      // WS12: Forced togetherness ends mirroring player riding rules (interior, warzone, fishing, dismount)
+      const isInInteriorForTogetherness =
+        npcCameraMode === 'cafe_interior' ||
+        npcCameraMode === 'casino_interior' ||
+        npcCameraMode === 'salon_interior' ||
+        npcCameraMode === 'house_interior' ||
+        npcCameraMode === 'house_visit';
+      const isPlayerFishing = Boolean(playerUnit && playerUnit.weaponName === 'Joran Fishing');
+      if (activeRideTogether) {
+        const forceRide = shouldForceEndTogethernessSession({
+          mode: 'ride',
+          worldMode: worldModeRef.current,
+          isInInterior: isInInteriorForTogetherness,
+          isFishing: isPlayerFishing,
+          playerScooterKind: scooterRideState?.kind ?? null,
+          playerAlive: Boolean(playerUnit && playerUnit.alive),
+        });
+        if (forceRide.shouldEnd) {
+          endRideTogetherNow();
+        }
+      }
+      if (activeWalkTogether) {
+        const forceWalk = shouldForceEndTogethernessSession({
+          mode: 'walk',
+          worldMode: worldModeRef.current,
+          isInInterior: isInInteriorForTogetherness,
+          isFishing: isPlayerFishing,
+          playerScooterKind: scooterRideState?.kind ?? null,
+          playerAlive: Boolean(playerUnit && playerUnit.alive),
+        });
+        if (forceWalk.shouldEnd) {
+          endWalkTogetherNow();
         }
       }
 
@@ -16890,10 +16972,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             (n) => n.preset.id === endingRide.citizenId,
           );
           if (ambientPassenger) {
+            ambientPassenger.isSitting = false;
             ambientPassenger.bodyGroup.rotation.set(0, ambientPassenger.yaw + Math.PI / 2, 0);
             if (ambientPassenger.rig.activeSocialClipName === 'scooter_bike_idle.001') {
               ambientPassenger.rig.activeSocialClipName = undefined;
             }
+            npcLingerStates.set(
+              endingRide.citizenId,
+              resetNpcLingerTimer(createIdleNpcLingerState(), endingRide.citizenId),
+            );
           }
         }
         emitTogethernessStateSnapshot();
@@ -20102,9 +20189,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           const initUrl = payload.initiateGlbUrl;
           const recvUrl = payload.receiveGlbUrl;
 
-          // 1. City Ambient NPC (Nadia, Mira, Tari, Raka, Bima, Kenji) -> accepts & poses together!
+          // 1. City Ambient NPC (Nadia, Mira, Tari, Raka, Bima, Kenji) -> enforce WS13 closeness gate for named NPCs
           const ambientNpc = cityAmbientNpcs.find((c) => c.preset.id === targetIdStr);
           if (ambientNpc) {
+            const closenessAcct =
+              nearSessionState.accountId ?? nearSessionState.walletId ?? 'guest';
+            if (
+              !canStartDirectPairedPoseForTarget({
+                store: loadNpcClosenessStore(closenessAcct),
+                targetId: ambientNpc.preset.id,
+              })
+            ) {
+              return;
+            }
             const anchorYaw = Math.atan2(-(ambientNpc.z - playerUnit.z), ambientNpc.x - playerUnit.x);
             void beginSynchronizedPairedPose({
               partnerKind: 'ambient_npc',
@@ -20122,13 +20219,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             return;
           }
 
-          // 2. Merchant NPC (Hana / Kai) -> accepts at clear spot right in front of player!
+          // 2. Merchant NPC (Hana / Kai) -> enforce WS13 closeness gate before posing
           if (
             targetIdStr === 'npc_hana' ||
             targetIdStr === 'npc_cafe' ||
             targetIdStr === 'npc_kai' ||
             targetIdStr === 'npc_beach'
           ) {
+            const closenessAcct =
+              nearSessionState.accountId ?? nearSessionState.walletId ?? 'guest';
+            if (
+              !canStartDirectPairedPoseForTarget({
+                store: loadNpcClosenessStore(closenessAcct),
+                targetId: targetIdStr,
+              })
+            ) {
+              return;
+            }
             const anchorYaw = playerUnit.yaw;
             void beginSynchronizedPairedPose({
               partnerKind: 'merchant_npc',
@@ -39373,6 +39480,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           mNpc.npcGrp.position.set(a.x, a.y, a.z);
           mNpc.npcGrp.rotation.set(0, a.yaw, 0);
         }
+      } else {
+        // WS12: Enter post-interaction linger (WS10) before resuming patrol from nearest waypoint.
+        npcLingerStates.set(
+          prev.citizenId,
+          resetNpcLingerTimer(createIdleNpcLingerState(), prev.citizenId),
+        );
       }
       emitTogethernessStateSnapshot();
     };
@@ -39394,10 +39507,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       } else {
         const ambientPassenger = cityAmbientNpcs.find((n) => n.preset.id === prev.citizenId);
         if (ambientPassenger) {
+          ambientPassenger.isSitting = false;
           ambientPassenger.bodyGroup.rotation.set(0, ambientPassenger.yaw + Math.PI / 2, 0);
           if (ambientPassenger.rig.activeSocialClipName === 'scooter_bike_idle.001') {
             ambientPassenger.rig.activeSocialClipName = undefined;
           }
+          // WS12: Enter post-interaction linger (WS10) before resuming patrol from nearest waypoint.
+          npcLingerStates.set(
+            prev.citizenId,
+            resetNpcLingerTimer(createIdleNpcLingerState(), prev.citizenId),
+          );
         }
       }
       emitTogethernessStateSnapshot();
@@ -39493,12 +39612,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
       if (cmd.type === 'start_ride') {
         if (worldModeRef.current === 'warzone' || npcCameraMode !== 'none') return;
+        // WS12: Ride invitation only exists while mounted on electric_scooter_bike (never kick scooter or on foot).
+        if (!scooterRideState || scooterRideState.kind !== 'electric_scooter_bike') return;
         endWalkTogetherNow();
         stopActivePairedInteraction(true);
-        if (!scooterRideState || scooterRideState.kind !== 'electric_scooter_bike') {
-          handleEquipScooter('electric_scooter_bike');
-        }
-        if (!scooterRideState || scooterRideState.kind !== 'electric_scooter_bike') return;
         const citizenId = npcIdToCitizenId(cmd.npcId);
         let savedMerchantAnchor: SavedNpcAnchorTransform | undefined;
         if (cmd.npcId === 'hana' || cmd.npcId === 'kai') {
@@ -39515,6 +39632,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         activeRideTogether = {
           npcId: cmd.npcId,
           citizenId,
+          phase: 'approaching',
+          approachElapsedSec: 0,
           savedMerchantAnchor,
         };
         emitTogethernessStateSnapshot();

@@ -368,32 +368,36 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
             >
               <MessageCircle className="w-3.5 h-3.5 stroke-[2.2]" />
             </button>
-            <button
-              type="button"
-              data-target-action="gift"
-              onClick={() => {
-                soundEngine.playUiClick();
-                onGiftTarget?.(targetEntity);
-              }}
-              aria-label={`Send Gift to ${displayName}`}
-              className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-400 to-rose-600 text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95"
-            >
-              <Gift className="w-3.5 h-3.5 stroke-[2.2]" />
-            </button>
-            {hasOwnedPairedAnimations && onInteractTarget && (
+            {(targetIsRealPlayer || isNpcChatSessionActive) && (
               <button
                 type="button"
-                data-target-action="paired"
+                data-target-action="gift"
                 onClick={() => {
                   soundEngine.playUiClick();
-                  onInteractTarget(targetEntity);
+                  onGiftTarget?.(targetEntity);
                 }}
-                aria-label={`Paired Interact with ${displayName}`}
-                className="w-7 h-7 rounded-full bg-gradient-to-br from-fuchsia-400 to-purple-600 text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95"
+                aria-label={`Send Gift to ${displayName}`}
+                className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-400 to-rose-600 text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95"
               >
-                <HeartHandshake className="w-3.5 h-3.5 stroke-[2.2]" />
+                <Gift className="w-3.5 h-3.5 stroke-[2.2]" />
               </button>
             )}
+            {(targetIsRealPlayer || isNpcChatSessionActive) &&
+              hasOwnedPairedAnimations &&
+              onInteractTarget && (
+                <button
+                  type="button"
+                  data-target-action="paired"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    onInteractTarget(targetEntity);
+                  }}
+                  aria-label={`Paired Interact with ${displayName}`}
+                  className="w-7 h-7 rounded-full bg-gradient-to-br from-fuchsia-400 to-purple-600 text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95"
+                >
+                  <HeartHandshake className="w-3.5 h-3.5 stroke-[2.2]" />
+                </button>
+              )}
             <button
               type="button"
               data-target-action="close"
@@ -797,37 +801,41 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                   </button>
                 )}
 
-                {/* 3. Send Gift (Pink-Rose Glossy Button) */}
-                <button
-                  type="button"
-                  data-target-action="gift"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    onGiftTarget?.(targetEntity);
-                  }}
-                  title={`Send Gift to ${displayName}`}
-                  aria-label={`Send Gift to ${displayName}`}
-                  className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-400 to-rose-600 hover:brightness-110 border border-pink-200/50 text-white shadow-[0_4px_12px_rgba(244,63,94,0.4)] flex items-center justify-center transition-all active:scale-95 cursor-pointer"
-                >
-                  <Gift className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
-                </button>
-
-                {/* 4. Paired Pose / Interact (Violet Glossy Button, when owned) */}
-                {hasOwnedPairedAnimations && onInteractTarget && (
+                {/* 3. Send Gift (Pink-Rose Glossy Button — human players or inside NPC chat session only) */}
+                {(targetIsRealPlayer || isNpcChatSessionActive) && (
                   <button
                     type="button"
-                    data-target-action="paired"
+                    data-target-action="gift"
                     onClick={() => {
                       soundEngine.playUiClick();
-                      onInteractTarget(targetEntity);
+                      onGiftTarget?.(targetEntity);
                     }}
-                    title={`Paired Interact with ${displayName}`}
-                    aria-label={`Paired Interact with ${displayName}`}
-                    className="w-9 h-9 rounded-full bg-gradient-to-br from-fuchsia-400 to-purple-600 hover:brightness-110 border border-fuchsia-200/50 text-white shadow-[0_4px_12px_rgba(192,38,211,0.4)] flex items-center justify-center transition-all active:scale-95 cursor-pointer"
+                    title={`Send Gift to ${displayName}`}
+                    aria-label={`Send Gift to ${displayName}`}
+                    className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-400 to-rose-600 hover:brightness-110 border border-pink-200/50 text-white shadow-[0_4px_12px_rgba(244,63,94,0.4)] flex items-center justify-center transition-all active:scale-95 cursor-pointer"
                   >
-                    <HeartHandshake className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+                    <Gift className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
                   </button>
                 )}
+
+                {/* 4. Paired Pose / Interact (Violet Glossy Button — human players or inside NPC chat session only) */}
+                {(targetIsRealPlayer || isNpcChatSessionActive) &&
+                  hasOwnedPairedAnimations &&
+                  onInteractTarget && (
+                    <button
+                      type="button"
+                      data-target-action="paired"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        onInteractTarget(targetEntity);
+                      }}
+                      title={`Paired Interact with ${displayName}`}
+                      aria-label={`Paired Interact with ${displayName}`}
+                      className="w-9 h-9 rounded-full bg-gradient-to-br from-fuchsia-400 to-purple-600 hover:brightness-110 border border-fuchsia-200/50 text-white shadow-[0_4px_12px_rgba(192,38,211,0.4)] flex items-center justify-center transition-all active:scale-95 cursor-pointer"
+                    >
+                      <HeartHandshake className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+                    </button>
+                  )}
               </div>
 
               {/* Return to Quick Items */}
