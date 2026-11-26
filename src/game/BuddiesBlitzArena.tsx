@@ -37,6 +37,11 @@ import {
   FRIEND_WORLD_RING_SPEC,
   resolveRemoteAvatarFriendRing,
 } from './friendWorldRing';
+import { buildCityRentalLotsVisuals } from './buddiesCityRentalLotsBuilder';
+import {
+  SHOP_LOT_PLACEMENT_SYNC_EVENT,
+  type ShopLotPlacementSyncPayload,
+} from './shopPlacementController';
 import type { PlayerSocialGraph } from './buddiesSocialGraph';
 import {
   createIdleNpcLingerState,
@@ -6591,6 +6596,24 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       CAFE_EXTERIOR_DOOR_TRIGGER.z,
     );
     scene.add(cafeExteriorDoorPad.group);
+
+    // Phase 2: Commercial 4-Block Rental Lots, 2m Sidewalks, Placed Shop GLBs & Replaceable Billboard Logos
+    const cityRentalLotsController = buildCityRentalLotsVisuals();
+    scene.add(cityRentalLotsController.rootGroup);
+    let shopLotPlacementState: ShopLotPlacementSyncPayload = {
+      rentedSlotIds: [],
+      lotStatusBySlotId: {},
+      placedBuildingBySlotId: {},
+      billboardLogoUrlBySlotId: {},
+      selectedSlotId: null,
+    };
+    const onShopLotPlacementSync = (ev: Event) => {
+      const detail = (ev as CustomEvent<ShopLotPlacementSyncPayload>).detail;
+      if (detail) {
+        shopLotPlacementState = detail;
+      }
+    };
+    window.addEventListener(SHOP_LOT_PLACEMENT_SYNC_EVENT, onShopLotPlacementSync);
 
     // Glowing Floor Ring + 3D Triangle for Outdoor Private House / Model Estate Entrance Door
     const houseExteriorDoorPad = buildGlowingDoorFloorArrowPad();
@@ -23307,6 +23330,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       if (cachedSouthResidenceHalte) cachedSouthResidenceHalte.visible = showOutdoor;
       if (cachedBeachfrontHarborHalte) cachedBeachfrontHarborHalte.visible = showOutdoor;
       if (cachedCityTransitNetworkGroup) cachedCityTransitNetworkGroup.visible = showOutdoor;
+      cityRentalLotsController.sync({
+        isSafezoneMode: worldModeRef.current !== 'warzone',
+        showOutdoor,
+        blueCommanderBases,
+        redCommanderBases,
+        rentedSlotIds: shopLotPlacementState.rentedSlotIds,
+        lotStatusBySlotId: shopLotPlacementState.lotStatusBySlotId,
+        placedBuildingBySlotId: shopLotPlacementState.placedBuildingBySlotId,
+        billboardLogoUrlBySlotId: shopLotPlacementState.billboardLogoUrlBySlotId,
+        selectedSlotId: shopLotPlacementState.selectedSlotId ?? null,
+        timeSec: performance.now() * 0.001,
+      });
       if (!showOutdoor) {
         if (cachedLobbyPortalsObj) cachedLobbyPortalsObj.visible = false;
         centerDropZoneGroup.visible = false;
@@ -39705,6 +39740,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     return () => {
       isDisposed = true;
       window.removeEventListener('npc-chat-gift-sent', onNpcGiftSentForLinger);
+      window.removeEventListener(SHOP_LOT_PLACEMENT_SYNC_EVENT, onShopLotPlacementSync);
+      cityRentalLotsController.dispose();
       window.removeEventListener(NPC_TOGETHERNESS_COMMAND_EVENT, onNpcTogethernessCommand);
       cancelAnimationFrame(rafId);
       cancelAnimationFrame(staggeredUpgradeRafId);

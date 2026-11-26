@@ -1123,6 +1123,25 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                           </div>
                         </div>
                       </div>
+                    ) : selectedFurnitureItem.renderImagePath ? (
+                      <div
+                        data-testid="catalog-shop-building-render"
+                        className="relative w-full h-[240px] sm:h-[300px] lg:h-[336px] shrink-0 rounded-xl bg-gradient-to-b from-[#dceafa] via-[#e8f1fa] to-[#cbd5e1] overflow-hidden flex items-center justify-center"
+                      >
+                        <img
+                          src={selectedFurnitureItem.renderImagePath}
+                          alt={selectedFurnitureItem.name}
+                          className="w-full h-full object-contain"
+                          draggable={false}
+                        />
+                        {selectedFurnitureItem.footprintLabel && (
+                          <div className="pointer-events-none absolute bottom-3 left-3">
+                            <span className="px-2.5 py-1 rounded-full bg-slate-950/80 border border-white/15 text-[11px] font-semibold text-white">
+                              {selectedFurnitureItem.footprintLabel}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <div
                         ref={viewportBoxRef}
@@ -1180,14 +1199,18 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                   <div className="space-y-3">
                     <div className="flex items-center flex-wrap gap-1.5 text-[11px]">
                       <span className="px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-400/30 font-semibold">
-                        {selectedFurnitureItem.category === 'nft_house_theme'
-                          ? 'House Theme NFT'
-                          : 'Collector Furniture NFT'}
+                        {selectedFurnitureItem.category === 'nft_shop_building'
+                          ? 'Shop Building'
+                          : selectedFurnitureItem.category === 'nft_house_theme'
+                            ? 'House Theme'
+                            : 'Furniture'}
                       </span>
                       <span className="px-2.5 py-0.5 rounded-full bg-white/10 text-white/80 border border-white/10 font-medium">
-                        {selectedFurnitureItem.interiorSlot
-                          ? SLOT_LABELS[selectedFurnitureItem.interiorSlot] ?? 'Interior Slot'
-                          : 'Full Interior & Exterior'}
+                        {selectedFurnitureItem.footprintLabel
+                          ? selectedFurnitureItem.footprintLabel
+                          : selectedFurnitureItem.interiorSlot
+                            ? SLOT_LABELS[selectedFurnitureItem.interiorSlot] ?? 'Interior Slot'
+                            : 'Full Interior & Exterior'}
                       </span>
                     </div>
 

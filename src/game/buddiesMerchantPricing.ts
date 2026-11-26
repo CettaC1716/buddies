@@ -18,6 +18,7 @@
  */
 
 import { BaseGardenPresetId, BaseSkinThemeId, CityTransitStationId } from './buddiesBlitzRules';
+import type { ShopBuildingFormId } from './buddiesCityRentalLotsRules';
 
 export type MerchantLocationId = 'lobby_cafe' | 'beach_house';
 
@@ -27,7 +28,12 @@ export interface MerchantCatalogItem {
   id: string;
   tokenId: string; // NEP-245 multi-token ID (for NFT items) or catalog SKU
   name: string;
-  category: 'non_nft_furniture' | 'nft_house_theme' | 'nft_collector_furniture' | 'fishing_gear';
+  category:
+    | 'non_nft_furniture'
+    | 'nft_house_theme'
+    | 'nft_collector_furniture'
+    | 'nft_shop_building'
+    | 'fishing_gear';
   currency: 'CYON' | 'RESPITE';
   basePrice: number;
   targetStock: number;
@@ -40,6 +46,12 @@ export interface MerchantCatalogItem {
   interiorSlot?: HouseInteriorSlotId;
   skinThemeId?: BaseSkinThemeId;
   gardenPresetId?: BaseGardenPresetId;
+  /** Shop building form identifier when category === 'nft_shop_building' */
+  buildingFormId?: ShopBuildingFormId;
+  /** Official game-rendered catalog/NFT image path (blank neutral billboard) */
+  renderImagePath?: string;
+  /** Human-readable footprint summary (e.g. '9.2 × 9.2 m') */
+  footprintLabel?: string;
   /** 2D OBB footprint rectangles `[offsetX, offsetZ, width, depth]` in meters */
   footprints?: readonly [number, number, number, number][];
   /** Item height in meters used for spring-damper wobble pivot `Gc(item)` */
@@ -290,6 +302,58 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
     initialStock: 5,
     isNft: true,
     description: 'Collector Tackle: Portable acoustic sonar for spotting trophy fish.',
+  },
+  // --- SHOP BUILDINGS (sold strictly by architectural FORM; placed on rented commercial lots) ---
+  {
+    id: 'shop_glass_corner_3story',
+    tokenId: 'nep245:shop_building:glass_corner_3story',
+    name: 'Glass Corner 3-Story',
+    category: 'nft_shop_building',
+    merchantId: 'lobby_cafe',
+    currency: 'RESPITE',
+    basePrice: 250,
+    targetStock: 8,
+    initialStock: 8,
+    isNft: true,
+    buildingFormId: 'glass_corner_3story',
+    renderImagePath: '/assets/buildings/renders/shop_glass_corner_3story.png',
+    footprintLabel: '9.2 × 9.2 m · 3-Story',
+    description:
+      'Three-story glass and concrete corner building shell with steel-truss rooftop billboard. Empty neutral interior ready for any rented commercial lot.',
+  },
+  {
+    id: 'shop_canopy_storefront_2story',
+    tokenId: 'nep245:shop_building:canopy_storefront_2story',
+    name: 'Canopy Storefront 2-Story',
+    category: 'nft_shop_building',
+    merchantId: 'lobby_cafe',
+    currency: 'RESPITE',
+    basePrice: 200,
+    targetStock: 10,
+    initialStock: 10,
+    isNft: true,
+    buildingFormId: 'canopy_storefront_2story',
+    renderImagePath: '/assets/buildings/renders/shop_canopy_storefront_2story.png',
+    footprintLabel: '9.2 × 9.0 m · 2-Story',
+    description:
+      'Two-story limestone storefront shell with dark metal wrap-around canopy and rooftop billboard. Empty neutral interior ready for any rented commercial lot.',
+  },
+  {
+    id: 'shop_brick_rooftop_deck',
+    tokenId: 'nep245:shop_building:brick_rooftop_deck',
+    name: 'Brick Block with Rooftop Deck',
+    category: 'nft_shop_building',
+    merchantId: 'lobby_cafe',
+    currency: 'RESPITE',
+    basePrice: 200,
+    targetStock: 10,
+    initialStock: 10,
+    isNft: true,
+    buildingFormId: 'brick_rooftop_deck',
+    renderImagePath: '/assets/buildings/renders/shop_brick_rooftop_deck.png',
+    footprintLabel: '9.2 × 9.0 m · 2-Story + Deck',
+    description:
+      'Two-story brick and concrete building shell with balcony balustrade, timber rooftop deck, and steel-truss billboard. Empty neutral interior ready for any rented commercial lot.',
   },
 ];
 

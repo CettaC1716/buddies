@@ -66,6 +66,11 @@ export interface MyThingsPanelProps {
   recruitedFamilyMembers: readonly RecruitedFamilyMemberAgent[];
   onPreviewFish: (spec: Fish3dPreviewSpec) => void;
   onReleaseFish: (fishId: string) => void;
+  placedLotIdByBuildingForm?: Partial<Record<string, string>>;
+  hasActiveRentedLot?: boolean;
+  onPlaceShopBuilding?: (buildingFormId: string) => void;
+  onRemoveShopBuilding?: (buildingFormId: string) => void;
+  onUploadShopBillboardLogo?: (buildingFormId: string, logoUrl: string | null) => void;
 }
 
 const ClothingCardVisual: React.FC<{ item: OwnedClothingCardItem }> = ({ item }) => {
@@ -153,6 +158,11 @@ export const MyThingsPanel: React.FC<MyThingsPanelProps> = ({
   recruitedFamilyMembers,
   onPreviewFish,
   onReleaseFish,
+  placedLotIdByBuildingForm,
+  hasActiveRentedLot,
+  onPlaceShopBuilding,
+  onRemoveShopBuilding,
+  onUploadShopBillboardLogo,
 }) => {
   const inventory = useMemo(
     () =>
@@ -582,31 +592,105 @@ export const MyThingsPanel: React.FC<MyThingsPanelProps> = ({
               />
             )}
 
-            {/* Owned Furniture & House Themes */}
+            {/* Owned Furniture, House Themes & Shop Buildings */}
             {inventory.ownedPropertyItems.map((item) => {
               const qty = inventory.ownedMerchantCounts[item.id] ?? 1;
               const placedQty = placedFurnitureCounts[item.id] ?? 0;
               const cleanName = sanitizeOwnedItemLabel(item.name);
-              const categoryLabel =
-                item.category === 'nft_house_theme' ? 'House Theme' : 'Furniture';
+              const isShopBuilding = item.category === 'nft_shop_building' && Boolean(item.buildingFormId);
+              const formId = item.buildingFormId;
+              const placedLotId = formId ? placedLotIdByBuildingForm?.[formId] : undefined;
+              const categoryLabel = isShopBuilding
+                ? 'Shop Building'
+                : item.category === 'nft_house_theme'
+                  ? 'House Theme'
+                  : 'Furniture';
               return (
                 <WalletAssetPortraitCard
                   key={item.id}
                   dataAttrs={{ 'data-my-things-property-item': item.id }}
                   brandLabel={categoryLabel}
-                  badgeLabel={qty > 1 ? `×${qty}` : undefined}
+                  badgeLabel={qty > 1 ? `×${qty}` : item.footprintLabel}
                   badgeTone="neutral"
                   title={cleanName}
-                  statusLabel={placedQty > 0 ? `In Room ×${placedQty}` : 'Owned'}
+                  statusLabel={
+                    isShopBuilding
+                      ? placedLotId
+                        ? 'Placed on Lot'
+                        : 'In My Things'
+                      : placedQty > 0
+                        ? `In Room ×${placedQty}`
+                        : 'Owned'
+                  }
                   statusTone="emerald"
                   visual={
-                    <Furniture3dThumbnail
-                      catalogId={item.id}
-                      name={cleanName}
-                      iconEmoji={item.iconEmoji}
-                      size="portrait"
-                      variant="studio"
-                    />
+                    isShopBuilding && item.renderImagePath ? (
+                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-slate-50 to-slate-200/80 p-2">
+                        <img
+                          src={item.renderImagePath}
+                          alt={cleanName}
+                          className="w-full h-full object-contain drop-shadow-[0_10px_14px_rgba(15,23,42,0.18)]"
+                          loading="lazy"
+                        />
+                      </div>
+                    ) : (
+                      <Furniture3dThumbnail
+                        catalogId={item.id}
+                        name={cleanName}
+                        iconEmoji={item.iconEmoji}
+                        size="portrait"
+                        variant="studio"
+                      />
+                    )
+                  }
+                  extraFooter={
+                    isShopBuilding && formId ? (
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {placedLotId ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                onRemoveShopBuilding?.(formId);
+                              }}
+                              className="flex-1 px-2 py-1.5 rounded-lg text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-white transition-colors"
+                            >
+                              Remove
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                const url = window.prompt('Paste your shop sign logo image URL (leave blank to clear):');
+                                if (url === null) return;
+                                const trimmed = url.trim();
+                                onUploadShopBillboardLogo?.(formId, trimmed ? trimmed : null);
+                              }}
+                              className="flex-1 px-2 py-1.5 rounded-lg text-[10px] font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+                            >
+                              Sign Logo
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={!hasActiveRentedLot}
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              onPlaceShopBuilding?.(formId);
+                            }}
+                            className={`w-full px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${
+                              hasActiveRentedLot
+                                ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                                : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                            }`}
+                          >
+                            {hasActiveRentedLot ? 'Place on Lot' : 'Rent a Lot First'}
+                          </button>
+                        )}
+                      </div>
+                    ) : undefined
                   }
                 />
               );

@@ -203,10 +203,14 @@ test('evaluateRoadNetworkSdf, evaluateNwLakeSdf, and evaluateSeHarborSdf match 1
   assert.ok(evaluateRoadNetworkSdf(19, 40) < 0);
   assert.ok(evaluateRoadNetworkSdf(19, -40) < 0);
 
-  // Outer Base Ring Road Loop ("jalan lingkar luar area base") and 3 Complex Divider Roads separating the 4 Base Plots (x = -60, -30, 0, +30, +60)
-  for (const roadX of [-60, -30, 0, 30, 60]) {
-    assert.ok(evaluateRoadNetworkSdf(roadX, 80) < 0, `Expected complex divider/ring road at (${roadX}, 80)`);
-    assert.ok(evaluateRoadNetworkSdf(roadX, -80) < 0, `Expected complex divider/ring road at (${roadX}, -80)`);
+  // Widened Commercial Avenues at x = -60, 0, +60 (divider Roads 2 & 4 at x = -30, +30 are closed for the 4-lot block layout)
+  for (const roadX of [-60, 0, 60]) {
+    assert.ok(evaluateRoadNetworkSdf(roadX, 80) < 0, `Expected widened avenue at (${roadX}, 80)`);
+    assert.ok(evaluateRoadNetworkSdf(roadX, -80) < 0, `Expected widened avenue at (${roadX}, -80)`);
+  }
+  for (const closedX of [-30, 30]) {
+    assert.ok(evaluateRoadNetworkSdf(closedX, 80) > 0, `Expected closed divider road at (${closedX}, 80)`);
+    assert.ok(evaluateRoadNetworkSdf(closedX, -80) > 0, `Expected closed divider road at (${closedX}, -80)`);
   }
   assert.ok(evaluateRoadNetworkSdf(0, 108) < 0);
   assert.ok(evaluateRoadNetworkSdf(0, -108) < 0);

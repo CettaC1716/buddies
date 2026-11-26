@@ -179,6 +179,18 @@ import {
 } from './components/Fish3dPreviewModal';
 import { MyThingsPanel } from './components/MyThingsPanel';
 import type { MyThingsSectionId, PersonalWalletTabId } from './components/myThingsRules';
+import type { ShopBuildingFormId } from './game/buddiesCityRentalLotsRules';
+import {
+  createEmptyLotRentalStore,
+  type LotRentalStore,
+} from './game/shopRentalEngine';
+import {
+  SHOP_LOT_PLACEMENT_SYNC_EVENT,
+  buildShopLotPlacementSyncPayload,
+  placeBuildingFromMyThingsOnLot,
+  removeBuildingFromLotToInventory,
+  setPlacedBuildingBillboardLogo,
+} from './game/shopPlacementController';
 import {
   createInitialMerchantMarketState,
   executeLulToCyonExchange,
@@ -1363,6 +1375,17 @@ export default function App() {
     useState<boolean>(false);
   const [realEstateCatalogTab, setRealEstateCatalogTab] =
     useState<RealEstateCatalogTabId>('house');
+  const [lotRentalStore, setLotRentalStore] = useState<LotRentalStore>(() =>
+    createEmptyLotRentalStore(),
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(
+      new CustomEvent(SHOP_LOT_PLACEMENT_SYNC_EVENT, {
+        detail: buildShopLotPlacementSyncPayload(lotRentalStore),
+      }),
+    );
+  }, [lotRentalStore]);
   const [isDexModalOpen, setIsDexModalOpen] = useState<boolean>(false);
   const loadOwnedScootersFromStorage = useCallback((acctKey: string): string[] => {
     let stored: string[] = [];
@@ -9482,6 +9505,77 @@ export default function App() {
         onReleaseFish={(fishId) => {
           setCaughtFishBucket((prev) => prev.filter((f) => f.id !== fishId));
           setLastCaughtFishToast((prev) => (prev?.id === fishId ? null : prev));
+        }}
+        placedLotIdByBuildingForm={Object.entries(lotRentalStore.rentalsByLotId).reduce<
+          Partial<Record<string, string>>
+        >((acc, [lotId, rec]) => {
+          const acct = (hud.nearWalletId || playerUid || '').trim().toLowerCase();
+          if (
+            rec.placedBuildingFormId &&
+            acct &&
+            rec.renterAccountId.trim().toLowerCase() === acct
+          ) {
+            acc[rec.placedBuildingFormId] = lotId;
+          }
+          return acc;
+        }, {})}
+        hasActiveRentedLot={Object.values(lotRentalStore.rentalsByLotId).some((rec) => {
+          const acct = (hud.nearWalletId || playerUid || '').trim().toLowerCase();
+          return Boolean(acct) && rec.renterAccountId.trim().toLowerCase() === acct;
+        })}
+        onPlaceShopBuilding={(formId) => {
+          const acct = (hud.nearWalletId || playerUid || '').trim();
+          const targetLot = Object.entries(lotRentalStore.rentalsByLotId).find(
+            ([, rec]) =>
+              rec.renterAccountId.trim().toLowerCase() === acct.toLowerCase() &&
+              !rec.placedBuildingFormId,
+          )?.[0];
+          if (!targetLot || !acct) return;
+          const res = placeBuildingFromMyThingsOnLot({
+            store: lotRentalStore,
+            lotId: targetLot,
+            accountId: acct,
+            buildingFormId: formId as ShopBuildingFormId,
+            ownedCatalogItemIds: ownedMerchantItemIds,
+          });
+          if (res.ok) {
+            setLotRentalStore(res.store);
+          }
+        }}
+        onRemoveShopBuilding={(formId) => {
+          const acct = (hud.nearWalletId || playerUid || '').trim();
+          const targetLot = Object.entries(lotRentalStore.rentalsByLotId).find(
+            ([, rec]) =>
+              rec.renterAccountId.trim().toLowerCase() === acct.toLowerCase() &&
+              rec.placedBuildingFormId === formId,
+          )?.[0];
+          if (!targetLot || !acct) return;
+          const res = removeBuildingFromLotToInventory({
+            store: lotRentalStore,
+            lotId: targetLot,
+            accountId: acct,
+          });
+          if (res.ok) {
+            setLotRentalStore(res.store);
+          }
+        }}
+        onUploadShopBillboardLogo={(formId, logoUrl) => {
+          const acct = (hud.nearWalletId || playerUid || '').trim();
+          const targetLot = Object.entries(lotRentalStore.rentalsByLotId).find(
+            ([, rec]) =>
+              rec.renterAccountId.trim().toLowerCase() === acct.toLowerCase() &&
+              rec.placedBuildingFormId === formId,
+          )?.[0];
+          if (!targetLot || !acct) return;
+          const res = setPlacedBuildingBillboardLogo({
+            store: lotRentalStore,
+            lotId: targetLot,
+            actorAccountId: acct,
+            logoUrl,
+          });
+          if (res.ok) {
+            setLotRentalStore(res.store);
+          }
         }}
       />
     );

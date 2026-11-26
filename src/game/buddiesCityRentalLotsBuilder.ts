@@ -1,15 +1,18 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { IndividualCommanderBaseState } from './buddiesBlitzRules';
 import {
   CITY_RENTAL_LOTS,
+  COMMERCIAL_SIDEWALK_STRIPS,
+  SHOP_BILLBOARD_MESH_SPEC,
+  SHOP_BUILDING_FORMS,
   STANDARD_SHOP_FOOTPRINT_SPEC,
-  STANDARD_SHOP_SHELL_VARIANTS,
   resolveCityRentalLotsState,
   type CityRentalLotSpec,
   type CityRentalLotStatus,
-  type StandardShopShellVariantId,
-  type StandardShopShellVariantSpec,
+  type ShopBuildingFormId,
+  type ShopBuildingFormSpec,
 } from './buddiesCityRentalLotsRules';
 
 export interface CityRentalLotNodeController {
@@ -17,6 +20,9 @@ export interface CityRentalLotNodeController {
   lotRoot: THREE.Group;
   emptyMarkerGroup: THREE.Group;
   shopBuildingGroup: THREE.Group;
+  glbBuildingMount: THREE.Group;
+  loadedGlbFormId: ShopBuildingFormId | null;
+  appliedBillboardLogoUrl: string | null;
   highlightGroup: THREE.Group;
   hitProxyMesh: THREE.Mesh;
   statusSignMat: THREE.MeshBasicMaterial;
@@ -33,6 +39,9 @@ export interface CityRentalLotsVisualController {
     blueCommanderBases?: ReadonlyArray<IndividualCommanderBaseState>;
     redCommanderBases?: ReadonlyArray<IndividualCommanderBaseState>;
     rentedSlotIds?: ReadonlySet<string> | ReadonlyArray<string>;
+    lotStatusBySlotId?: Readonly<Record<string, CityRentalLotStatus>>;
+    placedBuildingBySlotId?: Readonly<Record<string, ShopBuildingFormId | null | undefined>>;
+    billboardLogoUrlBySlotId?: Readonly<Record<string, string | null | undefined>>;
     selectedSlotId?: string | null;
     hoveredSlotId?: string | null;
     previewAllBuildingsFit?: boolean;
@@ -41,45 +50,26 @@ export interface CityRentalLotsVisualController {
   dispose: () => void;
 }
 
-function createSignboardTexture(
-  variant: StandardShopShellVariantSpec,
-  shortCode: string,
+function createNeutralBillboardTexture(
   disposables: Array<{ dispose: () => void }>,
 ): THREE.CanvasTexture {
   if (typeof document === 'undefined') {
-    const tex = new THREE.DataTexture(new Uint8Array([24, 32, 44, 255]), 1, 1);
+    const tex = new THREE.DataTexture(new Uint8Array([229, 231, 235, 255]), 1, 1);
     tex.needsUpdate = true;
     disposables.push(tex);
     return tex as unknown as THREE.CanvasTexture;
   }
 
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 128;
+  canvas.width = SHOP_BILLBOARD_MESH_SPEC.textureWidthPx;
+  canvas.height = SHOP_BILLBOARD_MESH_SPEC.textureHeightPx;
   const ctx = canvas.getContext('2d');
   if (ctx) {
-    ctx.fillStyle = variant.signBgHex;
+    ctx.fillStyle = SHOP_BILLBOARD_MESH_SPEC.defaultColorHex;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    ctx.strokeStyle = variant.signAccentHex;
-    ctx.lineWidth = 6;
-    ctx.strokeRect(8, 8, canvas.width - 16, canvas.height - 16);
-
-    ctx.fillStyle = variant.signAccentHex;
-    ctx.font = '900 22px system-ui, -apple-system, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(`CERRIA SHOWROOM · LOT ${shortCode}`, canvas.width * 0.5, 42);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '800 32px system-ui, -apple-system, sans-serif';
-    const title =
-      variant.id === 'timber_atelier'
-        ? 'ATELIER & BOUTIQUE'
-        : variant.id === 'brick_corner'
-          ? 'CORNER SHOWROOM'
-          : 'STUDIO GALLERY';
-    ctx.fillText(title, canvas.width * 0.5, 86);
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 8;
+    ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
   }
 
   const tex = new THREE.CanvasTexture(canvas);
@@ -147,7 +137,7 @@ function createLotGroundPlaqueTexture(
  */
 function buildStandardShopShellForLot(
   spec: CityRentalLotSpec,
-  variantId: StandardShopShellVariantId,
+  variantId: ShopBuildingFormId,
   sharedGeos: {
     plinthGeo: THREE.BufferGeometry;
     mainBodyGeo: THREE.BufferGeometry;
@@ -170,7 +160,7 @@ function buildStandardShopShellForLot(
   },
   disposables: Array<{ dispose: () => void }>,
 ): THREE.Group {
-  const variant = STANDARD_SHOP_SHELL_VARIANTS[variantId];
+  const variant: ShopBuildingFormSpec = SHOP_BUILDING_FORMS[variantId];
   const group = new THREE.Group();
   group.name = `StandardShopShell_${spec.slotId}_${variantId}`;
 
@@ -179,12 +169,13 @@ function buildStandardShopShellForLot(
   shellRoot.position.set(0, 0, buildingCenterZ);
   group.add(shellRoot);
 
-  const wallMat = new THREE.MeshLambertMaterial({ color: variant.wallColorHex });
-  const trimMat = new THREE.MeshLambertMaterial({ color: variant.trimColorHex });
-  const roofMat = new THREE.MeshLambertMaterial({ color: variant.roofColorHex });
-  const awningMat = new THREE.MeshLambertMaterial({ color: variant.awningColorHex });
-  const signTex = createSignboardTexture(variant, spec.shortCode, disposables);
+  const wallMat = new THREE.MeshLambertMaterial({ color: variant.palette.wallHex });
+  const trimMat = new THREE.MeshLambertMaterial({ color: variant.palette.trimHex });
+  const roofMat = new THREE.MeshLambertMaterial({ color: variant.palette.roofHex });
+  const awningMat = new THREE.MeshLambertMaterial({ color: variant.palette.accentHex });
+  const signTex = createNeutralBillboardTexture(disposables);
   const signFaceMat = new THREE.MeshBasicMaterial({ map: signTex });
+  signFaceMat.name = SHOP_BILLBOARD_MESH_SPEC.materialName;
   disposables.push(wallMat, trimMat, roofMat, awningMat, signFaceMat);
 
   // 1. Ground Stone Plinth (9.6m x 0.24m x 9.6m -> exact 40.96% footprint)
@@ -249,13 +240,14 @@ function buildStandardShopShellForLot(
   awning.castShadow = true;
   shellRoot.add(awning);
 
-  // 7. Prominent Storefront Signboard Fascia above Awning facing the nearest road (+Z)
+  // 7. Rooftop Billboard Face (separate named mesh + replaceable texture material)
   const signBack = new THREE.Mesh(sharedGeos.signBackGeo, trimMat);
-  signBack.position.set(0, variant.signboardCenterY, 4.74);
+  signBack.position.set(0, variant.billboard.centerYM * 0.55, 4.74);
   shellRoot.add(signBack);
 
   const signFace = new THREE.Mesh(sharedGeos.signFaceGeo, signFaceMat);
-  signFace.position.set(0, variant.signboardCenterY, 4.825);
+  signFace.name = SHOP_BILLBOARD_MESH_SPEC.meshName;
+  signFace.position.set(0, variant.billboard.centerYM * 0.55, 4.825);
   shellRoot.add(signFace);
 
   return group;
@@ -427,7 +419,7 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
     plaqueFace.position.set(0, 0.125, 5.85);
     emptyMarkerGroup.add(plaqueFace);
 
-    // 3. Standardized Compact Shop Building Shell (Hidden in resting empty state, visible when rented)
+    // 3. Standardized Compact Shop Building Shell (fallback while real GLB streams in)
     const shopBuildingGroup = buildStandardShopShellForLot(
       spec,
       spec.buildingVariantId,
@@ -437,6 +429,13 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
     );
     shopBuildingGroup.visible = false;
     lotRoot.add(shopBuildingGroup);
+
+    // 3B. Real Game-Ready GLB Building Mount (loaded on demand when a building is placed on a rented lot)
+    const glbBuildingMount = new THREE.Group();
+    glbBuildingMount.name = `ShopGlbMount_${spec.slotId}`;
+    glbBuildingMount.position.set(0, 0, STANDARD_SHOP_FOOTPRINT_SPEC.localDepthOffsetTowardRearM);
+    glbBuildingMount.visible = false;
+    lotRoot.add(glbBuildingMount);
 
     // 4. Interactive 3D Selection / Hover Highlight Border Ring
     const highlightGroup = new THREE.Group();
@@ -477,12 +476,144 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
       lotRoot,
       emptyMarkerGroup,
       shopBuildingGroup,
+      glbBuildingMount,
+      loadedGlbFormId: null,
+      appliedBillboardLogoUrl: null,
       highlightGroup,
       hitProxyMesh,
       statusSignMat,
       highlightRingMat,
     });
   }
+
+  // Amendment 2: 2.0m Commercial Avenue Sidewalks running full block length + street furniture
+  const sidewalkGroup = new THREE.Group();
+  sidewalkGroup.name = 'CommercialAvenueSidewalks';
+  rootGroup.add(sidewalkGroup);
+
+  const sidewalkSlabMat = regMat(new THREE.MeshLambertMaterial({ color: '#d8d4ca' }));
+  const lampPostMat = regMat(new THREE.MeshLambertMaterial({ color: '#272c36' }));
+  const lampGlobeMat = regMat(new THREE.MeshBasicMaterial({ color: '#fef3c7' }));
+  const benchWoodMat = regMat(new THREE.MeshLambertMaterial({ color: '#9c6b3b' }));
+  const planterPotMat = regMat(new THREE.MeshLambertMaterial({ color: '#5b6472' }));
+  const planterFoliageMat = regMat(new THREE.MeshLambertMaterial({ color: '#2f855a' }));
+
+  const lampPoleGeo = regGeo(new THREE.CylinderGeometry(0.06, 0.08, 3.6, 8));
+  const lampHeadGeo = regGeo(new THREE.SphereGeometry(0.2, 8, 8));
+  const benchSeatGeo = regGeo(new RoundedBoxGeometry(0.55, 0.12, 1.5, 1, 0.02));
+  const planterBoxGeo = regGeo(new RoundedBoxGeometry(0.65, 0.48, 0.65, 1, 0.03));
+  const planterBushGeo = regGeo(new THREE.SphereGeometry(0.42, 8, 8));
+  const bikeRackLoopGeo = regGeo(new THREE.TorusGeometry(0.28, 0.035, 6, 12, Math.PI));
+
+  for (const strip of COMMERCIAL_SIDEWALK_STRIPS) {
+    const slabGeo = regGeo(new THREE.BoxGeometry(strip.widthM, 0.09, strip.lengthM));
+    const slab = new THREE.Mesh(slabGeo, sidewalkSlabMat);
+    slab.position.set(strip.centerX, 0.045, (strip.minZ + strip.maxZ) * 0.5);
+    slab.receiveShadow = true;
+    sidewalkGroup.add(slab);
+
+    // Streetlamps, hardwood benches, planters, and bike racks along curb edge
+    const curbOffset = strip.sideOfAvenue === 'east' ? -0.58 : 0.58;
+    const fx = strip.centerX + curbOffset;
+    const zStops = [strip.minZ + 6, (strip.minZ + strip.maxZ) * 0.5, strip.maxZ - 6];
+    for (let zi = 0; zi < zStops.length; zi++) {
+      const fz = zStops[zi];
+      const pole = new THREE.Mesh(lampPoleGeo, lampPostMat);
+      pole.position.set(fx, 1.85, fz);
+      sidewalkGroup.add(pole);
+
+      const globe = new THREE.Mesh(lampHeadGeo, lampGlobeMat);
+      globe.position.set(fx, 3.7, fz);
+      sidewalkGroup.add(globe);
+
+      const planter = new THREE.Mesh(planterBoxGeo, planterPotMat);
+      planter.position.set(fx, 0.33, fz + 2.2);
+      sidewalkGroup.add(planter);
+
+      const bush = new THREE.Mesh(planterBushGeo, planterFoliageMat);
+      bush.position.set(fx, 0.72, fz + 2.2);
+      sidewalkGroup.add(bush);
+
+      if (zi === 1) {
+        const bench = new THREE.Mesh(benchSeatGeo, benchWoodMat);
+        bench.position.set(fx, 0.45, fz - 2.6);
+        sidewalkGroup.add(bench);
+
+        for (let r = 0; r < 2; r++) {
+          const rack = new THREE.Mesh(bikeRackLoopGeo, lampPostMat);
+          rack.position.set(fx, 0.12, fz + 4.4 + r * 0.65);
+          sidewalkGroup.add(rack);
+        }
+      }
+    }
+  }
+
+  // Real GLB cache + per-lot replaceable rooftop billboard texture loader
+  const gltfLoader = new GLTFLoader();
+  const textureLoader = new THREE.TextureLoader();
+  const glbTemplateCache = new Map<ShopBuildingFormId, Promise<THREE.Group | null>>();
+  const neutralBillboardTex = createNeutralBillboardTexture(disposables);
+  let disposed = false;
+
+  const loadShopGlbTemplate = (formId: ShopBuildingFormId): Promise<THREE.Group | null> => {
+    const cached = glbTemplateCache.get(formId);
+    if (cached) return cached;
+    const spec = SHOP_BUILDING_FORMS[formId];
+    const p = new Promise<THREE.Group | null>((resolve) => {
+      if (typeof window === 'undefined') {
+        resolve(null);
+        return;
+      }
+      gltfLoader.load(
+        spec.glbPath,
+        (gltf) => resolve(gltf.scene),
+        undefined,
+        () => resolve(null),
+      );
+    });
+    glbTemplateCache.set(formId, p);
+    return p;
+  };
+
+  const applyBillboardLogoToObject = (root: THREE.Object3D, logoUrl: string | null) => {
+    const applyTex = (tex: THREE.Texture) => {
+      root.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const mat = mesh.material as THREE.MeshStandardMaterial | THREE.MeshBasicMaterial | undefined;
+        if (
+          mesh.name === SHOP_BILLBOARD_MESH_SPEC.meshName ||
+          mat?.name === SHOP_BILLBOARD_MESH_SPEC.materialName
+        ) {
+          if (mat && 'map' in mat) {
+            mat.map = tex;
+            mat.needsUpdate = true;
+          }
+        }
+      });
+    };
+
+    if (!logoUrl) {
+      applyTex(neutralBillboardTex);
+      return;
+    }
+
+    textureLoader.load(
+      logoUrl,
+      (loadedTex) => {
+        if (disposed) {
+          loadedTex.dispose();
+          return;
+        }
+        loadedTex.colorSpace = THREE.SRGBColorSpace;
+        loadedTex.needsUpdate = true;
+        disposables.push(loadedTex);
+        applyTex(loadedTex);
+      },
+      undefined,
+      () => applyTex(neutralBillboardTex),
+    );
+  };
 
   const sync: CityRentalLotsVisualController['sync'] = (params) => {
     const visibleMode = params.isSafezoneMode && params.showOutdoor;
@@ -493,6 +624,8 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
       blueCommanderBases: params.blueCommanderBases,
       redCommanderBases: params.redCommanderBases,
       rentedSlotIds: params.rentedSlotIds,
+      lotStatusBySlotId: params.lotStatusBySlotId,
+      placedBuildingBySlotId: params.placedBuildingBySlotId,
       previewAllBuildingsFit: params.previewAllBuildingsFit,
     });
 
@@ -507,7 +640,56 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
       node.lotRoot.visible = st.isVisibleInWorld;
       if (!st.isVisibleInWorld) continue;
 
-      node.shopBuildingGroup.visible = st.showShopBuilding;
+      const targetForm = st.showShopBuilding ? st.placedBuildingFormId : null;
+      const targetLogoUrl = params.billboardLogoUrlBySlotId?.[node.spec.slotId] ?? null;
+
+      if (targetForm) {
+        if (node.loadedGlbFormId !== targetForm) {
+          node.loadedGlbFormId = targetForm;
+          node.appliedBillboardLogoUrl = null;
+          node.glbBuildingMount.clear();
+          node.glbBuildingMount.visible = false;
+          node.shopBuildingGroup.visible = true;
+          void loadShopGlbTemplate(targetForm).then((template) => {
+            if (!template || disposed || node.loadedGlbFormId !== targetForm) return;
+            const clone = template.clone(true);
+            // Clone billboard material per placed building so logo textures NEVER leak to other lots
+            clone.traverse((obj) => {
+              const mesh = obj as THREE.Mesh;
+              if (
+                mesh.isMesh &&
+                (mesh.name === SHOP_BILLBOARD_MESH_SPEC.meshName ||
+                  (mesh.material as THREE.Material | undefined)?.name ===
+                    SHOP_BILLBOARD_MESH_SPEC.materialName)
+              ) {
+                const clonedMat = (mesh.material as THREE.Material).clone();
+                disposables.push(clonedMat);
+                mesh.material = clonedMat;
+              }
+            });
+            node.glbBuildingMount.clear();
+            node.glbBuildingMount.add(clone);
+            node.glbBuildingMount.visible = true;
+            node.shopBuildingGroup.visible = false;
+            node.appliedBillboardLogoUrl = targetLogoUrl;
+            applyBillboardLogoToObject(clone, targetLogoUrl);
+          });
+        } else if (node.appliedBillboardLogoUrl !== targetLogoUrl) {
+          node.appliedBillboardLogoUrl = targetLogoUrl;
+          applyBillboardLogoToObject(
+            node.glbBuildingMount.visible ? node.glbBuildingMount : node.shopBuildingGroup,
+            targetLogoUrl,
+          );
+        }
+      } else {
+        node.shopBuildingGroup.visible = false;
+        node.glbBuildingMount.visible = false;
+        if (node.loadedGlbFormId !== null) {
+          node.loadedGlbFormId = null;
+          node.glbBuildingMount.clear();
+        }
+      }
+
       node.emptyMarkerGroup.visible = !st.showShopBuilding;
 
       const isSelected = params.selectedSlotId === node.spec.slotId;
@@ -524,6 +706,7 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
   };
 
   const dispose = () => {
+    disposed = true;
     for (let i = 0; i < disposables.length; i++) {
       disposables[i].dispose();
     }

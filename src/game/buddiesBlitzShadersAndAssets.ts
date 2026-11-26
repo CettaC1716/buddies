@@ -497,24 +497,16 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     float dHarborTurn = sdSegment2D(q, vec2(70.0, 15.0), vec2(76.5, 15.0));
 
     float dBaseWestOuter = sdSegment2D(q, vec2(-60.0, 52.0), vec2(-60.0, 108.0));
+    float dBaseCenterAvenue = sdSegment2D(q, vec2(0.0, 52.0), vec2(0.0, 108.0));
     float dBaseEastOuter = sdSegment2D(q, vec2(60.0, 52.0), vec2(60.0, 108.0));
-    float dComplexDiv1 = sdSegment2D(q, vec2(-30.0, 52.0), vec2(-30.0, 108.0));
-    float dComplexDiv2 = sdSegment2D(q, vec2(0.0, 52.0), vec2(0.0, 108.0));
-    float dComplexDiv3 = sdSegment2D(q, vec2(30.0, 52.0), vec2(30.0, 108.0));
     float dBaseRear = sdSegment2D(q, vec2(-60.0, 108.0), vec2(96.0, 108.0));
     float dGateDrive1 = sdSegment2D(q, vec2(-45.0, 52.0), vec2(-45.0, 64.2));
-    float dGateDrive2 = sdSegment2D(q, vec2(-15.0, 52.0), vec2(-15.0, 64.2));
-    float dGateDrive3 = sdSegment2D(q, vec2(15.0, 52.0), vec2(15.0, 64.2));
-    float dGateDrive4 = sdSegment2D(q, vec2(45.0, 52.0), vec2(45.0, 64.2));
 
     float dOuterAndBaseRing = min(
       dTramRingRoad,
       min(
-        min(
-          min(dHarborTurn, min(dBaseWestOuter, dBaseEastOuter)),
-          min(min(dComplexDiv1, dComplexDiv2), min(dComplexDiv3, dBaseRear))
-        ) - 3.9,
-        min(min(dGateDrive1, dGateDrive2), min(dGateDrive3, dGateDrive4)) - 2.6
+        min(dBaseWestOuter, min(dBaseCenterAvenue, dBaseEastOuter)) - 5.2,
+        min(min(dHarborTurn, dBaseRear) - 3.9, dGateDrive1 - 2.6)
       )
     );
 
@@ -23936,26 +23928,18 @@ export function createCurvedPlanetEnvironment(
             singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(42.0, 26.5), vec2(42.0, 49.5), 2.60, 10.20, gradP));
           }
           if (mp.y >= 51.5) {
-            // B. Base Complex Dividing Roads & Outer Base Ring Roads (North & South, az in [52..108])
-            //    Cleanly trimmed outside z=58.0 crosswalks (trimStart=8.9) and z=108.0 rear collector throat (trimEnd=4.6)
+            // B. Widened Commercial Avenues (Roads 1, 3, 5 at x = -60, 0, +60; divider Roads 2 & 4 closed)
             singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-60.0, 52.0), vec2(-60.0, 108.0), 8.9, 4.6, gradP));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-30.0, 52.0), vec2(-30.0, 108.0), 8.9, 4.6, gradP));
             singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(0.0, 52.0), vec2(0.0, 108.0), 8.9, 4.6, gradP));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(30.0, 52.0), vec2(30.0, 108.0), 8.9, 4.6, gradP));
             singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(60.0, 52.0), vec2(60.0, 108.0), 8.9, 4.6, gradP));
 
-            // Rear Base Collector Road at |z| = 108.0 (clean 4.6m junction setbacks at every T-intersection & coastal switchback throat)
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-60.0, 108.0), vec2(-30.0, 108.0), 4.6, 4.6, gradP));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-30.0, 108.0), vec2(0.0, 108.0), 4.6, 4.6, gradP));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(0.0, 108.0), vec2(30.0, 108.0), 4.6, 4.6, gradP));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(30.0, 108.0), vec2(60.0, 108.0), 4.6, 4.6, gradP));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(60.0, 108.0), vec2(96.0, 108.0), 4.6, 4.6, gradP));
+            // Rear Base Collector Road at |z| = 108.0
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-60.0, 108.0), vec2(0.0, 108.0), 5.6, 5.6, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(0.0, 108.0), vec2(60.0, 108.0), 5.6, 5.6, gradP));
+            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(60.0, 108.0), vec2(96.0, 108.0), 5.6, 4.6, gradP));
 
-            // 4 Base Gate Driveway Spurs (x = ±45, ±15, |z| in [52.0..64.2])
+            // Model Estate Drive Spur (x = -45, |z| in [52.0..64.2])
             singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-45.0, 52.0), vec2(-45.0, 64.2), 4.6, 1.4, gradP));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(-15.0, 52.0), vec2(-15.0, 64.2), 4.6, 1.4, gradP));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(15.0, 52.0), vec2(15.0, 64.2), 4.6, 1.4, gradP));
-            singleDash = max(singleDash, evalSegmentCenterDash(mp, vec2(45.0, 52.0), vec2(45.0, 64.2), 4.6, 1.4, gradP));
 
             // Grand Casino Semi-Circular Valet Drop-Off Loop Centerline Dashes (true arc-length + anisotropic AA)
             if (p.x <= -67.15 && p.y <= -60.5 && p.y >= -80.8) {

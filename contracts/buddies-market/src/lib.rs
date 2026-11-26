@@ -230,6 +230,48 @@ pub struct BuddiesMarketContract {
     pub fish_attester_pubkey: Option<Vec<u8>>,
     pub hana_attester_pubkey: Option<Vec<u8>>,
     pub claimed_hana_email_hashes: LookupMap<Vec<u8>, AccountId>,
+    /// Active commercial lot rentals keyed by `lot_id` (e.g. `lot-n-01`).
+    /// Land is rented, never sold; pricing comes from server-signed quotes.
+    pub lot_rentals: IterableMap<String, LotRentalRecord>,
+}
+
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug)]
+pub struct LotRentalRecord {
+    pub lot_id: String,
+    pub renter_id: AccountId,
+    pub locked_rent_respite: U128,
+    pub term_days: u32,
+    pub grace_period_days: u32,
+    pub started_at_ms: u64,
+    pub expires_at_ms: u64,
+    pub placed_building_token_id: Option<String>,
+    pub billboard_logo_url: Option<String>,
+}
+
+/// The v1.5.0 state layout, kept so `migrate_v150_to_v160` can upgrade live state in place.
+#[near(serializers = [borsh])]
+pub struct OldBuddiesMarketContractV150 {
+    pub master_account: AccountId,
+    pub total_respite_supply: u128,
+    pub respite_balances: LookupMap<AccountId, u128>,
+    pub storage_deposits: LookupMap<AccountId, u128>,
+    pub nft_tokens_by_id: IterableMap<String, NftToken>,
+    pub fish_nfts: LookupMap<String, FishNftToken>,
+    pub market_listings: IterableMap<String, FishMarketListing>,
+    pub active_listing_by_token: LookupMap<String, String>,
+    pub nft_subaccount_ledgers: LookupMap<String, NftSubAccountLedger>,
+    pub house_deeds: LookupMap<AccountId, OnChainHouseDeed>,
+    pub family_contracts_by_owner: LookupMap<AccountId, Vec<OnChainFamilyMemberContract>>,
+    pub mt_balances: LookupMap<String, u128>,
+    pub total_houses_minted: u64,
+    pub total_family_contracts: u64,
+    pub total_fish_nfts_minted: u64,
+    pub property_listings: IterableMap<String, PropertyListing>,
+    pub total_property_listings: u64,
+    pub fish_attester_pubkey: Option<Vec<u8>>,
+    pub hana_attester_pubkey: Option<Vec<u8>>,
+    pub claimed_hana_email_hashes: LookupMap<Vec<u8>, AccountId>,
 }
 
 /// The v1.4.0 state layout, kept so `migrate_v140_to_v150` can upgrade live state in place.
@@ -310,6 +352,7 @@ impl BuddiesMarketContract {
             fish_attester_pubkey: None,
             hana_attester_pubkey: None,
             claimed_hana_email_hashes: LookupMap::new(b"e"),
+            lot_rentals: IterableMap::new(b"k"),
         }
     }
 
@@ -351,6 +394,7 @@ impl BuddiesMarketContract {
             fish_attester_pubkey,
             hana_attester_pubkey: None,
             claimed_hana_email_hashes: LookupMap::new(b"e"),
+            lot_rentals: IterableMap::new(b"k"),
         }
     }
 
@@ -391,6 +435,42 @@ impl BuddiesMarketContract {
             fish_attester_pubkey: old.fish_attester_pubkey,
             hana_attester_pubkey,
             claimed_hana_email_hashes: LookupMap::new(b"e"),
+            lot_rentals: IterableMap::new(b"k"),
+        }
+    }
+
+    /// One-time state migration v1.5.0 -> v1.6.0: preserves every live v1.5.0 field
+    /// and initializes commercial lot rental storage (`lot_rentals`).
+    #[init(ignore_state)]
+    pub fn migrate_v150_to_v160() -> Self {
+        require!(
+            env::predecessor_account_id() == env::current_account_id(),
+            "Migration can only be called by the contract account"
+        );
+        let old: OldBuddiesMarketContractV150 =
+            env::state_read().expect("Cannot read the v1.5.0 contract state");
+        Self {
+            master_account: old.master_account,
+            total_respite_supply: old.total_respite_supply,
+            respite_balances: old.respite_balances,
+            storage_deposits: old.storage_deposits,
+            nft_tokens_by_id: old.nft_tokens_by_id,
+            fish_nfts: old.fish_nfts,
+            market_listings: old.market_listings,
+            active_listing_by_token: old.active_listing_by_token,
+            nft_subaccount_ledgers: old.nft_subaccount_ledgers,
+            house_deeds: old.house_deeds,
+            family_contracts_by_owner: old.family_contracts_by_owner,
+            mt_balances: old.mt_balances,
+            total_houses_minted: old.total_houses_minted,
+            total_family_contracts: old.total_family_contracts,
+            total_fish_nfts_minted: old.total_fish_nfts_minted,
+            property_listings: old.property_listings,
+            total_property_listings: old.total_property_listings,
+            fish_attester_pubkey: old.fish_attester_pubkey,
+            hana_attester_pubkey: old.hana_attester_pubkey,
+            claimed_hana_email_hashes: old.claimed_hana_email_hashes,
+            lot_rentals: IterableMap::new(b"k"),
         }
     }
 
@@ -1302,8 +1382,256 @@ impl BuddiesMarketContract {
             "nep245:fishing:sonar_fishfinder_pro" => Some(12),
             "nep245:vehicle:urban_electric_scooter_bike" => Some(30),
             "nep245:vehicle:urban_push_kick_scooter" => Some(15),
+            "nep245:shop_building:glass_corner_3story" => Some(250),
+            "nep245:shop_building:canopy_storefront_2story" => Some(200),
+            "nep245:shop_building:brick_rooftop_deck" => Some(200),
             _ => None,
         }
+    }
+
+    /// Official rendered media URL for new shop building NFTs (fixes `media: None` gap).
+    fn shop_building_media_url(form_id: &str) -> Option<&'static str> {
+        match form_id {
+            "glass_corner_3story" => {
+                Some("https://buddies-rouge.vercel.app/assets/buildings/renders/shop_glass_corner_3story.png")
+            }
+            "canopy_storefront_2story" => {
+                Some("https://buddies-rouge.vercel.app/assets/buildings/renders/shop_canopy_storefront_2story.png")
+            }
+            "brick_rooftop_deck" => {
+                Some("https://buddies-rouge.vercel.app/assets/buildings/renders/shop_brick_rooftop_deck.png")
+            }
+            _ => None,
+        }
+    }
+
+    /// Mints a shop building NFT copy (master_account only) with real rendered `media` populated.
+    pub fn mint_shop_building_nft(
+        &mut self,
+        receiver_id: AccountId,
+        token_id: String,
+        form_id: String,
+        title: String,
+        media_url: Option<String>,
+    ) -> NftToken {
+        require!(
+            env::predecessor_account_id() == self.master_account,
+            "Only the merchant (master_account) can mint shop building NFTs"
+        );
+        let clean_id = token_id.trim().to_string();
+        require!(!clean_id.is_empty(), "Invalid token_id");
+        require!(
+            !self.nft_tokens_by_id.contains_key(&clean_id),
+            "Shop building token_id already exists"
+        );
+        let resolved_media = media_url
+            .filter(|m| !m.trim().is_empty())
+            .or_else(|| Self::shop_building_media_url(form_id.trim()).map(|s| s.to_string()));
+        require!(resolved_media.is_some(), "Shop building media URL is required");
+
+        let token = NftToken {
+            token_id: clean_id.clone(),
+            owner_id: receiver_id.clone(),
+            metadata: Some(TokenMetadata {
+                title: Some(title),
+                description: Some(
+                    "Player-owned commercial shop building shell for rented city lots. Neutral blank rooftop billboard."
+                        .to_string(),
+                ),
+                media: resolved_media,
+                copies: Some(1),
+                extra: Some(
+                    json!({
+                        "kind": "shop_building",
+                        "form_id": form_id.trim()
+                    })
+                    .to_string(),
+                ),
+            }),
+        };
+        self.nft_tokens_by_id.insert(clean_id.clone(), token.clone());
+        Self::emit_nep_event(
+            "nep171",
+            "nft_mint",
+            json!([{
+                "owner_id": receiver_id,
+                "token_ids": [clean_id]
+            }]),
+        );
+        token
+    }
+
+    /// Canonical message signed by `/api/shop-rent-quote` for dynamic lot rent pricing.
+    fn lot_rent_quote_message(
+        lot_id: &str,
+        account_id: &AccountId,
+        amount_respite: u128,
+        term_days: u32,
+        expires_at_ms: u64,
+    ) -> String {
+        format!(
+            "buddies-lot-rent-v1|{}|{}|{}|{}|{}",
+            lot_id.trim(),
+            account_id,
+            amount_respite,
+            term_days,
+            expires_at_ms
+        )
+    }
+
+    fn verify_lot_rent_quote_signature(
+        &self,
+        lot_id: &str,
+        caller: &AccountId,
+        amount_respite: u128,
+        term_days: u32,
+        expires_at_ms: u64,
+        signature_hex: &str,
+    ) {
+        let pubkey = self
+            .fish_attester_pubkey
+            .clone()
+            .expect("Rent quote verifier key is not configured");
+        require!(pubkey.len() == 32, "Stored verifier key is malformed");
+        let now_ms = env::block_timestamp_ms();
+        require!(now_ms <= expires_at_ms, "Rent price quote expired");
+        require!(amount_respite > 0, "Rent amount must be positive");
+        require!(term_days > 0, "Rent term must be positive");
+
+        let sig_bytes = Self::hex_decode(signature_hex);
+        require!(sig_bytes.len() == 64, "Quote signature must be 64 bytes");
+        let mut sig = [0u8; 64];
+        sig.copy_from_slice(&sig_bytes);
+        let mut pk = [0u8; 32];
+        pk.copy_from_slice(&pubkey);
+        let message = Self::lot_rent_quote_message(
+            lot_id,
+            caller,
+            amount_respite,
+            term_days,
+            expires_at_ms,
+        );
+        require!(
+            env::ed25519_verify(&sig, message.as_bytes(), &pk),
+            "Invalid rent price quote signature"
+        );
+    }
+
+    /// Rent an available commercial lot using a server-signed dynamic RESPITE price quote.
+    pub fn rent_lot_with_quote(
+        &mut self,
+        lot_id: String,
+        amount_respite: U128,
+        term_days: u32,
+        grace_period_days: u32,
+        expires_at_ms: u64,
+        signature_hex: String,
+    ) -> LotRentalRecord {
+        let caller = env::predecessor_account_id();
+        let clean_lot = lot_id.trim().to_string();
+        require!(!clean_lot.is_empty(), "Invalid lot_id");
+        let now_ms = env::block_timestamp_ms();
+
+        if let Some(existing) = self.lot_rentals.get(&clean_lot) {
+            let grace_end = existing
+                .expires_at_ms
+                .saturating_add(u64::from(existing.grace_period_days) * 86_400_000);
+            require!(now_ms > grace_end, "Lot is currently rented");
+        }
+
+        self.verify_lot_rent_quote_signature(
+            &clean_lot,
+            &caller,
+            amount_respite.0,
+            term_days,
+            expires_at_ms,
+            &signature_hex,
+        );
+
+        let caller_bal = *self.respite_balances.get(&caller).unwrap_or(&0);
+        require!(caller_bal >= amount_respite.0, "Insufficient RESPITE balance for lot rent");
+        self.respite_balances
+            .insert(caller.clone(), caller_bal - amount_respite.0);
+        let master_bal = *self.respite_balances.get(&self.master_account).unwrap_or(&0);
+        self.respite_balances.insert(
+            self.master_account.clone(),
+            master_bal.saturating_add(amount_respite.0),
+        );
+
+        let record = LotRentalRecord {
+            lot_id: clean_lot.clone(),
+            renter_id: caller,
+            locked_rent_respite: amount_respite,
+            term_days,
+            grace_period_days,
+            started_at_ms: now_ms,
+            expires_at_ms: now_ms.saturating_add(u64::from(term_days) * 86_400_000),
+            placed_building_token_id: None,
+            billboard_logo_url: None,
+        };
+        self.lot_rentals.insert(clean_lot, record.clone());
+        record
+    }
+
+    /// Extend an active (or grace-period) lot rental; extension is ALWAYS counted from current expiry.
+    pub fn extend_lot_rent_with_quote(
+        &mut self,
+        lot_id: String,
+        amount_respite: U128,
+        term_days: u32,
+        expires_at_ms: u64,
+        signature_hex: String,
+    ) -> LotRentalRecord {
+        let caller = env::predecessor_account_id();
+        let clean_lot = lot_id.trim().to_string();
+        let existing = self
+            .lot_rentals
+            .get(&clean_lot)
+            .cloned()
+            .expect("Lot has no active rental");
+        require!(
+            existing.renter_id == caller,
+            "Only the active renter can extend this lot"
+        );
+        let now_ms = env::block_timestamp_ms();
+        let grace_end = existing
+            .expires_at_ms
+            .saturating_add(u64::from(existing.grace_period_days) * 86_400_000);
+        require!(now_ms <= grace_end, "Rental expired past grace period");
+
+        self.verify_lot_rent_quote_signature(
+            &clean_lot,
+            &caller,
+            amount_respite.0,
+            term_days,
+            expires_at_ms,
+            &signature_hex,
+        );
+
+        let caller_bal = *self.respite_balances.get(&caller).unwrap_or(&0);
+        require!(caller_bal >= amount_respite.0, "Insufficient RESPITE balance to extend rent");
+        self.respite_balances
+            .insert(caller.clone(), caller_bal - amount_respite.0);
+        let master_bal = *self.respite_balances.get(&self.master_account).unwrap_or(&0);
+        self.respite_balances.insert(
+            self.master_account.clone(),
+            master_bal.saturating_add(amount_respite.0),
+        );
+
+        let mut updated = existing;
+        updated.expires_at_ms = updated
+            .expires_at_ms
+            .saturating_add(u64::from(term_days) * 86_400_000);
+        self.lot_rentals.insert(clean_lot, updated.clone());
+        updated
+    }
+
+    pub fn get_lot_rental(&self, lot_id: String) -> Option<LotRentalRecord> {
+        self.lot_rentals.get(lot_id.trim()).cloned()
+    }
+
+    pub fn list_lot_rentals(&self) -> Vec<LotRentalRecord> {
+        self.lot_rentals.values().cloned().collect()
     }
 
     /// Buy a merchant NEP-245 item from the merchant's pre-minted stock.
@@ -3501,5 +3829,114 @@ mod tests {
         let bob_meta = bob_tokens[0].metadata.as_ref().expect("metadata");
         assert!(bob_meta.title.as_deref().unwrap_or("").contains("Classic Plaza Manor"));
         assert!(bob_meta.extra.as_deref().unwrap_or("").contains("\"house_style\":\"plaza_manor\""));
+    }
+
+    #[test]
+    fn test_mint_shop_building_nft_populates_media_url() {
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+        let token = contract.mint_shop_building_nft(
+            acct("alice.testnet"),
+            "nep171-shop-glass-0001".to_string(),
+            "glass_corner_3story".to_string(),
+            "Glass Corner 3-Story".to_string(),
+            None,
+        );
+        let meta = token.metadata.expect("metadata");
+        assert_eq!(
+            meta.media.as_deref(),
+            Some("https://buddies-rouge.vercel.app/assets/buildings/renders/shop_glass_corner_3story.png")
+        );
+    }
+
+    #[test]
+    fn test_shop_lot_rent_and_extend_with_signed_quote() {
+        const QUOTE_PUB_HEX: &str =
+            "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c";
+        const SIG1: &str =
+            "ee38d69ae5a5ac231b5c703f90874091a0c7be021cc515f4c4b0ab0df5c7e1d403e4bb88b7809c7620a9c7fa27a7d62dec8b7c86607a4f536fe7ff91107c5901";
+        const SIG2: &str =
+            "0bc6263258e91e1fff2be4e01905fb0301f361adff21b7d30619c9fefe2e29ea0cffa0ffd8961a8f8d622b5f4aca09d810805dfa51def3438cc4b700140d2506";
+
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+        contract.set_fish_attester_pubkey(QUOTE_PUB_HEX.to_string());
+
+        // Give alice RESPITE via swap
+        set_ctx("alice.testnet", 500_000_000_000_000_000_000_000);
+        contract.swap_near_for_respite();
+
+        let t0_ms: u64 = 1_764_200_000_000;
+        let quote_exp = t0_ms + 300_000;
+
+        let mut builder = VMContextBuilder::new();
+        builder
+            .predecessor_account_id(acct("alice.testnet"))
+            .block_timestamp(t0_ms * 1_000_000);
+        testing_env!(builder.build());
+
+        let rec = contract.rent_lot_with_quote(
+            "lot-n-01".to_string(),
+            U128(50),
+            30,
+            3,
+            quote_exp,
+            SIG1.to_string(),
+        );
+        assert_eq!(rec.renter_id, acct("alice.testnet"));
+        assert_eq!(rec.locked_rent_respite, U128(50));
+        assert_eq!(rec.expires_at_ms, t0_ms + 30 * 86_400_000);
+
+        // Extend at day 10 -> counted from day-30 expiry (= day 60)
+        let t10_ms = t0_ms + 10 * 86_400_000;
+        let ext_exp = t10_ms + 300_000;
+
+        let mut builder2 = VMContextBuilder::new();
+        builder2
+            .predecessor_account_id(acct("alice.testnet"))
+            .block_timestamp(t10_ms * 1_000_000);
+        testing_env!(builder2.build());
+
+        let extended = contract.extend_lot_rent_with_quote(
+            "lot-n-01".to_string(),
+            U128(75),
+            30,
+            ext_exp,
+            SIG2.to_string(),
+        );
+        assert_eq!(extended.expires_at_ms, t0_ms + 60 * 86_400_000);
+        assert_eq!(contract.list_lot_rentals().len(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Rent price quote expired")]
+    fn test_shop_lot_rent_rejects_expired_quote() {
+        const QUOTE_PUB_HEX: &str =
+            "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c";
+        const SIG_EXP: &str =
+            "c7875c7965e4937db180e8b57b4a55ef909fce40c1f56538b7b0d0ff644dc2f841ac6ac9f4f8da36d8ed664ed3d9f917736a2f0e017d76759c8c55eee5fac609";
+
+        set_ctx("buddiesblitz.testnet", 0);
+        let mut contract = BuddiesMarketContract::init(acct("buddiesblitz.testnet"));
+        contract.set_fish_attester_pubkey(QUOTE_PUB_HEX.to_string());
+
+        set_ctx("alice.testnet", 500_000_000_000_000_000_000_000);
+        contract.swap_near_for_respite();
+
+        let quote_exp = 1_000_000;
+        let mut builder = VMContextBuilder::new();
+        builder
+            .predecessor_account_id(acct("alice.testnet"))
+            .block_timestamp((quote_exp + 1000) * 1_000_000);
+        testing_env!(builder.build());
+
+        contract.rent_lot_with_quote(
+            "lot-n-02".to_string(),
+            U128(50),
+            30,
+            3,
+            quote_exp,
+            SIG_EXP.to_string(),
+        );
     }
 }

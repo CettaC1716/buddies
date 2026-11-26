@@ -460,32 +460,21 @@ export function evaluateRoadNetworkSdf(worldX: number, worldZ: number): number {
   const dTramRingRoad = Math.max(dTramOuterBox - 3.9, -(dTramInnerBox + 2.8));
   const dHarborTurn = sdSegment2D(px, az, 70.0, 15.0, 76.5, 15.0);
 
-  // 2. 4-Base Complex Ring & Dividing Roads ("masing-masing base dipisahkan dengan jalan raya seperti komplek"):
-  //    - 4 Base Plots centered at x = -45.0, -15.0, +15.0, +45.0 (|z| in [64.2, 99.2])
-  //    - Divided by 3 Complex Roads at x = -30.0, 0.0, +30.0 + Outer Ring Roads at x = ±60.0 & Rear Road at |z| = 108.0
+  // 2. 4-Block Commercial Avenues (WS Shop Buildings Block Layout):
+  //    - Divider Roads 2 (x = -30.0) & 4 (x = +30.0) are CLOSED and form the back-to-back block centerlines.
+  //    - Avenues 1 (x = -60.0), 3 (x = 0.0), and 5 (x = +60.0) are WIDENED to 10.4m (half-width 5.2m).
+  //    - Rear Promenade Road stays at |z| = 108.0; Tram Ring Road stays untouched.
   const dBaseWestOuter = sdSegment2D(px, az, -60.0, 52.0, -60.0, 108.0);
+  const dBaseCenterAvenue = sdSegment2D(px, az, 0.0, 52.0, 0.0, 108.0);
   const dBaseEastOuter = sdSegment2D(px, az, 60.0, 52.0, 60.0, 108.0);
-  const dComplexDiv1 = sdSegment2D(px, az, -30.0, 52.0, -30.0, 108.0);
-  const dComplexDiv2 = sdSegment2D(px, az, 0.0, 52.0, 0.0, 108.0);
-  const dComplexDiv3 = sdSegment2D(px, az, 30.0, 52.0, 30.0, 108.0);
   const dBaseRear = sdSegment2D(px, az, -60.0, 108.0, 96.0, 108.0);
   const dGateDrive1 = sdSegment2D(px, az, -45.0, 52.0, -45.0, 64.2);
-  const dGateDrive2 = sdSegment2D(px, az, -15.0, 52.0, -15.0, 64.2);
-  const dGateDrive3 = sdSegment2D(px, az, 15.0, 52.0, 15.0, 64.2);
-  const dGateDrive4 = sdSegment2D(px, az, 45.0, 52.0, 45.0, 64.2);
 
   const dOuterAndBaseRing = Math.min(
     dTramRingRoad,
-    Math.min(
-      dHarborTurn,
-      dBaseWestOuter,
-      dBaseEastOuter,
-      dComplexDiv1,
-      dComplexDiv2,
-      dComplexDiv3,
-      dBaseRear,
-    ) - 3.9,
-    Math.min(dGateDrive1, dGateDrive2, dGateDrive3, dGateDrive4) - 2.6,
+    Math.min(dBaseWestOuter, dBaseCenterAvenue, dBaseEastOuter) - 5.2,
+    Math.min(dHarborTurn, dBaseRear) - 3.9,
+    dGateDrive1 - 2.6,
   );
 
   // 3. Central S-Curve Warzone Roads (cutting through Wind Farm, Forest, and East Warzone)

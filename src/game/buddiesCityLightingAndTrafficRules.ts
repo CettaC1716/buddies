@@ -435,9 +435,9 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   { id: 'lamp_t2_civic_step_e', tier: 2, lampVariant: 'pier_lantern', district: 'central_plaza', x: -90.781, z: -23.264, rotY: 0, mountHeightOffset: 1.2212 },
   { id: 'lamp_t2_fashion_terrace', tier: 2, district: 'central_plaza', x: -100.85, z: 7.4, rotY: 0 },
   { id: 'lamp_t2_realestate_terrace', tier: 2, district: 'central_plaza', x: -100.85, z: -16.8, rotY: 0 },
-  // Grand Casino Valet Entrance Piers
-  { id: 'lamp_t2_casino_valet_s', tier: 2, district: 'grand_casino', x: -64.4, z: -59.4, rotY: Math.PI / 2 },
-  { id: 'lamp_t2_casino_valet_n', tier: 2, district: 'grand_casino', x: -64.4, z: -81.8, rotY: Math.PI / 2 },
+  // Grand Casino Valet Entrance Piers (shifted west of widened Avenue 1 edge x=-65.2)
+  { id: 'lamp_t2_casino_valet_s', tier: 2, district: 'grand_casino', x: -66.0, z: -59.4, rotY: Math.PI / 2 },
+  { id: 'lamp_t2_casino_valet_n', tier: 2, district: 'grand_casino', x: -66.0, z: -81.3, rotY: Math.PI / 2 },
   // Model Estate House Gateposts ONLY (intact house at -45, 81.7; zero empty-lot stray posts!)
   { id: 'lamp_t2_res_blue0_w', tier: 2, district: 'residential', x: -49.2, z: 62.6, rotY: 0 },
   { id: 'lamp_t2_res_blue0_e', tier: 2, district: 'residential', x: -40.8, z: 62.6, rotY: 0 },
@@ -492,15 +492,15 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   { id: 'lamp_t3_scurve_se', tier: 3, lampVariant: 'single', district: 'inner_boulevard', x: 26.2, z: 33.6, rotY: -Math.PI / 2 },
   // Residential Collector Avenues ('single', 100% N-S symmetric on green grass)
   { id: 'lamp_t3_res_s_w30', tier: 3, lampVariant: 'single', district: 'residential', x: -25.35, z: 78.0, rotY: -Math.PI / 2 },
-  { id: 'lamp_t3_res_s_0w', tier: 3, lampVariant: 'single', district: 'residential', x: -4.65, z: 78.0, rotY: Math.PI / 2 },
-  { id: 'lamp_t3_res_s_0e', tier: 3, lampVariant: 'single', district: 'residential', x: 4.65, z: 78.0, rotY: -Math.PI / 2 },
+  { id: 'lamp_t3_res_s_0w', tier: 3, lampVariant: 'single', district: 'residential', x: -6.25, z: 78.0, rotY: Math.PI / 2 },
+  { id: 'lamp_t3_res_s_0e', tier: 3, lampVariant: 'single', district: 'residential', x: 6.25, z: 78.0, rotY: -Math.PI / 2 },
   { id: 'lamp_t3_res_s_e30', tier: 3, lampVariant: 'single', district: 'residential', x: 25.35, z: 78.0, rotY: Math.PI / 2 },
-  { id: 'lamp_t3_res_s_e60', tier: 3, lampVariant: 'single', district: 'residential', x: 55.35, z: 78.0, rotY: Math.PI / 2 },
+  { id: 'lamp_t3_res_s_e60', tier: 3, lampVariant: 'single', district: 'residential', x: 53.75, z: 78.0, rotY: Math.PI / 2 },
   { id: 'lamp_t3_res_n_w30', tier: 3, lampVariant: 'single', district: 'residential', x: -25.35, z: -78.0, rotY: -Math.PI / 2 },
-  { id: 'lamp_t3_res_n_0w', tier: 3, lampVariant: 'single', district: 'residential', x: -4.65, z: -78.0, rotY: Math.PI / 2 },
-  { id: 'lamp_t3_res_n_0e', tier: 3, lampVariant: 'single', district: 'residential', x: 4.65, z: -78.0, rotY: -Math.PI / 2 },
+  { id: 'lamp_t3_res_n_0w', tier: 3, lampVariant: 'single', district: 'residential', x: -6.25, z: -78.0, rotY: Math.PI / 2 },
+  { id: 'lamp_t3_res_n_0e', tier: 3, lampVariant: 'single', district: 'residential', x: 6.25, z: -78.0, rotY: -Math.PI / 2 },
   { id: 'lamp_t3_res_n_e30', tier: 3, lampVariant: 'single', district: 'residential', x: 25.35, z: -78.0, rotY: Math.PI / 2 },
-  { id: 'lamp_t3_res_n_e60', tier: 3, lampVariant: 'single', district: 'residential', x: 55.35, z: -78.0, rotY: Math.PI / 2 },
+  { id: 'lamp_t3_res_n_e60', tier: 3, lampVariant: 'single', district: 'residential', x: 53.75, z: -78.0, rotY: Math.PI / 2 },
   // Beach Club North & South Boulevard Verge Streetlamps (centered in palm bays, clear of z=±15 entrances)
   { id: 'lamp_t3_beach_club_nw', tier: 3, lampVariant: 'single', district: 'beach_club', x: 78.85, z: -77.0, rotY: -Math.PI / 2 },
   { id: 'lamp_t3_beach_club_sw', tier: 3, lampVariant: 'single', district: 'beach_club', x: 78.85, z: -57.0, rotY: -Math.PI / 2 },
@@ -513,7 +513,7 @@ const RAW_CITY_LAMPS: readonly RawLampEntry[] = [
   { id: 'lamp_t4_plaza_center_s', tier: 4, district: 'central_plaza', x: -80.35, z: 12.4, rotY: 0 },
   { id: 'lamp_t4_cafe_corner', tier: 4, district: 'glasshouse_cafe', x: -95.55, z: 11.6, rotY: 0 },
   // Grand Casino South Forecourt Plaza & North Lawn Approach
-  { id: 'lamp_t4_casino_forecourt_s', tier: 4, district: 'grand_casino', x: -68.0, z: -55.5, rotY: Math.PI / 4 },
+  { id: 'lamp_t4_casino_forecourt_s', tier: 4, district: 'grand_casino', x: -68.5, z: -55.0, rotY: Math.PI / 4 },
   { id: 'lamp_t4_casino_forecourt_n', tier: 4, district: 'grand_casino', x: -69.5, z: -88.0, rotY: -Math.PI / 4 },
   // Beach Club Promenade Architectural Gateway Chandeliers (centered in palm bays)
   { id: 'lamp_t4_beach_club_gate_n', tier: 4, district: 'beach_club', x: 78.85, z: -47.0, rotY: 0 },

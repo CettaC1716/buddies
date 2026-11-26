@@ -6554,7 +6554,7 @@ export const CITY_TRAFFIC_SIGN_SPECS: readonly CityTrafficSignSpec[] = [
   { id: 'sign_pedwarn_plaza_n', kind: 'pedestrian_warning', x: -74.32, y: 0.085, z: -17.8, rotY: Math.PI },
   { id: 'sign_pedwarn_plaza_s', kind: 'pedestrian_warning', x: -74.32, y: 0.085, z: 17.8, rotY: 0 },
   { id: 'sign_ped_north_blvd', kind: 'pedestrian_crosswalk', x: 21.85, y: 0.085, z: -56.42, rotY: Math.PI / 2 },
-  { id: 'sign_ped_south_blvd', kind: 'pedestrian_crosswalk', x: -4.45, y: 0.085, z: 56.42, rotY: -Math.PI / 2 },
+  { id: 'sign_ped_south_blvd', kind: 'pedestrian_crosswalk', x: -6.25, y: 0.085, z: 56.42, rotY: -Math.PI / 2 },
 
   // Essential Urban Slow-Zone & Harbor Tram Crossing Alerts
   { id: 'sign_speed_30_plaza_n', kind: 'speed_limit_30', x: -74.32, y: 0.085, z: -35.5, rotY: Math.PI },

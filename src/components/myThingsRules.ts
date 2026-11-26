@@ -125,7 +125,8 @@ export function partitionMyThingsInventory(
     (item) =>
       (item.category === 'nft_collector_furniture' ||
         item.category === 'non_nft_furniture' ||
-        item.category === 'nft_house_theme') &&
+        item.category === 'nft_house_theme' ||
+        item.category === 'nft_shop_building') &&
       (ownedMerchantCounts[item.id] ?? 0) > 0,
   );
 
