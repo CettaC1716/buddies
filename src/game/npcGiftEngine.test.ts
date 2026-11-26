@@ -11,14 +11,17 @@ import {
   recordNpcConversation,
 } from './npcClosenessEngine';
 import {
+  EMPTY_GIFT_PICKER_HINT,
   GIFT_REACTION_BASE_DELTAS,
   canGiftNpcToday,
   clearNpcGiftPreferencesForTests,
   evaluateNpcGiftReaction,
+  filterGiftPickerItems,
   getGiftCatalogItem,
   getGiftCategoryForItem,
   giveGiftToNpc,
   hasGiftedNpcToday,
+  isGiftPickerEligibleItem,
   listGiftCatalogItems,
   registerNpcGiftPreferences,
 } from './npcGiftEngine';
@@ -219,5 +222,35 @@ describe('npcGiftEngine & npcPersonaRegistry', () => {
     assert.equal(getNpcPersona('kenji')?.citizenId, 'citizen_kenji');
     assert.equal(evaluateNpcGiftReaction('kenji', 'croissant').reactionTier, 'loved');
     assert.equal(evaluateNpcGiftReaction('kenji', 'tatami_tea_table').reactionTier, 'disliked');
+  });
+
+  it('gift picker eligibility includes ONLY gift catalog items & cooked dishes and excludes raw fish, wardrobe, furniture, and gear', () => {
+    assert.equal(isGiftPickerEligibleItem({ category: 'cafe_food' }), true);
+    assert.equal(isGiftPickerEligibleItem({ category: 'gift_consumable' }), true);
+    assert.equal(isGiftPickerEligibleItem({ category: 'gift_special' }), true);
+    assert.equal(isGiftPickerEligibleItem({ category: 'cooked_dish' }), true);
+
+    assert.equal(isGiftPickerEligibleItem({ category: 'fish' }), false);
+    assert.equal(isGiftPickerEligibleItem({ category: 'fashion_apparel' }), false);
+    assert.equal(isGiftPickerEligibleItem({ category: 'furniture' }), false);
+
+    const sampleFish = FISH_SPECIES_CATALOG[0].speciesId;
+    const sampleFood = CAFE_MENU_ITEMS[0].id;
+    const sampleFashion = FASHION_APPAREL_CATALOG_ITEMS[0].id;
+    const sampleFurniture = MERCHANT_CATALOG_ITEMS.find(
+      (i) => i.category === 'nft_collector_furniture' || i.category === 'non_nft_furniture',
+    )!.id;
+
+    const pickerItems = filterGiftPickerItems([
+      sampleFish,
+      sampleFood,
+      sampleFashion,
+      sampleFurniture,
+    ]);
+    assert.deepEqual(
+      pickerItems.map((it) => it.itemId),
+      [sampleFood],
+    );
+    assert.ok(EMPTY_GIFT_PICKER_HINT.toLowerCase().includes('stall'));
   });
 });

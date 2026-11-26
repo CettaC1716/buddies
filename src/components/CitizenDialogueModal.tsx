@@ -35,9 +35,10 @@ import {
 } from '../game/npcTogethernessSession';
 import type { UrbanScooterKind } from '../game/buddiesUrbanScooterRules';
 import {
+  EMPTY_GIFT_PICKER_HINT,
   buildNpcPairPoseDecisionReply,
   canGiftNpcToday,
-  getGiftCatalogItem,
+  filterGiftPickerItems,
   type GiftItemInput,
 } from '../game/npcGiftEngine';
 import type { NpcEmotionTag } from '../game/npcPersonaRegistry';
@@ -135,8 +136,8 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   friendshipStore,
   npcClosenessStore,
   caughtFishBucket,
-  ownedApparelIds = [],
-  ownedMerchantItemIds = [],
+  ownedApparelIds: _ownedApparelIds = [],
+  ownedMerchantItemIds: _ownedMerchantItemIds = [],
   ownedCafeFoodIds = [],
   playerName = '',
   isRaining,
@@ -188,24 +189,10 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
     ? !canGiftNpcToday(effectiveClosenessStore, namedNpcId)
     : record?.lastGiftDate === todayKey;
 
-  const ownedGiftSections = useMemo(() => {
-    const cafeItems = Array.from(new Set(ownedCafeFoodIds))
-      .map((id) => getGiftCatalogItem(id))
-      .filter((item): item is NonNullable<typeof item> => Boolean(item && item.category === 'cafe_food'));
-
-    const apparelItems = Array.from(new Set(ownedApparelIds))
-      .map((id) => getGiftCatalogItem(id))
-      .filter(
-        (item): item is NonNullable<typeof item> =>
-          Boolean(item && item.category === 'fashion_apparel'),
-      );
-
-    const furnitureItems = Array.from(new Set(ownedMerchantItemIds))
-      .map((id) => getGiftCatalogItem(id))
-      .filter((item): item is NonNullable<typeof item> => Boolean(item && item.category === 'furniture'));
-
-    return { cafeItems, apparelItems, furnitureItems };
-  }, [ownedApparelIds, ownedCafeFoodIds, ownedMerchantItemIds]);
+  const ownedGiftItems = useMemo(
+    () => filterGiftPickerItems(Array.from(new Set(ownedCafeFoodIds))),
+    [ownedCafeFoodIds],
+  );
 
   const buildOpeningGreeting = (targetProfile: CitizenProfile): string => {
     const rec = getCitizenFriendshipRecord(friendshipStore, targetProfile.id);
@@ -554,11 +541,7 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
     });
   };
 
-  const hasAnyOwnedNamedGift =
-    caughtFishBucket.length > 0 ||
-    ownedGiftSections.cafeItems.length > 0 ||
-    ownedGiftSections.apparelItems.length > 0 ||
-    ownedGiftSections.furnitureItems.length > 0;
+  const hasAnyOwnedNamedGift = ownedGiftItems.length > 0;
 
   return (
     <aside
@@ -809,120 +792,17 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
 
                 {namedNpcId && onGiveNpcOwnedGift ? (
                   <>
-                    {!hasAnyOwnedNamedGift && (
-                      <div className="p-3 rounded-2xl bg-white/8 border border-dashed border-white/20 text-xs font-medium text-white/65">
-                        Pick up fish, cafe treats, clothing, or furniture around town to share as a gift.
+                    {!hasAnyOwnedNamedGift ? (
+                      <div className="p-3 rounded-2xl bg-white/8 border border-dashed border-white/20 text-xs font-medium text-white/70 leading-relaxed">
+                        {EMPTY_GIFT_PICKER_HINT}
                       </div>
-                    )}
-
-                    {caughtFishBucket.length > 0 && (
+                    ) : (
                       <div className="space-y-2">
                         <div className="text-[10.5px] font-semibold text-white/65 px-0.5">
-                          Fresh Catch ({caughtFishBucket.length})
+                          Gifts ({ownedGiftItems.length})
                         </div>
                         <div className="grid grid-cols-1 gap-2">
-                          {caughtFishBucket.slice(0, 8).map((fish) => (
-                            <button
-                              key={fish.id}
-                              type="button"
-                              disabled={giftedToday}
-                              onClick={() =>
-                                handleOwnedGiftClick(
-                                  { speciesId: fish.speciesId, isTrophy: fish.isTrophy },
-                                  `${fish.speciesName} (${fish.weightKg.toFixed(1)}kg)`,
-                                  fish.id,
-                                )
-                              }
-                              className={`p-2.5 rounded-2xl border text-left flex items-center justify-between gap-2 transition-all ${
-                                giftedToday
-                                  ? 'bg-white/5 border-white/10 opacity-45 cursor-not-allowed'
-                                  : 'bg-white/10 hover:bg-white/18 border-white/15 hover:border-sky-300/50 cursor-pointer'
-                              }`}
-                            >
-                              <div className="min-w-0">
-                                <div className="text-xs font-semibold text-white truncate">
-                                  {fish.speciesName}
-                                </div>
-                                <div className="text-[10px] text-white/60">
-                                  {fish.rarity} · {fish.weightKg.toFixed(1)}kg
-                                </div>
-                              </div>
-                              <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-semibold shrink-0">
-                                Give
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {ownedGiftSections.cafeItems.length > 0 && (
-                      <div className="space-y-2">
-                        <div className="text-[10.5px] font-semibold text-white/65 px-0.5">
-                          Cafe Food &amp; Drinks ({ownedGiftSections.cafeItems.length})
-                        </div>
-                        <div className="grid grid-cols-1 gap-2">
-                          {ownedGiftSections.cafeItems.map((item) => (
-                            <button
-                              key={item.itemId}
-                              type="button"
-                              disabled={giftedToday}
-                              onClick={() => handleOwnedGiftClick(item.itemId, item.name)}
-                              className={`p-2.5 rounded-2xl border text-left flex items-center justify-between gap-2 transition-all ${
-                                giftedToday
-                                  ? 'bg-white/5 border-white/10 opacity-45 cursor-not-allowed'
-                                  : 'bg-white/10 hover:bg-white/18 border-white/15 hover:border-sky-300/50 cursor-pointer'
-                              }`}
-                            >
-                              <div className="text-xs font-semibold text-white truncate">
-                                {item.name}
-                              </div>
-                              <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-semibold shrink-0">
-                                Give
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {ownedGiftSections.apparelItems.length > 0 && (
-                      <div className="space-y-2">
-                        <div className="text-[10.5px] font-semibold text-white/65 px-0.5">
-                          Fashion &amp; Apparel ({ownedGiftSections.apparelItems.length})
-                        </div>
-                        <div className="grid grid-cols-1 gap-2">
-                          {ownedGiftSections.apparelItems.slice(0, 8).map((item) => (
-                            <button
-                              key={item.itemId}
-                              type="button"
-                              disabled={giftedToday}
-                              onClick={() => handleOwnedGiftClick(item.itemId, item.name)}
-                              className={`p-2.5 rounded-2xl border text-left flex items-center justify-between gap-2 transition-all ${
-                                giftedToday
-                                  ? 'bg-white/5 border-white/10 opacity-45 cursor-not-allowed'
-                                  : 'bg-white/10 hover:bg-white/18 border-white/15 hover:border-sky-300/50 cursor-pointer'
-                              }`}
-                            >
-                              <div className="text-xs font-semibold text-white truncate">
-                                {item.name}
-                              </div>
-                              <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-semibold shrink-0">
-                                Give
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {ownedGiftSections.furnitureItems.length > 0 && (
-                      <div className="space-y-2">
-                        <div className="text-[10.5px] font-semibold text-white/65 px-0.5">
-                          Furniture &amp; Decor ({ownedGiftSections.furnitureItems.length})
-                        </div>
-                        <div className="grid grid-cols-1 gap-2">
-                          {ownedGiftSections.furnitureItems.slice(0, 8).map((item) => (
+                          {ownedGiftItems.map((item) => (
                             <button
                               key={item.itemId}
                               type="button"

@@ -30,7 +30,48 @@ import {
  *   with zero visible score/meter UI.
  */
 
-export type GiftCategory = 'fish' | 'cafe_food' | 'fashion_apparel' | 'furniture';
+export type GiftCategory =
+  | 'fish'
+  | 'cafe_food'
+  | 'gift_consumable'
+  | 'gift_special'
+  | 'cooked_dish'
+  | 'fashion_apparel'
+  | 'furniture';
+
+/**
+ * Shipping gift-picker eligibility (companion to the gift preferences amendment):
+ * ONLY gift catalog items (daily consumables + special/premium gifts, including cafe treats)
+ * and cooked dishes may appear in the gift picker.
+ * Raw fish, wardrobe/fashion, furniture, and fishing gear NEVER appear in the gift picker.
+ */
+export const GIFTABLE_PICKER_CATEGORIES: ReadonlySet<GiftCategory> = new Set<GiftCategory>([
+  'cafe_food',
+  'gift_consumable',
+  'gift_special',
+  'cooked_dish',
+]);
+
+export const EMPTY_GIFT_PICKER_HINT =
+  'No gifts in your bag yet. Pick up drinks, treats, or special gifts at the drink/ice-cream stall or shops around town.';
+
+export function isGiftPickerEligibleItem(
+  item: Pick<GiftCatalogItem, 'category'> | null | undefined,
+): boolean {
+  if (!item) return false;
+  return GIFTABLE_PICKER_CATEGORIES.has(item.category);
+}
+
+export function filterGiftPickerItems(ownedBagItemIds: readonly string[]): GiftCatalogItem[] {
+  const result: GiftCatalogItem[] = [];
+  for (const id of ownedBagItemIds) {
+    const item = getGiftCatalogItem(id);
+    if (item && isGiftPickerEligibleItem(item)) {
+      result.push(item);
+    }
+  }
+  return result;
+}
 
 export type GiftReactionTier = 'loved' | 'liked' | 'neutral' | 'disliked';
 

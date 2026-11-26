@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bike, Fish, Home, Shirt, Sparkles, X } from 'lucide-react';
+import { Bike, Fish, Gift, Home, Shirt, Sparkles, X } from 'lucide-react';
+import { filterGiftPickerItems } from '../game/npcGiftEngine';
 import { soundEngine } from '../game/audio';
 import type { CaughtFishItem, FishNftMarketplaceListing } from '../game/buddiesFishingMarket';
 import type { UrbanScooterKind } from '../game/buddiesUrbanScooterRules';
@@ -36,6 +37,7 @@ export interface MyThingsPanelProps {
   isFishingRodEquipped: boolean;
   onToggleFishingRod: () => void;
   ownedMerchantItemIds: readonly string[];
+  ownedGiftItemIds?: readonly string[];
   placedFurnitureCounts: Record<string, number>;
   ownedApparelIds: readonly string[];
   onOpenWardrobe: () => void;
@@ -133,6 +135,7 @@ export const MyThingsPanel: React.FC<MyThingsPanelProps> = ({
   isFishingRodEquipped,
   onToggleFishingRod,
   ownedMerchantItemIds,
+  ownedGiftItemIds = [],
   placedFurnitureCounts,
   ownedApparelIds,
   onOpenWardrobe,
@@ -264,6 +267,44 @@ export const MyThingsPanel: React.FC<MyThingsPanelProps> = ({
             data-my-things-section="items"
             className="grid grid-cols-2 @[460px]:grid-cols-3 gap-x-3 gap-y-4 pt-2.5 pb-2"
           >
+            {/* Giftable items grouped under a tidy "Gifts" header inside the same single bag */}
+            {(() => {
+              const giftItems = filterGiftPickerItems(ownedGiftItemIds);
+              if (giftItems.length === 0) return null;
+              const counts = new Map<string, { name: string; count: number }>();
+              for (const g of giftItems) {
+                const prev = counts.get(g.itemId);
+                counts.set(g.itemId, { name: g.name, count: (prev?.count ?? 0) + 1 });
+              }
+              return (
+                <>
+                  <div className="col-span-full flex items-center gap-1.5 px-1 pt-0.5 text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                    <Gift className="w-3.5 h-3.5 text-rose-500" aria-hidden="true" />
+                    <span>Gifts ({giftItems.length})</span>
+                  </div>
+                  {Array.from(counts.entries()).map(([itemId, info]) => (
+                    <WalletAssetPortraitCard
+                      key={`gift_${itemId}`}
+                      dataAttrs={{ 'data-my-things-gift-item': itemId }}
+                      brandLabel="Gift"
+                      badgeLabel={info.count > 1 ? `×${info.count}` : undefined}
+                      badgeTone="neutral"
+                      title={info.name}
+                      statusLabel="In Bag"
+                      statusTone="emerald"
+                      visual={
+                        <div className="w-full h-full flex items-center justify-center">
+                          <div className="w-14 h-14 rounded-2xl bg-rose-500/12 border border-rose-500/20 text-rose-600 flex items-center justify-center shadow-xs">
+                            <Gift className="w-7 h-7 stroke-[1.9]" aria-hidden="true" />
+                          </div>
+                        </div>
+                      }
+                    />
+                  ))}
+                </>
+              );
+            })()}
+
             {/* Starter Fishing Rod */}
             <WalletAssetPortraitCard
               dataAttrs={{ 'data-my-things-item': 'fishing_rod' }}

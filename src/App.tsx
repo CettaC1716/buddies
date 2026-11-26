@@ -281,7 +281,8 @@ import {
   type NpcId,
 } from './game/npcClosenessEngine';
 import {
-  getGiftCatalogItem,
+  EMPTY_GIFT_PICKER_HINT,
+  filterGiftPickerItems,
   loadNpcTreasuryStore,
   recordNpcTreasuryGift,
   saveNpcTreasuryStore,
@@ -9331,6 +9332,7 @@ export default function App() {
           }
         }}
         ownedMerchantItemIds={ownedMerchantItemIds}
+        ownedGiftItemIds={ownedCafeFoodIds}
         placedFurnitureCounts={placedFurnitureCounts}
         ownedApparelIds={ownedApparelIds}
         onOpenWardrobe={() => {
@@ -14860,29 +14862,17 @@ export default function App() {
       {dockGiftPickerTarget &&
         hud.worldMode !== 'warzone' && (() => {
           const target = dockGiftPickerTarget;
-          const fishItems = caughtFishBucket.filter((f) => !f.isMintedNft);
-          const cafeItems = ownedCafeFoodIds
-            .map((id) => getGiftCatalogItem(id))
-            .filter((it): it is NonNullable<typeof it> => Boolean(it));
-          const apparelItems = ownedApparelIds
-            .map((id) => getGiftCatalogItem(id))
-            .filter((it): it is NonNullable<typeof it> => Boolean(it));
-          const furnitureItems = ownedMerchantItemIds
-            .map((id) => getGiftCatalogItem(id))
-            .filter((it): it is NonNullable<typeof it> => Boolean(it));
-          const hasAnyItem =
-            fishItems.length > 0 ||
-            cafeItems.length > 0 ||
-            apparelItems.length > 0 ||
-            furnitureItems.length > 0;
+          // Giftable item list amendment: show ONLY gift catalog items & cooked dishes from the single player bag.
+          // Raw fish, wardrobe/fashion, furniture, and gear never appear in the gift picker.
+          const giftableItems = filterGiftPickerItems(ownedCafeFoodIds);
+          const hasAnyItem = giftableItems.length > 0;
 
           const sendGiftFromDock = (
             itemInput: GiftItemInput,
             label: string,
-            fishInstanceId?: string,
           ) => {
             soundEngine.playUiClick();
-            const outcome = handleGiveNpcOwnedGift(target.npcId, itemInput, fishInstanceId);
+            const outcome = handleGiveNpcOwnedGift(target.npcId, itemInput);
             setDockGiftPickerTarget(null);
             window.dispatchEvent(
               new CustomEvent('npc-chat-gift-sent', {
@@ -14919,96 +14909,28 @@ export default function App() {
               </div>
               <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
                 {!hasAnyItem ? (
-                  <p className="text-[11px] text-white/65 text-center py-4">
-                    Pick up fish, cafe treats, clothing, or furniture around town to send as a gift.
+                  <p className="text-[11px] text-white/70 text-center py-4 leading-relaxed">
+                    {EMPTY_GIFT_PICKER_HINT}
                   </p>
                 ) : (
-                  <>
-                    {fishItems.length > 0 && (
-                      <div className="space-y-1.5">
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-sky-200/80">
-                          Fresh Catch ({fishItems.length})
-                        </div>
-                        {fishItems.slice(0, 8).map((fish) => (
-                          <button
-                            key={fish.id}
-                            type="button"
-                            onClick={() =>
-                              sendGiftFromDock(fish, fish.speciesName, fish.id)
-                            }
-                            className="w-full px-3 py-1.5 rounded-xl bg-white/[0.07] hover:bg-emerald-500/25 border border-white/10 flex items-center justify-between text-left cursor-pointer transition-colors"
-                          >
-                            <span className="text-xs font-medium truncate">
-                              {fish.speciesName} ({fish.weightKg.toFixed(1)}kg)
-                            </span>
-                            <span className="text-[10px] font-bold text-emerald-300 shrink-0 ml-2">
-                              Give
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {cafeItems.length > 0 && (
-                      <div className="space-y-1.5">
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-amber-200/80">
-                          Cafe Treats ({cafeItems.length})
-                        </div>
-                        {cafeItems.map((it, idx) => (
-                          <button
-                            key={`${it.itemId}_${idx}`}
-                            type="button"
-                            onClick={() => sendGiftFromDock(it.itemId, it.name)}
-                            className="w-full px-3 py-1.5 rounded-xl bg-white/[0.07] hover:bg-emerald-500/25 border border-white/10 flex items-center justify-between text-left cursor-pointer transition-colors"
-                          >
-                            <span className="text-xs font-medium truncate">{it.name}</span>
-                            <span className="text-[10px] font-bold text-emerald-300 shrink-0 ml-2">
-                              Give
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {apparelItems.length > 0 && (
-                      <div className="space-y-1.5">
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-fuchsia-200/80">
-                          Fashion & Apparel ({apparelItems.length})
-                        </div>
-                        {apparelItems.slice(0, 12).map((it) => (
-                          <button
-                            key={it.itemId}
-                            type="button"
-                            onClick={() => sendGiftFromDock(it.itemId, it.name)}
-                            className="w-full px-3 py-1.5 rounded-xl bg-white/[0.07] hover:bg-emerald-500/25 border border-white/10 flex items-center justify-between text-left cursor-pointer transition-colors"
-                          >
-                            <span className="text-xs font-medium truncate">{it.name}</span>
-                            <span className="text-[10px] font-bold text-emerald-300 shrink-0 ml-2">
-                              Give
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {furnitureItems.length > 0 && (
-                      <div className="space-y-1.5">
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-200/80">
-                          Furniture & Home ({furnitureItems.length})
-                        </div>
-                        {furnitureItems.slice(0, 12).map((it) => (
-                          <button
-                            key={it.itemId}
-                            type="button"
-                            onClick={() => sendGiftFromDock(it.itemId, it.name)}
-                            className="w-full px-3 py-1.5 rounded-xl bg-white/[0.07] hover:bg-emerald-500/25 border border-white/10 flex items-center justify-between text-left cursor-pointer transition-colors"
-                          >
-                            <span className="text-xs font-medium truncate">{it.name}</span>
-                            <span className="text-[10px] font-bold text-emerald-300 shrink-0 ml-2">
-                              Give
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </>
+                  <div className="space-y-1.5">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-amber-200/80">
+                      Gifts ({giftableItems.length})
+                    </div>
+                    {giftableItems.map((it, idx) => (
+                      <button
+                        key={`${it.itemId}_${idx}`}
+                        type="button"
+                        onClick={() => sendGiftFromDock(it.itemId, it.name)}
+                        className="w-full px-3 py-1.5 rounded-xl bg-white/[0.07] hover:bg-emerald-500/25 border border-white/10 flex items-center justify-between text-left cursor-pointer transition-colors"
+                      >
+                        <span className="text-xs font-medium truncate">{it.name}</span>
+                        <span className="text-[10px] font-bold text-emerald-300 shrink-0 ml-2">
+                          Give
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
