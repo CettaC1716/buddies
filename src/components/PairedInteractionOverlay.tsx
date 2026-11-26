@@ -11,6 +11,12 @@ import {
 import { soundEngine } from '../game/audio';
 import type { NearbyEntityUser } from './SocialChatModal';
 import type { WardrobeCatalogItem } from '../game/buddiesWardrobeStudioRules';
+import type { ClosenessBand } from '../game/npcClosenessEngine';
+import {
+  PAIRED_CATEGORY_SPECS,
+  filterPairedItemsForAcceptedCategory,
+  type PairedPoseCategory,
+} from '../game/npcTogethernessRegistry';
 import type { WorldMultiplayerPairedPoseEvent } from '../lib/supabaseClient';
 
 export interface PairedInteractionStatusState {
@@ -24,6 +30,10 @@ export interface PairedInteractionStatusState {
 export interface PairedInteractionOverlayProps {
   /** Strictly non-null ONLY when the user clicked "Interact" on a nearby player or NPC */
   targetEntity: NearbyEntityUser | null;
+  /** When opened from an accepted NPC chat category chip, locks the picker strictly to that category. */
+  lockedCategory?: PairedPoseCategory | null;
+  /** Current NPC closeness band when lockedCategory is active. */
+  npcClosenessBand?: ClosenessBand | null;
   ownedPairedItems: readonly WardrobeCatalogItem[];
   pairedStatus: PairedInteractionStatusState | null;
   incomingInvite: WorldMultiplayerPairedPoseEvent | null;
@@ -49,6 +59,8 @@ const PAIRED_RAIL_CATEGORIES: ReadonlyArray<{
 
 export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> = ({
   targetEntity,
+  lockedCategory = null,
+  npcClosenessBand = null,
   ownedPairedItems,
   pairedStatus,
   incomingInvite,
@@ -98,9 +110,18 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
 
   const filteredItems = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return ownedPairedItems.filter((item) => {
-      const sub = item.pairedAnim?.subKind ?? 'pose';
-      if (subFilter !== 'all' && sub !== subFilter) return false;
+    const baseItems = lockedCategory
+      ? filterPairedItemsForAcceptedCategory({
+          ownedPairedItems,
+          category: lockedCategory,
+          currentBand: npcClosenessBand ?? 'friendly',
+        })
+      : ownedPairedItems;
+    return baseItems.filter((item) => {
+      if (!lockedCategory) {
+        const sub = item.pairedAnim?.subKind ?? 'pose';
+        if (subFilter !== 'all' && sub !== subFilter) return false;
+      }
       if (!q) return true;
       return (
         item.name.toLowerCase().includes(q) ||
@@ -108,14 +129,20 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
         (item.pairedAnim?.vibeTag ?? '').toLowerCase().includes(q)
       );
     });
-  }, [ownedPairedItems, subFilter, searchQuery]);
+  }, [ownedPairedItems, lockedCategory, npcClosenessBand, subFilter, searchQuery]);
 
   const cleanTargetName = targetEntity
     ? targetEntity.name.replace(/\s*\((ANDA|YOU|KAMU)\)/gi, '').trim()
     : '';
 
-  const activeCategoryMeta =
-    PAIRED_RAIL_CATEGORIES.find((cat) => cat.id === subFilter) ?? PAIRED_RAIL_CATEGORIES[0];
+  const activeCategoryMeta = lockedCategory
+    ? {
+        id: 'all' as PairedRailFilter,
+        label: PAIRED_CATEGORY_SPECS[lockedCategory].label,
+        headerLabel: PAIRED_CATEGORY_SPECS[lockedCategory].label,
+        Icon: Users,
+      }
+    : PAIRED_RAIL_CATEGORIES.find((cat) => cat.id === subFilter) ?? PAIRED_RAIL_CATEGORIES[0];
 
   return (
     <>
@@ -175,9 +202,10 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
               </div>
             </div>
 
-            {/* 2-Column Body: Left Circular Category Rail + Right 3-Column Circular Orb Grid */}
+            {/* 2-Column Body: Left Circular Category Rail (hidden when locked to one accepted NPC category) + Right 3-Column Circular Orb Grid */}
             <div className="flex-1 flex min-h-0">
               {/* Left Vertical Circular Category Rail */}
+              {!lockedCategory && (
               <nav
                 aria-label="Paired duo categories"
                 className="w-[64px] shrink-0 py-3 px-1 border-r border-white/[0.12] flex flex-col items-center gap-3 overflow-y-auto no-scrollbar"
@@ -215,6 +243,7 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
                   );
                 })}
               </nav>
+              )}
 
               {/* Right Content Pane: Reset Row + Search + 3-Column Circular Orbs */}
               <div className="flex-1 min-w-0 overflow-y-auto no-scrollbar px-3 py-3 space-y-3">
@@ -232,7 +261,7 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
                     <span>Reset Style</span>
                   </button>
                   <span className="text-[11px] text-white/55 tabular-nums">
-                    {categoryCounts[subFilter]} owned
+                    {lockedCategory ? filteredItems.length : categoryCounts[subFilter]} owned
                   </span>
                 </div>
 

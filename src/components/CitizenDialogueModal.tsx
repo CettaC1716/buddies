@@ -30,7 +30,21 @@ import {
   type NpcTogethernessStateSnapshot,
 } from '../game/npcTogetherness';
 import {
-  detectChatTogethernessIntent,
+  DOCK_SEEN_LABELS_STORAGE_KEY,
+  TOGETHERNESS_ACTION_LABELS,
+  advancePendingChipOtherTurn,
+  createEmptyNpcPacingStore,
+  createPendingDockChip,
+  detectProgressiveChatIntent,
+  evaluateProgressiveCategoryVerdict,
+  isPendingDockChipExpired,
+  type NpcPacingStore,
+  type PairedPoseCategory,
+  type PendingDockChip,
+  type TogethernessActionCategory,
+} from '../game/npcTogethernessRegistry';
+import { TogethernessDockIcon } from './TogethernessDockIcon';
+import {
   resolveChatTogethernessOptions,
 } from '../game/npcTogethernessSession';
 import type { UrbanScooterKind } from '../game/buddiesUrbanScooterRules';
@@ -105,6 +119,10 @@ export interface CitizenDialogueModalProps {
   ) => void;
   npcTogethernessState?: NpcTogethernessStateSnapshot;
   playerScooterKind?: UrbanScooterKind | null;
+  /** True when opened as a remote phone chat: no togetherness chips and no physical actions can trigger. */
+  isPhoneChat?: boolean;
+  /** Live per-category pacing/cooldown store from App. */
+  npcPacingStore?: NpcPacingStore;
   onToggleNpcWalkTogether?: (
     npcId: NpcId,
   ) => void | { accepted: boolean; replyLine?: string; ended?: boolean };
@@ -115,6 +133,8 @@ export interface CitizenDialogueModalProps {
   onToggleNpcRideTogether?: (
     npcId: NpcId,
   ) => void | { accepted: boolean; replyLine?: string; ended?: boolean };
+  onOpenCategoryPosePicker?: (npcId: NpcId, category: PairedPoseCategory) => void;
+  onRecordTogethernessSession?: (npcId: NpcId, category: TogethernessActionCategory) => void;
   onVisitDirectoryCitizen: (profile: CitizenProfile) => void;
 }
 
@@ -152,9 +172,13 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   onNpcConversationTurn,
   npcTogethernessState = EMPTY_NPC_TOGETHERNESS_STATE,
   playerScooterKind = null,
+  isPhoneChat = false,
+  npcPacingStore,
   onToggleNpcWalkTogether,
   onTriggerNpcPairPose,
   onToggleNpcRideTogether,
+  onOpenCategoryPosePicker,
+  onRecordTogethernessSession,
   onVisitDirectoryCitizen,
 }) => {
   useNpcPortraitVersion();
@@ -163,6 +187,18 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   const [npcFullText, setNpcFullText] = useState<string>('');
   const [npcTypedText, setNpcTypedText] = useState<string>('');
   const [isNpcThinking, setIsNpcThinking] = useState<boolean>(false);
+  const [pendingDockChip, setPendingDockChip] = useState<PendingDockChip | null>(null);
+  const [seenDockChipLabels, setSeenDockChipLabels] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = window.localStorage.getItem(DOCK_SEEN_LABELS_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  });
+  const effectivePacingStore = npcPacingStore ?? createEmptyNpcPacingStore();
   const [giftFeedback, setGiftFeedback] = useState<{
     citizenId: string;
     accepted: boolean;
@@ -178,6 +214,27 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   const profile = citizenId ? getCitizenProfile(citizenId) : null;
   const isNpcOpen = Boolean(isOpen && profile);
   const namedNpcId: NpcId | null = profile ? resolveNpcId(profile.id) : null;
+
+  // Addendum: Silently expire pending dock chip on 90s idle, modal close, phone mode, or dismount.
+  useEffect(() => {
+    if (!pendingDockChip) return;
+    const checkExpiry = () => {
+      if (
+        isPendingDockChipExpired(pendingDockChip, {
+          isChatOpen: isOpen,
+          isInPerson: !isPhoneChat,
+          isInProximity: true,
+          activeNpcId: namedNpcId,
+          playerScooterKind,
+        })
+      ) {
+        setPendingDockChip(null);
+      }
+    };
+    checkExpiry();
+    const timer = window.setInterval(checkExpiry, 1000);
+    return () => window.clearInterval(timer);
+  }, [pendingDockChip, isOpen, isPhoneChat, namedNpcId, playerScooterKind]);
   const effectiveClosenessStore = npcClosenessStore ?? createEmptyNpcClosenessStore();
 
   const todayKey = getCitizenLocalDateKey();
@@ -288,9 +345,11 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
       return;
     }
 
-    // Natural typed togetherness invitation (walk / ride / get off) routed through WS12 engine
-    const typedIntent = detectChatTogethernessIntent(trimmed);
-    if (typedIntent === 'end') {
+    // Progressive chat negotiation: detect togetherness intent and produce verdict-conditioned reply.
+    // Free text alone NEVER executes anything physically; on accept, ONE live icon chip appears in the dock.
+    const progressiveIntent = detectProgressiveChatIntent(trimmed);
+    if (progressiveIntent === 'end' && !isPhoneChat) {
+      setPendingDockChip(null);
       if (npcTogethernessState.ridingNpcId === namedNpcId && onToggleNpcRideTogether) {
         onToggleNpcRideTogether(namedNpcId);
         return;
@@ -299,37 +358,34 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
         onToggleNpcWalkTogether(namedNpcId);
         return;
       }
-    } else if (
-      typedIntent === 'ride' &&
-      npcTogethernessState.ridingNpcId !== namedNpcId &&
-      onToggleNpcRideTogether
-    ) {
-      const res = onToggleNpcRideTogether(namedNpcId);
-      if (res && !res.ended && res.replyLine) {
-        appendNpcChatTurns(accountKey, profile.id, [{ role: 'npc', text: res.replyLine }]);
-        setNpcFullText(res.replyLine);
-        setNpcTypedText('');
-        window.setTimeout(() => {
-          chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-        }, 40);
-        return;
+    } else if (progressiveIntent && progressiveIntent !== 'end') {
+      const verdict = evaluateProgressiveCategoryVerdict({
+        store: effectiveClosenessStore,
+        pacingStore: effectivePacingStore,
+        npcId: namedNpcId,
+        category: progressiveIntent,
+        isInPerson: !isPhoneChat,
+        playerScooterKind,
+      });
+      if (verdict.accepted) {
+        // Only ONE pending chip at a time; newest acceptance replaces any old chip
+        setPendingDockChip(createPendingDockChip(namedNpcId, progressiveIntent));
+      } else {
+        setPendingDockChip((prev) =>
+          prev && prev.category === progressiveIntent ? null : prev,
+        );
       }
-    } else if (
-      typedIntent === 'walk' &&
-      npcTogethernessState.walkingNpcId !== namedNpcId &&
-      onToggleNpcWalkTogether
-    ) {
-      const res = onToggleNpcWalkTogether(namedNpcId);
-      if (res && !res.ended && res.replyLine) {
-        appendNpcChatTurns(accountKey, profile.id, [{ role: 'npc', text: res.replyLine }]);
-        setNpcFullText(res.replyLine);
-        setNpcTypedText('');
-        window.setTimeout(() => {
-          chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-        }, 40);
-        return;
-      }
+      appendNpcChatTurns(accountKey, profile.id, [{ role: 'npc', text: verdict.replyLine }]);
+      setNpcFullText(verdict.replyLine);
+      setNpcTypedText('');
+      window.setTimeout(() => {
+        chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 40);
+      return;
     }
+
+    // Non-intent turn on another topic: advance pending chip turn counter (silently expires at 3 turns)
+    setPendingDockChip((prev) => advancePendingChipOtherTurn(prev));
 
     // Named NPCs use server-side Gemini text chat (/api/npc-chat)
     const reqId = activeRequestIdRef.current + 1;
@@ -371,12 +427,13 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
         chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
       }, 40);
 
-      // WS21: Execute server-returned togetherness verdict action on the existing command channel
-      if (result.action === 'ride_together' && onToggleNpcRideTogether) {
-        onToggleNpcRideTogether(namedNpcId);
-      } else if (result.action === 'walk_together' && onToggleNpcWalkTogether) {
-        onToggleNpcWalkTogether(namedNpcId);
-      } else if (result.action === 'end_togetherness') {
+      // Server-returned togetherness action surfaces the matching dock chip (never executes on free text alone)
+      if (!isPhoneChat && result.action === 'ride_together') {
+        setPendingDockChip(createPendingDockChip(namedNpcId, 'ride'));
+      } else if (!isPhoneChat && result.action === 'walk_together') {
+        setPendingDockChip(createPendingDockChip(namedNpcId, 'walk'));
+      } else if (!isPhoneChat && result.action === 'end_togetherness') {
+        setPendingDockChip(null);
         if (npcTogethernessState.ridingNpcId === namedNpcId && onToggleNpcRideTogether) {
           onToggleNpcRideTogether(namedNpcId);
         } else if (npcTogethernessState.walkingNpcId === namedNpcId && onToggleNpcWalkTogether) {
@@ -696,16 +753,27 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                   <div ref={chatScrollEndRef} />
                 </div>
 
-                {/* Quick-Reply Choices + Togetherness Actions (plain English, zero closeness UI) + Clear Chat */}
+                {/* Icon-only Togetherness Action Dock (live pending chip + active session end icon; NEVER shown in phone chat) */}
                 <div className="px-3.5 py-2.5 border-t border-white/10 shrink-0 bg-black/15 space-y-1.5">
-                  {namedNpcId &&
+                  {namedNpcId && !isPhoneChat &&
                     (() => {
                       const ctxOpts = resolveChatTogethernessOptions({
                         npcId: namedNpcId,
                         playerScooterKind,
                         togethernessState: npcTogethernessState,
                       });
-                      const showGetOff =
+                      const activeChipValid =
+                        pendingDockChip &&
+                        !isPendingDockChipExpired(pendingDockChip, {
+                          isChatOpen: isOpen,
+                          isInPerson: !isPhoneChat,
+                          isInProximity: true,
+                          activeNpcId: namedNpcId,
+                          playerScooterKind,
+                        })
+                          ? pendingDockChip
+                          : null;
+                      const showEndSession =
                         ctxOpts.showGetOffOption &&
                         Boolean(
                           ctxOpts.isRidingWithThisNpc
@@ -715,7 +783,55 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                       const showStopPairPose =
                         npcTogethernessState.pairPoseNpcId === namedNpcId &&
                         Boolean(onTriggerNpcPairPose);
-                      if (!showGetOff && !showStopPairPose) return null;
+                      if (!activeChipValid && !showEndSession && !showStopPairPose) return null;
+
+                      const markChipLabelSeen = (cat: string) => {
+                        if (seenDockChipLabels.includes(cat)) return;
+                        const next = [...seenDockChipLabels, cat];
+                        setSeenDockChipLabels(next);
+                        try {
+                          window.localStorage.setItem(
+                            DOCK_SEEN_LABELS_STORAGE_KEY,
+                            JSON.stringify(next),
+                          );
+                        } catch {
+                          // ignore storage quota errors
+                        }
+                      };
+
+                      const handlePendingChipClick = () => {
+                        if (!activeChipValid || !namedNpcId) return;
+                        soundEngine.playUiClick();
+                        // Re-validate all conditions at tap time
+                        if (
+                          isPendingDockChipExpired(activeChipValid, {
+                            isChatOpen: isOpen,
+                            isInPerson: !isPhoneChat,
+                            isInProximity: true,
+                            activeNpcId: namedNpcId,
+                            playerScooterKind,
+                          })
+                        ) {
+                          setPendingDockChip(null);
+                          return;
+                        }
+                        const cat = activeChipValid.category;
+                        markChipLabelSeen(cat);
+                        setPendingDockChip(null);
+
+                        if (cat === 'ride') {
+                          onRecordTogethernessSession?.(namedNpcId, 'ride');
+                          onToggleNpcRideTogether?.(namedNpcId);
+                        } else if (cat === 'walk') {
+                          onRecordTogethernessSession?.(namedNpcId, 'walk');
+                          onToggleNpcWalkTogether?.(namedNpcId);
+                        } else {
+                          onRecordTogethernessSession?.(namedNpcId, cat);
+                          onClose();
+                          onOpenCategoryPosePicker?.(namedNpcId, cat);
+                        }
+                      };
+
                       return (
                         <div
                           className="space-y-1.5 pb-1 border-b border-white/10"
@@ -733,35 +849,59 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                                 : 'Walking together'}
                             </div>
                           )}
-                          <div className="flex flex-wrap gap-1.5">
-                            {showGetOff && (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {activeChipValid && !showEndSession && (
+                              <button
+                                type="button"
+                                data-npc-dock-chip={activeChipValid.category}
+                                aria-label={TOGETHERNESS_ACTION_LABELS[activeChipValid.category]}
+                                title={TOGETHERNESS_ACTION_LABELS[activeChipValid.category]}
+                                onClick={handlePendingChipClick}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[10.5px] font-semibold cursor-pointer transition-all bg-emerald-500/30 hover:bg-emerald-500/45 text-emerald-100 border border-emerald-300/50 shadow-sm"
+                              >
+                                <TogethernessDockIcon kind={activeChipValid.category} className="w-4 h-4 shrink-0" />
+                                {!seenDockChipLabels.includes(activeChipValid.category) && (
+                                  <span>{TOGETHERNESS_ACTION_LABELS[activeChipValid.category]}</span>
+                                )}
+                              </button>
+                            )}
+                            {showEndSession && (
                               <button
                                 type="button"
                                 data-npc-get-off-btn="true"
+                                data-npc-dock-chip="end"
+                                aria-label={ctxOpts.getOffLabel}
+                                title={ctxOpts.getOffLabel}
                                 onClick={() => {
                                   soundEngine.playUiClick();
+                                  markChipLabelSeen('end');
                                   if (ctxOpts.isRidingWithThisNpc) {
                                     onToggleNpcRideTogether?.(namedNpcId);
                                   } else {
                                     onToggleNpcWalkTogether?.(namedNpcId);
                                   }
                                 }}
-                                className="px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors bg-amber-500/30 hover:bg-amber-500/45 text-amber-100 border border-amber-300/45"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors bg-amber-500/30 hover:bg-amber-500/45 text-amber-100 border border-amber-300/45"
                               >
-                                {ctxOpts.getOffLabel}
+                                <TogethernessDockIcon kind="end" className="w-4 h-4 shrink-0" />
+                                {!seenDockChipLabels.includes('end') && (
+                                  <span>{ctxOpts.getOffLabel}</span>
+                                )}
                               </button>
                             )}
                             {showStopPairPose && onTriggerNpcPairPose && (
                               <button
                                 type="button"
                                 data-npc-pair-pose-btn="true"
+                                aria-label="Stop pose"
+                                title="Stop pose"
                                 onClick={() => {
                                   soundEngine.playUiClick();
                                   onTriggerNpcPairPose(namedNpcId);
                                 }}
-                                className="px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors bg-amber-500/30 hover:bg-amber-500/45 text-amber-100 border border-amber-300/45"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors bg-amber-500/30 hover:bg-amber-500/45 text-amber-100 border border-amber-300/45"
                               >
-                                Stop photo pose
+                                <TogethernessDockIcon kind="end" className="w-4 h-4 shrink-0" />
                               </button>
                             )}
                           </div>

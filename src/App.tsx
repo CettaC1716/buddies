@@ -272,6 +272,7 @@ import {
   type DailyMissionsState,
 } from './game/buddiesDailyMissions';
 import {
+  getNpcClosenessBand,
   loadNpcClosenessStore,
   npcIdToCitizenId,
   recordNpcConversation,
@@ -294,6 +295,15 @@ import {
   type NpcEmotionTag,
 } from './game/npcPersonaRegistry';
 import { ensureAllNpcPersonasRegistered } from './game/personas/index';
+import {
+  TOGETHERNESS_ACTION_LABELS,
+  createEmptyNpcPacingStore,
+  recordCompletedCategorySession,
+  type NpcPacingStore,
+  type PairedPoseCategory,
+  type TogethernessActionCategory,
+} from './game/npcTogethernessRegistry';
+import { appendNpcChatTurns } from './game/npcChatHistoryStore';
 import {
   EMPTY_NPC_TOGETHERNESS_STATE,
   NPC_TOGETHERNESS_STATE_EVENT,
@@ -1212,6 +1222,10 @@ export default function App() {
 
   const [npcTogethernessState, setNpcTogethernessState] =
     useState<NpcTogethernessStateSnapshot>(EMPTY_NPC_TOGETHERNESS_STATE);
+  const [npcPacingStore, setNpcPacingStore] = useState<NpcPacingStore>(() =>
+    createEmptyNpcPacingStore(),
+  );
+  const [lockedPairedCategory, setLockedPairedCategory] = useState<PairedPoseCategory | null>(null);
   const npcTogethernessStateRef = useRef<NpcTogethernessStateSnapshot>(npcTogethernessState);
   npcTogethernessStateRef.current = npcTogethernessState;
   const equippedScooterKindRef = useRef<UrbanScooterKind | null>(null);
@@ -1254,15 +1268,12 @@ export default function App() {
       npcClosenessStoreRef.current = res.closenessResult.store;
       setNpcClosenessStore(res.closenessResult.store);
       saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
-      // WS21: Let the NPC's acceptance line render briefly in chat, then auto-close modal, release dialogue camera, and execute walk_together!
-      window.setTimeout(() => {
-        setIsCitizenDialogueOpen(false);
-        if (activeSpecialModal === 'npc_merchant') {
-          setActiveSpecialModal('none');
-        }
-        window.dispatchEvent(new CustomEvent('close-npc-ui'));
-        dispatchNpcTogethernessCommand({ type: 'start_walk', npcId });
-      }, 650);
+      setIsCitizenDialogueOpen(false);
+      if (activeSpecialModal === 'npc_merchant') {
+        setActiveSpecialModal('none');
+      }
+      window.dispatchEvent(new CustomEvent('close-npc-ui'));
+      dispatchNpcTogethernessCommand({ type: 'start_walk', npcId });
       return { accepted: true, replyLine: decision.replyLine };
     },
     [activeSpecialModal],
@@ -1335,15 +1346,12 @@ export default function App() {
       npcClosenessStoreRef.current = res.closenessResult.store;
       setNpcClosenessStore(res.closenessResult.store);
       saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
-      // WS21: Show acceptance reply briefly, then auto-close modal, release dialogue camera, and execute ride_together!
-      window.setTimeout(() => {
-        setIsCitizenDialogueOpen(false);
-        if (activeSpecialModal === 'npc_merchant') {
-          setActiveSpecialModal('none');
-        }
-        window.dispatchEvent(new CustomEvent('close-npc-ui'));
-        dispatchNpcTogethernessCommand({ type: 'start_ride', npcId });
-      }, 650);
+      setIsCitizenDialogueOpen(false);
+      if (activeSpecialModal === 'npc_merchant') {
+        setActiveSpecialModal('none');
+      }
+      window.dispatchEvent(new CustomEvent('close-npc-ui'));
+      dispatchNpcTogethernessCommand({ type: 'start_ride', npcId });
       return { accepted: true, replyLine: decision.replyLine };
     },
     [activeSpecialModal],
@@ -14530,6 +14538,15 @@ export default function App() {
           />
             <PairedInteractionOverlay
               targetEntity={!isDockBlockedByModal ? pairedInteractTarget : null}
+              lockedCategory={lockedPairedCategory}
+              npcClosenessBand={
+                pairedInteractTarget?.isNpc
+                  ? getNpcClosenessBand(
+                      npcClosenessStore,
+                      resolveNpcId(String(pairedInteractTarget.id)) ?? 'hana',
+                    )
+                  : null
+              }
               ownedPairedItems={ownedPairedItems}
               pairedStatus={!isDockBlockedByModal ? pairedStatus : null}
               incomingInvite={!isDockBlockedByModal ? incomingPairedInvite : null}
@@ -14557,7 +14574,10 @@ export default function App() {
                   })}`,
                 );
               }}
-              onClosePopup={() => setPairedInteractTarget(null)}
+              onClosePopup={() => {
+                setPairedInteractTarget(null);
+                setLockedPairedCategory(null);
+              }}
               onStopPairedPose={() => {
                 dispatchBuddyAction('stopPairedPose');
               }}
@@ -15008,9 +15028,40 @@ export default function App() {
         onGiveNpcOwnedGift={handleGiveNpcOwnedGift}
         npcTogethernessState={npcTogethernessState}
         playerScooterKind={equippedScooterKind}
+        npcPacingStore={npcPacingStore}
         onToggleNpcWalkTogether={handleNpcWalkTogetherToggle}
         onTriggerNpcPairPose={handleNpcPairPoseTrigger}
         onToggleNpcRideTogether={handleNpcRideTogetherToggle}
+        onRecordTogethernessSession={(npcId: NpcId, category: TogethernessActionCategory) => {
+          setNpcPacingStore((prev) =>
+            recordCompletedCategorySession({
+              pacingStore: prev,
+              npcId,
+              category,
+              baseClosenessDelta: category === 'ride' ? 8 : category === 'walk' ? 6 : 5,
+            }).pacingStore,
+          );
+          appendNpcChatTurns(dailyMissionsAccountKey, npcId, [
+            {
+              role: 'npc',
+              text: `Shared a ${TOGETHERNESS_ACTION_LABELS[category].toLowerCase()} moment together.`,
+              visual: {
+                kind: 'interaction',
+                label: TOGETHERNESS_ACTION_LABELS[category],
+              },
+            },
+          ]);
+        }}
+        onOpenCategoryPosePicker={(npcId: NpcId, category: PairedPoseCategory) => {
+          setLockedPairedCategory(category);
+          const citizenEntity: NearbyEntityUser = {
+            id: npcIdToCitizenId(npcId),
+            name: npcId.charAt(0).toUpperCase() + npcId.slice(1),
+            isNpc: true,
+            distance: 2,
+          };
+          setPairedInteractTarget(citizenEntity);
+        }}
         isRaining={weatherCondition === 'hujan'}
         daytimePhase={
           lightingPreset === 'night'
