@@ -19,8 +19,8 @@ export interface CityRentalLotNodeController {
   spec: CityRentalLotSpec;
   lotRoot: THREE.Group;
   emptyMarkerGroup: THREE.Group;
+  claimKioskMesh: THREE.Group;
   lotPavingMesh: THREE.Mesh;
-  kioskChevron: THREE.Mesh;
   shopBuildingGroup: THREE.Group;
   glbBuildingMount: THREE.Group;
   loadedGlbFormId: ShopBuildingFormId | null;
@@ -264,7 +264,9 @@ function buildStandardShopShellForLot(
  * - While rented (or during fit preview): displays the lot's standard shop building shell.
  * - Interactive 3D hover & selection border highlight ring.
  */
-export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
+export function buildCityRentalLotsVisuals(options?: {
+  createKioskMesh?: () => THREE.Group;
+}): CityRentalLotsVisualController {
   const rootGroup = new THREE.Group();
   rootGroup.name = 'CityRentalLotsSystemRoot';
 
@@ -282,18 +284,8 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
   const lotPavingGeo = regGeo(new THREE.PlaneGeometry(14.4, 14.4));
   lotPavingGeo.rotateX(-Math.PI * 0.5);
 
-  const groundPlaqueBaseGeo = regGeo(new RoundedBoxGeometry(2.68, 0.12, 0.92, 1, 0.02));
   const groundPlaqueFaceGeo = regGeo(new THREE.PlaneGeometry(2.52, 0.8));
   groundPlaqueFaceGeo.rotateX(-Math.PI * 0.5);
-
-  // Shared Geometries for Centered Self-Service Claim Plot Kiosk (at exact lot center 0, 0, 0)
-  const kioskFootPadGeo = regGeo(new RoundedBoxGeometry(1.56, 0.12, 1.24, 2, 0.03));
-  const kioskPedestalGeo = regGeo(new RoundedBoxGeometry(0.92, 2.24, 0.52, 2, 0.04));
-  const kioskTopCapGeo = regGeo(new RoundedBoxGeometry(1.02, 0.14, 0.62, 2, 0.03));
-  const kioskBezelGeo = regGeo(new RoundedBoxGeometry(0.76, 1.04, 0.08, 2, 0.02));
-  const kioskScreenFaceGeo = regGeo(new THREE.PlaneGeometry(0.66, 0.92));
-  const kioskChevronGeo = regGeo(new THREE.ConeGeometry(0.16, 0.30, 3));
-  kioskChevronGeo.rotateX(Math.PI);
 
   // Highlight ring along the 15.0m x 15.0m perimeter
   const highlightNSGeo = regGeo(new THREE.PlaneGeometry(15.0, 0.28));
@@ -327,13 +319,7 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
     signFaceGeo: regGeo(new THREE.PlaneGeometry(6.36, 0.96)),
   };
 
-  // Shared Materials
-  const plaqueBaseMat = regMat(new THREE.MeshLambertMaterial({ color: '#1e293b' }));
-  const kioskWhiteMat = regMat(new THREE.MeshLambertMaterial({ color: '#f1f5f9' }));
-  const kioskDarkTrimMat = regMat(new THREE.MeshLambertMaterial({ color: '#1e293b' }));
-  const kioskAccentMat = regMat(
-    new THREE.MeshBasicMaterial({ color: '#38bdf8' }),
-  );
+  // Shared Materials (Amendment 3 paving materials below)
 
   // Amendment 3: Building-form styled lot paving materials (applied on placement, reverted to grass on removal/expiry)
   const createBuildingFormPavingMat = (
@@ -464,55 +450,26 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
       boundaryGroup.add(frontSeg);
     }
 
-    // 2. Resting Empty Land Presentation: Claim Plot Kiosk at exact center (0, 0, 0) of each kavling
+    // 2. Resting Empty Land Presentation: Original Self-Service Tactical Claim Kiosk at exact center (0, 0, 0) of each kavling
     const emptyMarkerGroup = new THREE.Group();
     emptyMarkerGroup.name = `LotEmptyMarker_${spec.slotId}`;
     lotRoot.add(emptyMarkerGroup);
 
-    const claimKioskGroup = new THREE.Group();
-    claimKioskGroup.name = `LotClaimKiosk_${spec.slotId}`;
-    claimKioskGroup.position.set(0, 0, 0);
-    emptyMarkerGroup.add(claimKioskGroup);
-
-    const kioskFootPad = new THREE.Mesh(kioskFootPadGeo, kioskDarkTrimMat);
-    kioskFootPad.position.set(0, 0.06, 0);
-    kioskFootPad.receiveShadow = true;
-    claimKioskGroup.add(kioskFootPad);
-
-    const kioskPedestal = new THREE.Mesh(kioskPedestalGeo, kioskWhiteMat);
-    kioskPedestal.position.set(0, 1.24, 0);
-    kioskPedestal.castShadow = true;
-    kioskPedestal.receiveShadow = true;
-    claimKioskGroup.add(kioskPedestal);
-
-    const kioskTopCap = new THREE.Mesh(kioskTopCapGeo, kioskDarkTrimMat);
-    kioskTopCap.position.set(0, 2.40, 0);
-    claimKioskGroup.add(kioskTopCap);
-
-    const kioskBezel = new THREE.Mesh(kioskBezelGeo, kioskDarkTrimMat);
-    kioskBezel.position.set(0, 1.56, 0.25);
-    claimKioskGroup.add(kioskBezel);
+    const claimKioskMesh = options?.createKioskMesh
+      ? options.createKioskMesh()
+      : new THREE.Group();
+    claimKioskMesh.name = `LotClaimKiosk_${spec.slotId}`;
+    claimKioskMesh.position.set(0, 0, 0);
+    emptyMarkerGroup.add(claimKioskMesh);
 
     const availTex = createLotGroundPlaqueTexture(spec.shortCode, 'available', disposables);
     const statusSignMat = regMat(new THREE.MeshBasicMaterial({ map: availTex }));
-
-    const kioskScreen = new THREE.Mesh(kioskScreenFaceGeo, statusSignMat);
-    kioskScreen.position.set(0, 1.56, 0.295);
-    claimKioskGroup.add(kioskScreen);
-
-    const kioskChevron = new THREE.Mesh(kioskChevronGeo, kioskAccentMat);
-    kioskChevron.name = `LotClaimChevron_${spec.slotId}`;
-    kioskChevron.position.set(0, 2.86, 0);
-    claimKioskGroup.add(kioskChevron);
-
-    // Compact ground plaque directly in front of the centered Claim Kiosk
-    const plaqueBase = new THREE.Mesh(groundPlaqueBaseGeo, plaqueBaseMat);
-    plaqueBase.position.set(0, 0.06, 1.35);
-    emptyMarkerGroup.add(plaqueBase);
-
-    const plaqueFace = new THREE.Mesh(groundPlaqueFaceGeo, statusSignMat);
-    plaqueFace.position.set(0, 0.125, 1.35);
-    emptyMarkerGroup.add(plaqueFace);
+    // Subtle flat lot code marker on ground in front of the original kiosk when no custom mesh is passed
+    if (!options?.createKioskMesh) {
+      const plaqueFace = new THREE.Mesh(groundPlaqueFaceGeo, statusSignMat);
+      plaqueFace.position.set(0, 0.03, 1.35);
+      emptyMarkerGroup.add(plaqueFace);
+    }
 
     // 3. Standardized Compact Shop Building Shell (fallback while real GLB streams in)
     const shopBuildingGroup = buildStandardShopShellForLot(
@@ -578,8 +535,8 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
       spec,
       lotRoot,
       emptyMarkerGroup,
+      claimKioskMesh,
       lotPavingMesh,
-      kioskChevron,
       shopBuildingGroup,
       glbBuildingMount,
       loadedGlbFormId: null,
@@ -822,10 +779,6 @@ export function buildCityRentalLotsVisuals(): CityRentalLotsVisualController {
       }
 
       node.emptyMarkerGroup.visible = !st.showShopBuilding;
-      if (node.emptyMarkerGroup.visible && typeof params.timeSec === 'number') {
-        node.kioskChevron.position.y = 2.86 + Math.sin(params.timeSec * 3.4 + i) * 0.08;
-        node.kioskChevron.rotation.y = params.timeSec * 1.4;
-      }
 
       const isSelected = params.selectedSlotId === node.spec.slotId;
       const isHovered = params.hoveredSlotId === node.spec.slotId;

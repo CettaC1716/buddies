@@ -6597,8 +6597,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     );
     scene.add(cafeExteriorDoorPad.group);
 
-    // Phase 2: Commercial 4-Block Rental Lots, 2m Sidewalks, Placed Shop GLBs & Replaceable Billboard Logos
-    const cityRentalLotsController = buildCityRentalLotsVisuals();
+    // Phase 2: Commercial 4-Block Rental Lots, 2m Sidewalks, Centered Original Self-Service Kiosks & Placed Shop GLBs
+    const cityRentalLotsController = buildCityRentalLotsVisuals({
+      createKioskMesh: () => {
+        const km = buildSelfServiceTacticalKioskMesh(windUniforms, isSoftwareGl);
+        const chev = buildCompactInteractiveChevronMarker(0.13, 0.25, '#38bdf8');
+        chev.group.position.set(0, 2.92, 0.02);
+        km.add(chev.group);
+        km.userData.interactiveChevron = chev;
+        return km;
+      },
+    });
     scene.add(cityRentalLotsController.rootGroup);
     let shopLotPlacementState: ShopLotPlacementSyncPayload = {
       rentedSlotIds: [],
@@ -11506,6 +11515,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             bestPlotIdx = idx;
             bestWorldX = kPos.x;
             bestWorldZ = kPos.z;
+          }
+        }
+      }
+
+      // In Safezone, also bind radial proximity & Claim Plot modal to all 16 centered commercial lot kiosks!
+      if (cityRentalLotsController.rootGroup.visible) {
+        for (let li = 0; li < cityRentalLotsController.lotNodes.length; li++) {
+          const node = cityRentalLotsController.lotNodes[li];
+          if (!node.lotRoot.visible || !node.emptyMarkerGroup.visible) continue;
+          const d = getPlanetShortestDistance(actorX, actorZ, node.spec.x, node.spec.z);
+          if (d < bestDist) {
+            bestDist = d;
+            bestTeam = node.spec.z >= 0 ? 'blue' : 'red';
+            bestPlotIdx = li % 4;
+            bestWorldX = node.spec.x;
+            bestWorldZ = node.spec.z;
           }
         }
       }
@@ -35899,6 +35924,30 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               chev.chevronArrow.position.y = Math.sin(markerPulseNow * 3.6 + pi * 0.7) * 0.05;
               chev.chevronArrow.rotation.y = markerPulseNow * 1.6 + pi * 0.4;
             }
+          }
+        }
+      }
+      // Animate overhead interactive chevrons & proximity lime highlight on all 16 centered commercial lot kiosks
+      for (let li = 0; li < cityRentalLotsController.lotNodes.length; li++) {
+        const node = cityRentalLotsController.lotNodes[li];
+        const chev = node.claimKioskMesh.userData.interactiveChevron as
+          | CompactInteractiveChevronMarker
+          | undefined;
+        if (chev) {
+          chev.group.visible =
+            showOutdoorKioskMarkers && node.lotRoot.visible && node.emptyMarkerGroup.visible;
+          if (chev.group.visible) {
+            const isLotKioskActive =
+              nearKioskNow &&
+              !isKioskModalOpenCanvas &&
+              Math.abs(nearestKiosk.worldX - node.spec.x) < 0.5 &&
+              Math.abs(nearestKiosk.worldZ - node.spec.z) < 0.5;
+            chev.chevronMat.color.copy(
+              isLotKioskActive ? PROXIMITY_ACTIVE_LIME_COLOR : PROXIMITY_IDLE_SKY_COLOR,
+            );
+            chev.chevronArrow.scale.setScalar(isLotKioskActive ? 1.16 : 1.0);
+            chev.chevronArrow.position.y = Math.sin(markerPulseNow * 3.6 + li * 0.7) * 0.05;
+            chev.chevronArrow.rotation.y = markerPulseNow * 1.6 + li * 0.4;
           }
         }
       }
