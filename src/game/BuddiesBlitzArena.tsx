@@ -33,6 +33,12 @@ import {
   type SavedNpcAnchorTransform,
 } from './npcTogetherness';
 import {
+  createIdleNpcLingerState,
+  resetNpcLingerTimer,
+  stepNpcPostInteractionLinger,
+  type NpcPostInteractionLingerState,
+} from './npcPostInteractionLinger';
+import {
   isPlayerRoleBadgeId,
   readStoredProfileIdentity,
   readStoredRoleBadge,
@@ -4941,6 +4947,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       return { seatFacingYaw, renderX, groundY, renderZ };
     };
 
+    // WS10: Per-client post-interaction linger state (25s after dialogue closes, 15m early-end)
+    const npcLingerStates = new Map<string, NpcPostInteractionLingerState>();
+    const npcWasTalkingMap = new Map<string, boolean>();
+
     const cityAmbientNpcs: CityAmbientNpcController[] = CITY_AMBIENT_NPC_PRESETS.map(
       (preset, idx) => {
         const initPatrolWaypoints = resolveNpcScheduledPatrolWaypoints(preset.id, 12);
@@ -5584,6 +5594,32 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             worldModeRef.current !== 'warzone' &&
             npcCameraMode === 'none',
         );
+        const wasTalkingPrev = npcWasTalkingMap.get(npc.preset.id) ?? false;
+        npcWasTalkingMap.set(npc.preset.id, isTalkingWithPlayer);
+        const scheduledPatrolForLinger =
+          resolveNpcScheduledPatrolWaypoints(npc.preset.id, worldClockHour) ?? npc.preset.waypoints;
+        const lingerStep = stepNpcPostInteractionLinger({
+          state: npcLingerStates.get(npc.preset.id) ?? createIdleNpcLingerState(),
+          npcId: npc.preset.id,
+          wasTalking: wasTalkingPrev,
+          isTalking: isTalkingWithPlayer,
+          npcX: npc.x,
+          npcZ: npc.z,
+          npcYaw: npc.yaw,
+          playerX,
+          playerZ,
+          waypoints: scheduledPatrolForLinger,
+          dt,
+          suppressedByActivity: isWalkingWithPlayer || isRidingWithPlayer || isPairedWithPlayer,
+        });
+        npcLingerStates.set(npc.preset.id, lingerStep.state);
+        if (lingerStep.endedThisFrame && lingerStep.resumeWaypointIdx !== null) {
+          npc.waypointIdx = lingerStep.resumeWaypointIdx;
+          npc.pauseTimer = 0;
+          npc.navPath = [];
+          npc.navWaypointIndex = 0;
+          npc.navPathGoalKey = '';
+        }
         let stepped: ReturnType<typeof stepCityAmbientNpcSchedule>;
         if (isRidingWithPlayer && scooterRideState && playerUnit) {
           const pillionTf = computeScooterPassengerTransform({
@@ -5706,6 +5742,29 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             activeActivity: npc.activeActivity,
             activeStatusLabel: npc.activeStatusLabel,
             activeSeatLiftY: npc.activeSeatLiftY,
+            activeHoldingCafeItemId: npc.activeHoldingCafeItemId,
+            waypointIdx: npc.waypointIdx,
+            pauseTimer: npc.pauseTimer,
+            navPath: npc.navPath,
+            navWaypointIndex: npc.navWaypointIndex,
+            navPathGoalKey: npc.navPathGoalKey,
+            stuckTimer: 0,
+            lastProgressX: npc.x,
+            lastProgressZ: npc.z,
+            avoidSide: 0,
+            avoidTimer: 0,
+          };
+        } else if (lingerStep.isLingering) {
+          stepped = {
+            x: npc.x,
+            z: npc.z,
+            yaw: lingerStep.yaw,
+            speedMps: 0,
+            isMoving: false,
+            isSitting: false,
+            activeActivity: npc.activeActivity,
+            activeStatusLabel: npc.activeStatusLabel,
+            activeSeatLiftY: 0,
             activeHoldingCafeItemId: npc.activeHoldingCafeItemId,
             waypointIdx: npc.waypointIdx,
             pauseTimer: npc.pauseTimer,
@@ -39383,6 +39442,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
     const unsubscribeNpcEmotion = subscribeNpcEmotionReaction(
       (detail: NpcEmotionReactionDetail) => {
+        const prevLinger = npcLingerStates.get(detail.citizenId);
+        if (prevLinger?.active || activeCitizenDialogueId === detail.citizenId) {
+          npcLingerStates.set(
+            detail.citizenId,
+            resetNpcLingerTimer(prevLinger ?? createIdleNpcLingerState(), detail.citizenId),
+          );
+        }
         const rig = resolveNamedNpcRigForHook(detail.citizenId);
         if (!rig) return;
         const plan = resolveVerifiedNpcEmotionClip({
