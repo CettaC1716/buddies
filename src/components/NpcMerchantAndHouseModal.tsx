@@ -6,8 +6,6 @@ import {
   Home,
   LogIn,
   MapPin,
-  Mic,
-  MicOff,
   Plus,
   ShoppingBag,
   Sofa,
@@ -50,9 +48,19 @@ import {
 } from '../game/buddiesMerchantPricing';
 import { soundEngine } from '../game/audio';
 import {
-  startHanaVoiceChat,
-  type HanaVoiceChatSession,
-} from '../game/hanaVoiceChat';
+  canLongConversation,
+  createEmptyNpcClosenessStore,
+  getNpcClosenessBand,
+  type NpcClosenessStore,
+  type NpcId,
+} from '../game/npcClosenessEngine';
+import {
+  canGiftNpcToday,
+  getGiftCatalogItem,
+  type GiftItemInput,
+} from '../game/npcGiftEngine';
+import type { NpcEmotionTag } from '../game/npcPersonaRegistry';
+import { sendNpcChatMessage } from '../game/npcTextChat';
 import {
   resolveNpcPhotoUrl,
   useNpcPortraitVersion,
@@ -244,6 +252,19 @@ interface NpcMerchantAndHouseModalProps {
     originStationId: CityTransitStationId,
   ) => void;
   onOpenExternalCatalog?: (tab?: 'house' | 'furniture' | 'market') => void;
+  npcClosenessStore?: NpcClosenessStore;
+  ownedApparelIds?: readonly string[];
+  ownedCafeFoodIds?: readonly string[];
+  onNpcConversationTurn?: (
+    npcId: NpcId,
+    closenessDelta: number,
+    emotion: NpcEmotionTag,
+  ) => void;
+  onGiveNpcOwnedGift?: (
+    npcId: NpcId,
+    itemInput: GiftItemInput,
+    fishInstanceId?: string,
+  ) => { accepted: boolean; reactionLine: string; itemName: string };
 }
 
 /* Kai chat-trade language pack: the card and Kai's short scripted lines
@@ -465,10 +486,20 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   onOpenTeleportKioskFromPitch,
   onTeleportToDestination,
   onOpenExternalCatalog,
+  npcClosenessStore,
+  ownedApparelIds = [],
+  ownedCafeFoodIds = [],
+  onNpcConversationTurn,
+  onGiveNpcOwnedGift,
 }) => {
-  const [activeTab, setActiveTab] = useState<'sesi_chat' | 'transaksi' | 'katalog' | 'fish_market'>(
+  const [activeTab, setActiveTab] = useState<'sesi_chat' | 'transaksi' | 'katalog' | 'fish_market' | 'gift'>(
     'sesi_chat',
   );
+  const [merchantGiftFeedback, setMerchantGiftFeedback] = useState<{
+    npcId: NpcId;
+    reactionLine: string;
+    giftLabel: string;
+  } | null>(null);
   const [isClaimingHanaNear, setIsClaimingHanaNear] = useState<boolean>(false);
   const [hanaClaimResult, setHanaClaimResult] = useState<{
     ok: boolean;
@@ -491,11 +522,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     }>
   >([]);
   const chatScrollEndRef = useRef<HTMLDivElement | null>(null);
-  // Hana voice chat (Gemini Live test): Hana's chat tab only, never Kai's.
-  const [hanaVoiceState, setHanaVoiceState] = useState<'off' | 'connecting' | 'live'>('off');
-  const [hanaVoiceNote, setHanaVoiceNote] = useState<string | null>(null);
-  const hanaVoiceSessionRef = useRef<HanaVoiceChatSession | null>(null);
-  const hanaVoiceStartCancelledRef = useRef<boolean>(false);
   const [exchangeLulAmountStr, setExchangeLulAmountStr] = useState<string>('0');
   const [cryptoSwapInputStr, setCryptoSwapInputStr] = useState<string>('0.25');
   const [lastCryptoSwapReceipt, setLastCryptoSwapReceipt] =
@@ -1275,7 +1301,37 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         },
       );
 
+    const activeNpcId: NpcId = merchantLocation === 'beach_house' ? 'kai' : 'hana';
+    const isKaiTradeNegotiating =
+      merchantLocation === 'beach_house' &&
+      tradePhaseRef.current === 'offering' &&
+      Boolean(tradeSessionRef.current);
+    const isMerchantTransactionQuery =
+      isKaiTradeNegotiating ||
+      Boolean(localTxIntent) ||
+      (merchantLocation === 'lobby_cafe' && isHanaHousingTopicQuery(text));
+
     void (async () => {
+      if (!isMerchantTransactionQuery) {
+        const closenessStore = npcClosenessStore ?? createEmptyNpcClosenessStore();
+        const chatResult = await sendNpcChatMessage({
+          npcId: activeNpcId,
+          message: text,
+          history: nextHistory.slice(-10).map((h) => ({ role: h.role, text: h.text })),
+          closenessBand: getNpcClosenessBand(closenessStore, activeNpcId),
+          canLongConversation: canLongConversation(closenessStore, activeNpcId),
+          playerName: citizenDisplayName || undefined,
+        });
+        if (activeNpcRequestIdRef.current !== reqId) return;
+        setIsNpcThinking(false);
+        onNpcConversationTurn?.(activeNpcId, chatResult.closenessDelta, chatResult.emotion);
+        triggerNpcSpeech(chatResult.ok && chatResult.reply.trim() ? chatResult.reply.trim() : fallbackReply());
+        window.setTimeout(() => {
+          chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }, 40);
+        return;
+      }
+
       try {
         const res = await fetch(resolveApiUrl('/api/npc-agent'), {
           method: 'POST',
@@ -1400,6 +1456,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
           if (!move) {
             resolveAndOpenChatTx(data.action);
           }
+          onNpcConversationTurn?.(activeNpcId, 1, 'happy');
           triggerNpcSpeech(data.reply.trim());
         } else {
           const resolved = resolveAndOpenChatTx(null);
@@ -1442,143 +1499,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   }, [activeModalMode]);
 
   const exchangeQuote = evaluateLulToCyonExchangeQuote(marketState);
-
-  // Hana voice chat (Gemini Live test): stop any live voice session when the
-  // merchant switches away from Hana, and tear it down on unmount.
-  useEffect(() => {
-    if (merchantLocation !== 'lobby_cafe' && hanaVoiceSessionRef.current) {
-      hanaVoiceSessionRef.current.stop();
-      hanaVoiceSessionRef.current = null;
-      setHanaVoiceState('off');
-    }
-  }, [merchantLocation]);
-
-  useEffect(() => {
-    return () => {
-      hanaVoiceStartCancelledRef.current = true;
-      hanaVoiceSessionRef.current?.stop();
-      hanaVoiceSessionRef.current = null;
-    };
-  }, []);
-
-  const stopHanaVoice = () => {
-    hanaVoiceSessionRef.current?.stop();
-    hanaVoiceSessionRef.current = null;
-    setHanaVoiceState('off');
-  };
-
-  const handleToggleHanaVoice = async () => {
-    soundEngine.playUiClick();
-    if (hanaVoiceState !== 'off') {
-      // Stop a live session, or cancel a connection still being set up.
-      hanaVoiceStartCancelledRef.current = true;
-      stopHanaVoice();
-      return;
-    }
-    setHanaVoiceNote(null);
-    setHanaVoiceState('connecting');
-    hanaVoiceStartCancelledRef.current = false;
-    const catalogSnapshot = MERCHANT_CATALOG_ITEMS.map((item) => {
-      const p = evaluateMerchantItemQuote(marketState, item);
-      return {
-        id: item.id,
-        name: item.name,
-        category: item.category,
-        currency: item.currency,
-        buyPrice: p.buyPrice,
-        stock: p.stock,
-      };
-    });
-    const session = await startHanaVoiceChat({
-      liveState: {
-        citizenDisplayName,
-        playerNearAccount,
-        walletConnected,
-        lulBalance,
-        cyonBalance,
-        respiteBalance,
-        nearBalance: nearTestnetBalance,
-        hasHouseOwnership,
-        hanaWelcomeNearClaimed: Boolean(hanaWelcomeNearClaimed || hanaClaimResult?.ok),
-        caughtFishCount: caughtFishBucket.length,
-        recruitedFamilyCount: recruitedFamilyMembers.length,
-        simulatedDay: marketState.dayCounter,
-        shopCyonReserve: marketState.treasuryCyon,
-        isShopBroke: marketState.isShopBroke,
-        lulCostFor10Cyon: exchangeQuote.lulCostFor10Cyon,
-        cyonGranted: exchangeQuote.cyonGranted,
-        investorDiscountActive: marketState.investorDiscountActive,
-        fishSalesStats: fishSalesStats
-          ? {
-              topSale: fishSalesStats.topSale
-                ? {
-                    speciesName: fishSalesStats.topSale.speciesName,
-                    weightKg: fishSalesStats.topSale.weightKg,
-                    priceRespite: fishSalesStats.topSale.priceRespite,
-                    buyerAccount: fishSalesStats.topSale.buyerAccount,
-                    sellerAccount: fishSalesStats.topSale.sellerAccount,
-                  }
-                : null,
-              recentSale: fishSalesStats.recentSale
-                ? {
-                    speciesName: fishSalesStats.recentSale.speciesName,
-                    weightKg: fishSalesStats.recentSale.weightKg,
-                    priceRespite: fishSalesStats.recentSale.priceRespite,
-                    buyerAccount: fishSalesStats.recentSale.buyerAccount,
-                    sellerAccount: fishSalesStats.recentSale.sellerAccount,
-                  }
-                : null,
-              totalSalesCount: fishSalesStats.totalSalesCount,
-            }
-          : null,
-        fishMarketListings: fishMarketListings.slice(0, 8).map((l) => ({
-          speciesName: l.speciesName,
-          rarity: l.rarity,
-          weightKg: l.weightKg,
-          priceRespite: l.priceRespite,
-          sellerNearAccount: l.sellerNearAccount,
-        })),
-        catalogSnapshot,
-      },
-      onTranscript: (speaker, text) => {
-        const trimmed = text.trim();
-        if (!trimmed) return;
-        setChatHistory((prev) => [
-          ...prev.slice(-14),
-          {
-            id: `voice-${speaker === 'player' ? 'u' : 'npc'}-${Date.now()}-${Math.random()
-              .toString(36)
-              .slice(2, 6)}`,
-            role: speaker === 'player' ? ('player' as const) : ('npc' as const),
-            text: trimmed,
-          },
-        ]);
-      },
-      onStatus: (status) => {
-        if (status === 'live') {
-          setHanaVoiceState('live');
-        } else if (status === 'denied') {
-          setHanaVoiceNote(
-            'Voice is off because the microphone is not available. You can keep typing to Hana here.',
-          );
-          setHanaVoiceState('off');
-        } else if (status === 'error') {
-          hanaVoiceSessionRef.current = null;
-          setHanaVoiceState('off');
-        }
-      },
-    });
-    if (hanaVoiceStartCancelledRef.current) {
-      session?.stop();
-      return;
-    }
-    if (session) {
-      hanaVoiceSessionRef.current = session;
-      setHanaVoiceState('live');
-    } else {
-      setHanaVoiceState('off');
-    }
-  };
 
   if (activeModalMode === 'house_interior') {
     const ownedFurniture = MERCHANT_CATALOG_ITEMS.filter(
@@ -2283,6 +2203,25 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               <span>Fish ({caughtFishBucket.length})</span>
             </button>
           )}
+
+          {onGiveNpcOwnedGift && (
+            <button
+              type="button"
+              data-merchant-gift-tab="true"
+              onClick={() => {
+                soundEngine.playUiClick();
+                setActiveTab('gift');
+              }}
+              className={`px-3 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-all ${
+                activeTab === 'gift'
+                  ? 'bg-emerald-500 text-white shadow-sm'
+                  : 'bg-white/10 hover:bg-white/18 text-white/75 hover:text-white border border-white/10'
+              }`}
+            >
+              <Gift className="w-3 h-3" aria-hidden="true" />
+              <span>Gift</span>
+            </button>
+          )}
         </div>
 
         {/* Tab Content Viewport (No bottom footer) */}
@@ -2838,31 +2777,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       {prompt}
                     </button>
                   ))}
-                  {merchantLocation === 'lobby_cafe' && (
-                    <button
-                      type="button"
-                      data-hana-voice-btn="true"
-                      onClick={() => void handleToggleHanaVoice()}
-                      className={`px-2.5 py-1 rounded-full border text-[10px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-colors shrink-0 ${
-                        hanaVoiceState === 'live'
-                          ? 'bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-200 border-emerald-400/40'
-                          : 'bg-white/10 hover:bg-white/18 text-white/90 border-white/12'
-                      }`}
-                    >
-                      {hanaVoiceState === 'live' ? (
-                        <MicOff className="w-3 h-3" aria-hidden="true" />
-                      ) : (
-                        <Mic className="w-3 h-3" aria-hidden="true" />
-                      )}
-                      <span>
-                        {hanaVoiceState === 'live'
-                          ? 'Stop voice'
-                          : hanaVoiceState === 'connecting'
-                            ? 'Connecting...'
-                            : 'Voice'}
-                      </span>
-                    </button>
-                  )}
                   <button
                     type="button"
                     data-chat-clear-btn="true"
@@ -2873,16 +2787,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     <span>Clear chat</span>
                   </button>
                 </div>
-                {merchantLocation === 'lobby_cafe' && (
-                  <div className="space-y-1">
-                    <p className="text-[10px] leading-snug text-white/60">
-                      Hana needs your microphone so you can talk to her.
-                    </p>
-                    {hanaVoiceNote && (
-                      <p className="text-[10px] leading-snug text-amber-200">{hanaVoiceNote}</p>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -4309,6 +4213,211 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               </div>
             </div>
           )}
+          {activeTab === 'gift' && onGiveNpcOwnedGift && (() => {
+            const giftNpcId: NpcId = merchantLocation === 'beach_house' ? 'kai' : 'hana';
+            const giftNpcName = giftNpcId === 'kai' ? 'Kai' : 'Hana';
+            const closenessStore = npcClosenessStore ?? createEmptyNpcClosenessStore();
+            const alreadyGiftedToday = !canGiftNpcToday(closenessStore, giftNpcId);
+            const cafeItems = Array.from(new Set(ownedCafeFoodIds))
+              .map((id) => getGiftCatalogItem(id))
+              .filter(
+                (item): item is NonNullable<typeof item> =>
+                  Boolean(item && item.category === 'cafe_food'),
+              );
+            const apparelItems = Array.from(new Set(ownedApparelIds))
+              .map((id) => getGiftCatalogItem(id))
+              .filter(
+                (item): item is NonNullable<typeof item> =>
+                  Boolean(item && item.category === 'fashion_apparel'),
+              );
+            const furnitureItems = Array.from(new Set(ownedItemIds))
+              .map((id) => getGiftCatalogItem(id))
+              .filter(
+                (item): item is NonNullable<typeof item> =>
+                  Boolean(item && item.category === 'furniture'),
+              );
+            const activeGiftFeedback =
+              merchantGiftFeedback && merchantGiftFeedback.npcId === giftNpcId
+                ? merchantGiftFeedback
+                : null;
+            const hasAnyGift =
+              caughtFishBucket.length > 0 ||
+              cafeItems.length > 0 ||
+              apparelItems.length > 0 ||
+              furnitureItems.length > 0;
+
+            const handleGive = (
+              itemInput: GiftItemInput,
+              giftLabel: string,
+              fishInstanceId?: string,
+            ) => {
+              soundEngine.playUiClick();
+              const out = onGiveNpcOwnedGift(giftNpcId, itemInput, fishInstanceId);
+              setMerchantGiftFeedback({
+                npcId: giftNpcId,
+                reactionLine: out.reactionLine,
+                giftLabel,
+              });
+            };
+
+            return (
+              <div className="space-y-3">
+                <div className="p-3 rounded-2xl bg-white/10 border border-white/15 text-xs font-semibold text-white/90">
+                  {alreadyGiftedToday
+                    ? `You already gave ${giftNpcName} a gift today.`
+                    : `Choose an item to give ${giftNpcName} today.`}
+                </div>
+
+                {activeGiftFeedback && (
+                  <div className="p-3 rounded-2xl bg-white/12 border border-sky-300/35 space-y-1">
+                    <div className="text-[10.5px] font-medium text-white/65">
+                      {activeGiftFeedback.giftLabel}
+                    </div>
+                    <p className="text-xs font-medium text-white/95 leading-relaxed">
+                      “{activeGiftFeedback.reactionLine}”
+                    </p>
+                  </div>
+                )}
+
+                {!hasAnyGift && (
+                  <div className="p-3 rounded-2xl bg-white/8 border border-dashed border-white/20 text-xs font-medium text-white/65">
+                    Pick up fish, cafe treats, clothing, or furniture around town to share as a gift.
+                  </div>
+                )}
+
+                {caughtFishBucket.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[10.5px] font-semibold text-white/65 px-0.5">
+                      Fresh Catch ({caughtFishBucket.length})
+                    </div>
+                    <div className="grid grid-cols-1 gap-2">
+                      {caughtFishBucket.slice(0, 8).map((fish) => (
+                        <button
+                          key={fish.id}
+                          type="button"
+                          disabled={alreadyGiftedToday}
+                          onClick={() =>
+                            handleGive(
+                              { speciesId: fish.speciesId, isTrophy: fish.isTrophy },
+                              `${fish.speciesName} (${fish.weightKg.toFixed(1)}kg)`,
+                              fish.id,
+                            )
+                          }
+                          className={`p-2.5 rounded-2xl border text-left flex items-center justify-between gap-2 transition-all ${
+                            alreadyGiftedToday
+                              ? 'bg-white/5 border-white/10 opacity-45 cursor-not-allowed'
+                              : 'bg-white/10 hover:bg-white/18 border-white/15 hover:border-sky-300/50 cursor-pointer'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-white truncate">
+                              {fish.speciesName}
+                            </div>
+                            <div className="text-[10px] text-white/60">
+                              {fish.rarity} · {fish.weightKg.toFixed(1)}kg
+                            </div>
+                          </div>
+                          <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-semibold shrink-0">
+                            Give
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {cafeItems.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[10.5px] font-semibold text-white/65 px-0.5">
+                      Cafe Food &amp; Drinks ({cafeItems.length})
+                    </div>
+                    <div className="grid grid-cols-1 gap-2">
+                      {cafeItems.map((item) => (
+                        <button
+                          key={item.itemId}
+                          type="button"
+                          disabled={alreadyGiftedToday}
+                          onClick={() => handleGive(item.itemId, item.name)}
+                          className={`p-2.5 rounded-2xl border text-left flex items-center justify-between gap-2 transition-all ${
+                            alreadyGiftedToday
+                              ? 'bg-white/5 border-white/10 opacity-45 cursor-not-allowed'
+                              : 'bg-white/10 hover:bg-white/18 border-white/15 hover:border-sky-300/50 cursor-pointer'
+                          }`}
+                        >
+                          <div className="text-xs font-semibold text-white truncate">
+                            {item.name}
+                          </div>
+                          <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-semibold shrink-0">
+                            Give
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {apparelItems.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[10.5px] font-semibold text-white/65 px-0.5">
+                      Fashion &amp; Apparel ({apparelItems.length})
+                    </div>
+                    <div className="grid grid-cols-1 gap-2">
+                      {apparelItems.slice(0, 8).map((item) => (
+                        <button
+                          key={item.itemId}
+                          type="button"
+                          disabled={alreadyGiftedToday}
+                          onClick={() => handleGive(item.itemId, item.name)}
+                          className={`p-2.5 rounded-2xl border text-left flex items-center justify-between gap-2 transition-all ${
+                            alreadyGiftedToday
+                              ? 'bg-white/5 border-white/10 opacity-45 cursor-not-allowed'
+                              : 'bg-white/10 hover:bg-white/18 border-white/15 hover:border-sky-300/50 cursor-pointer'
+                          }`}
+                        >
+                          <div className="text-xs font-semibold text-white truncate">
+                            {item.name}
+                          </div>
+                          <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-semibold shrink-0">
+                            Give
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {furnitureItems.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[10.5px] font-semibold text-white/65 px-0.5">
+                      Furniture &amp; Decor ({furnitureItems.length})
+                    </div>
+                    <div className="grid grid-cols-1 gap-2">
+                      {furnitureItems.slice(0, 8).map((item) => (
+                        <button
+                          key={item.itemId}
+                          type="button"
+                          disabled={alreadyGiftedToday}
+                          onClick={() => handleGive(item.itemId, item.name)}
+                          className={`p-2.5 rounded-2xl border text-left flex items-center justify-between gap-2 transition-all ${
+                            alreadyGiftedToday
+                              ? 'bg-white/5 border-white/10 opacity-45 cursor-not-allowed'
+                              : 'bg-white/10 hover:bg-white/18 border-white/15 hover:border-sky-300/50 cursor-pointer'
+                          }`}
+                        >
+                          <div className="text-xs font-semibold text-white truncate">
+                            {item.name}
+                          </div>
+                          <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-semibold shrink-0">
+                            Give
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </div>
       </aside>

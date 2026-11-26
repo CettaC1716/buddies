@@ -7,7 +7,7 @@ import { handleFishAttestRequest } from './api/fish-attest.ts';
 import { handleHanaClaimAttestRequest } from './api/hana-claim-attest.ts';
 import { handleNearRelayerRequest } from './api/near-relayer.ts';
 import { handleNpcAgentRequest } from './api/npc-agent.ts';
-import { handleHanaVoiceTokenRequest } from './api/hana-voice-token.ts';
+import { handleNpcChatRequest } from './api/npc-chat.ts';
 import { handleNpcTradeRequest } from './api/npc-trade.ts';
 import { createRemoteAssetsProxyMiddleware } from './api/remote-assets-proxy.ts';
 import { handleCityFeedActionRequest, handleCityFeedGetRequest } from './api/city-feed.ts';
@@ -136,10 +136,10 @@ function nearSubAccountRelayerDevPlugin(): Plugin {
         'NPC agent',
       );
       mountJsonPostRoute(
-        '/api/hana-voice-token',
+        '/api/npc-chat',
         (body) =>
-          handleHanaVoiceTokenRequest(body as Parameters<typeof handleHanaVoiceTokenRequest>[0]),
-        'Hana voice token',
+          handleNpcChatRequest(body as Parameters<typeof handleNpcChatRequest>[0]),
+        'NPC chat',
       );
       mountJsonPostRoute('/api/fish-attest', handleFishAttestRequest, 'Fish attest');
       mountJsonPostRoute('/api/hana-claim-attest', handleHanaClaimAttestRequest, 'Hana claim attest');

@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Check, Heart, Trash2, Wifi, X } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Gift, Trash2, Wifi, X } from 'lucide-react';
 import { soundEngine } from '../game/audio';
 import {
   CITIZEN_DAILY_GIFT_CATALOG,
@@ -18,6 +18,21 @@ import {
 } from '../game/buddiesCitizenRoles';
 import type { CaughtFishItem } from '../game/buddiesFishingMarket';
 import {
+  canLongConversation,
+  createEmptyNpcClosenessStore,
+  getNpcClosenessBand,
+  resolveNpcId,
+  type NpcClosenessStore,
+  type NpcId,
+} from '../game/npcClosenessEngine';
+import {
+  canGiftNpcToday,
+  getGiftCatalogItem,
+  type GiftItemInput,
+} from '../game/npcGiftEngine';
+import type { NpcEmotionTag } from '../game/npcPersonaRegistry';
+import { sendNpcChatMessage } from '../game/npcTextChat';
+import {
   resolveNpcPhotoUrl,
   useNpcPortraitVersion,
 } from '../game/npcPortraitRegistry';
@@ -29,13 +44,24 @@ export interface CitizenGiftOutcome {
   pointsAwarded: number;
 }
 
+export interface NpcOwnedGiftOutcome {
+  accepted: boolean;
+  reactionLine: string;
+  itemName: string;
+}
+
 export interface CitizenDialogueModalProps {
   isOpen: boolean;
   citizenId: CitizenId | null;
   openSeq?: number;
   initialTab?: 'sesi_chat' | 'gift' | 'directory';
   friendshipStore: CitizenFriendshipStore;
+  npcClosenessStore?: NpcClosenessStore;
   caughtFishBucket: readonly CaughtFishItem[];
+  ownedApparelIds?: readonly string[];
+  ownedMerchantItemIds?: readonly string[];
+  ownedCafeFoodIds?: readonly string[];
+  playerName?: string;
   isRaining: boolean;
   daytimePhase?: 'day' | 'evening' | 'night';
   talkedBonusJustAwarded?: boolean;
@@ -44,6 +70,16 @@ export interface CitizenDialogueModalProps {
   onClose: () => void;
   onGiveCatalogGift: (citizenId: CitizenId, giftId: string) => CitizenGiftOutcome;
   onGiveFishGift: (citizenId: CitizenId, fish: CaughtFishItem) => CitizenGiftOutcome;
+  onGiveNpcOwnedGift?: (
+    npcId: NpcId,
+    itemInput: GiftItemInput,
+    fishInstanceId?: string,
+  ) => NpcOwnedGiftOutcome;
+  onNpcConversationTurn?: (
+    npcId: NpcId,
+    closenessDelta: number,
+    emotion: NpcEmotionTag,
+  ) => void;
   onVisitDirectoryCitizen: (profile: CitizenProfile) => void;
 }
 
@@ -55,33 +91,28 @@ interface CitizenChatEntry {
   text: string;
 }
 
-const TIER_PILL_STYLE: Record<CitizenGiftReactionTier, string> = {
-  loved: 'bg-pink-100 text-pink-700 border-pink-200/80',
-  liked: 'bg-sky-100 text-sky-700 border-sky-200/80',
-  neutral: 'bg-amber-100 text-amber-800 border-amber-200/80',
-};
-
-const TIER_LABEL: Record<CitizenGiftReactionTier, string> = {
-  loved: 'Loved gift!',
-  liked: 'Liked gift',
-  neutral: 'Thank you',
-};
-
 export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   isOpen,
   citizenId,
   openSeq = 0,
   initialTab = 'sesi_chat',
   friendshipStore,
+  npcClosenessStore,
   caughtFishBucket,
+  ownedApparelIds = [],
+  ownedMerchantItemIds = [],
+  ownedCafeFoodIds = [],
+  playerName = '',
   isRaining,
   daytimePhase = 'day',
-  talkedBonusJustAwarded = false,
+  talkedBonusJustAwarded: _talkedBonusJustAwarded = false,
   playerBubbleBgColor: _playerBubbleBgColor = '#fef9c3',
   playerBubbleTextColor: _playerBubbleTextColor = '#0f172a',
   onClose,
   onGiveCatalogGift,
   onGiveFishGift,
+  onGiveNpcOwnedGift,
+  onNpcConversationTurn,
   onVisitDirectoryCitizen,
 }) => {
   useNpcPortraitVersion();
@@ -89,25 +120,51 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   const [chatHistory, setChatHistory] = useState<CitizenChatEntry[]>([]);
   const [npcFullText, setNpcFullText] = useState<string>('');
   const [npcTypedText, setNpcTypedText] = useState<string>('');
+  const [isNpcThinking, setIsNpcThinking] = useState<boolean>(false);
   const [giftFeedback, setGiftFeedback] = useState<{
     citizenId: string;
-    outcome: CitizenGiftOutcome;
+    accepted: boolean;
+    reactionLine: string;
     giftLabel: string;
   } | null>(null);
 
   const chatScrollEndRef = useRef<HTMLDivElement | null>(null);
   const npcFullTextRef = useRef<string>('');
   npcFullTextRef.current = npcFullText;
+  const activeRequestIdRef = useRef<number>(0);
 
   const profile = citizenId ? getCitizenProfile(citizenId) : null;
   const isNpcOpen = Boolean(isOpen && profile);
+  const namedNpcId: NpcId | null = profile ? resolveNpcId(profile.id) : null;
+  const effectiveClosenessStore = npcClosenessStore ?? createEmptyNpcClosenessStore();
 
   const todayKey = getCitizenLocalDateKey();
   const record = profile
     ? getCitizenFriendshipRecord(friendshipStore, profile.id)
     : null;
   const progress = getCitizenHeartProgress(record?.points ?? 0);
-  const giftedToday = record?.lastGiftDate === todayKey;
+  const giftedToday = namedNpcId
+    ? !canGiftNpcToday(effectiveClosenessStore, namedNpcId)
+    : record?.lastGiftDate === todayKey;
+
+  const ownedGiftSections = useMemo(() => {
+    const cafeItems = Array.from(new Set(ownedCafeFoodIds))
+      .map((id) => getGiftCatalogItem(id))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item && item.category === 'cafe_food'));
+
+    const apparelItems = Array.from(new Set(ownedApparelIds))
+      .map((id) => getGiftCatalogItem(id))
+      .filter(
+        (item): item is NonNullable<typeof item> =>
+          Boolean(item && item.category === 'fashion_apparel'),
+      );
+
+    const furnitureItems = Array.from(new Set(ownedMerchantItemIds))
+      .map((id) => getGiftCatalogItem(id))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item && item.category === 'furniture'));
+
+    return { cafeItems, apparelItems, furnitureItems };
+  }, [ownedApparelIds, ownedCafeFoodIds, ownedMerchantItemIds]);
 
   const buildOpeningGreeting = (targetProfile: CitizenProfile): string => {
     const rec = getCitizenFriendshipRecord(friendshipStore, targetProfile.id);
@@ -126,6 +183,8 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
 
   useEffect(() => {
     if (!isOpen || !profile) return;
+    activeRequestIdRef.current += 1;
+    setIsNpcThinking(false);
     setActiveTab(initialTab);
     setChatHistory([]);
     setGiftFeedback(null);
@@ -150,14 +209,6 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
     const trimmed = rawText.trim();
     if (!trimmed || !profile || !record) return;
     const prevNpcText = npcFullTextRef.current.trim();
-    const { reply } = generateCitizenChatReply({
-      citizenId: profile.id,
-      userText: trimmed,
-      hearts: progress.hearts,
-      timePhase: daytimePhase,
-      isRaining,
-      talkedCount: record.totalTalks + chatHistory.length,
-    });
     const nextEntries: CitizenChatEntry[] = [];
     if (prevNpcText) {
       nextEntries.push({
@@ -171,13 +222,67 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
       role: 'player',
       text: trimmed,
     });
-    setChatHistory((prev) => [...prev, ...nextEntries]);
-    setNpcFullText(reply);
-    setNpcTypedText('');
+    const updatedHistory = [...chatHistory, ...nextEntries];
+    setChatHistory(updatedHistory);
     setActiveTab('sesi_chat');
-    window.setTimeout(() => {
-      chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    }, 40);
+
+    // Ambient citizens (e.g. Raka) stay strictly scripted — NO AI calls.
+    if (!namedNpcId) {
+      const { reply } = generateCitizenChatReply({
+        citizenId: profile.id,
+        userText: trimmed,
+        hearts: progress.hearts,
+        timePhase: daytimePhase,
+        isRaining,
+        talkedCount: record.totalTalks + chatHistory.length,
+      });
+      setNpcFullText(reply);
+      setNpcTypedText('');
+      window.setTimeout(() => {
+        chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 40);
+      return;
+    }
+
+    // Named NPCs use server-side Gemini text chat (/api/npc-chat)
+    const reqId = activeRequestIdRef.current + 1;
+    activeRequestIdRef.current = reqId;
+    setIsNpcThinking(true);
+    setNpcFullText('');
+    setNpcTypedText('');
+
+    const band = getNpcClosenessBand(effectiveClosenessStore, namedNpcId);
+    const allowLong = canLongConversation(effectiveClosenessStore, namedNpcId);
+
+    void (async () => {
+      const result = await sendNpcChatMessage({
+        npcId: namedNpcId,
+        message: trimmed,
+        history: updatedHistory.slice(-10).map((h) => ({ role: h.role, text: h.text })),
+        closenessBand: band,
+        canLongConversation: allowLong,
+        playerName: playerName || undefined,
+      });
+      if (activeRequestIdRef.current !== reqId) return;
+      setIsNpcThinking(false);
+      const replyText =
+        result.ok && result.reply.trim()
+          ? result.reply.trim()
+          : generateCitizenChatReply({
+              citizenId: profile.id,
+              userText: trimmed,
+              hearts: progress.hearts,
+              timePhase: daytimePhase,
+              isRaining,
+              talkedCount: record.totalTalks + chatHistory.length,
+            }).reply;
+      onNpcConversationTurn?.(namedNpcId, result.closenessDelta, result.emotion);
+      setNpcFullText(replyText);
+      setNpcTypedText('');
+      window.setTimeout(() => {
+        chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 40);
+    })();
   };
 
   const submitPlayerQuestionRef = useRef(submitPlayerQuestion);
@@ -197,34 +302,62 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   const handleClearChat = () => {
     if (!profile) return;
     soundEngine.playUiClick();
+    activeRequestIdRef.current += 1;
+    setIsNpcThinking(false);
     setChatHistory([]);
     setNpcFullText(buildOpeningGreeting(profile));
     setNpcTypedText('');
   };
 
   const directoryEntries = listCitizenDirectory(friendshipStore, todayKey);
-  const totalTownHearts = directoryEntries.reduce((acc, entry) => acc + entry.progress.hearts, 0);
-  const maxTownHearts = directoryEntries.length * progress.maxHearts;
   const activeFeedback =
     profile && giftFeedback && giftFeedback.citizenId === profile.id ? giftFeedback : null;
 
   const quickPrompts = profile ? getCitizenQuickPrompts(profile.id) : [];
 
-  const handleCatalogGiftClick = (giftId: string, giftLabel: string) => {
-    if (!profile) return;
-    const outcome = onGiveCatalogGift(profile.id, giftId);
-    setGiftFeedback({ citizenId: profile.id, outcome, giftLabel });
+  const handleOwnedGiftClick = (
+    itemInput: GiftItemInput,
+    giftLabel: string,
+    fishInstanceId?: string,
+  ) => {
+    if (!profile || !namedNpcId || !onGiveNpcOwnedGift) return;
+    soundEngine.playUiClick();
+    const outcome = onGiveNpcOwnedGift(namedNpcId, itemInput, fishInstanceId);
+    setGiftFeedback({
+      citizenId: profile.id,
+      accepted: outcome.accepted,
+      reactionLine: outcome.reactionLine,
+      giftLabel,
+    });
   };
 
-  const handleFishGiftClick = (fish: CaughtFishItem) => {
+  const handleAmbientCatalogGiftClick = (giftId: string, giftLabel: string) => {
+    if (!profile) return;
+    const outcome = onGiveCatalogGift(profile.id, giftId);
+    setGiftFeedback({
+      citizenId: profile.id,
+      accepted: outcome.accepted,
+      reactionLine: outcome.reactionLine,
+      giftLabel,
+    });
+  };
+
+  const handleAmbientFishGiftClick = (fish: CaughtFishItem) => {
     if (!profile) return;
     const outcome = onGiveFishGift(profile.id, fish);
     setGiftFeedback({
       citizenId: profile.id,
-      outcome,
+      accepted: outcome.accepted,
+      reactionLine: outcome.reactionLine,
       giftLabel: `${fish.speciesName} (${fish.weightKg.toFixed(1)}kg)`,
     });
   };
+
+  const hasAnyOwnedNamedGift =
+    caughtFishBucket.length > 0 ||
+    ownedGiftSections.cafeItems.length > 0 ||
+    ownedGiftSections.apparelItems.length > 0 ||
+    ownedGiftSections.furnitureItems.length > 0;
 
   return (
     <aside
@@ -242,7 +375,7 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
     >
       {profile && (
         <div className="relative flex-1 flex flex-col rounded-[32px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] text-white overflow-hidden min-h-0">
-          {/* Top Status Strip: BLITZ OS + Close Icon (replaces expand button) */}
+          {/* Top Status Strip: CERRIA OS + Close Icon */}
           <div className="shrink-0 flex items-center justify-between text-[10.5px] font-medium px-4 pt-3 pb-1.5 text-white/90">
             <div className="flex items-center gap-1.5">
               <Wifi className="w-3 h-3 text-white/85" aria-hidden="true" />
@@ -263,7 +396,7 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
             </button>
           </div>
 
-          {/* Active Chat Person Header */}
+          {/* Active Chat Person Header (no visible closeness indicators) */}
           <div className="shrink-0 flex items-center justify-between gap-2.5 px-3.5 py-2 border-b border-white/12">
             <div className="flex items-center gap-2.5 min-w-0">
               <img
@@ -281,19 +414,7 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                 </div>
               </div>
             </div>
-
-            <span
-              title={`${progress.tierLabel} (${progress.points}/${progress.nextHeartPoints} pts)`}
-              className="px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-300/30 text-rose-200 text-[10px] font-semibold inline-flex items-center gap-1 shrink-0"
-            >
-              <Heart className="w-3 h-3 fill-rose-400 text-rose-400" aria-hidden="true" />
-              <span>
-                {progress.hearts}/{progress.maxHearts}
-              </span>
-              {talkedBonusJustAwarded && (
-                <span className="ml-0.5 text-emerald-300 font-bold">+25</span>
-              )}
-            </span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.75)] shrink-0" />
           </div>
 
           {/* Compact Dark Glass Mode Tabs */}
@@ -320,13 +441,14 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                 soundEngine.playUiClick();
                 setActiveTab('gift');
               }}
-              className={`px-3 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-all ${
+              className={`px-3 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-all ${
                 activeTab === 'gift'
                   ? 'bg-emerald-500 text-white shadow-sm'
                   : 'bg-white/10 hover:bg-white/18 text-white/75 hover:text-white border border-white/10'
               }`}
             >
-              <span>Gift ({giftedToday ? '1/1' : '0/1'})</span>
+              <Gift className="w-3 h-3" aria-hidden="true" />
+              <span>Gift</span>
             </button>
 
             <button
@@ -346,7 +468,7 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
             </button>
           </div>
 
-          {/* Tab Viewport (No bottom footer) */}
+          {/* Tab Viewport */}
           <div className="flex-1 flex flex-col overflow-hidden bg-transparent min-h-0">
             {activeTab === 'sesi_chat' && (
               <div className="flex-1 flex flex-col justify-between min-h-0">
@@ -387,7 +509,7 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                     ),
                   )}
 
-                  {/* Active NPC Typewriter Speech Bubble */}
+                  {/* Active NPC Typewriter Speech Bubble or Thinking Indicator */}
                   <div className="flex flex-col items-start">
                     <div className="flex items-center gap-1.5 mb-1 px-1.5 flex-wrap">
                       <span className="text-[10px] font-semibold text-white/75">
@@ -401,12 +523,18 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                       data-npc-chat-bubble="true"
                       className="max-w-[85%] px-3.5 py-2.5 rounded-2xl rounded-tl-sm bg-[#eef0f4]/92 text-slate-900 border border-white/80 shadow-sm"
                     >
-                      <p className="text-xs font-medium leading-relaxed text-slate-900">
-                        {npcTypedText}
-                        {npcTypedText.length < npcFullText.length && (
-                          <span className="inline-block w-1.5 h-3.5 rounded-full bg-sky-500 ml-0.5 align-middle animate-pulse" />
-                        )}
-                      </p>
+                      {isNpcThinking ? (
+                        <p className="text-xs font-medium leading-relaxed text-slate-500 italic">
+                          Thinking...
+                        </p>
+                      ) : (
+                        <p className="text-xs font-medium leading-relaxed text-slate-900">
+                          {npcTypedText}
+                          {npcTypedText.length < npcFullText.length && (
+                            <span className="inline-block w-1.5 h-3.5 rounded-full bg-sky-500 ml-0.5 align-middle animate-pulse" />
+                          )}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -420,11 +548,12 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                       <button
                         key={prompt}
                         type="button"
+                        disabled={isNpcThinking}
                         onClick={() => {
                           soundEngine.playUiClick();
                           submitPlayerQuestion(prompt);
                         }}
-                        className="w-full text-left px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/18 border border-white/12 text-white/90 text-[11px] font-medium cursor-pointer transition-colors"
+                        className="w-full text-left px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/18 border border-white/12 text-white/90 text-[11px] font-medium cursor-pointer transition-colors disabled:opacity-50"
                       >
                         {prompt}
                       </button>
@@ -447,128 +576,246 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
 
             {activeTab === 'gift' && (
               <div className="flex-1 overflow-y-auto px-3.5 py-3 space-y-3 min-h-0">
-                <div className="p-3 rounded-2xl bg-white/10 border border-white/15 flex flex-wrap items-center justify-between gap-2">
+                <div className="p-3 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-between gap-2">
                   <div className="text-xs font-semibold text-white/90">
-                    Daily Gift:{' '}
-                    <span className={giftedToday ? 'text-emerald-300' : 'text-sky-300'}>
-                      {giftedToday ? '1 / 1 Gifted Today ✓' : '0 / 1 Available'}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {profile.favoriteTags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="text-[10px] font-medium text-rose-200/90"
-                      >
-                        ♥ {tag}
-                      </span>
-                    ))}
+                    {giftedToday
+                      ? `You already gave ${profile.name} a gift today.`
+                      : `Choose an item to give ${profile.name} today.`}
                   </div>
                 </div>
 
                 {activeFeedback && (
-                  <div className="p-3 rounded-2xl bg-white/12 border border-sky-300/35 space-y-1.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                          TIER_PILL_STYLE[activeFeedback.outcome.tier]
-                        }`}
-                      >
-                        {activeFeedback.outcome.accepted
-                          ? `${TIER_LABEL[activeFeedback.outcome.tier]} · +${activeFeedback.outcome.pointsAwarded} pts`
-                          : 'Daily limit'}
-                      </span>
-                      <span className="text-[10.5px] font-medium text-white/65">
-                        {activeFeedback.giftLabel}
-                      </span>
+                  <div className="p-3 rounded-2xl bg-white/12 border border-sky-300/35 space-y-1">
+                    <div className="text-[10.5px] font-medium text-white/65">
+                      {activeFeedback.giftLabel}
                     </div>
                     <p className="text-xs font-medium text-white/95 leading-relaxed">
-                      “{activeFeedback.outcome.reactionLine}”
+                      “{activeFeedback.reactionLine}”
                     </p>
                   </div>
                 )}
 
-                <div className="space-y-2">
-                  <div className="text-[10.5px] font-semibold text-white/65 px-0.5">
-                    Town Keepsakes &amp; Refreshments
-                  </div>
-                  <div className="grid grid-cols-1 gap-2">
-                    {CITIZEN_DAILY_GIFT_CATALOG.map((gift) => (
-                      <button
-                        key={gift.id}
-                        type="button"
-                        disabled={giftedToday}
-                        onClick={() => handleCatalogGiftClick(gift.id, gift.label)}
-                        className={`p-2.5 rounded-2xl border text-left flex items-center gap-2.5 transition-all ${
-                          giftedToday
-                            ? 'bg-white/5 border-white/10 opacity-45 cursor-not-allowed'
-                            : 'bg-white/10 hover:bg-white/18 border-white/15 hover:border-sky-300/50 cursor-pointer active:scale-[0.99]'
-                        }`}
-                      >
-                        <span className="w-8 h-8 rounded-xl bg-amber-400/20 border border-amber-300/30 flex items-center justify-center text-base shrink-0">
-                          {gift.emoji}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="text-xs font-semibold text-white truncate">
-                            {gift.label}
-                          </div>
-                          <div className="text-[10px] text-white/60 line-clamp-1">
-                            {gift.description}
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                {namedNpcId && onGiveNpcOwnedGift ? (
+                  <>
+                    {!hasAnyOwnedNamedGift && (
+                      <div className="p-3 rounded-2xl bg-white/8 border border-dashed border-white/20 text-xs font-medium text-white/65">
+                        Pick up fish, cafe treats, clothing, or furniture around town to share as a gift.
+                      </div>
+                    )}
 
-                <div className="space-y-2">
-                  <div className="text-[10.5px] font-semibold text-white/65 px-0.5">
-                    Fresh Catch ({caughtFishBucket.length} in Bucket)
-                  </div>
-                  {caughtFishBucket.length === 0 ? (
-                    <div className="p-3 rounded-2xl bg-white/8 border border-dashed border-white/20 text-xs font-medium text-white/65">
-                      Catch fish at NW Oasis Lake or East Beach to gift fresh fish!
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-2">
-                      {caughtFishBucket.slice(0, 8).map((fish) => (
-                        <button
-                          key={fish.id}
-                          type="button"
-                          disabled={giftedToday}
-                          onClick={() => handleFishGiftClick(fish)}
-                          className={`p-2.5 rounded-2xl border text-left flex items-center justify-between gap-2 transition-all ${
-                            giftedToday
-                              ? 'bg-white/5 border-white/10 opacity-45 cursor-not-allowed'
-                              : 'bg-white/10 hover:bg-white/18 border-white/15 hover:border-sky-300/50 cursor-pointer'
-                          }`}
-                        >
-                          <div className="min-w-0">
-                            <div className="text-xs font-semibold text-white truncate">
-                              🐟 {fish.speciesName}
+                    {caughtFishBucket.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="text-[10.5px] font-semibold text-white/65 px-0.5">
+                          Fresh Catch ({caughtFishBucket.length})
+                        </div>
+                        <div className="grid grid-cols-1 gap-2">
+                          {caughtFishBucket.slice(0, 8).map((fish) => (
+                            <button
+                              key={fish.id}
+                              type="button"
+                              disabled={giftedToday}
+                              onClick={() =>
+                                handleOwnedGiftClick(
+                                  { speciesId: fish.speciesId, isTrophy: fish.isTrophy },
+                                  `${fish.speciesName} (${fish.weightKg.toFixed(1)}kg)`,
+                                  fish.id,
+                                )
+                              }
+                              className={`p-2.5 rounded-2xl border text-left flex items-center justify-between gap-2 transition-all ${
+                                giftedToday
+                                  ? 'bg-white/5 border-white/10 opacity-45 cursor-not-allowed'
+                                  : 'bg-white/10 hover:bg-white/18 border-white/15 hover:border-sky-300/50 cursor-pointer'
+                              }`}
+                            >
+                              <div className="min-w-0">
+                                <div className="text-xs font-semibold text-white truncate">
+                                  {fish.speciesName}
+                                </div>
+                                <div className="text-[10px] text-white/60">
+                                  {fish.rarity} · {fish.weightKg.toFixed(1)}kg
+                                </div>
+                              </div>
+                              <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-semibold shrink-0">
+                                Give
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {ownedGiftSections.cafeItems.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="text-[10.5px] font-semibold text-white/65 px-0.5">
+                          Cafe Food &amp; Drinks ({ownedGiftSections.cafeItems.length})
+                        </div>
+                        <div className="grid grid-cols-1 gap-2">
+                          {ownedGiftSections.cafeItems.map((item) => (
+                            <button
+                              key={item.itemId}
+                              type="button"
+                              disabled={giftedToday}
+                              onClick={() => handleOwnedGiftClick(item.itemId, item.name)}
+                              className={`p-2.5 rounded-2xl border text-left flex items-center justify-between gap-2 transition-all ${
+                                giftedToday
+                                  ? 'bg-white/5 border-white/10 opacity-45 cursor-not-allowed'
+                                  : 'bg-white/10 hover:bg-white/18 border-white/15 hover:border-sky-300/50 cursor-pointer'
+                              }`}
+                            >
+                              <div className="text-xs font-semibold text-white truncate">
+                                {item.name}
+                              </div>
+                              <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-semibold shrink-0">
+                                Give
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {ownedGiftSections.apparelItems.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="text-[10.5px] font-semibold text-white/65 px-0.5">
+                          Fashion &amp; Apparel ({ownedGiftSections.apparelItems.length})
+                        </div>
+                        <div className="grid grid-cols-1 gap-2">
+                          {ownedGiftSections.apparelItems.slice(0, 8).map((item) => (
+                            <button
+                              key={item.itemId}
+                              type="button"
+                              disabled={giftedToday}
+                              onClick={() => handleOwnedGiftClick(item.itemId, item.name)}
+                              className={`p-2.5 rounded-2xl border text-left flex items-center justify-between gap-2 transition-all ${
+                                giftedToday
+                                  ? 'bg-white/5 border-white/10 opacity-45 cursor-not-allowed'
+                                  : 'bg-white/10 hover:bg-white/18 border-white/15 hover:border-sky-300/50 cursor-pointer'
+                              }`}
+                            >
+                              <div className="text-xs font-semibold text-white truncate">
+                                {item.name}
+                              </div>
+                              <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-semibold shrink-0">
+                                Give
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {ownedGiftSections.furnitureItems.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="text-[10.5px] font-semibold text-white/65 px-0.5">
+                          Furniture &amp; Decor ({ownedGiftSections.furnitureItems.length})
+                        </div>
+                        <div className="grid grid-cols-1 gap-2">
+                          {ownedGiftSections.furnitureItems.slice(0, 8).map((item) => (
+                            <button
+                              key={item.itemId}
+                              type="button"
+                              disabled={giftedToday}
+                              onClick={() => handleOwnedGiftClick(item.itemId, item.name)}
+                              className={`p-2.5 rounded-2xl border text-left flex items-center justify-between gap-2 transition-all ${
+                                giftedToday
+                                  ? 'bg-white/5 border-white/10 opacity-45 cursor-not-allowed'
+                                  : 'bg-white/10 hover:bg-white/18 border-white/15 hover:border-sky-300/50 cursor-pointer'
+                              }`}
+                            >
+                              <div className="text-xs font-semibold text-white truncate">
+                                {item.name}
+                              </div>
+                              <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-semibold shrink-0">
+                                Give
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <div className="text-[10.5px] font-semibold text-white/65 px-0.5">
+                        Town Keepsakes &amp; Refreshments
+                      </div>
+                      <div className="grid grid-cols-1 gap-2">
+                        {CITIZEN_DAILY_GIFT_CATALOG.map((gift) => (
+                          <button
+                            key={gift.id}
+                            type="button"
+                            disabled={giftedToday}
+                            onClick={() => handleAmbientCatalogGiftClick(gift.id, gift.label)}
+                            className={`p-2.5 rounded-2xl border text-left flex items-center gap-2.5 transition-all ${
+                              giftedToday
+                                ? 'bg-white/5 border-white/10 opacity-45 cursor-not-allowed'
+                                : 'bg-white/10 hover:bg-white/18 border-white/15 hover:border-sky-300/50 cursor-pointer active:scale-[0.99]'
+                            }`}
+                          >
+                            <span className="w-8 h-8 rounded-xl bg-amber-400/20 border border-amber-300/30 flex items-center justify-center text-base shrink-0">
+                              {gift.emoji}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs font-semibold text-white truncate">
+                                {gift.label}
+                              </div>
+                              <div className="text-[10px] text-white/60 line-clamp-1">
+                                {gift.description}
+                              </div>
                             </div>
-                            <div className="text-[10px] text-white/60">
-                              {fish.rarity} · {fish.weightKg.toFixed(1)}kg
-                            </div>
-                          </div>
-                          <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-semibold shrink-0">
-                            Give
-                          </span>
-                        </button>
-                      ))}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  )}
-                </div>
+
+                    <div className="space-y-2">
+                      <div className="text-[10.5px] font-semibold text-white/65 px-0.5">
+                        Fresh Catch ({caughtFishBucket.length} in Bucket)
+                      </div>
+                      {caughtFishBucket.length === 0 ? (
+                        <div className="p-3 rounded-2xl bg-white/8 border border-dashed border-white/20 text-xs font-medium text-white/65">
+                          Catch fish at NW Oasis Lake or East Beach to gift fresh fish!
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-2">
+                          {caughtFishBucket.slice(0, 8).map((fish) => (
+                            <button
+                              key={fish.id}
+                              type="button"
+                              disabled={giftedToday}
+                              onClick={() => handleAmbientFishGiftClick(fish)}
+                              className={`p-2.5 rounded-2xl border text-left flex items-center justify-between gap-2 transition-all ${
+                                giftedToday
+                                  ? 'bg-white/5 border-white/10 opacity-45 cursor-not-allowed'
+                                  : 'bg-white/10 hover:bg-white/18 border-white/15 hover:border-sky-300/50 cursor-pointer'
+                              }`}
+                            >
+                              <div className="min-w-0">
+                                <div className="text-xs font-semibold text-white truncate">
+                                  {fish.speciesName}
+                                </div>
+                                <div className="text-[10px] text-white/60">
+                                  {fish.rarity} · {fish.weightKg.toFixed(1)}kg
+                                </div>
+                              </div>
+                              <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-semibold shrink-0">
+                                Give
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
             {activeTab === 'directory' && (
               <div className="flex-1 overflow-y-auto px-3.5 py-3 space-y-2.5 min-h-0">
                 <div className="p-3 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-between gap-2">
-                  <div className="text-xs font-semibold text-white">Blitz City Citizens</div>
-                  <span className="text-[11px] font-semibold text-rose-300">
-                    {totalTownHearts} / {maxTownHearts} ♥
-                  </span>
+                  <div className="text-xs font-semibold text-white">Blitz City Residents</div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-2">
@@ -577,54 +824,35 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                     return (
                       <div
                         key={entry.profile.id}
-                        className={`p-3 rounded-2xl border flex flex-col justify-between gap-2 transition-all ${
+                        className={`p-3 rounded-2xl border flex items-start justify-between gap-2 transition-all ${
                           isCurrent
                             ? 'bg-sky-500/20 border-sky-300/50 ring-1 ring-sky-300/30'
                             : 'bg-white/10 border-white/15'
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <img
-                                src={resolveNpcPhotoUrl(entry.profile.id, 'avatar')}
-                                alt={entry.profile.name}
-                                draggable={false}
-                                className="w-7 h-7 rounded-full object-cover object-center ring-1 ring-white/25 shrink-0"
-                              />
-                              <span className="text-xs font-semibold text-white truncate">
-                                {entry.profile.name}
-                              </span>
-                            </div>
-                            <div className="text-[10px] text-white/60 truncate mt-0.5">
-                              {entry.profile.roleBadge} · {entry.profile.districtLabel}
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => onVisitDirectoryCitizen(entry.profile)}
-                            className="px-2.5 py-1 rounded-full bg-sky-500 hover:bg-sky-400 text-white text-[10px] font-semibold shadow-xs cursor-pointer transition-colors shrink-0"
-                          >
-                            Visit
-                          </button>
-                        </div>
-
-                        <div className="flex items-center gap-1 pt-1.5 border-t border-white/10">
-                          {Array.from({ length: entry.progress.maxHearts }).map((_, hIdx) => (
-                            <Heart
-                              key={hIdx}
-                              className={`w-3 h-3 ${
-                                hIdx < entry.progress.hearts
-                                  ? 'fill-rose-400 text-rose-400'
-                                  : 'fill-white/10 text-white/25'
-                              }`}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <img
+                              src={resolveNpcPhotoUrl(entry.profile.id, 'avatar')}
+                              alt={entry.profile.name}
+                              draggable={false}
+                              className="w-7 h-7 rounded-full object-cover object-center ring-1 ring-white/25 shrink-0"
                             />
-                          ))}
-                          <span className="ml-1 text-[10px] font-medium text-white/65 inline-flex items-center gap-0.5">
-                            {entry.talkedToday && <Check className="w-2.5 h-2.5 text-emerald-400" />}
-                            {entry.progress.points} pts
-                          </span>
+                            <span className="text-xs font-semibold text-white truncate">
+                              {entry.profile.name}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-white/60 truncate mt-0.5">
+                            {entry.profile.roleBadge} · {entry.profile.districtLabel}
+                          </div>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => onVisitDirectoryCitizen(entry.profile)}
+                          className="px-2.5 py-1 rounded-full bg-sky-500 hover:bg-sky-400 text-white text-[10px] font-semibold shadow-xs cursor-pointer transition-colors shrink-0"
+                        >
+                          Visit
+                        </button>
                       </div>
                     );
                   })}

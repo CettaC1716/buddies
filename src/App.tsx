@@ -259,6 +259,24 @@ import {
   type DailyMissionsState,
 } from './game/buddiesDailyMissions';
 import {
+  loadNpcClosenessStore,
+  recordNpcConversation,
+  saveNpcClosenessStore,
+  type NpcClosenessStore,
+  type NpcId,
+} from './game/npcClosenessEngine';
+import {
+  giveGiftToNpc,
+  type GiftItemInput,
+  type GiftReactionTier,
+} from './game/npcGiftEngine';
+import {
+  getNpcPersona,
+  type NpcEmotionTag,
+} from './game/npcPersonaRegistry';
+import { ensureAllNpcPersonasRegistered } from './game/personas/index';
+import { dispatchNpcEmotionReaction } from './game/npcTextChat';
+import {
   FAMILY_MEMBER_CONTRACT_PLANS,
   FAMILY_MEMBER_ORDER_SPECS,
   HOUSE_OWNERSHIP_PRICE_RESPITE,
@@ -1038,6 +1056,89 @@ export default function App() {
     (hud.nearWalletId || playerUid || 'guest').trim().toLowerCase() || 'guest';
   const dailyMissionsAccountRef = useRef<string>(dailyMissionsAccountKey);
   dailyMissionsAccountRef.current = dailyMissionsAccountKey;
+
+  const [npcClosenessStore, setNpcClosenessStore] = useState<NpcClosenessStore>(() => {
+    ensureAllNpcPersonasRegistered();
+    return loadNpcClosenessStore(dailyMissionsAccountKey);
+  });
+  const npcClosenessStoreRef = useRef<NpcClosenessStore>(npcClosenessStore);
+  npcClosenessStoreRef.current = npcClosenessStore;
+
+  useEffect(() => {
+    ensureAllNpcPersonasRegistered();
+    const loaded = loadNpcClosenessStore(dailyMissionsAccountKey);
+    npcClosenessStoreRef.current = loaded;
+    setNpcClosenessStore(loaded);
+  }, [dailyMissionsAccountKey]);
+
+  const handleNpcConversationTurn = useCallback(
+    (npcId: NpcId, closenessDelta: number, emotion: NpcEmotionTag) => {
+      const result = recordNpcConversation(npcClosenessStoreRef.current, npcId, {
+        closenessDelta,
+      });
+      npcClosenessStoreRef.current = result.store;
+      setNpcClosenessStore(result.store);
+      saveNpcClosenessStore(dailyMissionsAccountRef.current, result.store);
+      dispatchNpcEmotionReaction(npcId, emotion);
+    },
+    [],
+  );
+
+  const handleGiveNpcOwnedGift = useCallback(
+    (npcId: NpcId, itemInput: GiftItemInput, fishInstanceId?: string) => {
+      ensureAllNpcPersonasRegistered();
+      const res = giveGiftToNpc(npcClosenessStoreRef.current, npcId, itemInput);
+      const persona = getNpcPersona(npcId);
+      const pickPlainReaction = (tier: GiftReactionTier): string => {
+        const lines = persona?.giftReactionLines?.[tier];
+        if (lines && lines.length > 0) return lines[0];
+        if (tier === 'loved') return 'Thank you so much! I really love this.';
+        if (tier === 'liked') return 'That is really thoughtful of you, thank you!';
+        if (tier === 'disliked') return 'Thank you for bringing this by, though it is not quite my usual style.';
+        return 'Thank you for thinking of me!';
+      };
+
+      if (!res.accepted) {
+        return {
+          accepted: false,
+          reactionLine:
+            res.reason === 'already_gifted_today'
+              ? 'You already brought me a gift today. Let us save the next one for tomorrow!'
+              : 'Thanks, though I cannot take that item right now.',
+          itemName: res.itemName,
+        };
+      }
+
+      npcClosenessStoreRef.current = res.store;
+      setNpcClosenessStore(res.store);
+      saveNpcClosenessStore(dailyMissionsAccountRef.current, res.store);
+      if (fishInstanceId) {
+        setCaughtFishBucket((prev) => prev.filter((item) => item.id !== fishInstanceId));
+      }
+      const giftEmotion: NpcEmotionTag =
+        res.reactionTier === 'loved' || res.reactionTier === 'liked'
+          ? 'happy'
+          : res.reactionTier === 'disliked'
+            ? 'awkward'
+            : 'neutral';
+      dispatchNpcEmotionReaction(npcId, giftEmotion);
+      return {
+        accepted: true,
+        reactionLine: pickPlainReaction(res.reactionTier),
+        itemName: res.itemName,
+      };
+    },
+    [],
+  );
+
+  const ownedCafeFoodIds = useMemo(() => {
+    const ids: string[] = [];
+    if (cafeConsumerState.activeItem) ids.push(cafeConsumerState.activeItem.id);
+    for (const item of cafeConsumerState.queuedItems) {
+      ids.push(item.id);
+    }
+    return ids;
+  }, [cafeConsumerState.activeItem, cafeConsumerState.queuedItems]);
 
   const loadDailyMissionsFromStorage = useCallback((acctKey: string): DailyMissionsState => {
     const todayKey = getLocalDailyDateKey();
@@ -12843,6 +12944,11 @@ export default function App() {
         onMintFishAsNft={handleMintCaughtFishNft}
         onListFishNftOnMarket={handleListFishNftOnMarket}
         onBuyFishNftFromMarket={handleBuyFishNftFromMarket}
+        npcClosenessStore={npcClosenessStore}
+        ownedApparelIds={ownedApparelIds}
+        ownedCafeFoodIds={ownedCafeFoodIds}
+        onNpcConversationTurn={handleNpcConversationTurn}
+        onGiveNpcOwnedGift={handleGiveNpcOwnedGift}
       />
 
       {/* =====================================================================
@@ -14386,7 +14492,14 @@ export default function App() {
         openSeq={citizenOpenSeq}
         initialTab={citizenInitialTab}
         friendshipStore={citizenFriendshipStore}
+        npcClosenessStore={npcClosenessStore}
         caughtFishBucket={caughtFishBucket}
+        ownedApparelIds={ownedApparelIds}
+        ownedMerchantItemIds={ownedMerchantItemIds}
+        ownedCafeFoodIds={ownedCafeFoodIds}
+        playerName={playerDisplayName}
+        onNpcConversationTurn={handleNpcConversationTurn}
+        onGiveNpcOwnedGift={handleGiveNpcOwnedGift}
         isRaining={weatherCondition === 'hujan'}
         daytimePhase={
           lightingPreset === 'night'
