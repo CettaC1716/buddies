@@ -696,7 +696,15 @@ export function evaluateCityRentalLotConflict(
   const modelMinZ = MODEL_ESTATE_BASE_PLOT_SPEC.plotCenterZ - MODEL_ESTATE_DEPTH * 0.5;
   const modelMaxZ = MODEL_ESTATE_BASE_PLOT_SPEC.plotCenterZ + MODEL_ESTATE_DEPTH * 0.5;
 
+  // Only suppress for legacy Model Estate when an active Model Estate plot is actually present
+  // (after WS20 removes on-map houses in Safezone, Arena passes blueCommanderBases: [] so all 16 lots appear).
+  const hasActiveModelEstate =
+    blueCommanderBases === undefined
+      ? true
+      : blueCommanderBases.some((p) => Boolean(p && isCommanderBasePlotActive(p) && p.isModelEstate));
+
   const overlapsModelEstate =
+    hasActiveModelEstate &&
     lot.maxX > modelMinX &&
     lot.minX < modelMaxX &&
     lot.maxZ > modelMinZ &&
