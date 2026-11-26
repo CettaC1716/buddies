@@ -72,6 +72,10 @@ import {
   isFriendWith,
   type PlayerSocialGraph,
 } from '../game/buddiesSocialGraph';
+import {
+  resolveProfileDockActions,
+  resolvePublicChatSenderAction,
+} from '../game/publicChatNameTap';
 
 export interface NearbyEntityUser {
   id: number | string;
@@ -407,6 +411,8 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
   const [peopleSearchResults, setPeopleSearchResults] = useState<SearchedPlayerProfile[]>([]);
   const [isSearchingPeople, setIsSearchingPeople] = useState<boolean>(false);
   const [friendRequestStatusMsg, setFriendRequestStatusMsg] = useState<string | null>(null);
+  const [publicChatProfileDockUser, setPublicChatProfileDockUser] =
+    useState<NearbyEntityUser | null>(null);
   const lettersUnreadCount = letters.filter((l) => !l.isRead).length;
   const lettersNeedsAnswerCount = letters.filter((l) => letterNeedsAnswer(l)).length;
 
@@ -1682,15 +1688,52 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                         className={`flex flex-col ${isSelf ? 'items-end' : 'items-start'}`}
                       >
                         <div className="flex items-center gap-1.5 mb-1 px-1.5">
-                          <span
-                            className={`text-[10.5px] font-semibold ${
-                              isPhoneGlassMode ? 'text-white/80' : 'text-slate-500'
-                            }`}
-                          >
-                            {isSelf
+                          {(() => {
+                            const tapAction = resolvePublicChatSenderAction({
+                              msg,
+                              localPlayerName: playerName,
+                              localPlayerUid: playerUid,
+                              nearbyUsers,
+                            });
+                            const displaySender = isSelf
                               ? `${simplifyDisplayName(playerName)} (You)`
-                              : simplifyDisplayName(msg.senderName)}
-                          </span>
+                              : simplifyDisplayName(msg.senderName);
+                            if (tapAction.kind === 'none') {
+                              return (
+                                <span
+                                  className={`text-[10.5px] font-semibold ${
+                                    isPhoneGlassMode ? 'text-white/80' : 'text-slate-500'
+                                  }`}
+                                >
+                                  {displaySender}
+                                </span>
+                              );
+                            }
+                            return (
+                              <button
+                                type="button"
+                                data-public-chat-sender-btn={
+                                  tapAction.kind === 'npc_profile' ? 'npc' : 'player'
+                                }
+                                onClick={() => {
+                                  soundEngine.playUiClick();
+                                  if (tapAction.kind === 'npc_profile') {
+                                    setPublicChatProfileDockUser(null);
+                                    onOpenPlayerProfile?.(tapAction.npcEntity);
+                                  } else {
+                                    setPublicChatProfileDockUser(tapAction.user);
+                                  }
+                                }}
+                                className={`text-[10.5px] font-semibold cursor-pointer hover:underline focus:outline-none ${
+                                  isPhoneGlassMode
+                                    ? 'text-sky-200 hover:text-white'
+                                    : 'text-sky-700 hover:text-sky-900'
+                                }`}
+                              >
+                                {displaySender}
+                              </button>
+                            );
+                          })()}
                           <span
                             className={`text-[10px] ${
                               isPhoneGlassMode ? 'text-white/50' : 'text-slate-400'
@@ -1733,6 +1776,172 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                 )}
                 <div ref={publicEndRef} />
               </div>
+
+              {/* WS17: Compact Bottom Profile Dock overlaid on Public Chat feed */}
+              {publicChatProfileDockUser &&
+                (() => {
+                  const dockUser = publicChatProfileDockUser;
+                  const dockActions = resolveProfileDockActions({
+                    user: dockUser,
+                    socialGraph,
+                    privacySettings,
+                  });
+                  const cleanDockName = simplifyDisplayName(dockUser.name);
+                  const roleSpec = dockUser.roleBadge
+                    ? getPlayerRoleBadgeSpec(dockUser.roleBadge)
+                    : null;
+                  return (
+                    <div
+                      data-public-chat-profile-dock="true"
+                      className="mt-2 rounded-2xl bg-[#111827]/95 border border-white/20 text-white shadow-[0_-10px_30px_rgba(0,0,0,0.5)] backdrop-blur-xl p-3 space-y-2.5 shrink-0"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-sky-400 to-indigo-600 border border-white/30 flex items-center justify-center text-xs font-extrabold text-white shrink-0">
+                            {cleanDockName.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold text-white truncate">
+                                {cleanDockName}
+                              </span>
+                              {dockUser.roleBadge && (
+                                <RoleBadgeCircle roleId={dockUser.roleBadge} size="sm" />
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[10px] text-white/65">
+                              {roleSpec && <span>{roleSpec.label}</span>}
+                              {dockActions.friendshipStatus === 'friend' && (
+                                <span className="px-1.5 py-0.2 rounded-full bg-sky-500/25 text-sky-200 border border-sky-300/35 font-semibold">
+                                  Friend
+                                </span>
+                              )}
+                              {dockActions.friendshipStatus === 'pending' && (
+                                <span className="px-1.5 py-0.2 rounded-full bg-amber-500/25 text-amber-200 border border-amber-300/35 font-semibold">
+                                  Request Sent
+                                </span>
+                              )}
+                              {dockActions.friendshipStatus === 'following' && (
+                                <span className="px-1.5 py-0.2 rounded-full bg-emerald-500/25 text-emerald-200 border border-emerald-300/35 font-semibold">
+                                  Following
+                                </span>
+                              )}
+                              {dockActions.isBlocked && (
+                                <span className="px-1.5 py-0.2 rounded-full bg-rose-500/25 text-rose-200 border border-rose-300/35 font-semibold">
+                                  Blocked
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          data-public-chat-profile-dock-close="true"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            setPublicChatProfileDockUser(null);
+                          }}
+                          aria-label="Close profile dock"
+                          className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white/80 flex items-center justify-center cursor-pointer shrink-0"
+                        >
+                          <X className="w-3.5 h-3.5" aria-hidden="true" />
+                        </button>
+                      </div>
+
+                      {dockActions.isBlocked ? (
+                        <div className="text-[11px] text-white/60">
+                          Actions unavailable for this player.
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {dockActions.isFriend ? (
+                            <span
+                              data-dock-action="friend-badge"
+                              className="px-2.5 py-1 rounded-full bg-sky-500/20 border border-sky-300/35 text-sky-100 text-[10.5px] font-semibold inline-flex items-center gap-1"
+                            >
+                              <Check className="w-3 h-3" aria-hidden="true" />
+                              Friend
+                            </span>
+                          ) : dockActions.canAddFriend && onSendFriendRequest ? (
+                            <button
+                              type="button"
+                              data-dock-action="add-friend"
+                              disabled={dockActions.isPendingRequest}
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                if (!dockActions.isPendingRequest) {
+                                  void onSendFriendRequest(dockUser);
+                                }
+                              }}
+                              className={`px-2.5 py-1 rounded-full text-[10.5px] font-semibold inline-flex items-center gap-1 transition-colors ${
+                                dockActions.isPendingRequest
+                                  ? 'bg-amber-500/20 border border-amber-300/35 text-amber-100 cursor-default'
+                                  : 'bg-indigo-500/30 hover:bg-indigo-500/45 border border-indigo-300/40 text-indigo-100 cursor-pointer'
+                              }`}
+                            >
+                              <UserPlus className="w-3 h-3" aria-hidden="true" />
+                              {dockActions.isPendingRequest ? 'Request Sent' : 'Add Friend'}
+                            </button>
+                          ) : null}
+
+                          {dockActions.canFollow && onToggleFollowPlayer && (
+                            <button
+                              type="button"
+                              data-dock-action="follow"
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                onToggleFollowPlayer(dockUser);
+                              }}
+                              className={`px-2.5 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-colors ${
+                                dockActions.isFollowing
+                                  ? 'bg-emerald-500/30 hover:bg-emerald-500/45 border border-emerald-300/40 text-emerald-100'
+                                  : 'bg-white/12 hover:bg-white/22 border border-white/20 text-white/90'
+                              }`}
+                            >
+                              {dockActions.isFollowing ? 'Unfollow' : 'Follow'}
+                            </button>
+                          )}
+
+                          {dockActions.canWhisper && (
+                            <button
+                              type="button"
+                              data-dock-action="whisper"
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                onSelectPrivateUser(dockUser);
+                                setPublicChatProfileDockUser(null);
+                                if (lockedTab && onSwitchPhoneApp) {
+                                  onSwitchPhoneApp('messages');
+                                } else {
+                                  setActiveTab('private');
+                                }
+                              }}
+                              className="px-2.5 py-1 rounded-full bg-sky-500/30 hover:bg-sky-500/45 border border-sky-300/40 text-sky-100 text-[10.5px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-colors"
+                            >
+                              <MessageCircle className="w-3 h-3" aria-hidden="true" />
+                              Whisper
+                            </button>
+                          )}
+
+                          {dockActions.canViewProfile && onOpenPlayerProfile && (
+                            <button
+                              type="button"
+                              data-dock-action="view-profile"
+                              onClick={() => {
+                                soundEngine.playUiClick();
+                                setPublicChatProfileDockUser(null);
+                                onOpenPlayerProfile(dockUser);
+                              }}
+                              className="px-2.5 py-1 rounded-full bg-white/12 hover:bg-white/22 border border-white/20 text-white/90 text-[10.5px] font-semibold cursor-pointer transition-colors"
+                            >
+                              View Profile
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
             </div>
           )}
 
