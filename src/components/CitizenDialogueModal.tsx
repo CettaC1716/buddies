@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Gift, Trash2, Wifi, X } from 'lucide-react';
+import { Wifi, X } from 'lucide-react';
 import { soundEngine } from '../game/audio';
 import {
   CITIZEN_DAILY_GIFT_CATALOG,
@@ -12,7 +12,6 @@ import {
   getCitizenHeartProgress,
   getCitizenLocalDateKey,
   getCitizenProfile,
-  getCitizenQuickPrompts,
   listCitizenDirectory,
   pickCitizenContextualDialogue,
 } from '../game/buddiesCitizenRoles';
@@ -34,12 +33,18 @@ import {
   type NpcTogethernessStateSnapshot,
 } from '../game/npcTogetherness';
 import {
+  buildNpcPairPoseDecisionReply,
   canGiftNpcToday,
   getGiftCatalogItem,
   type GiftItemInput,
 } from '../game/npcGiftEngine';
 import type { NpcEmotionTag } from '../game/npcPersonaRegistry';
-import { sendNpcChatMessage } from '../game/npcTextChat';
+import { dispatchNpcEmotionReaction, sendNpcChatMessage } from '../game/npcTextChat';
+import {
+  GiftBoxBubbleSvg,
+  InteractionRequestBubble,
+  type NpcChatVisualPayload,
+} from './NpcChatVisualBubbles';
 import {
   resolveNpcPhotoUrl,
   useNpcPortraitVersion,
@@ -101,6 +106,7 @@ interface CitizenChatEntry {
   id: string;
   role: 'player' | 'npc';
   text: string;
+  visual?: NpcChatVisualPayload;
 }
 
 export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
@@ -312,9 +318,95 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
       if (!text) return;
       submitPlayerQuestionRef.current(text);
     };
+    const onDockInteractionRequest = (ev: Event) => {
+      const detail = (
+        ev as CustomEvent<{
+          npcId?: string;
+          kind?: 'pair_pose';
+          targetEntity?: unknown;
+        }>
+      ).detail;
+      if (!detail || !namedNpcId || detail.npcId !== namedNpcId) return;
+      setActiveTab('sesi_chat');
+      activeRequestIdRef.current += 1;
+      setIsNpcThinking(false);
+      const accepted = canPairPose(effectiveClosenessStore, namedNpcId);
+      const reply = buildNpcPairPoseDecisionReply(namedNpcId, accepted);
+      setChatHistory((prev) => {
+        const next = [...prev];
+        if (npcFullText.trim()) {
+          next.push({ id: `npc_${Date.now()}_prev`, role: 'npc', text: npcFullText });
+        }
+        next.push({
+          id: `player_interact_${Date.now()}`,
+          role: 'player',
+          text: 'Pair Pose?',
+          visual: { kind: 'interaction', emoji: '🤝✨', label: 'Pair Pose?' },
+        });
+        return next;
+      });
+      dispatchNpcEmotionReaction(namedNpcId, accepted ? 'happy' : 'shy');
+      setNpcFullText(reply);
+      setNpcTypedText('');
+      window.setTimeout(() => {
+        chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 40);
+      if (accepted) {
+        window.setTimeout(() => {
+          onClose();
+          window.dispatchEvent(
+            new CustomEvent('npc-chat-open-pair-pose-catalog', {
+              detail: { npcId: namedNpcId, targetEntity: detail.targetEntity },
+            }),
+          );
+        }, 950);
+      }
+    };
+    const onDockGiftSent = (ev: Event) => {
+      const detail = (
+        ev as CustomEvent<{
+          npcId?: string;
+          itemName?: string;
+          accepted?: boolean;
+          reactionLine?: string;
+        }>
+      ).detail;
+      if (!detail || !namedNpcId || detail.npcId !== namedNpcId) return;
+      setActiveTab('sesi_chat');
+      activeRequestIdRef.current += 1;
+      setIsNpcThinking(false);
+      const itemName = detail.itemName || 'Gift';
+      const reply = detail.accepted
+        ? detail.reactionLine || 'Thank you so much!'
+        : detail.reactionLine || 'You already brought me a gift today. Let us save the next one for tomorrow!';
+      setChatHistory((prev) => {
+        const next = [...prev];
+        if (npcFullText.trim()) {
+          next.push({ id: `npc_${Date.now()}_prev`, role: 'npc', text: npcFullText });
+        }
+        next.push({
+          id: `player_gift_${Date.now()}`,
+          role: 'player',
+          text: `Sent a gift: ${itemName}`,
+          visual: { kind: 'gift_box', itemName },
+        });
+        return next;
+      });
+      setNpcFullText(reply);
+      setNpcTypedText('');
+      window.setTimeout(() => {
+        chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 40);
+    };
     window.addEventListener('citizen-dialogue-user-chat', onUserChat);
-    return () => window.removeEventListener('citizen-dialogue-user-chat', onUserChat);
-  }, [isNpcOpen]);
+    window.addEventListener('npc-chat-interaction-request', onDockInteractionRequest);
+    window.addEventListener('npc-chat-gift-sent', onDockGiftSent);
+    return () => {
+      window.removeEventListener('citizen-dialogue-user-chat', onUserChat);
+      window.removeEventListener('npc-chat-interaction-request', onDockInteractionRequest);
+      window.removeEventListener('npc-chat-gift-sent', onDockGiftSent);
+    };
+  }, [isNpcOpen, namedNpcId, effectiveClosenessStore, npcFullText, onClose, profile?.name]);
 
   const handleClearChat = () => {
     if (!profile) return;
@@ -329,8 +421,6 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   const directoryEntries = listCitizenDirectory(friendshipStore, todayKey);
   const activeFeedback =
     profile && giftFeedback && giftFeedback.citizenId === profile.id ? giftFeedback : null;
-
-  const quickPrompts = profile ? getCitizenQuickPrompts(profile.id) : [];
 
   const handleOwnedGiftClick = (
     itemInput: GiftItemInput,
@@ -434,57 +524,6 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
             <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.75)] shrink-0" />
           </div>
 
-          {/* Compact Dark Glass Mode Tabs */}
-          <div className="shrink-0 flex items-center gap-1.5 px-3.5 py-2 border-b border-white/10">
-            <button
-              type="button"
-              onClick={() => {
-                soundEngine.playUiClick();
-                setActiveTab('sesi_chat');
-              }}
-              className={`px-3 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-all ${
-                activeTab === 'sesi_chat'
-                  ? 'bg-sky-500 text-white shadow-sm'
-                  : 'bg-white/10 hover:bg-white/18 text-white/75 hover:text-white border border-white/10'
-              }`}
-            >
-              <span>Chat</span>
-            </button>
-
-            <button
-              type="button"
-              data-citizen-gift-tab="true"
-              onClick={() => {
-                soundEngine.playUiClick();
-                setActiveTab('gift');
-              }}
-              className={`px-3 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-all ${
-                activeTab === 'gift'
-                  ? 'bg-emerald-500 text-white shadow-sm'
-                  : 'bg-white/10 hover:bg-white/18 text-white/75 hover:text-white border border-white/10'
-              }`}
-            >
-              <Gift className="w-3 h-3" aria-hidden="true" />
-              <span>Gift</span>
-            </button>
-
-            <button
-              type="button"
-              data-citizen-directory-tab="true"
-              onClick={() => {
-                soundEngine.playUiClick();
-                setActiveTab('directory');
-              }}
-              className={`px-3 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-all ${
-                activeTab === 'directory'
-                  ? 'bg-sky-500 text-white shadow-sm'
-                  : 'bg-white/10 hover:bg-white/18 text-white/75 hover:text-white border border-white/10'
-              }`}
-            >
-              <span>Town Folks</span>
-            </button>
-          </div>
-
           {/* Tab Viewport */}
           <div className="flex-1 flex flex-col overflow-hidden bg-transparent min-h-0">
             {activeTab === 'sesi_chat' && (
@@ -502,9 +541,18 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                           data-player-chat-bubble="true"
                           className="max-w-[85%] px-3.5 py-2.5 rounded-2xl rounded-tr-sm bg-sky-500 text-white shadow-sm"
                         >
-                          <p className="text-xs font-medium leading-relaxed">
-                            {entry.text}
-                          </p>
+                          {entry.visual?.kind === 'gift_box' ? (
+                            <GiftBoxBubbleSvg itemName={entry.visual.itemName || entry.text} />
+                          ) : entry.visual?.kind === 'interaction' ? (
+                            <InteractionRequestBubble
+                              emoji={entry.visual.emoji || '🤝✨'}
+                              label={entry.visual.label || entry.text}
+                            />
+                          ) : (
+                            <p className="text-xs font-medium leading-relaxed">
+                              {entry.text}
+                            </p>
+                          )}
                         </div>
                       </div>
                     ) : (
@@ -541,8 +589,8 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                       className="max-w-[85%] px-3.5 py-2.5 rounded-2xl rounded-tl-sm bg-[#eef0f4]/92 text-slate-900 border border-white/80 shadow-sm"
                     >
                       {isNpcThinking ? (
-                        <p className="text-xs font-medium leading-relaxed text-slate-500 italic">
-                          Thinking...
+                        <p className="text-xs font-medium leading-relaxed text-slate-500">
+                          Typing...
                         </p>
                       ) : (
                         <p className="text-xs font-medium leading-relaxed text-slate-900">
@@ -663,30 +711,13 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
                           )}
                       </div>
                     )}
-                  <div className="flex flex-col gap-1.5">
-                    {quickPrompts.map((prompt) => (
-                      <button
-                        key={prompt}
-                        type="button"
-                        disabled={isNpcThinking}
-                        onClick={() => {
-                          soundEngine.playUiClick();
-                          submitPlayerQuestion(prompt);
-                        }}
-                        className="w-full text-left px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/18 border border-white/12 text-white/90 text-[11px] font-medium cursor-pointer transition-colors disabled:opacity-50"
-                      >
-                        {prompt}
-                      </button>
-                    ))}
-                  </div>
                   <div className="flex justify-end pt-0.5">
                     <button
                       type="button"
                       data-citizen-clear-chat-btn="true"
                       onClick={handleClearChat}
-                      className="px-2.5 py-1 rounded-full bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 border border-rose-400/30 text-[10px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-colors shrink-0"
+                      className="px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/18 text-white/75 hover:text-white border border-white/15 text-[10px] font-semibold cursor-pointer inline-flex items-center transition-colors shrink-0"
                     >
-                      <Trash2 className="w-3 h-3" aria-hidden="true" />
                       <span>Clear chat</span>
                     </button>
                   </div>

@@ -40,6 +40,7 @@ import {
   type RainIntensityTier,
   type WeatherConditionKey,
   evaluateCommandCenterRadarSpec,
+  resolveCityDistrictLabelAtPosition,
   worldCoordToRadarPercent,
   COMMANDER_PLOT_OFFSETS_X,
   CITY_TRANSIT_DESTINATIONS,
@@ -261,14 +262,20 @@ import {
 import {
   loadNpcClosenessStore,
   recordNpcConversation,
+  resolveNpcId,
   saveNpcClosenessStore,
   type NpcClosenessStore,
   type NpcId,
 } from './game/npcClosenessEngine';
 import {
+  getGiftCatalogItem,
   giveGiftToNpc,
+  loadNpcTreasuryStore,
+  recordNpcTreasuryGift,
+  saveNpcTreasuryStore,
   type GiftItemInput,
   type GiftReactionTier,
+  type NpcTreasuryStore,
 } from './game/npcGiftEngine';
 import {
   getNpcPersona,
@@ -1073,12 +1080,53 @@ export default function App() {
   const npcClosenessStoreRef = useRef<NpcClosenessStore>(npcClosenessStore);
   npcClosenessStoreRef.current = npcClosenessStore;
 
+  const [npcTreasuryStore, setNpcTreasuryStore] = useState<NpcTreasuryStore>(() =>
+    loadNpcTreasuryStore(dailyMissionsAccountKey),
+  );
+  const npcTreasuryStoreRef = useRef<NpcTreasuryStore>(npcTreasuryStore);
+  npcTreasuryStoreRef.current = npcTreasuryStore;
+
+  const [dockGiftPickerTarget, setDockGiftPickerTarget] = useState<{
+    npcId: NpcId;
+    displayName: string;
+    entity: NearbyEntityUser;
+  } | null>(null);
+
   useEffect(() => {
     ensureAllNpcPersonasRegistered();
     const loaded = loadNpcClosenessStore(dailyMissionsAccountKey);
     npcClosenessStoreRef.current = loaded;
     setNpcClosenessStore(loaded);
+    const loadedTreasury = loadNpcTreasuryStore(dailyMissionsAccountKey);
+    npcTreasuryStoreRef.current = loadedTreasury;
+    setNpcTreasuryStore(loadedTreasury);
   }, [dailyMissionsAccountKey]);
+
+  useEffect(() => {
+    const onOpenPairPoseCatalog = (ev: Event) => {
+      const detail = (
+        ev as CustomEvent<{ npcId?: NpcId; targetEntity?: NearbyEntityUser | null }>
+      ).detail;
+      if (!detail?.targetEntity) return;
+      const entity = detail.targetEntity;
+      closeSmartphone();
+      setIsQuickPoseModalOpen(false);
+      setDockGiftPickerTarget(null);
+      setSelectedTargetUser(entity);
+      setIsTargetMenuExpanded(true);
+      setIsKioskModalOpen(false);
+      setIsProfileModalOpen(false);
+      setIsSocialChatModalOpen(false);
+      setIsPersonalWalletModalOpen(false);
+      setActiveSpecialModal('none');
+      setActiveTeleportKioskModal('none');
+      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+      setPairedInteractTarget(entity);
+    };
+    window.addEventListener('npc-chat-open-pair-pose-catalog', onOpenPairPoseCatalog);
+    return () =>
+      window.removeEventListener('npc-chat-open-pair-pose-catalog', onOpenPairPoseCatalog);
+  }, []);
 
   const handleNpcConversationTurn = useCallback(
     (npcId: NpcId, closenessDelta: number, emotion: NpcEmotionTag) => {
@@ -1121,6 +1169,17 @@ export default function App() {
       npcClosenessStoreRef.current = res.store;
       setNpcClosenessStore(res.store);
       saveNpcClosenessStore(dailyMissionsAccountRef.current, res.store);
+      if (res.category) {
+        const nextTreasury = recordNpcTreasuryGift(npcTreasuryStoreRef.current, npcId, {
+          itemId: res.itemId,
+          itemName: res.itemName,
+          category: res.category,
+          giftedBy: dailyMissionsAccountRef.current,
+        });
+        npcTreasuryStoreRef.current = nextTreasury;
+        setNpcTreasuryStore(nextTreasury);
+        saveNpcTreasuryStore(dailyMissionsAccountRef.current, nextTreasury);
+      }
       if (fishInstanceId) {
         setCaughtFishBucket((prev) => prev.filter((item) => item.id !== fishInstanceId));
       }
@@ -1360,6 +1419,7 @@ export default function App() {
           underwearId: typeof parsed.underwearId === 'string' ? parsed.underwearId : null,
           corewearId: typeof parsed.corewearId === 'string' ? parsed.corewearId : null,
           hideOuterForUnderwear: Boolean(parsed.hideOuterForUnderwear),
+          hideBaseUnderwear: Boolean(parsed.hideBaseUnderwear),
           bodyShapeId: typeof parsed.bodyShapeId === 'string' ? parsed.bodyShapeId : null,
           eyeStyleId: typeof parsed.eyeStyleId === 'string' ? parsed.eyeStyleId : null,
           browStyleId: typeof parsed.browStyleId === 'string' ? parsed.browStyleId : null,
@@ -10800,7 +10860,10 @@ export default function App() {
                         ? 'Grand Casino'
                         : isInsideBeautySalon
                           ? 'Glow Studio Salon'
-                          : 'Central Plaza'}
+                          : resolveCityDistrictLabelAtPosition(
+                              hud.playerWorldX ?? -85,
+                              hud.playerWorldZ ?? 0,
+                            )}
               </span>
             </div>
 
@@ -12200,7 +12263,7 @@ export default function App() {
              ================================================================= */}
           {playMode !== 'editor' &&
             hud.worldMode !== 'warzone' &&
-            !isAnyNpcChatBarMode &&
+            (!isAnyNpcChatBarMode || isCitizenDialogueOpen || activeSpecialModal === 'npc_merchant') &&
             fishingPhase === 'idle' &&
             !lastCaughtFishToast && (() => {
               const activeSelectedTarget =
@@ -12212,8 +12275,52 @@ export default function App() {
               const isPairedModeActive = Boolean(
                 pairedInteractTarget || pairedStatus?.active,
               );
-              // Never auto-switch the bottom dock on proximity; only switch after explicit press-and-hold interaction or active pair mode
-              const dockTargetEntity = activeSelectedTarget ?? pairedInteractTarget;
+              const chattingNpcFallbackTarget: NearbyEntityUser | null = (() => {
+                if (isCitizenDialogueOpen && activeCitizenId) {
+                  const foundNearby = (hud.nearbyRadiusUsers ?? []).find(
+                    (u) => String(u.id) === String(activeCitizenId),
+                  );
+                  if (foundNearby) return foundNearby;
+                  const citizenProfile = getCitizenProfile(activeCitizenId);
+                  return {
+                    id: activeCitizenId,
+                    name: citizenProfile?.name ?? String(activeCitizenId),
+                    distance: 1.5,
+                    team: 'blue',
+                    status: 'Online',
+                    isSelf: false,
+                    isNpc: true,
+                    gender:
+                      activeCitizenId === 'citizen_bima' || activeCitizenId === 'citizen_kenji'
+                        ? 'male'
+                        : 'female',
+                  };
+                }
+                if (activeSpecialModal === 'npc_merchant') {
+                  const isKai = merchantLocation === 'beach_house';
+                  const merchantId = isKai ? 'npc_kai' : 'npc_hana';
+                  const foundNearby = (hud.nearbyRadiusUsers ?? []).find(
+                    (u) => String(u.id) === merchantId,
+                  );
+                  if (foundNearby) return foundNearby;
+                  return {
+                    id: merchantId,
+                    name: isKai ? 'Kai' : 'Hana',
+                    distance: 1.5,
+                    team: 'blue',
+                    status: 'Online',
+                    isSelf: false,
+                    isNpc: true,
+                    isMerchant: true,
+                    merchantLocation: isKai ? 'beach_house' : 'lobby_cafe',
+                    gender: isKai ? 'male' : 'female',
+                  };
+                }
+                return null;
+              })();
+              // Never auto-switch the bottom dock on proximity; only switch after explicit press-and-hold interaction, active pair mode, or active NPC chat
+              const dockTargetEntity =
+                activeSelectedTarget ?? pairedInteractTarget ?? chattingNpcFallbackTarget;
               const nearbyCycleList = (hud.nearbyRadiusUsers ?? []).filter(
                 (u) => String(u.id) !== '0' && u.distance <= 8.5,
               );
@@ -12265,8 +12372,16 @@ export default function App() {
                   }
                   targetEntity={dockTargetEntity}
                   isTargetLocked={Boolean(dockTargetEntity)}
-                  isTargetInteractionOpen={isTargetMenuExpanded || isPairedModeActive}
+                  isTargetInteractionOpen={
+                    isTargetMenuExpanded ||
+                    isPairedModeActive ||
+                    isCitizenDialogueOpen ||
+                    activeSpecialModal === 'npc_merchant'
+                  }
                   isPairedModeActive={isPairedModeActive}
+                  isNpcChatSessionActive={
+                    isCitizenDialogueOpen || activeSpecialModal === 'npc_merchant'
+                  }
                   canCycleTargetEntity={canCycleNearby}
                   hasOwnedPairedAnimations={ownedPairedItems.length > 0}
                   onToggleTargetInteraction={() => {
@@ -12341,31 +12456,22 @@ export default function App() {
                   onGiftTarget={(entity) => {
                     setIsTargetMenuExpanded(false);
                     setPairedInteractTarget(null);
+                    const namedGiftNpc = resolveNpcId(String(entity.id));
+                    if (namedGiftNpc) {
+                      const cleanName =
+                        getNpcPersona(namedGiftNpc)?.displayName ??
+                        entity.name.replace(/\s*\((ANDA|YOU|KAMU)\)/gi, '').trim();
+                      setDockGiftPickerTarget((prev) =>
+                        prev && prev.npcId === namedGiftNpc
+                          ? null
+                          : { npcId: namedGiftNpc, displayName: cleanName, entity },
+                      );
+                      return;
+                    }
                     const canonicalCitizen = resolveCanonicalCitizenId(String(entity.id));
                     if (canonicalCitizen) {
                       closeSmartphone();
-                      openCitizenDialogueForId(canonicalCitizen, 'gift');
-                      return;
-                    }
-                    const isMerchant = Boolean(
-                      entity.isMerchant ||
-                        entity.id === 'npc_hana' ||
-                        entity.id === 'npc_cafe' ||
-                        entity.id === 'npc_kai' ||
-                        entity.id === 'npc_beach',
-                    );
-                    if (isMerchant) {
-                      closeSmartphone();
-                      const location =
-                        entity.merchantLocation ??
-                        (entity.id === 'npc_beach' || entity.id === 'npc_kai'
-                          ? 'beach_house'
-                          : 'lobby_cafe');
-                      window.dispatchEvent(
-                        new CustomEvent('open-npc-merchant-ui', {
-                          detail: { location },
-                        }),
-                      );
+                      openCitizenDialogueForId(canonicalCitizen, 'sesi_chat');
                       return;
                     }
                     const recipientHandle =
@@ -12378,6 +12484,23 @@ export default function App() {
                     openSmartphoneApp('wallet');
                   }}
                   onInteractTarget={(entity) => {
+                    const namedNpc = resolveNpcId(String(entity.id));
+                    const isChattingWithThisNpc =
+                      Boolean(namedNpc) &&
+                      ((isCitizenDialogueOpen &&
+                        resolveNpcId(String(activeCitizenId)) === namedNpc) ||
+                        (activeSpecialModal === 'npc_merchant' &&
+                          ((merchantLocation === 'beach_house' && namedNpc === 'kai') ||
+                            (merchantLocation !== 'beach_house' && namedNpc === 'hana'))));
+                    if (isChattingWithThisNpc && namedNpc) {
+                      setDockGiftPickerTarget(null);
+                      window.dispatchEvent(
+                        new CustomEvent('npc-chat-interaction-request', {
+                          detail: { npcId: namedNpc, kind: 'pair_pose', targetEntity: entity },
+                        }),
+                      );
+                      return;
+                    }
                     closeSmartphone();
                     setIsQuickPoseModalOpen(false);
                     setSelectedTargetUser(entity);
@@ -13342,7 +13465,10 @@ export default function App() {
                       ? 'Grand Casino'
                       : isInsideBeautySalon
                         ? 'Glow Studio Salon'
-                        : 'Central Plaza';
+                        : resolveCityDistrictLabelAtPosition(
+                            hud.playerWorldX ?? -85,
+                            hud.playerWorldZ ?? 0,
+                          );
             return (
               <CityFeedModal
                 embeddedInPhone
@@ -13487,7 +13613,10 @@ export default function App() {
                 ? 'Grand Casino'
                 : isInsideBeautySalon
                   ? 'Glow Studio Salon'
-                  : 'Central Plaza'
+                  : resolveCityDistrictLabelAtPosition(
+                      hud.playerWorldX ?? -85,
+                      hud.playerWorldZ ?? 0,
+                    )
         }
         playerDisplayName={playerDisplayName || 'Buddy'}
         characterGender={characterGender}
@@ -14573,6 +14702,163 @@ export default function App() {
           void refreshFishMarketplaceFromChainAndDb();
         }}
       />
+      {dockGiftPickerTarget &&
+        hud.worldMode !== 'warzone' && (() => {
+          const target = dockGiftPickerTarget;
+          const fishItems = caughtFishBucket.filter((f) => !f.isMintedNft);
+          const cafeItems = ownedCafeFoodIds
+            .map((id) => getGiftCatalogItem(id))
+            .filter((it): it is NonNullable<typeof it> => Boolean(it));
+          const apparelItems = ownedApparelIds
+            .map((id) => getGiftCatalogItem(id))
+            .filter((it): it is NonNullable<typeof it> => Boolean(it));
+          const furnitureItems = ownedMerchantItemIds
+            .map((id) => getGiftCatalogItem(id))
+            .filter((it): it is NonNullable<typeof it> => Boolean(it));
+          const hasAnyItem =
+            fishItems.length > 0 ||
+            cafeItems.length > 0 ||
+            apparelItems.length > 0 ||
+            furnitureItems.length > 0;
+
+          const sendGiftFromDock = (
+            itemInput: GiftItemInput,
+            label: string,
+            fishInstanceId?: string,
+          ) => {
+            soundEngine.playUiClick();
+            const outcome = handleGiveNpcOwnedGift(target.npcId, itemInput, fishInstanceId);
+            setDockGiftPickerTarget(null);
+            window.dispatchEvent(
+              new CustomEvent('npc-chat-gift-sent', {
+                detail: {
+                  npcId: target.npcId,
+                  itemName: outcome.itemName || label,
+                  accepted: outcome.accepted,
+                  reactionLine: outcome.reactionLine,
+                },
+              }),
+            );
+          };
+
+          return (
+            <div
+              data-npc-dock-gift-picker="true"
+              className="fixed bottom-[106px] left-1/2 -translate-x-1/2 z-[55] w-[320px] max-w-[92vw] max-h-[46vh] rounded-2xl bg-[#131926]/92 border border-white/20 text-white shadow-2xl backdrop-blur-xl flex flex-col overflow-hidden pointer-events-auto"
+            >
+              <div className="px-3.5 py-2.5 border-b border-white/10 flex items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Gift className="w-4 h-4 text-rose-300 shrink-0" aria-hidden="true" />
+                  <span className="text-xs font-bold truncate">
+                    Send Gift to {target.displayName}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDockGiftPickerTarget(null)}
+                  className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center cursor-pointer"
+                  aria-label="Close gift picker"
+                >
+                  <X className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
+                {!hasAnyItem ? (
+                  <p className="text-[11px] text-white/65 text-center py-4">
+                    Pick up fish, cafe treats, clothing, or furniture around town to send as a gift.
+                  </p>
+                ) : (
+                  <>
+                    {fishItems.length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-sky-200/80">
+                          Fresh Catch ({fishItems.length})
+                        </div>
+                        {fishItems.slice(0, 8).map((fish) => (
+                          <button
+                            key={fish.id}
+                            type="button"
+                            onClick={() =>
+                              sendGiftFromDock(fish, fish.speciesName, fish.id)
+                            }
+                            className="w-full px-3 py-1.5 rounded-xl bg-white/[0.07] hover:bg-emerald-500/25 border border-white/10 flex items-center justify-between text-left cursor-pointer transition-colors"
+                          >
+                            <span className="text-xs font-medium truncate">
+                              {fish.speciesName} ({fish.weightKg.toFixed(1)}kg)
+                            </span>
+                            <span className="text-[10px] font-bold text-emerald-300 shrink-0 ml-2">
+                              Give
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {cafeItems.length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-amber-200/80">
+                          Cafe Treats ({cafeItems.length})
+                        </div>
+                        {cafeItems.map((it, idx) => (
+                          <button
+                            key={`${it.itemId}_${idx}`}
+                            type="button"
+                            onClick={() => sendGiftFromDock(it.itemId, it.name)}
+                            className="w-full px-3 py-1.5 rounded-xl bg-white/[0.07] hover:bg-emerald-500/25 border border-white/10 flex items-center justify-between text-left cursor-pointer transition-colors"
+                          >
+                            <span className="text-xs font-medium truncate">{it.name}</span>
+                            <span className="text-[10px] font-bold text-emerald-300 shrink-0 ml-2">
+                              Give
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {apparelItems.length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-fuchsia-200/80">
+                          Fashion & Apparel ({apparelItems.length})
+                        </div>
+                        {apparelItems.slice(0, 12).map((it) => (
+                          <button
+                            key={it.itemId}
+                            type="button"
+                            onClick={() => sendGiftFromDock(it.itemId, it.name)}
+                            className="w-full px-3 py-1.5 rounded-xl bg-white/[0.07] hover:bg-emerald-500/25 border border-white/10 flex items-center justify-between text-left cursor-pointer transition-colors"
+                          >
+                            <span className="text-xs font-medium truncate">{it.name}</span>
+                            <span className="text-[10px] font-bold text-emerald-300 shrink-0 ml-2">
+                              Give
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {furnitureItems.length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-200/80">
+                          Furniture & Home ({furnitureItems.length})
+                        </div>
+                        {furnitureItems.slice(0, 12).map((it) => (
+                          <button
+                            key={it.itemId}
+                            type="button"
+                            onClick={() => sendGiftFromDock(it.itemId, it.name)}
+                            className="w-full px-3 py-1.5 rounded-xl bg-white/[0.07] hover:bg-emerald-500/25 border border-white/10 flex items-center justify-between text-left cursor-pointer transition-colors"
+                          >
+                            <span className="text-xs font-medium truncate">{it.name}</span>
+                            <span className="text-[10px] font-bold text-emerald-300 shrink-0 ml-2">
+                              Give
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       {(npcTogethernessState.walkingNpcId || npcTogethernessState.ridingNpcId) &&
         hud.worldMode !== 'warzone' && (
           <div

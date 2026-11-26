@@ -11,7 +11,6 @@ import {
   Sofa,
   Sparkles,
   Store,
-  Trash2,
   Wifi,
   X,
 } from 'lucide-react';
@@ -63,12 +62,18 @@ import {
   type NpcTogethernessStateSnapshot,
 } from '../game/npcTogetherness';
 import {
+  buildNpcPairPoseDecisionReply,
   canGiftNpcToday,
   getGiftCatalogItem,
   type GiftItemInput,
 } from '../game/npcGiftEngine';
 import type { NpcEmotionTag } from '../game/npcPersonaRegistry';
-import { sendNpcChatMessage } from '../game/npcTextChat';
+import { dispatchNpcEmotionReaction, sendNpcChatMessage } from '../game/npcTextChat';
+import {
+  GiftBoxBubbleSvg,
+  InteractionRequestBubble,
+  type NpcChatVisualPayload,
+} from './NpcChatVisualBubbles';
 import {
   resolveNpcPhotoUrl,
   useNpcPortraitVersion,
@@ -535,6 +540,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       id: string;
       role: 'player' | 'npc';
       text: string;
+      visual?: NpcChatVisualPayload;
       propertyOffer?: { lang: 'en' | 'id'; dismissed?: boolean } | null;
     }>
   >([]);
@@ -1506,14 +1512,104 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
   useEffect(() => {
     if (activeModalMode !== 'npc_merchant') return;
+    const merchantNpcId: NpcId = merchantLocation === 'beach_house' ? 'kai' : 'hana';
     const onUserChat = (ev: Event) => {
       const text = (ev as CustomEvent<{ text?: string }>).detail?.text?.trim();
       if (!text) return;
       submitPlayerQuestionRef.current(text);
     };
+    const onDockInteractionRequest = (ev: Event) => {
+      const detail = (
+        ev as CustomEvent<{
+          npcId?: string;
+          kind?: 'pair_pose';
+          targetEntity?: unknown;
+        }>
+      ).detail;
+      if (!detail || detail.npcId !== merchantNpcId) return;
+      setActiveTab('sesi_chat');
+      activeNpcRequestIdRef.current += 1;
+      setIsNpcThinking(false);
+      const accepted = canPairPose(
+        npcClosenessStore ?? createEmptyNpcClosenessStore(),
+        merchantNpcId,
+      );
+      const reply = buildNpcPairPoseDecisionReply(merchantNpcId, accepted);
+      setChatHistory((prev) => {
+        const next = [...prev];
+        if (npcFullText.trim()) {
+          next.push({ id: `npc_${Date.now()}_prev`, role: 'npc', text: npcFullText });
+        }
+        next.push({
+          id: `player_interact_${Date.now()}`,
+          role: 'player',
+          text: 'Pair Pose?',
+          visual: { kind: 'interaction', emoji: '🤝✨', label: 'Pair Pose?' },
+        });
+        return next;
+      });
+      dispatchNpcEmotionReaction(merchantNpcId, accepted ? 'happy' : 'shy');
+      setNpcFullText(reply);
+      setNpcTypedText('');
+      window.setTimeout(() => {
+        chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 40);
+      if (accepted) {
+        window.setTimeout(() => {
+          onClose();
+          window.dispatchEvent(
+            new CustomEvent('npc-chat-open-pair-pose-catalog', {
+              detail: { npcId: merchantNpcId, targetEntity: detail.targetEntity },
+            }),
+          );
+        }, 950);
+      }
+    };
+    const onDockGiftSent = (ev: Event) => {
+      const detail = (
+        ev as CustomEvent<{
+          npcId?: string;
+          itemName?: string;
+          accepted?: boolean;
+          reactionLine?: string;
+        }>
+      ).detail;
+      if (!detail || detail.npcId !== merchantNpcId) return;
+      setActiveTab('sesi_chat');
+      activeNpcRequestIdRef.current += 1;
+      setIsNpcThinking(false);
+      const itemName = detail.itemName || 'Gift';
+      const reply = detail.accepted
+        ? detail.reactionLine || 'Thank you so much!'
+        : detail.reactionLine || 'You already brought me a gift today. Let us save the next one for tomorrow!';
+      setChatHistory((prev) => {
+        const next = [...prev];
+        if (npcFullText.trim()) {
+          next.push({ id: `npc_${Date.now()}_prev`, role: 'npc', text: npcFullText });
+        }
+        next.push({
+          id: `player_gift_${Date.now()}`,
+          role: 'player',
+          text: `Sent a gift: ${itemName}`,
+          visual: { kind: 'gift_box', itemName },
+        });
+        return next;
+      });
+      setNpcFullText(reply);
+      setNpcTypedText('');
+      window.setTimeout(() => {
+        chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 40);
+    };
     window.addEventListener('npc-merchant-user-chat', onUserChat);
-    return () => window.removeEventListener('npc-merchant-user-chat', onUserChat);
-  }, [activeModalMode]);
+    window.addEventListener('npc-chat-interaction-request', onDockInteractionRequest);
+    window.addEventListener('npc-chat-gift-sent', onDockGiftSent);
+    return () => {
+      window.removeEventListener('npc-merchant-user-chat', onUserChat);
+      window.removeEventListener('npc-chat-interaction-request', onDockInteractionRequest);
+      window.removeEventListener('npc-chat-gift-sent', onDockGiftSent);
+    };
+  }, [activeModalMode, merchantLocation, npcClosenessStore, npcFullText, onClose]);
 
   const exchangeQuote = evaluateLulToCyonExchangeQuote(marketState);
 
@@ -2220,25 +2316,6 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               <span>Fish ({caughtFishBucket.length})</span>
             </button>
           )}
-
-          {onGiveNpcOwnedGift && (
-            <button
-              type="button"
-              data-merchant-gift-tab="true"
-              onClick={() => {
-                soundEngine.playUiClick();
-                setActiveTab('gift');
-              }}
-              className={`px-3 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-all ${
-                activeTab === 'gift'
-                  ? 'bg-emerald-500 text-white shadow-sm'
-                  : 'bg-white/10 hover:bg-white/18 text-white/75 hover:text-white border border-white/10'
-              }`}
-            >
-              <Gift className="w-3 h-3" aria-hidden="true" />
-              <span>Gift</span>
-            </button>
-          )}
         </div>
 
         {/* Tab Content Viewport (No bottom footer) */}
@@ -2349,9 +2426,18 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               data-player-chat-bubble="true"
                               className="max-w-[85%] px-3.5 py-2.5 rounded-2xl rounded-tr-sm bg-sky-500 text-white shadow-sm"
                             >
-                              <p className="text-xs font-medium leading-relaxed">
-                                {entry.text}
-                              </p>
+                              {entry.visual?.kind === 'gift_box' ? (
+                                <GiftBoxBubbleSvg itemName={entry.visual.itemName || entry.text} />
+                              ) : entry.visual?.kind === 'interaction' ? (
+                                <InteractionRequestBubble
+                                  emoji={entry.visual.emoji || '🤝✨'}
+                                  label={entry.visual.label || entry.text}
+                                />
+                              ) : (
+                                <p className="text-xs font-medium leading-relaxed">
+                                  {entry.text}
+                                </p>
+                              )}
                             </div>
                           </div>
                         ) : (
@@ -2903,9 +2989,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     type="button"
                     data-chat-clear-btn="true"
                     onClick={handleClearChat}
-                    className="ml-auto px-2.5 py-1 rounded-full bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 border border-rose-400/30 text-[10px] font-semibold cursor-pointer inline-flex items-center gap-1 transition-colors shrink-0"
+                    className="ml-auto px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/18 text-white/75 hover:text-white border border-white/15 text-[10px] font-semibold cursor-pointer inline-flex items-center transition-colors shrink-0"
                   >
-                    <Trash2 className="w-3 h-3" aria-hidden="true" />
                     <span>Clear chat</span>
                   </button>
                 </div>

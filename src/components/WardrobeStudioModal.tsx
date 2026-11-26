@@ -1029,8 +1029,9 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       if (rawDt > 0.001 && rawDt < 0.25) {
         localSmoothedMs = localSmoothedMs * 0.92 + rawDt * 1000 * 0.08;
         frameCounter++;
-        if (frameCounter % 45 === 0) {
-          setStudioFrameMs(localSmoothedMs);
+        if (frameCounter % 60 === 0) {
+          const quantizedMs = localSmoothedMs >= 26 ? Math.round(localSmoothedMs) : 16.6;
+          setStudioFrameMs((prev) => (Math.abs(prev - quantizedMs) >= 4 ? quantizedMs : prev));
         }
       }
 
@@ -1819,7 +1820,11 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       }
       if (item.slot === 'underwear') {
         if (item.isStarterDefault) {
-          return (draft.underwearId ?? null) === null && (draft.corewearId ?? null) === null;
+          return (
+            (draft.underwearId ?? null) === null &&
+            (draft.corewearId ?? null) === null &&
+            Boolean(draft.hideBaseUnderwear)
+          );
         }
         return item.underwearSubSlot === 'corewear'
           ? draft.corewearId === item.id
@@ -3563,6 +3568,37 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                         {draft.hideOuterForUnderwear ? 'In City: Outer Off' : 'In City: Outer On'}
                       </button>
                     </div>
+                    <button
+                      type="button"
+                      data-wardrobe-base-underwear-toggle="true"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        const nextRemove = !Boolean(draft.hideBaseUnderwear);
+                        setHistory((prev) =>
+                          pushWardrobeDraft(prev, {
+                            ...prev.present,
+                            underwearId: nextRemove ? null : prev.present.underwearId,
+                            corewearId: nextRemove ? null : prev.present.corewearId,
+                            hideBaseUnderwear: nextRemove,
+                          }),
+                        );
+                        showNotice(
+                          nextRemove
+                            ? 'Underwear removed (clean base skin)'
+                            : 'Default base underwear restored',
+                        );
+                      }}
+                      className={`w-full h-7 rounded-full text-[10px] font-medium transition-colors cursor-pointer px-2.5 truncate ${
+                        draft.hideBaseUnderwear && !draft.underwearId && !draft.corewearId
+                          ? 'bg-[#8ad8ff] text-slate-950 font-semibold'
+                          : 'bg-white/[0.06] text-white/75 border border-white/10 hover:bg-white/[0.12]'
+                      }`}
+                      title="Remove or restore the default white underwear painted on the base avatar"
+                    >
+                      {draft.hideBaseUnderwear && !draft.underwearId && !draft.corewearId
+                        ? 'Underwear: Removed (Click to Restore)'
+                        : 'Remove Default Underwear'}
+                    </button>
                   </div>
                 )}
                 <div className="flex items-center justify-between text-xs">

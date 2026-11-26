@@ -8023,6 +8023,21 @@
       "kb": 509
     },
     {
+      "id": "fit_f_top_1616c5dc_pbr",
+      "sourceId": "1616C5DC_PBR",
+      "slot": "top",
+      "gender": "female",
+      "name": "Resort Modern 4 (PBR Test)",
+      "collection": "Blitz Boutique · Women",
+      "glbPath": "/assets/outfit/fitted/female/top/1616C5DC_PBR.glb",
+      "swatchGradient": [
+        "#b9e1c7",
+        "#4e5e54"
+      ],
+      "accentHex": "#b9e1c7",
+      "kb": 1296
+    },
+    {
       "id": "fit_f_top_5dc8faa4",
       "sourceId": "5DC8FAA4",
       "slot": "top",

@@ -12810,20 +12810,19 @@ function convertToStylizedPlayerCharacterMaterial(
         `,
       );
     } else if (!isSkinMat && !isHairMat) {
-      // Multi-Scale Fabric Weave & Fold Micro-Relief Pass for clothing:
-      // Recovers crisp knit stitches, ribbed yarn lines, seams, and ruched pleat detail
-      // from 512px/1024px wardrobe albedo textures using hardware mipmap frequency decomposition.
+      // Clean Anime Fabric Clarity Pass for clothing:
+      // Gentle mipmap detail recovery without harsh photo/PBR sharpening grain on lace, denim, or prints.
       fragShader = fragShader.replace(
         '#include <map_fragment>',
         /* glsl */ `
         #ifdef USE_MAP
-          vec4 centerTap = texture2D( map, vMapUv, -0.35 );
-          vec3 microBlur = texture2D( map, vMapUv, 1.65 ).rgb;
-          vec3 macroBlur = texture2D( map, vMapUv, 3.55 ).rgb;
+          vec4 centerTap = texture2D( map, vMapUv, -0.10 );
+          vec3 microBlur = texture2D( map, vMapUv, 1.55 ).rgb;
+          vec3 macroBlur = texture2D( map, vMapUv, 3.25 ).rgb;
           vec3 threadWeave = centerTap.rgb - microBlur;
           vec3 foldRelief = microBlur - macroBlur;
           vec3 crispClothRgb = clamp(
-            centerTap.rgb + threadWeave * 1.45 + foldRelief * 0.90,
+            centerTap.rgb + threadWeave * 0.35 + foldRelief * 0.38,
             vec3( 0.0 ),
             vec3( 1.0 )
           );
@@ -12901,23 +12900,23 @@ function convertToStylizedPlayerCharacterMaterial(
       float darkGlareExcess = max( rawClothLuma - 0.042, 0.0 ) * darkFabricMask;
       float targetClothLuma = rawClothLuma - darkGlareExcess * 0.48;
 
-      float coloredFabricMask = smoothstep( 0.045, 0.16, rawClothChroma ) * ( 1.0 - smoothstep( 0.82, 0.95, rawClothLuma ) );
-      float washedOutFabricMask = coloredFabricMask * smoothstep( 0.26, 0.48, rawClothLuma ) * ( 1.0 - smoothstep( 0.54, 0.78, rawClothSat ) );
+      float coloredFabricMask = smoothstep( 0.030, 0.13, rawClothChroma ) * ( 1.0 - smoothstep( 0.92, 0.99, rawClothLuma ) );
+      float washedOutFabricMask = coloredFabricMask * smoothstep( 0.20, 0.42, rawClothLuma ) * ( 1.0 - smoothstep( 0.62, 0.88, rawClothSat ) );
 
-      float expandedClothLuma = pow( clamp( targetClothLuma, 0.0, 1.0 ), 1.38 ) * 0.92;
-      float sCurveClothLuma = smoothstep( 0.06, 0.92, targetClothLuma );
-      float richClothLuma = mix( expandedClothLuma, sCurveClothLuma, 0.45 );
-      float depthBlend = clamp( 0.58 * washedOutFabricMask + 0.16 * coloredFabricMask, 0.0, 0.72 );
+      float expandedClothLuma = pow( clamp( targetClothLuma, 0.0, 1.0 ), 1.54 ) * 0.85;
+      float sCurveClothLuma = smoothstep( 0.05, 0.89, targetClothLuma );
+      float richClothLuma = mix( expandedClothLuma, sCurveClothLuma, 0.30 );
+      float depthBlend = clamp( 0.76 * washedOutFabricMask + 0.25 * coloredFabricMask, 0.0, 0.86 );
       targetClothLuma = mix( targetClothLuma, richClothLuma, depthBlend );
 
-      float brightClothExcess = max( targetClothLuma - 0.84, 0.0 );
-      targetClothLuma -= brightClothExcess * 0.30;
+      float brightClothExcess = max( targetClothLuma - 0.78, 0.0 );
+      targetClothLuma -= brightClothExcess * 0.36;
       if ( rawClothLuma > 0.0005 ) {
         baseCol *= ( targetClothLuma / rawClothLuma );
       }
       baseCol = max( baseCol, vec3( 0.015, 0.016, 0.020 ) );
       float finalClothLuma = dot( baseCol, vec3( 0.299, 0.587, 0.114 ) );
-      float clothSatBoost = 1.12 + 0.44 * washedOutFabricMask + 0.12 * coloredFabricMask;
+      float clothSatBoost = 1.24 + 0.62 * washedOutFabricMask + 0.18 * coloredFabricMask;
       baseCol = max( vec3( 0.0 ), mix( vec3( finalClothLuma ), baseCol, clothSatBoost ) );
       float peakBaseC = max( max( baseCol.r, max( baseCol.g, baseCol.b ) ), 1.0 );
       baseCol /= peakBaseC;
@@ -12962,19 +12961,19 @@ function convertToStylizedPlayerCharacterMaterial(
       `
             : /* glsl */ `
       vec3 camClothL = normalize( viewWorld + vec3( 0.18, 0.72, 0.0 ) );
-      vec3 L = normalize( mix( worldL, camClothL, 0.25 ) );
+      vec3 L = normalize( mix( worldL, camClothL, 0.08 ) );
       float ndl = dot( N, L );
-      float celLit = smoothstep( -0.16, 0.30, ndl );
+      float celLit = smoothstep( -0.06, 0.18, ndl );
       float hemi = clamp( N.y * 0.5 + 0.5, 0.0, 1.0 );
-      float hemiShade = mix( 0.80, 1.03, hemi );
-      vec3 shadowTint = vec3( 0.66, 0.64, 0.72 );
-      vec3 litTint = mix( vec3( 1.00 ), uStylizedLightColor, 0.32 );
+      float hemiShade = mix( 0.78, 0.96, hemi );
+      vec3 shadowTint = vec3( 0.60, 0.58, 0.68 );
+      vec3 litTint = mix( vec3( 0.91 ), uStylizedLightColor * 0.92, 0.28 );
       vec3 shadedCol = baseCol * mix( shadowTint, litTint, celLit ) * hemiShade;
-      float rim = pow( clamp( 1.0 - abs( dot( N, viewWorld ) ), 0.0, 1.0 ), 3.2 ) * smoothstep( -0.1, 0.8, N.y );
-      vec3 rimScale = vec3( 0.048, 0.045, 0.050 );
+      float rim = pow( clamp( 1.0 - abs( dot( N, viewWorld ) ), 0.0, 1.0 ), 3.4 ) * smoothstep( -0.1, 0.8, N.y );
+      vec3 rimScale = vec3( 0.024, 0.023, 0.026 );
       vec3 rawClothOut = shadedCol + baseCol * rimScale * rim;
-      float peakOutC = max( max( rawClothOut.r, max( rawClothOut.g, rawClothOut.b ) ), 1.02 );
-      outgoingLight = rawClothOut * ( 1.02 / peakOutC );
+      float peakOutC = max( max( rawClothOut.r, max( rawClothOut.g, rawClothOut.b ) ), 0.96 );
+      outgoingLight = rawClothOut * ( 0.96 / peakOutC );
       `
       }
       #include <opaque_fragment>
@@ -15367,7 +15366,16 @@ function fadeToCharBuddiesAction(
     return;
   }
   const prevAction = ctrl.actions.get(ctrl.activeClipName);
+  // Stop any stale third action still fading or left enabled on this AnimationMixer
+  // so rapid clip switches (e.g. idle -> danceA -> danceB) never leave multiple
+  // AnimationActions pulling on the same skeleton bones simultaneously.
+  for (const [, act] of ctrl.actions) {
+    if (act !== nextAction && act !== prevAction && (act.isRunning() || act.getEffectiveWeight() > 0)) {
+      act.stop();
+    }
+  }
   nextAction.reset();
+  nextAction.enabled = true;
   nextAction.setEffectiveWeight(1);
   nextAction.play();
   if (clipName === 'fishing_cast.001') {
@@ -15377,7 +15385,11 @@ function fadeToCharBuddiesAction(
     nextAction.time = 1.3;
   }
   if (prevAction && prevAction !== nextAction) {
-    prevAction.crossFadeTo(nextAction, fadeDuration, false);
+    if (fadeDuration <= 0.001) {
+      prevAction.stop();
+    } else {
+      prevAction.crossFadeTo(nextAction, fadeDuration, false);
+    }
   }
   ctrl.activeClipName = clipName;
 }
@@ -18944,11 +18956,25 @@ function updateBlitzBaseDollBodySkinTrim<K extends keyof BlitzBodySkinActiveTrim
       }
 
       if (bestSigned > SKIN_RECESS_SIGNED_THRESH) {
-        const push =
+        let push =
           Math.min(
             SKIN_RECESS_MAX_PUSH,
             Math.max(0, bestSigned + SKIN_RECESS_TARGET_CLEARANCE),
           ) * ankleSeamScale;
+        // Softly taper recess right near an open skirt/pants waistband (top 4.2cm of legs garment)
+        // so exposed midriff/waist skin never gets pinched inward above the waistband rim.
+        const legsTopY = activeTrims.legs?.maxGarmentY;
+        const torsoMinY = activeTrims.torso?.hemCoverMinY;
+        const hasExposedMidriffAboveLegs =
+          legsTopY !== undefined &&
+          (torsoMinY === undefined || torsoMinY > legsTopY + 0.015);
+        if (hasExposedMidriffAboveLegs && legsTopY !== undefined && vy >= legsTopY - 0.045 && vy <= legsTopY + 0.030) {
+          const depthBelowRim = legsTopY - vy;
+          const rimT = Math.max(0, Math.min(1, depthBelowRim / 0.045));
+          const smoothRimScale = rimT * rimT * (3 - 2 * rimT);
+          const minPokeGuard = bestSigned > 0.0005 ? Math.min(0.012, bestSigned + 0.003) : 0;
+          push = Math.max(minPokeGuard, push * smoothRimScale);
+        }
         rawPush[i] = push;
         if (push > maxPush) maxPush = push;
       }
@@ -20762,6 +20788,12 @@ function stepCharBuddiesGlbRigController(
       (weaponId === 'unarmed' || isSitting) &&
       ctrl.clips.has('eat_makan_ngobrol.001'),
   );
+  const isPlayingSocialClip = Boolean(
+    rig.activeSocialClipName && targetClip === rig.activeSocialClipName,
+  );
+  const isPlayingCustomIdleOverride = Boolean(
+    rig.idleClipOverrideName && targetClip === rig.idleClipOverrideName,
+  );
   const minStepInterval =
     isMoving ||
     ctrl.turnInPlaceTimer > 0 ||
@@ -20769,7 +20801,9 @@ function stepCharBuddiesGlbRigController(
     isActiveFishingAction ||
     hasScooterPose ||
     isCafeWorkPose ||
-    isCafeEatingPose
+    isCafeEatingPose ||
+    isPlayingSocialClip ||
+    isPlayingCustomIdleOverride
       ? 0.008
       : 0.028;
   const shouldStepMixer =
@@ -20781,7 +20815,9 @@ function stepCharBuddiesGlbRigController(
     isActiveFishingAction ||
     hasScooterPose ||
     isCafeWorkPose ||
-    isCafeEatingPose;
+    isCafeEatingPose ||
+    isPlayingSocialClip ||
+    isPlayingCustomIdleOverride;
   if (shouldStepMixer && rawDt >= 0.002) {
     ctrl.lastStepTimeMs = nowMs;
     ctrl.mixer.update(stepDt);
@@ -20808,9 +20844,6 @@ function stepCharBuddiesGlbRigController(
 
   // 2B. Stabilize Hips & Spine pitch/roll in 'YXZ' order so diagonal strafing/turning never pitches the body over;
   // apply subtle turn/strafe banking (<= 3.3 deg) ONLY on Spine/Hips bones, never on the ground root group
-  const isPlayingSocialClip = Boolean(
-    rig.activeSocialClipName && targetClip === rig.activeSocialClipName,
-  );
   const isSeatedOrPiloting =
     Boolean(rig.isSeatedRiderRef) ||
     isDriving ||
@@ -20818,7 +20851,8 @@ function stepCharBuddiesGlbRigController(
     isSleeping ||
     Boolean(scooterRidePose) ||
     isCafeWorkPose ||
-    isPlayingSocialClip;
+    isPlayingSocialClip ||
+    isPlayingCustomIdleOverride;
   if (!isSeatedOrPiloting && !ctrl.isCustomSkeleton) {
     const yawRateRad = Math.max(-4.5, Math.min(4.5, deltaYaw / Math.max(0.008, stepDt)));
     const bankLeanRad = isMoving

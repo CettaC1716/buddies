@@ -704,10 +704,15 @@ test('Underwear slot selection supports underwear + corewear layering and bare o
   draft = applyItemSelectionToDraft(draft, anyTop);
   assert.equal(draft.hideOuterForUnderwear, false);
 
-  // Selecting starter "Polos / Lepas" clears both underwear & corewear
+  // Selecting starter "Bare / None" clears both underwear & corewear and removes baked base underwear
   draft = applyItemSelectionToDraft(draft, starterNone);
   assert.equal(draft.underwearId, null);
   assert.equal(draft.corewearId, null);
+  assert.equal(draft.hideBaseUnderwear, true);
+
+  // Clicking "Bare / None" again restores default baked base underwear
+  draft = applyItemSelectionToDraft(draft, starterNone);
+  assert.equal(draft.hideBaseUnderwear, false);
 });
 
 test('shouldFlipWardrobeThumbY flips glTF UV beauty thumbnails upright without flipping underwear or procedural previews', () => {

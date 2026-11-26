@@ -430,3 +430,139 @@ export function giveGiftToNpc(
     store: mutation.store,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Per-NPC Gift Treasury Persistence (accepted gifts enter the NPC's treasury)
+// ---------------------------------------------------------------------------
+
+export interface NpcTreasuryEntry {
+  id: string;
+  itemId: string;
+  itemName: string;
+  category: GiftCategory;
+  giftedAtMs: number;
+  giftedBy: string;
+}
+
+export type NpcTreasuryStore = Partial<Record<NpcId, NpcTreasuryEntry[]>>;
+
+const NPC_TREASURY_STORAGE_PREFIX = 'bb_npc_treasury_v1';
+
+export function getNpcTreasuryStorageKey(playerAccountId?: string | null): string {
+  const clean = (playerAccountId ?? '').trim().toLowerCase() || 'guest';
+  return `${NPC_TREASURY_STORAGE_PREFIX}:${clean}`;
+}
+
+export function loadNpcTreasuryStore(
+  playerAccountId?: string | null,
+  storage?: Pick<Storage, 'getItem'> | null,
+): NpcTreasuryStore {
+  const storeRef = storage ?? (typeof window !== 'undefined' ? window.localStorage : null);
+  if (!storeRef) return {};
+  try {
+    const raw = storeRef.getItem(getNpcTreasuryStorageKey(playerAccountId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed as NpcTreasuryStore;
+  } catch {
+    return {};
+  }
+}
+
+export function saveNpcTreasuryStore(
+  playerAccountId: string | null | undefined,
+  treasury: NpcTreasuryStore,
+  storage?: Pick<Storage, 'setItem'> | null,
+): void {
+  const storeRef = storage ?? (typeof window !== 'undefined' ? window.localStorage : null);
+  if (!storeRef) return;
+  try {
+    storeRef.setItem(getNpcTreasuryStorageKey(playerAccountId), JSON.stringify(treasury));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+export function recordNpcTreasuryGift(
+  treasury: NpcTreasuryStore,
+  rawNpcId: string | null | undefined,
+  entry: {
+    itemId: string;
+    itemName: string;
+    category: GiftCategory;
+    giftedBy?: string;
+    nowMs?: number;
+  },
+): NpcTreasuryStore {
+  const npcId = resolveNpcId(rawNpcId);
+  if (!npcId) return treasury;
+  const nowMs = entry.nowMs ?? Date.now();
+  const prevList = treasury[npcId] ?? [];
+  const nextEntry: NpcTreasuryEntry = {
+    id: `${npcId}_${entry.itemId}_${nowMs}`,
+    itemId: entry.itemId,
+    itemName: entry.itemName,
+    category: entry.category,
+    giftedAtMs: nowMs,
+    giftedBy: (entry.giftedBy ?? 'Player').trim() || 'Player',
+  };
+  return {
+    ...treasury,
+    [npcId]: [nextEntry, ...prevList].slice(0, 120),
+  };
+}
+
+export function getNpcTreasuryItems(
+  treasury: NpcTreasuryStore,
+  rawNpcId: string | null | undefined,
+): readonly NpcTreasuryEntry[] {
+  const npcId = resolveNpcId(rawNpcId);
+  if (!npcId) return [];
+  return treasury[npcId] ?? [];
+}
+
+export function buildNpcPairPoseDecisionReply(
+  rawNpcId: string | null | undefined,
+  accepted: boolean,
+): string {
+  const npcId = resolveNpcId(rawNpcId);
+  if (accepted) {
+    switch (npcId) {
+      case 'hana':
+        return 'Of course! Let us step over and pick a nice pose together.';
+      case 'kai':
+        return 'Sure thing. Lead the way and pick a pose — I will try not to blink.';
+      case 'mira':
+        return 'Yes! I would love to — let us pick a fun pose together!';
+      case 'nadia':
+        return 'Finally, someone with an eye for a good frame. Pick a pose and let us shoot.';
+      case 'tari':
+        return 'Oh, I am SO in! Pick a pose or dance and let us make it shine!';
+      case 'bima':
+        return 'Alright. Pick a pose — I am ready.';
+      case 'kenji':
+        return 'Very well, I have a moment off-duty. Please choose a pose.';
+      default:
+        return 'Sure, let us pose together! Pick one you like.';
+    }
+  }
+  switch (npcId) {
+    case 'hana':
+      return 'That is sweet of you to ask! Let us get to know each other a bit better first.';
+    case 'kai':
+      return 'Easy there — we barely know each other yet. Stick around and chat a bit first.';
+    case 'mira':
+      return 'Hehe, maybe after we have chatted a bit more! Come hang out with me first.';
+    case 'nadia':
+      return 'Not so fast. I only do paired shoots with people I know well — talk to me a bit more first.';
+    case 'tari':
+      return 'Ooh, rain check for now! Let us hang out and chat a little more first, okay?';
+    case 'bima':
+      return 'Not yet. Let us talk a bit more first.';
+    case 'kenji':
+      return 'I appreciate the offer, though I prefer to get acquainted a bit more before posing together.';
+    default:
+      return 'Maybe once we know each other a little better — let us chat a bit more first!';
+  }
+}

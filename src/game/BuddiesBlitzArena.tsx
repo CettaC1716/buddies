@@ -26,7 +26,7 @@ import {
   computeScooterPassengerTransform,
   dispatchNpcTogethernessState,
   getCuratedNpcPairPose,
-  resolveNpcScheduledWaypoint,
+  resolveNpcScheduledPatrolWaypoints,
   resolveVerifiedNpcEmotionClip,
   stepNpcWalkTogether,
   type NpcTogethernessCommand,
@@ -4943,9 +4943,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
     const cityAmbientNpcs: CityAmbientNpcController[] = CITY_AMBIENT_NPC_PRESETS.map(
       (preset, idx) => {
+        const initPatrolWaypoints = resolveNpcScheduledPatrolWaypoints(preset.id, 12);
         const startStopIdx =
           preset.waypoints.length > 0 ? idx % preset.waypoints.length : 0;
-        const wp0 = preset.waypoints[startStopIdx] ?? { x: 0, z: 0, yaw: 0 };
+        const wp0 =
+          (initPatrolWaypoints && initPatrolWaypoints[0]) ||
+          preset.waypoints[startStopIdx] ||
+          { x: 0, z: 0, yaw: 0 };
         const initYaw = wp0.yaw ?? 0;
         const initActivity = wp0.activity ?? preset.activity;
         const initSitting = initActivity === 'sit_relax';
@@ -5823,18 +5827,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               eastSignalState: eastTrafficSignalState,
             });
 
-          // Deterministic persona schedule lookup (LLM never decides movement):
-          // uses `getNpcPersona(npcId)?.schedule` when populated; falls back to default preset when empty.
-          const scheduledPersonaTarget = resolveNpcScheduledWaypoint(
+          // Deterministic multi-waypoint persona patrol loop (LLM never decides movement):
+          // uses `getNpcPersona(npcId)?.schedule` anchors so NPCs actively patrol their
+          // assigned territory instead of freezing on 1 bench or stacking on shared benches.
+          const scheduledPatrolWaypoints = resolveNpcScheduledPatrolWaypoints(
             npc.preset.id,
             worldClockHour,
           );
-          const effectiveSchedulePreset = scheduledPersonaTarget
-            ? {
-                ...npc.preset,
-                waypoints: [scheduledPersonaTarget.waypoint],
-              }
-            : npc.preset;
+          const effectiveSchedulePreset =
+            scheduledPatrolWaypoints && scheduledPatrolWaypoints.length > 0
+              ? {
+                  ...npc.preset,
+                  waypoints: scheduledPatrolWaypoints,
+                }
+              : npc.preset;
 
           stepped = stepCityAmbientNpcSchedule({
             preset: effectiveSchedulePreset,
@@ -6624,9 +6630,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       }
       builtCafe.root.add(custRoot);
 
-      // Station Mira permanently inside Glasshouse Cafe lounge as well as outdoors on Cafe Terrace
+      // WS7/WS8: Cafe keeps no named resident — Mira patrols Beach Club outdoors
       const miraRoot = new THREE.Group();
       miraRoot.name = 'CafeInteriorMiraNpc';
+      miraRoot.visible = false;
       miraRoot.position.set(CAFE_MIRA_INTERIOR_X, 0, CAFE_MIRA_INTERIOR_Z);
       miraRoot.scale.setScalar(0.55);
 
@@ -38441,6 +38448,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         redBaseHp,
         contextHint,
         radarDots,
+        playerWorldX: Math.round(playerUnit.x * 10) / 10,
+        playerWorldZ: Math.round(playerUnit.z * 10) / 10,
         floatingPrompts,
         editorObjectCount: currentMapLayout.props.length,
         editorCursorX: Math.round(aimWorldPoint.x * 2) / 2,

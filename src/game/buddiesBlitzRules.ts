@@ -15356,6 +15356,34 @@ export interface CityAmbientNpcPreset {
   waypoints: readonly CityAmbientNpcWaypoint[];
 }
 
+/**
+ * Resolves the live city district display name for the player's current world (x, z)
+ * position so the top-left HUD location indicator updates dynamically as the player
+ * explores Cerria:
+ * - West side (`x <= -60`, player spawn): West Plaza (with Tennis Club north, Grand Casino Plaza south)
+ * - Center of map (`-60 < x < 60`): Central Plaza (with Oasis Lake NW, North/South Residence)
+ * - East side (`x >= 60`): Beach Club, Harbor Pier & Fish Market, and Coastal Promenade
+ */
+export function resolveCityDistrictLabelAtPosition(x: number, z: number): string {
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return 'West Plaza';
+  if (x <= -60) {
+    if (z >= 42) return 'Tennis Club';
+    if (z <= -52) return 'Grand Casino Plaza';
+    return 'West Plaza';
+  }
+  if (x >= 60) {
+    if (x >= 72 && z >= 46) return 'Harbor Pier & Fish Market';
+    if (x >= 72 && z < 46) return 'Beach Club';
+    return 'Coastal Promenade';
+  }
+  if (x >= -56 && x <= -18 && z >= -32 && z <= 12) {
+    return 'Oasis Lake';
+  }
+  if (z <= -48) return 'North Residence';
+  if (z >= 48) return 'South Residence';
+  return 'Central Plaza';
+}
+
 export const CITY_AMBIENT_NPC_PRESETS: readonly CityAmbientNpcPreset[] = [
   {
     id: 'city_plaza_raka',

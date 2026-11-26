@@ -179,6 +179,8 @@ export interface HudSnapshot {
   kioskStatusMessage: string | null;
   contextHint: string;
   radarDots: RadarDot[];
+  playerWorldX?: number;
+  playerWorldZ?: number;
   floatingPrompts: FloatingWorldPrompt[];
   // Map Editor State
   editorObjectCount: number;

@@ -73,6 +73,7 @@ export interface BuddyFaceCustomizationProfile {
   faceoverlayOverlay?: BeautyUvLayerSpec | null;
   underwearOverlay?: BeautyUvLayerSpec | null;
   corewearOverlay?: BeautyUvLayerSpec | null;
+  hideBaseUnderwear?: boolean;
   tuning?: FaceTuningParams | null;
 }
 
@@ -90,6 +91,7 @@ export const DEFAULT_NEUTRAL_FACE_CUSTOMIZATION: BuddyFaceCustomizationProfile =
   faceoverlayOverlay: null,
   underwearOverlay: null,
   corewearOverlay: null,
+  hideBaseUnderwear: false,
   tuning: null,
 };
 
@@ -1106,6 +1108,7 @@ export function applyBuddyRigFaceCustomization(
         faceoverlayOverlay: profile.faceoverlayOverlay ?? null,
         underwearOverlay: profile.underwearOverlay ?? null,
         corewearOverlay: profile.corewearOverlay ?? null,
+        hideBaseUnderwear: Boolean(profile.hideBaseUnderwear),
         tuning: profile.tuning ?? null,
       }
     : DEFAULT_NEUTRAL_FACE_CUSTOMIZATION;
@@ -1195,7 +1198,8 @@ export function applyBuddyRigFaceCustomization(
     !resolved.browStyle &&
     !resolved.lipStyle &&
     overlayLayers.length === 0 &&
-    !hasTextureTuning;
+    !hasTextureTuning &&
+    !resolved.hideBaseUnderwear;
 
   // Trigger async load for any uncached overlay WebP and re-composite when ready
   const pendingUrls = overlayLayers
@@ -1291,7 +1295,23 @@ export function applyBuddyRigFaceCustomization(
   ctx.save();
   ctx.scale(scaleX, scaleY);
 
-  // -1. Body 2D Underwear & Corewear
+  // -1. Clear baked-in white underwear on the base skin atlas when player removes underwear
+  //     ("Bare / None") or equips custom underwear/corewear so white straps/panties never peek through.
+  //     Both atlases keep the face in top-right (x >= 650, y <= 260), cleanly separated from body UVs.
+  if (
+    resolved.hideBaseUnderwear ||
+    Boolean(resolved.underwearOverlay?.url) ||
+    Boolean(resolved.corewearOverlay?.url)
+  ) {
+    ctx.fillStyle = `rgb(${skinRgb[0]}, ${skinRgb[1]}, ${skinRgb[2]})`;
+    if (gender === 'female') {
+      ctx.fillRect(0, 368, 616, 482);
+    } else {
+      ctx.fillRect(0, 380, 600, 260);
+    }
+  }
+
+  // Body 2D Underwear & Corewear
   drawUvOverlayLayer(ctx, resolved.underwearOverlay);
   drawUvOverlayLayer(ctx, resolved.corewearOverlay);
 

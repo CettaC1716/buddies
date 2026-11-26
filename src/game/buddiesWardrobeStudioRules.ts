@@ -168,6 +168,7 @@ export interface WardrobeOutfitDraft {
   underwearId?: string | null;
   corewearId?: string | null;
   hideOuterForUnderwear?: boolean;
+  hideBaseUnderwear?: boolean;
   bodyShapeId: string | null;
   eyeStyleId: string | null;
   browStyleId: string | null;
@@ -231,6 +232,7 @@ export const EMPTY_WARDROBE_DRAFT: WardrobeOutfitDraft = {
   underwearId: null,
   corewearId: null,
   hideOuterForUnderwear: false,
+  hideBaseUnderwear: false,
   bodyShapeId: null,
   eyeStyleId: null,
   browStyleId: null,
@@ -2259,6 +2261,7 @@ export function areWardrobeDraftsEqual(a: WardrobeOutfitDraft, b: WardrobeOutfit
     (a.underwearId ?? null) === (b.underwearId ?? null) &&
     (a.corewearId ?? null) === (b.corewearId ?? null) &&
     Boolean(a.hideOuterForUnderwear) === Boolean(b.hideOuterForUnderwear) &&
+    Boolean(a.hideBaseUnderwear) === Boolean(b.hideBaseUnderwear) &&
     a.bodyShapeId === b.bodyShapeId &&
     a.eyeStyleId === b.eyeStyleId &&
     a.browStyleId === b.browStyleId &&
@@ -2407,12 +2410,19 @@ export function applyItemSelectionToDraft(
   }
   if (item.slot === 'underwear') {
     if (item.isStarterDefault) {
+      const alreadyBare =
+        (next.underwearId ?? null) === null &&
+        (next.corewearId ?? null) === null &&
+        Boolean(next.hideBaseUnderwear);
       next.underwearId = null;
       next.corewearId = null;
+      next.hideBaseUnderwear = !alreadyBare;
     } else if (item.underwearSubSlot === 'corewear') {
       next.corewearId = (next.corewearId ?? null) === resolvedId ? null : resolvedId;
+      if (next.corewearId) next.hideBaseUnderwear = false;
     } else {
       next.underwearId = (next.underwearId ?? null) === resolvedId ? null : resolvedId;
+      if (next.underwearId) next.hideBaseUnderwear = false;
     }
     return next;
   }
@@ -2735,6 +2745,7 @@ export function resolveWardrobeDraftFaceCustomization(
       underwearItem?.slot === 'underwear' ? pickGenderedOverlay(underwearItem) : null,
     corewearOverlay:
       corewearItem?.slot === 'underwear' ? pickGenderedOverlay(corewearItem) : null,
+    hideBaseUnderwear: Boolean(draft.hideBaseUnderwear),
     tuning: {
       lipScale:
         typeof draft.lipScale === 'number' && Number.isFinite(draft.lipScale)

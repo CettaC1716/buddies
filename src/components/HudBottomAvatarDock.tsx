@@ -54,6 +54,7 @@ export interface HudBottomAvatarDockProps {
   canCycleTargetEntity?: boolean;
   hasOwnedPairedAnimations?: boolean;
   isPairedModeActive?: boolean;
+  isNpcChatSessionActive?: boolean;
   onToggleTargetInteraction?: () => void;
   onClearTargetEntity?: () => void;
   onCycleTargetEntity?: () => void;
@@ -161,6 +162,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
   canCycleTargetEntity = false,
   hasOwnedPairedAnimations = false,
   isPairedModeActive = false,
+  isNpcChatSessionActive = false,
   onToggleTargetInteraction,
   onClearTargetEntity,
   onCycleTargetEntity,
@@ -285,7 +287,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
           left: 'max(0.75rem, var(--safe-left))',
           maxWidth: 'calc(100vw - 148px)',
         }}
-        className="fixed z-30 flex items-center gap-1.5 pointer-events-auto select-none"
+        className="fixed z-[45] flex items-center gap-1.5 pointer-events-auto select-none"
       >
         {/* Compact Avatar Portrait */}
         <div className="relative shrink-0">
@@ -520,8 +522,8 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
       }
       className={
         isTabletDock
-          ? 'fixed z-30 flex flex-col items-end gap-2 pointer-events-none select-none'
-          : 'fixed bottom-3.5 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 pointer-events-none select-none'
+          ? 'fixed z-[45] flex flex-col items-end gap-2 pointer-events-none select-none'
+          : 'fixed bottom-3.5 left-1/2 -translate-x-1/2 z-[45] flex flex-col items-center gap-2 pointer-events-none select-none'
       }
     >
       {/* Main Constant-Width 2-Tier Hero Dock (Scaled slightly on Tablet) */}
@@ -639,7 +641,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                   </button>
 
                   <div className="flex items-center gap-0.5 shrink-0">
-                    {canCycleTargetEntity && onCycleTargetEntity && (
+                    {canCycleTargetEntity && onCycleTargetEntity && !isNpcChatSessionActive && (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -690,22 +692,28 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
             </div>
 
             {/* Pill 2: Vibrant Color-Coded Bag & Motor Mode Switcher */}
+            {(() => {
+              const isModeSwitcherDisabled = isPairedModeActive || isNpcChatSessionActive;
+              const disabledLabel = isNpcChatSessionActive
+                ? 'Disabled during NPC chat'
+                : 'Disabled during Paired Mode';
+              return (
             <div
               data-dock-mode-switcher="true"
-              data-dock-mode-switcher-disabled={isPairedModeActive ? 'true' : 'false'}
+              data-dock-mode-switcher-disabled={isModeSwitcherDisabled ? 'true' : 'false'}
               className="shrink-0 h-full px-1.5 rounded-2xl bg-[#111622]/86 border border-white/22 shadow-[0_8px_24px_rgba(0,0,0,0.4)] flex items-center gap-1.5"
             >
               <button
                 type="button"
                 data-dock-tab-bag="true"
-                disabled={isPairedModeActive}
-                aria-disabled={isPairedModeActive}
+                disabled={isModeSwitcherDisabled}
+                aria-disabled={isModeSwitcherDisabled}
                 onClick={() => handleSelectCategory('bag')}
-                title={isPairedModeActive ? 'Disabled during Paired Mode' : 'Bag Quick Items'}
+                title={isModeSwitcherDisabled ? disabledLabel : 'Bag Quick Items'}
                 aria-label="Bag Quick Items"
-                aria-pressed={!isPairedModeActive && !showTargetInteractionBar && dockCategory === 'bag'}
+                aria-pressed={!isModeSwitcherDisabled && !showTargetInteractionBar && dockCategory === 'bag'}
                 className={`relative w-7 h-7 rounded-xl flex items-center justify-center transition-all ${
-                  isPairedModeActive
+                  isModeSwitcherDisabled
                     ? 'bg-white/[0.06] border border-white/10 text-white/30 opacity-45 saturate-0 cursor-not-allowed'
                     : !showTargetInteractionBar && dockCategory === 'bag'
                       ? 'bg-gradient-to-br from-emerald-400 to-teal-500 text-white ring-1 ring-white/70 shadow-[0_3px_10px_rgba(16,185,129,0.48)] cursor-pointer active:scale-95'
@@ -713,7 +721,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                 }`}
               >
                 <Backpack className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
-                {isFishingRodEquipped && !isPairedModeActive && (
+                {isFishingRodEquipped && !isModeSwitcherDisabled && (
                   <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-lime-300 border border-[#0d1118]" />
                 )}
               </button>
@@ -721,14 +729,14 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
               <button
                 type="button"
                 data-dock-tab-scooter="true"
-                disabled={isPairedModeActive}
-                aria-disabled={isPairedModeActive}
+                disabled={isModeSwitcherDisabled}
+                aria-disabled={isModeSwitcherDisabled}
                 onClick={() => handleSelectCategory('scooter')}
-                title={isPairedModeActive ? 'Disabled during Paired Mode' : 'Scooters & Rides'}
+                title={isModeSwitcherDisabled ? disabledLabel : 'Scooters & Rides'}
                 aria-label="Scooters & Rides"
-                aria-pressed={!isPairedModeActive && !showTargetInteractionBar && dockCategory === 'scooter'}
+                aria-pressed={!isModeSwitcherDisabled && !showTargetInteractionBar && dockCategory === 'scooter'}
                 className={`relative w-7 h-7 rounded-xl flex items-center justify-center transition-all ${
-                  isPairedModeActive
+                  isModeSwitcherDisabled
                     ? 'bg-white/[0.06] border border-white/10 text-white/30 opacity-45 saturate-0 cursor-not-allowed'
                     : !showTargetInteractionBar && dockCategory === 'scooter'
                       ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-white ring-1 ring-white/70 shadow-[0_3px_10px_rgba(245,158,11,0.48)] cursor-pointer active:scale-95'
@@ -736,11 +744,13 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                 }`}
               >
                 <Bike className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
-                {equippedScooterKind && !isPairedModeActive && (
+                {equippedScooterKind && !isModeSwitcherDisabled && (
                   <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-lime-300 border border-[#0d1118]" />
                 )}
               </button>
             </div>
+              );
+            })()}
           </div>
 
           {/* BOTTOM TIER: Constant-Width (w-full = 252px) Color-Coded Icon-Only Quick Bar */}
@@ -765,25 +775,27 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                   <User className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
                 </button>
 
-                {/* 2. Whisper / Talk (Emerald Glossy Button) */}
-                <button
-                  type="button"
-                  data-target-action="whisper"
-                  onClick={handleWhisperOrTalk}
-                  title={
-                    targetIsRealPlayer
-                      ? `Whisper ${displayName}`
-                      : `Talk to ${displayName}`
-                  }
-                  aria-label={
-                    targetIsRealPlayer
-                      ? `Whisper ${displayName}`
-                      : `Talk to ${displayName}`
-                  }
-                  className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-green-600 hover:brightness-110 border border-emerald-200/50 text-white shadow-[0_4px_12px_rgba(16,185,129,0.4)] flex items-center justify-center transition-all active:scale-95 cursor-pointer"
-                >
-                  <MessageCircle className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
-                </button>
+                {/* 2. Whisper / Talk (Emerald Glossy Button — hidden while already in NPC chat session) */}
+                {!isNpcChatSessionActive && (
+                  <button
+                    type="button"
+                    data-target-action="whisper"
+                    onClick={handleWhisperOrTalk}
+                    title={
+                      targetIsRealPlayer
+                        ? `Whisper ${displayName}`
+                        : `Talk to ${displayName}`
+                    }
+                    aria-label={
+                      targetIsRealPlayer
+                        ? `Whisper ${displayName}`
+                        : `Talk to ${displayName}`
+                    }
+                    className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-green-600 hover:brightness-110 border border-emerald-200/50 text-white shadow-[0_4px_12px_rgba(16,185,129,0.4)] flex items-center justify-center transition-all active:scale-95 cursor-pointer"
+                  >
+                    <MessageCircle className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+                  </button>
+                )}
 
                 {/* 3. Send Gift (Pink-Rose Glossy Button) */}
                 <button

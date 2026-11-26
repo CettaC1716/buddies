@@ -308,6 +308,96 @@ export const CITY_LIFE_ANCHORS: Readonly<Record<string, CityLifeAnchor>> = {
     activity: 'fishing',
     district: 'beachfront_pier',
   },
+  beach_club_promenade_north: {
+    id: 'beach_club_promenade_north',
+    label: 'Beach Club Palm Promenade (North)',
+    x: 84.5,
+    z: -64.0,
+    yaw: Math.PI / 2,
+    activity: 'sightseeing',
+    district: 'beachfront_pier',
+  },
+  beach_club_promenade_mid: {
+    id: 'beach_club_promenade_mid',
+    label: 'Beach Club Palm Promenade (Center)',
+    x: 84.5,
+    z: -14.0,
+    yaw: Math.PI / 2,
+    activity: 'sightseeing',
+    district: 'beachfront_pier',
+  },
+  beach_club_lounge_walk: {
+    id: 'beach_club_lounge_walk',
+    label: 'Beach Club Lounge Walk',
+    x: 86.0,
+    z: 6.0,
+    yaw: Math.PI / 2,
+    activity: 'walk_patrol',
+    district: 'beachfront_pier',
+  },
+  beach_club_promenade_south: {
+    id: 'beach_club_promenade_south',
+    label: 'Beach Club Palm Promenade (South)',
+    x: 84.5,
+    z: 22.0,
+    yaw: Math.PI / 2,
+    activity: 'sightseeing',
+    district: 'beachfront_pier',
+  },
+  central_beauty_salon_front: {
+    id: 'central_beauty_salon_front',
+    label: 'Central Plaza Beauty Salon',
+    x: 29.5,
+    z: 7.4,
+    yaw: 0.0,
+    activity: 'sightseeing',
+    district: 'central_plaza',
+  },
+  central_boutique_front: {
+    id: 'central_boutique_front',
+    label: 'Central Plaza Boutique Tower',
+    x: 20.8,
+    z: 0.0,
+    yaw: Math.PI / 2,
+    activity: 'sightseeing',
+    district: 'central_plaza',
+  },
+  central_cozy_cafe_front: {
+    id: 'central_cozy_cafe_front',
+    label: 'Central Plaza Cozy Bites',
+    x: 37.0,
+    z: -4.5,
+    yaw: -Math.PI / 2,
+    activity: 'cafe_hangout',
+    district: 'central_plaza',
+  },
+  central_plaza_north_walk: {
+    id: 'central_plaza_north_walk',
+    label: 'Central Plaza Tram Promenade',
+    x: 20.5,
+    z: -10.5,
+    yaw: 0.0,
+    activity: 'walk_patrol',
+    district: 'central_plaza',
+  },
+  central_plaza_west_gate: {
+    id: 'central_plaza_west_gate',
+    label: 'Central Plaza West Gate',
+    x: 1.5,
+    z: -7.5,
+    yaw: Math.PI / 2,
+    activity: 'walk_patrol',
+    district: 'central_plaza',
+  },
+  central_plaza_east_walk: {
+    id: 'central_plaza_east_walk',
+    label: 'Central Plaza East Promenade',
+    x: 52.8,
+    z: -5.5,
+    yaw: -Math.PI / 2,
+    activity: 'walk_patrol',
+    district: 'central_plaza',
+  },
 } as const;
 
 export const CITY_LIFE_ANCHOR_IDS: readonly string[] = Object.keys(CITY_LIFE_ANCHORS);
@@ -414,6 +504,68 @@ export function resolveNpcScheduledWaypoint(
       seatLiftY: anchor.seatLiftY,
     },
   };
+}
+
+/**
+ * Builds a multi-waypoint patrol loop for a named NPC starting from its active
+ * scheduled anchor so the NPC actively roams its district instead of freezing
+ * on a single bench for hours.
+ */
+export function resolveNpcScheduledPatrolWaypoints(
+  rawNpcId: string,
+  timeOfDayHours: number,
+): CityAmbientNpcWaypoint[] | null {
+  // Ambient Raka roams Central Urban Plaza (map center) per WS7 pairing revision
+  if (rawNpcId === 'city_plaza_raka') {
+    const rakaAnchorIds = [
+      'central_plaza_west_gate',
+      'central_boutique_front',
+      'central_plaza_north_walk',
+      'central_cozy_cafe_front',
+      'central_plaza_east_walk',
+    ] as const;
+    return rakaAnchorIds
+      .map((id) => getCityLifeAnchor(id))
+      .filter((a): a is CityLifeAnchor => Boolean(a))
+      .map((anchor) => ({
+        x: anchor.x,
+        z: anchor.z,
+        yaw: anchor.yaw,
+        activity: anchor.activity,
+        moveMode: 'walk' as const,
+        label: anchor.label,
+        durationSec: 15.0,
+        seatLiftY: anchor.seatLiftY,
+      }));
+  }
+  const npcId = resolveNpcId(rawNpcId);
+  if (!npcId) return null;
+  ensureAllNpcPersonasRegistered();
+  const schedule = getNpcPersona(npcId)?.schedule;
+  if (!schedule || schedule.length === 0) return null;
+
+  const activeIdx = schedule.findIndex((slot) => isHourInScheduleSlot(timeOfDayHours, slot));
+  const startIdx = activeIdx >= 0 ? activeIdx : 0;
+  const ordered = [...schedule.slice(startIdx), ...schedule.slice(0, startIdx)];
+
+  const seenAnchors = new Set<string>();
+  const waypoints: CityAmbientNpcWaypoint[] = [];
+  for (const slot of ordered) {
+    const anchor = getCityLifeAnchor(slot.anchorId) ?? getCityLifeAnchor(slot.waypointId);
+    if (!anchor || seenAnchors.has(anchor.id)) continue;
+    seenAnchors.add(anchor.id);
+    waypoints.push({
+      x: anchor.x,
+      z: anchor.z,
+      yaw: anchor.yaw,
+      activity: anchor.activity,
+      moveMode: 'walk',
+      label: slot.activityLabel.trim() || anchor.label,
+      durationSec: anchor.activity === 'sit_relax' ? 22.0 : 16.0,
+      seatLiftY: anchor.seatLiftY,
+    });
+  }
+  return waypoints.length > 0 ? waypoints : null;
 }
 
 // ============================================================================
