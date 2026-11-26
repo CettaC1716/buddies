@@ -20,7 +20,6 @@ import {
 } from './npcClosenessEngine';
 import {
   NPC_TOGETHERNESS_COMMAND_EVENT,
-  applyScooterPillionHugPose,
   computeScooterPassengerTransform,
   dispatchNpcTogethernessState,
   getCuratedNpcPairPose,
@@ -6344,8 +6343,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         );
         npc.shadowMesh.visible = !npc.isSitting;
         if (isRidingPassengerNow && scooterRideState && playerUnit) {
-          // WS24 Defect 3: Hard-anchor passenger root to the scooter passenger transform every frame
-          // (exact position, yaw, slope pitch, and cornering lean roll — zero independent root rotation).
+          // Hard-anchor passenger root to the scooter pillion every frame, seated sideways
+          // (classic side-saddle sit animation) with locked heading so she never spins around.
           const pillionTf = computeScooterPassengerTransform({
             driverX: playerUnit.x,
             driverZ: playerUnit.z,
@@ -6356,9 +6355,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           });
           npc.bodyGroup.rotation.order = 'YXZ';
           npc.bodyGroup.rotation.set(
-            pillionTf.pitchX,
-            pillionTf.yaw + Math.PI / 2,
             pillionTf.rollZ,
+            pillionTf.yaw,
+            -pillionTf.pitchX,
           );
           npc.bodyGroup.position.y = 0;
           applyPlanetCurvatureToObject(
@@ -6473,9 +6472,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               npc.rig.weaponRigGroup.visible = false;
               npc.rig.pistolGroup.visible = false;
             }
-            if (isRidingPassengerNow) {
-              applyScooterPillionHugPose(npc.rig, timeSec);
-            }
           }
         } else if (npc.rig.customGlbController) {
           npc.rig.customGlbController.lastStepTimeMs = nowMs;
@@ -6585,9 +6581,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                 );
                 mNpc.npcGrp.rotation.order = 'YXZ';
                 mNpc.npcGrp.rotation.set(
-                  pillionTf.pitchX,
-                  pillionTf.yaw + Math.PI / 2,
                   pillionTf.rollZ,
+                  pillionTf.yaw,
+                  -pillionTf.pitchX,
                 );
               } else {
                 const groundAtNpc = getTerrainElevation(approach.x, approach.z);
@@ -6603,9 +6599,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             );
             mNpc.npcGrp.rotation.order = 'YXZ';
             mNpc.npcGrp.rotation.set(
-              pillionTf.pitchX,
-              pillionTf.yaw + Math.PI / 2,
               pillionTf.rollZ,
+              pillionTf.yaw,
+              -pillionTf.pitchX,
             );
           }
           if (mNpc.npcRig.activeSocialClipName === 'scooter_bike_idle.001') {
@@ -6638,9 +6634,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             'chair',
             null,
           );
-          if (activeRideTogether.phase === 'mounted') {
-            applyScooterPillionHugPose(mNpc.npcRig, timeSec);
-          }
         }
       } else if (
         activeWalkTogether &&
@@ -22745,6 +22738,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       ) {
         for (const standingNpc of [lobbyCafeNpc, beachHouseNpc]) {
           if (!standingNpc?.npcGrp?.visible) continue;
+          // Exempt the NPC currently riding (or approaching to ride) on the player's scooter
+          // so her body capsule at -0.98m behind the driver never shoves the motorbike forward!
+          if (
+            isPlayerControlled &&
+            activeRideTogether &&
+            ((standingNpc === lobbyCafeNpc && activeRideTogether.npcId === 'hana') ||
+              (standingNpc === beachHouseNpc && activeRideTogether.npcId === 'kai'))
+          ) {
+            continue;
+          }
           const npcX = standingNpc.npcGrp.position.x;
           const npcZ = standingNpc.npcGrp.position.z;
           if (Math.abs(mover.x - npcX) > 4.5 || Math.abs(mover.z - npcZ) > 4.5) continue;
@@ -22775,6 +22778,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         for (let ni = 0; ni < cityAmbientNpcs.length; ni++) {
           const citizen = cityAmbientNpcs[ni];
           if (!citizen.root.visible) continue;
+          // Exempt the passenger NPC currently riding (or approaching to ride) on the player's scooter
+          // so her body capsule at -0.98m behind the driver never pushes the scooter forward!
+          if (
+            isPlayerControlled &&
+            activeRideTogether &&
+            activeRideTogether.citizenId === citizen.preset.id
+          ) {
+            continue;
+          }
           if (Math.abs(mover.x - citizen.x) > 4.5 || Math.abs(mover.z - citizen.z) > 4.5) continue;
           if (Math.abs(moverGroundY - getTerrainElevation(citizen.x, citizen.z)) > 2.2) continue;
           for (const hs of hullSpheres) {

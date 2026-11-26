@@ -33,6 +33,7 @@ import {
   createEmptyNpcPacingStore,
   detectProgressiveChatIntent,
   evaluateProgressiveCategoryVerdict,
+  getLastCompletedCategoryForNpc,
   type NpcPacingStore,
   type PairedPoseCategory,
   type TogethernessActionCategory,
@@ -316,9 +317,13 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
       return;
     }
 
-    // Progressive chat negotiation: detect togetherness intent and produce verdict-conditioned reply.
-    // Free text alone NEVER executes anything physically; on accept, App surfaces ONE live icon chip in the NPC profile dock (WS27).
-    const progressiveIntent = detectProgressiveChatIntent(trimmed);
+    // Progressive chat negotiation: detect togetherness intent (including WS28 context-aware "lagi"/"again" re-invites)
+    // and produce a verdict-conditioned reply line (intent turns NEVER fall through to free LLM prose).
+    const lastCompleted = getLastCompletedCategoryForNpc(effectivePacingStore, namedNpcId);
+    const progressiveIntent = detectProgressiveChatIntent(trimmed, {
+      lastCompletedCategory: lastCompleted?.category ?? null,
+      lastCompletedAtMs: lastCompleted?.completedAtMs ?? null,
+    });
     if (progressiveIntent === 'end' && !isPhoneChat) {
       onClearPendingDockChip?.(namedNpcId);
       if (npcTogethernessState.ridingNpcId === namedNpcId && onToggleNpcRideTogether) {

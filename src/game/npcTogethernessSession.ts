@@ -500,13 +500,13 @@ const END_TOGETHERNESS_PATTERNS: readonly RegExp[] = [
 ];
 
 const RIDE_TOGETHER_PATTERNS: readonly RegExp[] = [
-  /\b(ride together|ride along|go for a ride|take a ride|hop on|ride with me|scooter ride|want a ride|get on my (scooter|bike|motor))\b/i,
-  /\b(bonceng\w*|naik\s+(motor\w*|skuter\w*|scooter\w*|vespa\w*|sepeda\s*motor\w*)|ikut\s+naik|keliling\s+naik|sini\s+naik|ayo\s+naik|yuk\s+naik)/i,
+  /\b(ride together|ride along|go for a ride|take a ride|hop on|ride with me|scooter ride|want a ride|get on my (scooter|bike|motor)|one more ride|ride again)\b/i,
+  /\b(bonceng\w*(\s+lagi)?|naik\s+(motor\w*|skuter\w*|scooter\w*|vespa\w*|sepeda\s*motor\w*|lagi)|ikut\s+naik|keliling\s+(naik|lagi)|sini\s+naik|ayo\s+naik(\s+lagi)?|yuk\s+naik(\s+lagi)?|gas\s+lagi)/i,
 ];
 
 const WALK_TOGETHER_PATTERNS: readonly RegExp[] = [
-  /\b(walk together|go for a walk|take a walk|walk with me|stroll together|let'?s walk|wanna walk)\b/i,
-  /\b(jalan\s+bareng|jalan-jalan|jalan\s+bersama|temen\w*\s+jalan|teman\w*\s+jalan|ikut\s+jalan|ayo\s+jalan|yuk\s+jalan|mau\s+jalan)/i,
+  /\b(walk together|go for a walk|take a walk|walk with me|stroll together|let'?s walk|wanna walk|walk again|stroll again)\b/i,
+  /\b(jalan\s+bareng|jalan-jalan|jalan\s+bersama|jalan\s+lagi|temen\w*\s+jalan|teman\w*\s+jalan|ikut\s+jalan|ayo\s+jalan(\s+lagi)?|yuk\s+jalan(\s+lagi)?|mau\s+jalan)/i,
 ];
 
 /**

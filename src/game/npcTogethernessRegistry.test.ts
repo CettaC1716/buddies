@@ -14,6 +14,7 @@ import {
   CATEGORY_COOLDOWN_MS,
   DOCK_CHIP_EXPIRY_MS,
   PAIRED_ANIMATION_CATEGORY_REGISTRY,
+  REINVITE_CONTEXT_WINDOW_MS,
   advancePendingChipOtherTurn,
   computeDiminishingClosenessDelta,
   createEmptyNpcPacingStore,
@@ -22,6 +23,7 @@ import {
   evaluateProgressiveCategoryVerdict,
   filterPairedItemsForAcceptedCategory,
   formatEmptyCategoryPickerMessage,
+  getLastCompletedCategoryForNpc,
   getPairedCategoryCounts,
   isPairedTargetStillInProximity,
   isPendingDockChipExpired,
@@ -481,4 +483,93 @@ test('WS26 acceptance & diagnostic chain: real target entity, empty-category cop
       true,
     );
   }
+});
+
+test('WS28 acceptance: context-aware re-invite ("ayo naik lagi", "ayo lagi") accepts immediately within 1m with reduced closeness', () => {
+  const t0 = Date.UTC(2026, 10, 27, 5, 0, 0);
+  const store = buildStoreAtScore('tari', 90); // trusted band
+  let pacing = createEmptyNpcPacingStore();
+
+  // 1st ride completes
+  const firstRide = recordCompletedCategorySession({
+    pacingStore: pacing,
+    npcId: 'tari',
+    category: 'ride',
+    baseClosenessDelta: 8,
+    nowMs: t0,
+  });
+  pacing = firstRide.pacingStore;
+  assert.equal(firstRide.awardedClosenessDelta, 8);
+
+  const lastCompleted = getLastCompletedCategoryForNpc(pacing, 'tari');
+  assert.deepEqual(lastCompleted, { category: 'ride', completedAtMs: t0 });
+
+  // Within 1 minute of getting off: "ayo naik lagi" -> explicit ride intent + accepted (NEVER blocked by cooldown)
+  const t1 = t0 + 30_000;
+  assert.equal(
+    detectProgressiveChatIntent('ayo naik lagi', {
+      lastCompletedCategory: lastCompleted?.category,
+      lastCompletedAtMs: lastCompleted?.completedAtMs,
+      nowMs: t1,
+    }),
+    'ride',
+  );
+  const v1 = evaluateProgressiveCategoryVerdict({
+    store,
+    pacingStore: pacing,
+    npcId: 'tari',
+    category: 'ride',
+    isInPerson: true,
+    playerScooterKind: 'electric_scooter_bike',
+    nowMs: t1,
+  });
+  assert.equal(v1.accepted, true);
+  assert.equal(v1.reason, 'accepted');
+  assert.ok(v1.replyLine.length > 0);
+
+  // Repeat with bare "ayo lagi" -> resolves to 'ride' via 15m context window -> accepted immediately
+  assert.equal(
+    detectProgressiveChatIntent('ayo lagi', {
+      lastCompletedCategory: lastCompleted?.category,
+      lastCompletedAtMs: lastCompleted?.completedAtMs,
+      nowMs: t1 + 5_000,
+    }),
+    'ride',
+  );
+  assert.equal(
+    detectProgressiveChatIntent('let\'s go again', {
+      lastCompletedCategory: lastCompleted?.category,
+      lastCompletedAtMs: lastCompleted?.completedAtMs,
+      nowMs: t1 + 5_000,
+    }),
+    'ride',
+  );
+
+  // Outside 15-minute window, bare "ayo lagi" does NOT misfire
+  assert.equal(
+    detectProgressiveChatIntent('ayo lagi', {
+      lastCompletedCategory: lastCompleted?.category,
+      lastCompletedAtMs: lastCompleted?.completedAtMs,
+      nowMs: t0 + REINVITE_CONTEXT_WINDOW_MS + 1000,
+    }),
+    null,
+  );
+
+  // 2nd ride grants reduced closeness (50% = 4), 3rd grants 0 — pacing intact while action never refused
+  const secondRide = recordCompletedCategorySession({
+    pacingStore: pacing,
+    npcId: 'tari',
+    category: 'ride',
+    baseClosenessDelta: 8,
+    nowMs: t1,
+  });
+  assert.equal(secondRide.awardedClosenessDelta, 4);
+  const thirdRide = recordCompletedCategorySession({
+    pacingStore: secondRide.pacingStore,
+    npcId: 'tari',
+    category: 'ride',
+    baseClosenessDelta: 8,
+    nowMs: t1 + 20_000,
+  });
+  assert.equal(thirdRide.awardedClosenessDelta, 0);
 });

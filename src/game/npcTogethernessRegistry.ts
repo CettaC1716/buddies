@@ -47,6 +47,7 @@ export type ChatVerdictIntent = TogethernessActionCategory | 'end' | null;
 export const DOCK_CHIP_EXPIRY_MS = 90_000;
 export const DOCK_CHIP_MAX_OTHER_TURNS = 3;
 export const CATEGORY_COOLDOWN_MS = 10 * 60 * 1000;
+export const REINVITE_CONTEXT_WINDOW_MS = 15 * 60 * 1000;
 export const DOCK_SEEN_LABELS_STORAGE_KEY = 'bb_npc_dock_seen_v1';
 
 const BAND_RANK: Readonly<Record<ClosenessBand, number>> = {
@@ -264,11 +265,51 @@ const POSE_INTENT_PATTERNS: ReadonlyArray<{
   },
 ];
 
+const BARE_REINVITE_PATTERNS: readonly RegExp[] = [
+  /^\s*(lagi|ayo\s+lagi|yuk\s+lagi|lanjut(\s+lagi)?|gas\s+lagi|sekali\s+lagi|again|let'?s\s+go\s+again|one\s+more\s+time)\s*[!?.~]*\s*$/i,
+  /\b(ayo\s+lagi|yuk\s+lagi|sekali\s+lagi|let'?s\s+go\s+again)\b/i,
+];
+
+export interface ReinviteDetectionContext {
+  lastCompletedCategory?: TogethernessActionCategory | null;
+  lastCompletedAtMs?: number | null;
+  nowMs?: number;
+}
+
+/**
+ * Returns the most recently completed togetherness category & timestamp for an NPC
+ * from the pacing store (used for context-aware bare re-invitations within 15 minutes).
+ */
+export function getLastCompletedCategoryForNpc(
+  pacingStore: NpcPacingStore,
+  npcId: NpcId,
+): { category: TogethernessActionCategory; completedAtMs: number } | null {
+  const npcEntries = pacingStore[npcId];
+  if (!npcEntries) return null;
+  let best: { category: TogethernessActionCategory; completedAtMs: number } | null = null;
+  for (const [cat, entry] of Object.entries(npcEntries)) {
+    if (!entry || !Number.isFinite(entry.lastCompletedAtMs)) continue;
+    if (!best || entry.lastCompletedAtMs > best.completedAtMs) {
+      best = {
+        category: cat as TogethernessActionCategory,
+        completedAtMs: entry.lastCompletedAtMs,
+      };
+    }
+  }
+  return best;
+}
+
 /**
  * Detects any togetherness intent in natural player chat:
  * end | ride | walk | hold_hands | hug | kiss | dance | sit_together | fun_pose | null.
+ * WS28: Within a 15-minute window after a completed session, bare re-invite phrases
+ * ("lagi", "ayo lagi", "lanjut", "sekali lagi", "again", "let's go again") resolve
+ * to `context.lastCompletedCategory` so intent turns never fall through to free LLM prose.
  */
-export function detectProgressiveChatIntent(rawText: string): ChatVerdictIntent {
+export function detectProgressiveChatIntent(
+  rawText: string,
+  context?: ReinviteDetectionContext,
+): ChatVerdictIntent {
   const clean = (rawText || '').trim();
   if (!clean) return null;
   const base = detectChatTogethernessIntent(clean);
@@ -276,6 +317,21 @@ export function detectProgressiveChatIntent(rawText: string): ChatVerdictIntent 
   for (const group of POSE_INTENT_PATTERNS) {
     if (group.patterns.some((re) => re.test(clean))) {
       return group.category;
+    }
+  }
+  if (
+    context?.lastCompletedCategory &&
+    typeof context.lastCompletedAtMs === 'number' &&
+    Number.isFinite(context.lastCompletedAtMs)
+  ) {
+    const nowMs = context.nowMs ?? Date.now();
+    const ageMs = nowMs - context.lastCompletedAtMs;
+    if (
+      ageMs >= 0 &&
+      ageMs <= REINVITE_CONTEXT_WINDOW_MS &&
+      BARE_REINVITE_PATTERNS.some((re) => re.test(clean))
+    ) {
+      return context.lastCompletedCategory;
     }
   }
   return null;
@@ -425,22 +481,9 @@ export function evaluateProgressiveCategoryVerdict(params: {
     };
   }
 
-  if (
-    isCategoryOnCooldown({
-      pacingStore: params.pacingStore,
-      npcId: params.npcId,
-      category: params.category,
-      nowMs,
-    })
-  ) {
-    return {
-      accepted: false,
-      category: params.category,
-      reason: 'cooldown',
-      replyLine: COOLDOWN_LINES[params.category],
-    };
-  }
-
+  // WS28: Cooldown gates REWARDS (diminishing closeness in recordCompletedCategorySession),
+  // NEVER ride/walk actions. Ride & walk re-invitations can always execute immediately;
+  // pose categories keep a short in-character breather decline.
   if (params.category === 'ride' || params.category === 'walk') {
     const decision = evaluateTogethernessInvitation({
       store: params.store,
@@ -462,6 +505,22 @@ export function evaluateProgressiveCategoryVerdict(params: {
       category: params.category,
       reason: 'accepted',
       replyLine: decision.replyLine,
+    };
+  }
+
+  if (
+    isCategoryOnCooldown({
+      pacingStore: params.pacingStore,
+      npcId: params.npcId,
+      category: params.category,
+      nowMs,
+    })
+  ) {
+    return {
+      accepted: false,
+      category: params.category,
+      reason: 'cooldown',
+      replyLine: COOLDOWN_LINES[params.category],
     };
   }
 
