@@ -8,21 +8,150 @@ import {
   normalizeNpcEmotionTag,
   type NpcEmotionTag,
 } from './npcPersonaRegistry';
+import type { NpcTogethernessStateSnapshot } from './npcTogetherness';
+import {
+  TOGETHERNESS_ACTION_LABELS,
+  getLastCompletedCategoryForNpc,
+  type NpcPacingStore,
+} from './npcTogethernessRegistry';
 import { ensureAllNpcPersonasRegistered } from './personas/index';
 import { resolveApiUrl } from '../lib/nearClient';
 
 /**
- * Client-side Gemini Text Chat (Foundation F2)
- * ============================================
+ * Client-side Gemini Text Chat (Foundation F2 + WS29 Situational Awareness)
+ * =========================================================================
  * - Sends text chat turns for the 7 named NPCs to server-side `/api/npc-chat`.
  * - Never holds or exposes any API key in the browser.
- * - Preserves the `emotion` tag on replies for dialogue tone/data; NPCs stay in
- *   their natural idle during and after conversations (no emotion-clip playback).
+ * - Attaches a per-turn `situation` sense block + `recentOpenings` so the NPC
+ *   always knows where she is, what she is doing, and avoids repeating openings.
  */
+
+export type NpcSituationActivity =
+  | 'standing_in_territory'
+  | 'walking_with_player'
+  | 'riding_as_passenger'
+  | 'just_got_off_scooter'
+  | 'in_session_pose'
+  | 'seated_on_bench';
+
+export interface NpcChatSituation {
+  placeLabel: string;
+  activity: NpcSituationActivity;
+  timePhase: 'day' | 'evening' | 'night';
+  weather: string;
+  lastSharedEvent: string | null;
+  nearbyObjects?: string | null;
+}
 
 export interface NpcTextChatHistoryTurn {
   role: 'player' | 'npc';
   text: string;
+}
+
+const JUST_GOT_OFF_WINDOW_MS = 5 * 60 * 1000;
+const RECENT_EVENT_WINDOW_MS = 15 * 60 * 1000;
+
+function formatElapsedMinutesAgo(ageMs: number): string {
+  if (ageMs < 45_000) return 'just now';
+  const mins = Math.max(1, Math.round(ageMs / 60_000));
+  return mins === 1 ? '1 minute ago' : `${mins} minutes ago`;
+}
+
+/**
+ * Builds the compact per-turn `situation` object purely from existing live state
+ * (togetherness snapshot, HUD place label, pacing store, time/weather).
+ */
+export function buildNpcChatSituation(params: {
+  npcId: NpcId;
+  placeLabel: string;
+  togethernessState: NpcTogethernessStateSnapshot;
+  pacingStore?: NpcPacingStore;
+  giftedToday?: boolean;
+  timePhase: 'day' | 'evening' | 'night';
+  isRaining: boolean;
+  weatherLabel?: string;
+  nowMs?: number;
+}): NpcChatSituation {
+  const nowMs = params.nowMs ?? Date.now();
+  const cleanPlace = (params.placeLabel || '').trim() || 'Central Plaza';
+  const weather =
+    (params.weatherLabel || '').trim() || (params.isRaining ? 'rainy' : 'clear');
+  const lastCompleted = params.pacingStore
+    ? getLastCompletedCategoryForNpc(params.pacingStore, params.npcId)
+    : null;
+  const lastAgeMs =
+    lastCompleted && Number.isFinite(lastCompleted.completedAtMs)
+      ? Math.max(0, nowMs - lastCompleted.completedAtMs)
+      : null;
+
+  let activity: NpcSituationActivity = 'standing_in_territory';
+  if (params.togethernessState.ridingNpcId === params.npcId) {
+    activity = 'riding_as_passenger';
+  } else if (params.togethernessState.sittingNpcId === params.npcId) {
+    activity = 'seated_on_bench';
+  } else if (params.togethernessState.pairPoseNpcId === params.npcId) {
+    activity = 'in_session_pose';
+  } else if (params.togethernessState.walkingNpcId === params.npcId) {
+    activity = 'walking_with_player';
+  } else if (
+    lastCompleted?.category === 'ride' &&
+    lastAgeMs !== null &&
+    lastAgeMs <= JUST_GOT_OFF_WINDOW_MS
+  ) {
+    activity = 'just_got_off_scooter';
+  }
+
+  let lastSharedEvent: string | null = null;
+  if (lastCompleted && lastAgeMs !== null && lastAgeMs <= RECENT_EVENT_WINDOW_MS) {
+    const ago = formatElapsedMinutesAgo(lastAgeMs);
+    if (lastCompleted.category === 'ride') {
+      lastSharedEvent =
+        activity === 'riding_as_passenger'
+          ? `started riding together on the scooter ${ago}`
+          : `rode together and got off here ${ago}`;
+    } else if (lastCompleted.category === 'walk') {
+      lastSharedEvent = `walked together here ${ago}`;
+    } else {
+      const catLabel = TOGETHERNESS_ACTION_LABELS[lastCompleted.category].toLowerCase();
+      lastSharedEvent = `shared a ${catLabel} moment together ${ago}`;
+    }
+  } else if (params.giftedToday) {
+    lastSharedEvent = 'received a gift from the player today';
+  }
+
+  return {
+    placeLabel: cleanPlace,
+    activity,
+    timePhase: params.timePhase,
+    weather,
+    lastSharedEvent,
+    nearbyObjects: params.togethernessState.nearbySeatsSummary ?? null,
+  };
+}
+
+/**
+ * Extracts the NPC's last N reply openings (first clause / up to 6 words)
+ * for the server anti-repetition guard.
+ */
+export function extractRecentNpcReplyOpenings(
+  history: readonly NpcTextChatHistoryTurn[],
+  maxCount: number = 3,
+): string[] {
+  const openings: string[] = [];
+  const seen = new Set<string>();
+  for (let i = history.length - 1; i >= 0 && openings.length < maxCount; i--) {
+    const turn = history[i];
+    if (!turn || turn.role !== 'npc') continue;
+    const clean = turn.text.replace(/\s+/g, ' ').trim();
+    if (!clean) continue;
+    const clause = clean.split(/[.!?—\n]/)[0]?.trim() || clean;
+    const words = clause.split(' ').slice(0, 6).join(' ').slice(0, 48).trim();
+    const key = words.toLowerCase();
+    if (!words || seen.has(key)) continue;
+    seen.add(key);
+    openings.push(words);
+  }
+  return openings.reverse();
 }
 
 export interface SendNpcChatParams {
@@ -32,6 +161,8 @@ export interface SendNpcChatParams {
   closenessBand: ClosenessBand;
   canLongConversation: boolean;
   playerName?: string;
+  situation?: NpcChatSituation;
+  recentOpenings?: string[];
   fetchImpl?: typeof fetch;
 }
 
@@ -58,7 +189,13 @@ export interface NpcChatClientResult {
 function buildClientFallback(
   npcId: NpcId,
   closenessBand: ClosenessBand,
+  reason: string,
 ): NpcChatClientResult {
+  console.warn('[npc-chat] client fallback reply used', {
+    npcId,
+    closenessBand,
+    reason,
+  });
   ensureAllNpcPersonasRegistered();
   const pack = getNpcPersona(npcId);
   const bank = pack?.fallbackReplies?.[closenessBand];
@@ -103,6 +240,10 @@ export async function sendNpcChatMessage(
   }
 
   const fetchFn = params.fetchImpl ?? fetch;
+  const recentOpenings =
+    params.recentOpenings && params.recentOpenings.length > 0
+      ? params.recentOpenings.slice(-3)
+      : extractRecentNpcReplyOpenings(params.history ?? [], 3);
 
   try {
     const res = await fetchFn(resolveApiUrl('/api/npc-chat'), {
@@ -115,6 +256,8 @@ export async function sendNpcChatMessage(
         closenessBand: params.closenessBand,
         canLongConversation: params.canLongConversation,
         ...(params.playerName ? { playerName: params.playerName } : {}),
+        ...(params.situation ? { situation: params.situation } : {}),
+        ...(recentOpenings.length > 0 ? { recentOpenings } : {}),
       }),
     });
 
@@ -138,9 +281,13 @@ export async function sendNpcChatMessage(
         action: normalizeNpcChatAction(data.action),
       };
     }
-  } catch {
+    return buildClientFallback(npcId, params.closenessBand, `http_${res.status}`);
+  } catch (err) {
     // Fall back gracefully if offline / network error
+    return buildClientFallback(
+      npcId,
+      params.closenessBand,
+      err instanceof Error ? err.message : 'network_error',
+    );
   }
-
-  return buildClientFallback(npcId, params.closenessBand);
 }

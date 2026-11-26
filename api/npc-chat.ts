@@ -81,6 +81,11 @@ export interface NpcServerFlirtBandBehavior {
   offence: string;
 }
 
+export interface NpcOffDutyFacet {
+  temperament: string;
+  personalTopics: readonly string[];
+}
+
 export interface NpcServerPersonaData {
   npcId: NpcId;
   displayName: string;
@@ -89,6 +94,7 @@ export interface NpcServerPersonaData {
   identity?: string;
   emotionalCharacter?: string;
   speechStyle?: string;
+  offDuty?: NpcOffDutyFacet;
   topicsKnown?: readonly string[];
   topicsUnknown?: readonly string[];
   personaPrompt?: string;
@@ -103,6 +109,23 @@ export interface NpcChatHistoryTurn {
   text: string;
 }
 
+export type NpcSituationActivity =
+  | 'standing_in_territory'
+  | 'walking_with_player'
+  | 'riding_as_passenger'
+  | 'just_got_off_scooter'
+  | 'in_session_pose'
+  | 'seated_on_bench';
+
+export interface NpcChatSituationPayload {
+  placeLabel?: string;
+  activity?: NpcSituationActivity;
+  timePhase?: 'day' | 'evening' | 'night';
+  weather?: string;
+  lastSharedEvent?: string | null;
+  nearbyObjects?: string | null;
+}
+
 export interface NpcChatRequestPayload {
   npcId?: string;
   message?: string;
@@ -110,6 +133,8 @@ export interface NpcChatRequestPayload {
   closenessBand?: ClosenessBand;
   canLongConversation?: boolean;
   playerName?: string;
+  situation?: NpcChatSituationPayload;
+  recentOpenings?: string[];
 }
 
 export interface NpcChatResponsePayload {
@@ -815,12 +840,219 @@ export function parseNpcChatModelJson(rawText: string): {
   }
 }
 
+const ACTIVITY_SENSE_DESCRIPTIONS: Readonly<Record<NpcSituationActivity, string>> = {
+  standing_in_territory:
+    'You are standing here in person chatting with the player.',
+  walking_with_player:
+    'You are currently walking alongside the player through town.',
+  riding_as_passenger:
+    'You are currently riding as a passenger sitting behind the player on their moving electric scooter bike.',
+  just_got_off_scooter:
+    'You just got off the player’s scooter bike and are standing beside them here.',
+  in_session_pose:
+    'You are currently sharing a paired pose together with the player right here.',
+  seated_on_bench:
+    'You are currently seated on a bench/seat here, relaxing and chatting with the player.',
+};
+
+export function extractRecentReplyOpenings(
+  history: readonly NpcChatHistoryTurn[] | undefined,
+  explicitOpenings?: readonly string[],
+  maxCount: number = 3,
+): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  const pushOpening = (raw: string) => {
+    const clean = String(raw || '').replace(/\s+/g, ' ').trim();
+    if (!clean) return;
+    const clause = clean.split(/[.!?—\n]/)[0]?.trim() || clean;
+    const words = clause.split(' ').slice(0, 6).join(' ').slice(0, 48).trim();
+    const key = words.toLowerCase();
+    if (!words || seen.has(key)) return;
+    seen.add(key);
+    result.push(words);
+  };
+
+  if (Array.isArray(explicitOpenings) && explicitOpenings.length > 0) {
+    for (const op of explicitOpenings.slice(-maxCount)) {
+      pushOpening(op);
+    }
+    return result.slice(-maxCount);
+  }
+
+  if (Array.isArray(history)) {
+    const npcTurns = history.filter((t) => t && t.role === 'npc' && typeof t.text === 'string');
+    for (const turn of npcTurns.slice(-maxCount)) {
+      pushOpening(turn.text);
+    }
+  }
+  return result.slice(-maxCount);
+}
+
+const SERVER_NPC_OFF_DUTY_FACETS: Readonly<Record<NpcId, NpcOffDutyFacet>> = {
+  hana: {
+    temperament:
+      'Unhurried, quietly curious, and affectionate—loves people-watching from sunny benches, iced matcha, and trading small everyday stories.',
+    personalTopics: [
+      'favorite quiet corners and golden-hour light',
+      'new bakery snacks and iced coffee moods',
+      'weekend playlists, films, and daydreaming about travel',
+      'little habits and how the player is genuinely feeling today',
+    ],
+  },
+  kai: {
+    temperament:
+      'Laid-back, dryly witty, and present—enjoys sea breeze walks, grilled street food, and easy unhurried banter away from the dock.',
+    personalTopics: [
+      'ocean breeze, clouds, and late-afternoon skies',
+      'best late-night snacks and strong coffee',
+      'old coastal stories, music, and simple pleasures',
+      'what the player has been enjoying around town lately',
+    ],
+  },
+  mira: {
+    temperament:
+      'Playful, expressive, and daydreamy—loves spotting colour palettes in the street, sweet desserts, and teasing banter.',
+    personalTopics: [
+      'street colours, sunset reflections, and tiny details people miss',
+      'gelato flavours, cute cafes, and cozy playlists',
+      'fun weekend plans and spontaneous detours',
+      'the player’s tastes, stories, and mood today',
+    ],
+  },
+  nadia: {
+    temperament:
+      'Warm, thoughtful, and gently funny—enjoys slow strolls, breezy conversations, herbal tea, and noticing small comforts.',
+    personalTopics: [
+      'book recommendations, podcasts, and rainy-day moods',
+      'warm drinks, evening breezes, and quiet parks',
+      'favorite memories and what helps the player unwind',
+      'little joys from the week',
+    ],
+  },
+  tari: {
+    temperament:
+      'Spirited, teasing, and effortlessly fun—loves night air, coastal views, spontaneous rides, live music, and laughing over shared moments.',
+    personalTopics: [
+      'ocean breeze, city lights, and good music',
+      'late-night bites, iced drinks, and spontaneous adventures',
+      'fun dares, playful stories, and favorite spots to unwind',
+      'what excites the player and what they want to do next',
+    ],
+  },
+  bima: {
+    temperament:
+      'Easygoing, loyal, and good-humoured—enjoys cruising the avenue, classic tunes, street snacks, and relaxed bro/buddy banter.',
+    personalTopics: [
+      'smooth cruising routes and city sunsets',
+      'good street food, cold drinks, and classic tracks',
+      'weekend hangouts and funny stories around town',
+      'how the player’s day is going and where they want to explore',
+    ],
+  },
+  kenji: {
+    temperament:
+      'Calm, dryly observant, and unexpectedly warm once off the clock—enjoys quiet walks, ramen, starlit skies, and honest conversation.',
+    personalTopics: [
+      'night air, quiet streets, and good ramen spots',
+      'staying sharp, music, and decompressing after a busy day',
+      'honest thoughts and low-key hangouts',
+      'what has been on the player’s mind lately',
+    ],
+  },
+};
+
+export function isCompanionOffDutyActivity(
+  activity: NpcSituationActivity | undefined,
+): boolean {
+  return (
+    activity === 'walking_with_player' ||
+    activity === 'riding_as_passenger' ||
+    activity === 'seated_on_bench' ||
+    activity === 'in_session_pose' ||
+    activity === 'just_got_off_scooter'
+  );
+}
+
+export function buildRightNowSenseBlock(
+  situation: NpcChatSituationPayload | undefined,
+  fallbackDistrict: string,
+  pack?: NpcServerPersonaData,
+  playerName?: string,
+): string[] {
+  if (!situation) return [];
+  const place = (situation.placeLabel || '').trim() || fallbackDistrict || 'Central Plaza';
+  const activityKey: NpcSituationActivity =
+    situation.activity && situation.activity in ACTIVITY_SENSE_DESCRIPTIONS
+      ? situation.activity
+      : 'standing_in_territory';
+  const activityDesc = ACTIVITY_SENSE_DESCRIPTIONS[activityKey];
+  const timePhase =
+    situation.timePhase === 'evening' || situation.timePhase === 'night'
+      ? situation.timePhase
+      : 'day';
+  const weather = (situation.weather || '').trim() || 'clear';
+  const lastSharedEvent = (situation.lastSharedEvent || '').trim();
+  const nearbyObjects = (situation.nearbyObjects || '').trim();
+  const playerLabel = (playerName || '').trim() || 'the player';
+
+  const block: string[] = [
+    '',
+    'RIGHT NOW (live world state — treat as absolute ground truth for this turn):',
+    `- Location: ${place}`,
+    `- Current activity: ${activityDesc}`,
+    `- Time & weather: ${timePhase}, ${weather}`,
+  ];
+  if (lastSharedEvent) {
+    block.push(`- What just happened: ${lastSharedEvent}`);
+  }
+  if (nearbyObjects) {
+    block.push(`- Nearby objects: ${nearbyObjects}`);
+  }
+
+  // WS32: Switch to companion / off-duty frame during any active togetherness session.
+  if (isCompanionOffDutyActivity(activityKey)) {
+    const offDuty = pack?.offDuty ?? (pack ? SERVER_NPC_OFF_DUTY_FACETS[pack.npcId] : undefined);
+    block.push(
+      '',
+      'COMPANION MODE (OFF DUTY):',
+      `- You are off duty, spending time with ${playerLabel} as a companion. Your job is background, not a topic, unless the player raises it or you are passing your workplace (one light line at most).`,
+    );
+    if (offDuty) {
+      block.push(
+        `- Off-duty side: ${offDuty.temperament}`,
+        `- Personal topics you enjoy away from work: ${offDuty.personalTopics.join(', ')}.`,
+      );
+    }
+  }
+
+  block.push(
+    'SITUATIONAL CONSISTENCY RULES:',
+    '- NEVER contradict this RIGHT NOW block. If you are already riding as a passenger, speak as someone sitting behind the player on the moving scooter—NEVER offer to get on, ask to start a ride, or act like you are standing at your usual post.',
+    '- Let your current place, activity, time, and weather colour your topics naturally without mechanically announcing them.',
+    '- Answer the player’s actual question or point FIRST; add atmosphere or playful decoration second.',
+  );
+  return block;
+}
+
+export function buildAntiRepetitionBlock(recentOpenings: readonly string[]): string[] {
+  if (!recentOpenings || recentOpenings.length === 0) return [];
+  return [
+    '',
+    'ANTI-REPETITION (do NOT reuse any of these recent reply openings or signature lead-ins this turn):',
+    ...recentOpenings.map((op) => `- "${op}"`),
+    '- Start with fresh wording and rhythm tailored directly to what the player just said.',
+  ];
+}
+
 export function buildNpcChatSystemInstruction(
   pack: NpcServerPersonaData,
   options: {
     closenessBand: ClosenessBand;
     canLongConversation: boolean;
     playerName?: string;
+    situation?: NpcChatSituationPayload;
+    recentOpenings?: readonly string[];
   },
 ): string {
   const band = options.closenessBand;
@@ -845,6 +1077,19 @@ export function buildNpcChatSystemInstruction(
       `Topics you do not know well (deflect naturally in character): ${pack.topicsUnknown.join(', ')}.`,
     );
   }
+
+  lines.push(
+    ...buildRightNowSenseBlock(options.situation, pack.homeDistrict, pack, safePlayerName),
+  );
+  lines.push(...buildAntiRepetitionBlock(options.recentOpenings ?? []));
+
+  lines.push(
+    '',
+    'TWO-WAY ENGAGEMENT RULES:',
+    '- React directly to the specific content of the player’s last message before adding anything of your own.',
+    '- Every 3 to 4 of your turns, ask one genuine, natural question about the player—and later in the same conversation, recall or reference something they told you.',
+    '- When the RIGHT NOW place or activity changes mid-conversation, you may notice it naturally in one brief line, the way a real companion would.',
+  );
 
   lines.push(
     '',
@@ -963,7 +1208,17 @@ export async function handleNpcChatRequest(
 
   // Graceful fallback when GEMINI_API_KEY is absent in local/test mode
   if (!apiKey) {
-    const fallback = buildNpcChatFallbackResponse(pack, closenessBand, message);
+    console.warn('[npc-chat] server fallback reply used', {
+      npcId,
+      closenessBand,
+      reason: 'missing_api_key',
+    });
+    console.warn('[npc-chat] server fallback reply used', {
+    npcId,
+    closenessBand,
+    reason: 'all_models_failed',
+  });
+  const fallback = buildNpcChatFallbackResponse(pack, closenessBand, message);
     return {
       status: 200,
       payload: {
@@ -977,13 +1232,17 @@ export async function handleNpcChatRequest(
     };
   }
 
+  const rawHistory = Array.isArray(body?.history) ? body.history.slice(-10) : [];
+  const recentOpenings = extractRecentReplyOpenings(rawHistory, body?.recentOpenings, 3);
+
   const systemText = buildNpcChatSystemInstruction(pack, {
     closenessBand,
     canLongConversation,
     playerName,
+    situation: body?.situation,
+    recentOpenings,
   });
 
-  const rawHistory = Array.isArray(body?.history) ? body.history.slice(-10) : [];
   const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
 
   for (const turn of rawHistory) {
@@ -1066,6 +1325,11 @@ export async function handleNpcChatRequest(
     }
   }
 
+  console.warn('[npc-chat] server fallback reply used', {
+    npcId,
+    closenessBand,
+    reason: 'all_models_failed',
+  });
   const fallback = buildNpcChatFallbackResponse(pack, closenessBand, message);
   return {
     status: 200,

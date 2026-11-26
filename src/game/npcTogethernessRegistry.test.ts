@@ -20,7 +20,9 @@ import {
   createEmptyNpcPacingStore,
   createPendingDockChip,
   detectProgressiveChatIntent,
+  detectSitNextToMePreference,
   evaluateProgressiveCategoryVerdict,
+  evaluateSitCommandVerdict,
   filterPairedItemsForAcceptedCategory,
   formatEmptyCategoryPickerMessage,
   getLastCompletedCategoryForNpc,
@@ -32,6 +34,22 @@ import {
   resolvePairedAnimationCategory,
   type PairedPoseCategory,
 } from './npcTogethernessRegistry';
+import {
+  EMPTY_NPC_TOGETHERNESS_STATE,
+  queryNearbySeats,
+  selectBestFreeSeat,
+  stepNpcWalkTogether,
+  summarizeNearbySeatsForSituation,
+} from './npcTogetherness';
+import {
+  buildNpcChatSituation,
+  extractRecentNpcReplyOpenings,
+} from './npcTextChat';
+import {
+  buildNpcChatSystemInstruction,
+  buildRightNowSenseBlock,
+  isCompanionOffDutyActivity,
+} from '../../api/npc-chat';
 import type { WardrobeCatalogItem } from './buddiesWardrobeStudioRules';
 
 function buildStoreAtScore(npcId: NpcId, targetScore: number): NpcClosenessStore {
@@ -572,4 +590,226 @@ test('WS28 acceptance: context-aware re-invite ("ayo naik lagi", "ayo lagi") acc
     nowMs: t1 + 20_000,
   });
   assert.equal(thirdRide.awardedClosenessDelta, 0);
+});
+
+test('WS29 + WS32 acceptance: RIGHT NOW situation block, off-duty companion frame, anti-repetition openings, and two-way engagement rules', () => {
+  const t0 = Date.UTC(2026, 10, 27, 5, 30, 0);
+  const pacingAfterRide = recordCompletedCategorySession({
+    pacingStore: createEmptyNpcPacingStore(),
+    npcId: 'tari',
+    category: 'ride',
+    baseClosenessDelta: 8,
+    nowMs: t0,
+  }).pacingStore;
+
+  // (a) While riding as passenger at Grand Casino Plaza
+  const ridingSit = buildNpcChatSituation({
+    npcId: 'tari',
+    placeLabel: 'Grand Casino Plaza',
+    togethernessState: {
+      ...EMPTY_NPC_TOGETHERNESS_STATE,
+      ridingNpcId: 'tari',
+    },
+    pacingStore: pacingAfterRide,
+    timePhase: 'evening',
+    isRaining: false,
+    nowMs: t0 + 30_000,
+  });
+  assert.equal(ridingSit.activity, 'riding_as_passenger');
+  assert.equal(ridingSit.placeLabel, 'Grand Casino Plaza');
+  assert.equal(isCompanionOffDutyActivity(ridingSit.activity), true);
+
+  // (b) Just got off scooter at Central Plaza 2 minutes ago
+  const gotOffSit = buildNpcChatSituation({
+    npcId: 'tari',
+    placeLabel: 'Central Plaza',
+    togethernessState: EMPTY_NPC_TOGETHERNESS_STATE,
+    pacingStore: pacingAfterRide,
+    timePhase: 'evening',
+    isRaining: false,
+    nowMs: t0 + 120_000,
+  });
+  assert.equal(gotOffSit.activity, 'just_got_off_scooter');
+  assert.match(gotOffSit.lastSharedEvent ?? '', /rode together and got off here 2 minutes ago/i);
+
+  // (c) Anti-repetition extracts last 3 distinct NPC reply openings
+  const recentOpenings = extractRecentNpcReplyOpenings(
+    [
+      { role: 'npc', text: 'Hold on, the breeze feels amazing out here!' },
+      { role: 'player', text: 'Right? Where next?' },
+      { role: 'npc', text: 'Honestly, I love cruising past the plaza lights.' },
+      { role: 'player', text: 'Same here.' },
+      { role: 'npc', text: 'Ooh, look at the fountain glowing tonight!' },
+    ],
+    3,
+  );
+  assert.equal(recentOpenings.length, 3);
+  assert.equal(recentOpenings[0], 'Hold on, the breeze feels amazing');
+  assert.equal(recentOpenings[2], 'Ooh, look at the fountain glowing');
+
+  // Verify injected server prompt contains RIGHT NOW, COMPANION MODE, ANTI-REPETITION, and TWO-WAY ENGAGEMENT RULES
+  const mockTariPack = {
+    npcId: 'tari' as const,
+    displayName: 'Tari',
+    roleTitle: 'Boutique & Casino Lounge Host',
+    homeDistrict: 'West Quarter',
+    toneByClosenessBand: {
+      stranger: 'Polite',
+      acquaintance: 'Warm',
+      friendly: 'Friendly',
+      close: 'Close',
+      trusted: 'Trusted',
+    },
+  };
+  const companionPrompt = buildNpcChatSystemInstruction(mockTariPack, {
+    closenessBand: 'trusted',
+    canLongConversation: true,
+    playerName: 'Rakyan',
+    situation: ridingSit,
+    recentOpenings,
+  });
+  assert.match(companionPrompt, /RIGHT NOW/);
+  assert.match(companionPrompt, /Grand Casino Plaza/);
+  assert.match(companionPrompt, /riding as a passenger/);
+  assert.match(companionPrompt, /COMPANION MODE \(OFF DUTY\)/);
+  assert.match(companionPrompt, /Your job is background, not a topic/);
+  assert.match(companionPrompt, /ANTI-REPETITION/);
+  assert.match(companionPrompt, /TWO-WAY ENGAGEMENT RULES/);
+
+  // Control: standing in territory has NO companion off-duty override
+  const standingBlock = buildRightNowSenseBlock(
+    {
+      placeLabel: 'West Quarter',
+      activity: 'standing_in_territory',
+      timePhase: 'day',
+      weather: 'clear',
+      lastSharedEvent: null,
+    },
+    'West Quarter',
+    mockTariPack,
+    'Rakyan',
+  ).join('\n');
+  assert.doesNotMatch(standingBlock, /COMPANION MODE \(OFF DUTY\)/);
+});
+
+test('WS30 acceptance: walk-together matches player walk & run speed for 10s, stays under 6m, pauses facing player', () => {
+  // Simulate player walking (4.5 m/s) for 5s then running (7.4 m/s) for 10s = 15s total
+  let px = 0;
+  let pz = 0;
+  let nx = -2.0;
+  let nz = 0;
+  let nyaw = 0;
+  let wasMoving = false;
+  const dt = 0.1;
+  const samplesAt5s: number[] = [];
+
+  for (let step = 1; step <= 150; step++) {
+    const tSec = step * dt;
+    const playerSpeed = tSec <= 5.0 ? 4.5 : 7.4;
+    px += playerSpeed * dt;
+    const res = stepNpcWalkTogether({
+      npcX: nx,
+      npcZ: nz,
+      npcYaw: nyaw,
+      wasMoving,
+      playerX: px,
+      playerZ: pz,
+      playerYaw: 0,
+      playerSpeedMps: playerSpeed,
+      dt,
+    });
+    assert.equal(res.shouldEndWalk, false);
+    nx = res.x;
+    nz = res.z;
+    nyaw = res.yaw;
+    wasMoving = res.isMoving;
+    const dist = Math.hypot(px - nx, pz - nz);
+    if (step === 50 || step === 100 || step === 150) {
+      samplesAt5s.push(dist);
+    }
+    assert.ok(dist < 6.0, `Expected distance < 6m at t=${tSec.toFixed(1)}s, got ${dist.toFixed(2)}m`);
+  }
+  assert.equal(samplesAt5s.length, 3);
+  assert.ok(samplesAt5s.every((d) => d < 6.0));
+
+  // When player stops and NPC closes within 1.95m, she pauses facing player
+  for (let s = 0; s < 30; s++) {
+    const res = stepNpcWalkTogether({
+      npcX: nx,
+      npcZ: nz,
+      npcYaw: nyaw,
+      wasMoving,
+      playerX: px,
+      playerZ: pz,
+      playerYaw: 0,
+      playerSpeedMps: 0,
+      dt,
+    });
+    nx = res.x;
+    nz = res.z;
+    nyaw = res.yaw;
+    wasMoving = res.isMoving;
+  }
+  assert.equal(wasMoving, false);
+});
+
+test('WS31 acceptance: seat sense within 10m, neutral sit intent & verdict, seated situation, and decline when no seats', () => {
+  // Near Casino Promenade Bench (North) at (-78.59, -56.6)
+  const nearSeats = queryNearbySeats({ x: -77.5, z: -57.0 });
+  assert.ok(nearSeats.length >= 1);
+  assert.equal(nearSeats[0].id, 'casino_bench_north');
+  const summary = summarizeNearbySeatsForSituation(nearSeats);
+  assert.match(summary ?? '', /free seat.*Casino Promenade Bench/i);
+
+  // Intent detection & neutral verdict (no band gate)
+  assert.equal(detectProgressiveChatIntent('duduk sini'), 'sit');
+  assert.equal(detectProgressiveChatIntent('istirahat dulu'), 'sit');
+  assert.equal(detectProgressiveChatIntent('take a seat next to me'), 'sit');
+  assert.equal(detectSitNextToMePreference('duduk sebelahku'), true);
+
+  const acceptVerdict = evaluateSitCommandVerdict({
+    isInPerson: true,
+    hasFreeSeatNearby: true,
+    nearestSeatLabel: nearSeats[0].label,
+  });
+  assert.equal(acceptVerdict.accepted, true);
+  assert.match(acceptVerdict.replyLine, /Casino Promenade Bench/);
+
+  // Best free seat selects nearest free seat
+  const chosen = selectBestFreeSeat({
+    npcX: -77.5,
+    npcZ: -57.0,
+    playerX: -78.0,
+    playerZ: -56.8,
+    preferNearPlayer: true,
+  });
+  assert.equal(chosen?.id, 'casino_bench_north');
+
+  // Seated situation block reflects seated_on_bench + nearbyObjects
+  const seatedSit = buildNpcChatSituation({
+    npcId: 'tari',
+    placeLabel: 'Grand Casino Plaza',
+    togethernessState: {
+      ...EMPTY_NPC_TOGETHERNESS_STATE,
+      sittingNpcId: 'tari',
+      sittingSeatLabel: nearSeats[0].label,
+      nearbySeatsSummary: summary,
+      hasFreeSeatNearby: true,
+      nearestFreeSeatLabel: nearSeats[0].label,
+    },
+    timePhase: 'day',
+    isRaining: false,
+  });
+  assert.equal(seatedSit.activity, 'seated_on_bench');
+  assert.match(seatedSit.nearbyObjects ?? '', /Casino Promenade Bench/);
+
+  // Somewhere with NO seats within 10m -> declines honestly in character
+  const noSeats = queryNearbySeats({ x: 999, z: 999 });
+  assert.equal(noSeats.length, 0);
+  const declineVerdict = evaluateSitCommandVerdict({
+    isInPerson: true,
+    hasFreeSeatNearby: false,
+  });
+  assert.equal(declineVerdict.accepted, false);
+  assert.equal(declineVerdict.reason, 'no_seat_nearby');
 });

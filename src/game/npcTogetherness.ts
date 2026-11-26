@@ -980,11 +980,14 @@ export function stepNpcWalkTogether(input: WalkTogetherStepInput): WalkTogetherS
     };
   }
 
-  // Smooth walking pace: 1.65 m/s normally, gently catches up to 2.75 m/s if further behind
-  const catchUpBonus = Math.max(0, Math.min(1.1, (distToPlayer - 3.2) * 0.25));
+  // WS30 Pace matching: match the player's actual locomotion (walk at player walk speed,
+  // jog/run up to player run speed + catch-up boost when falling behind so she never loses pace).
+  const catchUpBonus = Math.max(0, Math.min(3.4, (distToPlayer - 2.8) * 0.7));
+  const playerMatchedBase = Math.max(2.15, input.playerSpeedMps * 1.04);
+  const maxFollowSpeed = Math.max(7.8, input.playerSpeedMps + 2.0);
   const targetWalkSpeed = Math.max(
-    1.55,
-    Math.min(2.75, Math.max(1.65, input.playerSpeedMps * 0.92) + catchUpBonus),
+    1.8,
+    Math.min(maxFollowSpeed, playerMatchedBase + catchUpBonus),
   );
   const stepDist = Math.min(targetWalkSpeed * dt, Math.max(0, distToPlayer - stopRadius * 0.85));
   const dirX = sdx / sDist;
@@ -1078,13 +1081,22 @@ export type NpcTogethernessCommand =
   | { type: 'start_pair_pose'; npcId: NpcId; poseId?: string }
   | { type: 'stop_pair_pose' }
   | { type: 'start_ride'; npcId: NpcId }
-  | { type: 'end_ride' };
+  | { type: 'end_ride' }
+  | { type: 'start_sit'; npcId: NpcId; preferNearPlayer?: boolean }
+  | { type: 'end_sit' };
 
 export interface NpcTogethernessStateSnapshot {
   walkingNpcId: NpcId | null;
   pairPoseNpcId: NpcId | null;
   pairPoseLabel: string | null;
   ridingNpcId: NpcId | null;
+  /** WS31: Active NPC seated in a sit session (or null). */
+  sittingNpcId?: NpcId | null;
+  sittingSeatLabel?: string | null;
+  /** WS31: Live seat-sense summary within 10m around the player/NPC for WS29 situation & sit verdicts. */
+  nearbySeatsSummary?: string | null;
+  hasFreeSeatNearby?: boolean;
+  nearestFreeSeatLabel?: string | null;
 }
 
 export const EMPTY_NPC_TOGETHERNESS_STATE: NpcTogethernessStateSnapshot = {
@@ -1092,6 +1104,11 @@ export const EMPTY_NPC_TOGETHERNESS_STATE: NpcTogethernessStateSnapshot = {
   pairPoseNpcId: null,
   pairPoseLabel: null,
   ridingNpcId: null,
+  sittingNpcId: null,
+  sittingSeatLabel: null,
+  nearbySeatsSummary: null,
+  hasFreeSeatNearby: false,
+  nearestFreeSeatLabel: null,
 };
 
 export function dispatchNpcTogethernessCommand(command: NpcTogethernessCommand): void {
@@ -1288,4 +1305,142 @@ export function applyScooterPillionHugPose(
     rig.rightLegPivot.rotation.x = -1.0;
     rig.rightLegPivot.rotation.z = 0.22;
   }
+}
+
+// ============================================================================
+// WS31 — OBJECT SENSE: SEATS (QUERY OVER EXISTING SEAT ANCHORS WITHIN 10m)
+// ============================================================================
+
+export const SEAT_SENSE_RADIUS_M = 10.0;
+
+export interface NearbySeatInfo {
+  id: string;
+  label: string;
+  x: number;
+  z: number;
+  yaw: number;
+  liftY: number;
+  distanceM: number;
+  occupiedBy: string | null;
+}
+
+export interface ExtraSeatAnchorLike {
+  id: string;
+  label?: string;
+  x: number;
+  z: number;
+  yaw?: number;
+  facingYaw?: number;
+  seatLiftY?: number;
+  liftY?: number;
+}
+
+/**
+ * Queries all existing seat anchors (`CITY_ANCHORS` with `activity === 'sit_relax'`
+ * plus any optional extra lobby/world seat spots) within `maxDistanceM` (default 10m)
+ * of `(x, z)`, sorted nearest-first with occupancy metadata.
+ */
+export function queryNearbySeats(params: {
+  x: number;
+  z: number;
+  maxDistanceM?: number;
+  occupiedBySeatId?: ReadonlyMap<string, string> | Readonly<Record<string, string>>;
+  extraSeats?: readonly ExtraSeatAnchorLike[];
+}): NearbySeatInfo[] {
+  const maxDist = params.maxDistanceM ?? SEAT_SENSE_RADIUS_M;
+  const results: NearbySeatInfo[] = [];
+  const seenIds = new Set<string>();
+
+  const lookupOccupant = (seatId: string): string | null => {
+    if (!params.occupiedBySeatId) return null;
+    if (params.occupiedBySeatId instanceof Map) {
+      return params.occupiedBySeatId.get(seatId) ?? null;
+    }
+    return (params.occupiedBySeatId as Readonly<Record<string, string>>)[seatId] ?? null;
+  };
+
+  for (const anchor of Object.values(CITY_LIFE_ANCHORS)) {
+    if (anchor.activity !== 'sit_relax') continue;
+    const dist = Math.hypot(anchor.x - params.x, anchor.z - params.z);
+    if (dist > maxDist) continue;
+    seenIds.add(anchor.id);
+    results.push({
+      id: anchor.id,
+      label: anchor.label,
+      x: anchor.x,
+      z: anchor.z,
+      yaw: anchor.yaw,
+      liftY: anchor.seatLiftY ?? 0.12,
+      distanceM: dist,
+      occupiedBy: lookupOccupant(anchor.id),
+    });
+  }
+
+  if (params.extraSeats) {
+    for (const s of params.extraSeats) {
+      if (seenIds.has(s.id)) continue;
+      const dist = Math.hypot(s.x - params.x, s.z - params.z);
+      if (dist > maxDist) continue;
+      seenIds.add(s.id);
+      results.push({
+        id: s.id,
+        label: s.label || 'Plaza Bench',
+        x: s.x,
+        z: s.z,
+        yaw: s.yaw ?? s.facingYaw ?? 0,
+        liftY: s.seatLiftY ?? s.liftY ?? 0.12,
+        distanceM: dist,
+        occupiedBy: lookupOccupant(s.id),
+      });
+    }
+  }
+
+  results.sort((a, b) => a.distanceM - b.distanceM);
+  return results;
+}
+
+/**
+ * Formats a compact nearby-objects summary for the WS29 RIGHT NOW situation block
+ * (e.g. "2 free seats nearby (nearest: Casino Promenade Bench (North))").
+ */
+export function summarizeNearbySeatsForSituation(
+  seats: readonly NearbySeatInfo[],
+): string | null {
+  if (!seats || seats.length === 0) return null;
+  const freeSeats = seats.filter((s) => !s.occupiedBy);
+  const occupiedCount = seats.length - freeSeats.length;
+  const nearest = freeSeats[0] ?? seats[0];
+  if (freeSeats.length > 0 && occupiedCount > 0) {
+    return `${freeSeats.length} free ${freeSeats.length === 1 ? 'seat' : 'seats'} and ${occupiedCount} occupied nearby (nearest free: ${nearest.label})`;
+  }
+  if (freeSeats.length > 0) {
+    return `${freeSeats.length} free ${freeSeats.length === 1 ? 'seat' : 'seats'} nearby (nearest: ${nearest.label})`;
+  }
+  return `${occupiedCount} ${occupiedCount === 1 ? 'seat' : 'seats'} nearby (all occupied; nearest: ${nearest.label})`;
+}
+
+/**
+ * Picks the best free seat within 10m — nearest to the player when `preferNearPlayer`
+ * is true ("sebelahku / next to me"), otherwise nearest to the NPC.
+ */
+export function selectBestFreeSeat(params: {
+  npcX: number;
+  npcZ: number;
+  playerX: number;
+  playerZ: number;
+  preferNearPlayer?: boolean;
+  maxDistanceM?: number;
+  occupiedBySeatId?: ReadonlyMap<string, string> | Readonly<Record<string, string>>;
+  extraSeats?: readonly ExtraSeatAnchorLike[];
+}): NearbySeatInfo | null {
+  const refX = params.preferNearPlayer ? params.playerX : params.npcX;
+  const refZ = params.preferNearPlayer ? params.playerZ : params.npcZ;
+  const seats = queryNearbySeats({
+    x: refX,
+    z: refZ,
+    maxDistanceM: params.maxDistanceM ?? SEAT_SENSE_RADIUS_M,
+    occupiedBySeatId: params.occupiedBySeatId,
+    extraSeats: params.extraSeats,
+  });
+  return seats.find((s) => !s.occupiedBy) ?? null;
 }

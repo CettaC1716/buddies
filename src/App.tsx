@@ -1249,8 +1249,16 @@ export default function App() {
   }, []);
 
   const handleNpcWalkTogetherToggle = useCallback(
-    (npcId: NpcId): { accepted: boolean; replyLine?: string; ended?: boolean } => {
+    (
+      npcId: NpcId,
+      mode: 'toggle' | 'start_only' = 'toggle',
+    ): { accepted: boolean; replyLine?: string; ended?: boolean } => {
       if (npcTogethernessStateRef.current.walkingNpcId === npcId) {
+        // WS30: Starting a walk from a verdict/chip is idempotent (start-only) — NEVER a toggle-off.
+        if (mode === 'start_only') {
+          setIsCitizenDialogueOpen(false);
+          return { accepted: true, ended: false };
+        }
         dispatchNpcTogethernessCommand({ type: 'end_walk' });
         setIsCitizenDialogueOpen(false);
         if (activeSpecialModal === 'npc_merchant') {
@@ -2948,7 +2956,8 @@ export default function App() {
       handleNpcRideTogetherToggle(npcId);
     } else if (category === 'walk') {
       recordNpcTogethernessSession(npcId, 'walk');
-      handleNpcWalkTogetherToggle(npcId);
+      // WS30: Chip tap is start-only (idempotent); never toggles off an active walk session.
+      handleNpcWalkTogetherToggle(npcId, 'start_only');
     } else {
       recordNpcTogethernessSession(npcId, category);
       setIsCitizenDialogueOpen(false);
@@ -15251,7 +15260,26 @@ export default function App() {
         onClearPendingDockChip={(npcId: NpcId) => {
           setPendingDockChip((prev) => (prev && prev.npcId === npcId ? null : prev));
         }}
+        onStartNpcSit={(npcId: NpcId, preferNearPlayer: boolean) => {
+          dispatchNpcTogethernessCommand({ type: 'start_sit', npcId, preferNearPlayer });
+        }}
+        onEndNpcSit={() => {
+          dispatchNpcTogethernessCommand({ type: 'end_sit' });
+        }}
         isRaining={weatherCondition === 'hujan'}
+        currentPlaceLabel={
+          isInsideGlasshouseCafe
+            ? 'Glasshouse Cafe'
+            : isInsideGrandCasino
+              ? 'Grand Casino'
+              : isInsideBeautySalon
+                ? 'Glow Studio Salon'
+                : resolveCityDistrictLabelAtPosition(
+                    hud.playerWorldX ?? -85,
+                    hud.playerWorldZ ?? 0,
+                  )
+        }
+        weatherLabel={weatherCondition === 'hujan' ? 'rainy' : 'clear'}
         daytimePhase={
           lightingPreset === 'night'
             ? 'night'

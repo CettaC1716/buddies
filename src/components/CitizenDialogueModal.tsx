@@ -32,7 +32,9 @@ import {
 import {
   createEmptyNpcPacingStore,
   detectProgressiveChatIntent,
+  detectSitNextToMePreference,
   evaluateProgressiveCategoryVerdict,
+  evaluateSitCommandVerdict,
   getLastCompletedCategoryForNpc,
   type NpcPacingStore,
   type PairedPoseCategory,
@@ -51,7 +53,11 @@ import {
   type GiftItemInput,
 } from '../game/npcGiftEngine';
 import type { NpcEmotionTag } from '../game/npcPersonaRegistry';
-import { sendNpcChatMessage } from '../game/npcTextChat';
+import {
+  buildNpcChatSituation,
+  extractRecentNpcReplyOpenings,
+  sendNpcChatMessage,
+} from '../game/npcTextChat';
 import {
   appendNpcChatTurns,
   clearNpcChatTranscript,
@@ -96,6 +102,9 @@ export interface CitizenDialogueModalProps {
   playerName?: string;
   isRaining: boolean;
   daytimePhase?: 'day' | 'evening' | 'night';
+  /** WS29: Current HUD named place label (e.g. "Grand Casino Plaza") and weather label. */
+  currentPlaceLabel?: string;
+  weatherLabel?: string;
   talkedBonusJustAwarded?: boolean;
   playerBubbleBgColor?: string;
   playerBubbleTextColor?: string;
@@ -135,6 +144,9 @@ export interface CitizenDialogueModalProps {
   onDeclineTogethernessCategory?: (npcId: NpcId, category: TogethernessActionCategory) => void;
   onOtherTopicChatTurn?: (npcId: NpcId) => void;
   onClearPendingDockChip?: (npcId: NpcId) => void;
+  /** WS31: Start or end a bench/seat sit session for this NPC. */
+  onStartNpcSit?: (npcId: NpcId, preferNearPlayer: boolean) => void;
+  onEndNpcSit?: (npcId: NpcId) => void;
   onVisitDirectoryCitizen: (profile: CitizenProfile) => void;
 }
 
@@ -162,6 +174,8 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   playerName = '',
   isRaining,
   daytimePhase = 'day',
+  currentPlaceLabel,
+  weatherLabel,
   talkedBonusJustAwarded: _talkedBonusJustAwarded = false,
   playerBubbleBgColor: _playerBubbleBgColor = '#fef9c3',
   playerBubbleTextColor: _playerBubbleTextColor = '#0f172a',
@@ -183,6 +197,8 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   onDeclineTogethernessCategory,
   onOtherTopicChatTurn,
   onClearPendingDockChip,
+  onStartNpcSit,
+  onEndNpcSit,
   onVisitDirectoryCitizen,
 }) => {
   useNpcPortraitVersion();
@@ -334,6 +350,26 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
         onToggleNpcWalkTogether(namedNpcId);
         return;
       }
+      if (npcTogethernessState.sittingNpcId === namedNpcId && onEndNpcSit) {
+        onEndNpcSit(namedNpcId);
+        return;
+      }
+    } else if (progressiveIntent === 'sit') {
+      const sitVerdict = evaluateSitCommandVerdict({
+        isInPerson: !isPhoneChat,
+        hasFreeSeatNearby: Boolean(npcTogethernessState.hasFreeSeatNearby),
+        nearestSeatLabel: npcTogethernessState.nearestFreeSeatLabel,
+      });
+      if (sitVerdict.accepted && !isPhoneChat) {
+        onStartNpcSit?.(namedNpcId, detectSitNextToMePreference(trimmed));
+      }
+      appendNpcChatTurns(accountKey, profile.id, [{ role: 'npc', text: sitVerdict.replyLine }]);
+      setNpcFullText(sitVerdict.replyLine);
+      setNpcTypedText('');
+      window.setTimeout(() => {
+        chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 40);
+      return;
     } else if (progressiveIntent && progressiveIntent !== 'end') {
       const verdict = evaluateProgressiveCategoryVerdict({
         store: effectiveClosenessStore,
@@ -372,15 +408,29 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
 
     const band = getNpcClosenessBand(effectiveClosenessStore, namedNpcId);
     const allowLong = canLongConversation(effectiveClosenessStore, namedNpcId);
+    const historyTurns = updatedHistory.slice(-10).map((h) => ({ role: h.role, text: h.text }));
+    const situation = buildNpcChatSituation({
+      npcId: namedNpcId,
+      placeLabel: (currentPlaceLabel || '').trim() || profile.districtLabel,
+      togethernessState: npcTogethernessState,
+      pacingStore: effectivePacingStore,
+      giftedToday,
+      timePhase: daytimePhase,
+      isRaining,
+      weatherLabel,
+    });
+    const recentOpenings = extractRecentNpcReplyOpenings(historyTurns, 3);
 
     void (async () => {
       const result = await sendNpcChatMessage({
         npcId: namedNpcId,
         message: trimmed,
-        history: updatedHistory.slice(-10).map((h) => ({ role: h.role, text: h.text })),
+        history: historyTurns,
         closenessBand: band,
         canLongConversation: allowLong,
         playerName: playerName || undefined,
+        situation,
+        recentOpenings,
       });
       if (activeRequestIdRef.current !== reqId) return;
       setIsNpcThinking(false);

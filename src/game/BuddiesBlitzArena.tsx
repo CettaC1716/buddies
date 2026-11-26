@@ -23,10 +23,13 @@ import {
   computeScooterPassengerTransform,
   dispatchNpcTogethernessState,
   getCuratedNpcPairPose,
+  queryNearbySeats,
   resolveNpcScheduledPatrolWaypoints,
   resolveScooterBrakeOverride,
+  selectBestFreeSeat,
   shouldAllowFramedDialogueCamera,
   stepNpcWalkTogether,
+  summarizeNearbySeatsForSituation,
   type NpcTogethernessCommand,
   type SavedNpcAnchorTransform,
 } from './npcTogetherness';
@@ -2798,13 +2801,49 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       approachElapsedSec: number;
       savedMerchantAnchor?: SavedNpcAnchorTransform;
     } | null = null;
+    let activeSitSession: {
+      npcId: NpcId;
+      citizenId: CitizenId;
+      seatId: string;
+      seatLabel: string;
+      seatX: number;
+      seatZ: number;
+      seatYaw: number;
+      seatLiftY: number;
+      phase: 'approaching' | 'seated';
+      approachElapsedSec: number;
+    } | null = null;
+    const collectOccupiedSeatsMap = (): Map<string, string> => {
+      const occ = new Map<string, string>();
+      if (activeSitSession) {
+        occ.set(activeSitSession.seatId, activeSitSession.npcId);
+      }
+      if (playerUnit && playerUnit.isSitting && !scooterRideState && currentNearestLobbySeat) {
+        occ.set(currentNearestLobbySeat.id, 'player');
+      }
+      return occ;
+    };
     const emitTogethernessStateSnapshot = () => {
       const pairNpcId = activePairedSession ? resolveNpcId(activePairedSession.targetId) : null;
+      const nearbySeats = playerUnit
+        ? queryNearbySeats({
+            x: playerUnit.x,
+            z: playerUnit.z,
+            occupiedBySeatId: collectOccupiedSeatsMap(),
+            extraSeats: LOBBY_SEAT_SPOTS,
+          })
+        : [];
+      const firstFreeSeat = nearbySeats.find((s) => !s.occupiedBy) ?? null;
       dispatchNpcTogethernessState({
         walkingNpcId: activeWalkTogether?.npcId ?? null,
         pairPoseNpcId: pairNpcId,
         pairPoseLabel: pairNpcId ? activePairedSession?.animLabel ?? null : null,
         ridingNpcId: activeRideTogether?.npcId ?? null,
+        sittingNpcId: activeSitSession?.npcId ?? null,
+        sittingSeatLabel: activeSitSession?.seatLabel ?? null,
+        nearbySeatsSummary: summarizeNearbySeatsForSituation(nearbySeats),
+        hasFreeSeatNearby: Boolean(firstFreeSeat),
+        nearestFreeSeatLabel: firstFreeSeat?.label ?? null,
       });
     };
     let citizenPortraitState: {
@@ -2892,6 +2931,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       const nextId = customEv.detail?.isOpen ? (customEv.detail.citizenId ?? null) : null;
       // WS24: Clear movement input state on every chat modal open/close transition so no keyup is ever swallowed.
       resetAllPlayerMovementInputs();
+      // WS31: Refresh nearby seat sense immediately when chat opens so sit verdicts & RIGHT NOW block are fresh.
+      if (nextId) {
+        emitTogethernessStateSnapshot();
+      }
       if (nextId !== activeCitizenDialogueId) {
         resetNpcPortraitInspectCamera();
       }
@@ -5606,13 +5649,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             playerUnit &&
             playerUnit.alive,
         );
+        // WS30: Drop npcCameraMode === 'none' gate so dialogue/camera transitions never hand
+        // a walking companion back to schedule/patrol mid-session.
         const isWalkingWithPlayer = Boolean(
           activeWalkTogether &&
             activeWalkTogether.citizenId === npc.preset.id &&
             playerUnit &&
             playerUnit.alive &&
-            worldModeRef.current !== 'warzone' &&
-            npcCameraMode === 'none',
+            worldModeRef.current !== 'warzone',
+        );
+        const isSittingInSession = Boolean(
+          activeSitSession &&
+            activeSitSession.citizenId === npc.preset.id &&
+            playerUnit &&
+            playerUnit.alive &&
+            worldModeRef.current !== 'warzone',
         );
         const wasTalkingPrev = npcWasTalkingMap.get(npc.preset.id) ?? false;
         npcWasTalkingMap.set(npc.preset.id, isTalkingWithPlayer);
@@ -5630,7 +5681,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           playerZ,
           waypoints: scheduledPatrolForLinger,
           dt,
-          suppressedByActivity: isWalkingWithPlayer || isRidingWithPlayer || isPairedWithPlayer,
+          suppressedByActivity:
+            isWalkingWithPlayer || isRidingWithPlayer || isPairedWithPlayer || isSittingInSession,
         });
         npcLingerStates.set(npc.preset.id, lingerStep.state);
         if (lingerStep.endedThisFrame && lingerStep.resumeWaypointIdx !== null) {
@@ -5749,51 +5801,171 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             };
           }
         } else if (isWalkingWithPlayer && activeWalkTogether && playerUnit) {
-          const walkRes = stepNpcWalkTogether({
-            npcX: npc.x,
-            npcZ: npc.z,
-            npcYaw: npc.yaw,
-            wasMoving: activeWalkTogether.wasMoving,
-            playerX: playerUnit.x,
-            playerZ: playerUnit.z,
-            playerYaw: playerUnit.yaw,
-            playerSpeedMps: Math.hypot(playerUnit.vx, playerUnit.vz),
-            dt,
-            navGrid: pedestrianNavGrid,
-            navPath: activeWalkTogether.navPath,
-            navWaypointIndex: activeWalkTogether.navWaypointIndex,
-            replanTimerSec: activeWalkTogether.replanTimerSec,
-          });
-          activeWalkTogether.navPath = walkRes.navPath;
-          activeWalkTogether.navWaypointIndex = walkRes.navWaypointIndex;
-          activeWalkTogether.replanTimerSec = walkRes.replanTimerSec;
-          activeWalkTogether.wasMoving = walkRes.isMoving;
-          if (walkRes.shouldEndWalk) {
-            activeWalkTogether = null;
-            emitTogethernessStateSnapshot();
+          if (isTalkingWithPlayer) {
+            // WS30: While dialogue is open mid-walk, pause facing the player without losing the session.
+            const faceYaw = Math.atan2(-(playerUnit.z - npc.z), playerUnit.x - npc.x);
+            activeWalkTogether.wasMoving = false;
+            stepped = {
+              x: npc.x,
+              z: npc.z,
+              yaw: faceYaw,
+              speedMps: 0,
+              isMoving: false,
+              isSitting: false,
+              activeActivity: 'walk_patrol',
+              activeStatusLabel: 'WALKING TOGETHER',
+              activeSeatLiftY: 0,
+              activeHoldingCafeItemId: null,
+              waypointIdx: npc.waypointIdx,
+              pauseTimer: 0,
+              navPath: activeWalkTogether.navPath,
+              navWaypointIndex: activeWalkTogether.navWaypointIndex,
+              navPathGoalKey: 'walk_together',
+              stuckTimer: 0,
+              lastProgressX: npc.x,
+              lastProgressZ: npc.z,
+              avoidSide: 0,
+              avoidTimer: 0,
+            };
+          } else {
+            const walkRes = stepNpcWalkTogether({
+              npcX: npc.x,
+              npcZ: npc.z,
+              npcYaw: npc.yaw,
+              wasMoving: activeWalkTogether.wasMoving,
+              playerX: playerUnit.x,
+              playerZ: playerUnit.z,
+              playerYaw: playerUnit.yaw,
+              playerSpeedMps: Math.hypot(playerUnit.vx, playerUnit.vz),
+              dt,
+              navGrid: pedestrianNavGrid,
+              navPath: activeWalkTogether.navPath,
+              navWaypointIndex: activeWalkTogether.navWaypointIndex,
+              replanTimerSec: activeWalkTogether.replanTimerSec,
+            });
+            activeWalkTogether.navPath = walkRes.navPath;
+            activeWalkTogether.navWaypointIndex = walkRes.navWaypointIndex;
+            activeWalkTogether.replanTimerSec = walkRes.replanTimerSec;
+            activeWalkTogether.wasMoving = walkRes.isMoving;
+            if (walkRes.shouldEndWalk) {
+              activeWalkTogether = null;
+              emitTogethernessStateSnapshot();
+            }
+            stepped = {
+              x: walkRes.x,
+              z: walkRes.z,
+              yaw: walkRes.yaw,
+              speedMps: walkRes.speedMps,
+              isMoving: walkRes.isMoving,
+              isSitting: false,
+              activeActivity: 'walk_patrol',
+              activeStatusLabel: 'WALKING TOGETHER',
+              activeSeatLiftY: 0,
+              activeHoldingCafeItemId: null,
+              waypointIdx: npc.waypointIdx,
+              pauseTimer: 0,
+              navPath: walkRes.navPath,
+              navWaypointIndex: walkRes.navWaypointIndex,
+              navPathGoalKey: 'walk_together',
+              stuckTimer: 0,
+              lastProgressX: walkRes.x,
+              lastProgressZ: walkRes.z,
+              avoidSide: 0,
+              avoidTimer: 0,
+            };
           }
-          stepped = {
-            x: walkRes.x,
-            z: walkRes.z,
-            yaw: walkRes.yaw,
-            speedMps: walkRes.speedMps,
-            isMoving: walkRes.isMoving,
-            isSitting: false,
-            activeActivity: 'walk_patrol',
-            activeStatusLabel: 'WALKING TOGETHER',
-            activeSeatLiftY: 0,
-            activeHoldingCafeItemId: null,
-            waypointIdx: npc.waypointIdx,
-            pauseTimer: 0,
-            navPath: walkRes.navPath,
-            navWaypointIndex: walkRes.navWaypointIndex,
-            navPathGoalKey: 'walk_together',
-            stuckTimer: 0,
-            lastProgressX: walkRes.x,
-            lastProgressZ: walkRes.z,
-            avoidSide: 0,
-            avoidTimer: 0,
-          };
+        } else if (isSittingInSession && activeSitSession && playerUnit) {
+          // WS31: Walk to chosen free bench/seat and remain seated until stand/walk/ride or tether break.
+          const distPlayerToSeat = Math.hypot(
+            playerUnit.x - activeSitSession.seatX,
+            playerUnit.z - activeSitSession.seatZ,
+          );
+          if (distPlayerToSeat > 48.0) {
+            activeSitSession = null;
+            emitTogethernessStateSnapshot();
+            stepped = {
+              x: npc.x,
+              z: npc.z,
+              yaw: npc.yaw,
+              speedMps: 0,
+              isMoving: false,
+              isSitting: false,
+              activeActivity: 'sightseeing',
+              activeStatusLabel: 'STANDING',
+              activeSeatLiftY: 0,
+              activeHoldingCafeItemId: null,
+              waypointIdx: npc.waypointIdx,
+              pauseTimer: 0,
+              navPath: [],
+              navWaypointIndex: 0,
+              navPathGoalKey: '',
+              stuckTimer: 0,
+              lastProgressX: npc.x,
+              lastProgressZ: npc.z,
+              avoidSide: 0,
+              avoidTimer: 0,
+            };
+          } else if (activeSitSession.phase === 'approaching') {
+            activeSitSession.approachElapsedSec += dt;
+            const approach = stepNpcApproachVehicleForRide({
+              npcX: npc.x,
+              npcZ: npc.z,
+              npcYaw: npc.yaw,
+              pillionX: activeSitSession.seatX,
+              pillionZ: activeSitSession.seatZ,
+              dt,
+              elapsedSec: activeSitSession.approachElapsedSec,
+            });
+            if (approach.reachedMount) {
+              activeSitSession.phase = 'seated';
+              emitTogethernessStateSnapshot();
+            }
+            stepped = {
+              x: approach.reachedMount ? activeSitSession.seatX : approach.x,
+              z: approach.reachedMount ? activeSitSession.seatZ : approach.z,
+              yaw: approach.reachedMount ? activeSitSession.seatYaw : approach.yaw,
+              speedMps: approach.reachedMount ? 0 : approach.speedMps,
+              isMoving: !approach.reachedMount && approach.isMoving,
+              isSitting: approach.reachedMount,
+              activeActivity: approach.reachedMount ? 'sit_relax' : 'walk_patrol',
+              activeStatusLabel: approach.reachedMount ? 'SEATED' : 'HEADING TO SEAT',
+              activeSeatLiftY: approach.reachedMount ? activeSitSession.seatLiftY : 0,
+              activeHoldingCafeItemId: null,
+              waypointIdx: npc.waypointIdx,
+              pauseTimer: 0,
+              navPath: [],
+              navWaypointIndex: 0,
+              navPathGoalKey: '',
+              stuckTimer: 0,
+              lastProgressX: approach.x,
+              lastProgressZ: approach.z,
+              avoidSide: 0,
+              avoidTimer: 0,
+            };
+          } else {
+            stepped = {
+              x: activeSitSession.seatX,
+              z: activeSitSession.seatZ,
+              yaw: activeSitSession.seatYaw,
+              speedMps: 0,
+              isMoving: false,
+              isSitting: true,
+              activeActivity: 'sit_relax',
+              activeStatusLabel: 'SEATED',
+              activeSeatLiftY: activeSitSession.seatLiftY,
+              activeHoldingCafeItemId: null,
+              waypointIdx: npc.waypointIdx,
+              pauseTimer: 0,
+              navPath: [],
+              navWaypointIndex: 0,
+              navPathGoalKey: '',
+              stuckTimer: 0,
+              lastProgressX: activeSitSession.seatX,
+              lastProgressZ: activeSitSession.seatZ,
+              avoidSide: 0,
+              avoidTimer: 0,
+            };
+          }
         } else if (isPairedWithPlayer && activePairedSession) {
           stepped = {
             x: activePairedSession.anchorX,
@@ -6640,8 +6812,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         (activeWalkTogether.npcId === 'hana' || activeWalkTogether.npcId === 'kai') &&
         playerUnit &&
         playerUnit.alive &&
-        worldModeRef.current !== 'warzone' &&
-        npcCameraMode === 'none'
+        worldModeRef.current !== 'warzone'
       ) {
         const mNpc = activeWalkTogether.npcId === 'hana' ? lobbyCafeNpc : beachHouseNpc;
         if (mNpc?.npcGrp && mNpc?.npcRig) {
@@ -39869,7 +40040,61 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         return;
       }
 
+      if (cmd.type === 'end_sit') {
+        if (activeSitSession) {
+          activeSitSession = null;
+          emitTogethernessStateSnapshot();
+        }
+        return;
+      }
+
+      if (cmd.type === 'start_sit') {
+        const isInterior =
+          npcCameraMode === 'cafe_interior' ||
+          npcCameraMode === 'casino_interior' ||
+          npcCameraMode === 'salon_interior' ||
+          npcCameraMode === 'house_interior' ||
+          npcCameraMode === 'house_visit';
+        if (worldModeRef.current === 'warzone' || isInterior || !playerUnit) return;
+        const citizenId = npcIdToCitizenId(cmd.npcId);
+        const targetCitizen = cityAmbientNpcs.find((n) => n.preset.id === citizenId);
+        const npcX = targetCitizen ? targetCitizen.x : playerUnit.x;
+        const npcZ = targetCitizen ? targetCitizen.z : playerUnit.z;
+        const bestSeat = selectBestFreeSeat({
+          npcX,
+          npcZ,
+          playerX: playerUnit.x,
+          playerZ: playerUnit.z,
+          preferNearPlayer: Boolean(cmd.preferNearPlayer),
+          occupiedBySeatId: collectOccupiedSeatsMap(),
+          extraSeats: LOBBY_SEAT_SPOTS,
+        });
+        if (!bestSeat) return;
+        endWalkTogetherNow();
+        endRideTogetherNow();
+        stopActivePairedInteraction(true);
+        activeSitSession = {
+          npcId: cmd.npcId,
+          citizenId,
+          seatId: bestSeat.id,
+          seatLabel: bestSeat.label,
+          seatX: bestSeat.x,
+          seatZ: bestSeat.z,
+          seatYaw: bestSeat.yaw,
+          seatLiftY: bestSeat.liftY,
+          phase: 'approaching',
+          approachElapsedSec: 0,
+        };
+        emitTogethernessStateSnapshot();
+        return;
+      }
+
       if (cmd.type === 'start_walk') {
+        // WS30: Idempotent start — if already walking with this NPC, keep session alive.
+        if (activeWalkTogether?.npcId === cmd.npcId) {
+          emitTogethernessStateSnapshot();
+          return;
+        }
         const isInterior =
           npcCameraMode === 'cafe_interior' ||
           npcCameraMode === 'casino_interior' ||
@@ -39882,6 +40107,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           npcCameraMode = 'none';
           activeCitizenDialogueId = null;
         }
+        activeSitSession = null;
         endRideTogetherNow();
         stopActivePairedInteraction(true);
         const citizenId = npcIdToCitizenId(cmd.npcId);
@@ -39950,6 +40176,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           npcCameraMode = 'none';
           activeCitizenDialogueId = null;
         }
+        activeSitSession = null;
         endWalkTogetherNow();
         stopActivePairedInteraction(true);
         const citizenId = npcIdToCitizenId(cmd.npcId);

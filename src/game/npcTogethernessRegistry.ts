@@ -42,7 +42,7 @@ export type TogethernessActionCategory =
   | 'walk'
   | PairedPoseCategory;
 
-export type ChatVerdictIntent = TogethernessActionCategory | 'end' | null;
+export type ChatVerdictIntent = TogethernessActionCategory | 'sit' | 'end' | null;
 
 export const DOCK_CHIP_EXPIRY_MS = 90_000;
 export const DOCK_CHIP_MAX_OTHER_TURNS = 3;
@@ -265,6 +265,21 @@ const POSE_INTENT_PATTERNS: ReadonlyArray<{
   },
 ];
 
+const SIT_COMMAND_PATTERNS: readonly RegExp[] = [
+  /\b(duduk\s+sini|duduk\s+di\s+situ|duduk\s+dulu|istirahat\s+dulu|duduk\s+sebelahku|duduk\s+di\s+sebelahku|ayo\s+duduk|yuk\s+duduk|duduk\s+yuk)\b/i,
+  /\b(sit\s+here|take\s+a\s+seat|rest\s+a\s+bit|sit\s+down|sit\s+next\s+to\s+me|have\s+a\s+seat)\b/i,
+];
+
+const SIT_NEXT_TO_ME_PATTERN = /\b(sebelahku|di\s+sebelahku|next\s+to\s+me|beside\s+me)\b/i;
+
+export function detectSitNextToMePreference(rawText: string): boolean {
+  return SIT_NEXT_TO_ME_PATTERN.test(rawText || '');
+}
+
+const STAND_UP_PATTERNS: readonly RegExp[] = [
+  /\b(berdiri\s+yuk|ayo\s+berdiri|bangun\s+yuk|stand\s+up|get\s+up)\b/i,
+];
+
 const BARE_REINVITE_PATTERNS: readonly RegExp[] = [
   /^\s*(lagi|ayo\s+lagi|yuk\s+lagi|lanjut(\s+lagi)?|gas\s+lagi|sekali\s+lagi|again|let'?s\s+go\s+again|one\s+more\s+time)\s*[!?.~]*\s*$/i,
   /\b(ayo\s+lagi|yuk\s+lagi|sekali\s+lagi|let'?s\s+go\s+again)\b/i,
@@ -312,8 +327,16 @@ export function detectProgressiveChatIntent(
 ): ChatVerdictIntent {
   const clean = (rawText || '').trim();
   if (!clean) return null;
+  if (STAND_UP_PATTERNS.some((re) => re.test(clean))) {
+    return 'end';
+  }
   const base = detectChatTogethernessIntent(clean);
   if (base) return base;
+  // WS31: Check explicit sit-on-bench command before generic sit_together pose so
+  // "duduk sini" / "sit here" / "take a seat" / "istirahat dulu" route to seat session.
+  if (SIT_COMMAND_PATTERNS.some((re) => re.test(clean))) {
+    return 'sit';
+  }
   for (const group of POSE_INTENT_PATTERNS) {
     if (group.patterns.some((re) => re.test(clean))) {
       return group.category;
@@ -447,6 +470,46 @@ const COOLDOWN_LINES: Readonly<Record<TogethernessActionCategory, string>> = {
   sit_together: "We just sat together—let's stretch our legs a bit before sitting down again.",
   fun_pose: "Let's save the next photoshoot for a little later—my smile needs a rest!",
 };
+
+export interface SitCommandVerdictResult {
+  accepted: boolean;
+  reason: 'accepted' | 'phone_chat_blocked' | 'no_seat_nearby';
+  replyLine: string;
+}
+
+/**
+ * WS31: Evaluates a neutral sit command ("duduk sini", "sit here", "istirahat dulu").
+ * No closeness band gate (sitting is neutral); declines honestly in character when
+ * no free seat is within 10m so words and world state never disagree.
+ */
+export function evaluateSitCommandVerdict(params: {
+  isInPerson: boolean;
+  hasFreeSeatNearby: boolean;
+  nearestSeatLabel?: string | null;
+}): SitCommandVerdictResult {
+  if (!params.isInPerson) {
+    return {
+      accepted: false,
+      reason: 'phone_chat_blocked',
+      replyLine: "We'll have to meet up in person first before grabbing a bench together!",
+    };
+  }
+  if (!params.hasFreeSeatNearby) {
+    return {
+      accepted: false,
+      reason: 'no_seat_nearby',
+      replyLine: "I don't see an open bench or seat nearby—let's head over by some benches first.",
+    };
+  }
+  const label = (params.nearestSeatLabel || '').trim();
+  return {
+    accepted: true,
+    reason: 'accepted',
+    replyLine: label
+      ? `Sure, I'll go take a seat at ${label}.`
+      : "Sure, I'll grab a seat right here and rest for a bit.",
+  };
+}
 
 export interface CategoryVerdictResult {
   accepted: boolean;
