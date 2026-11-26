@@ -35,6 +35,15 @@ export interface SendNpcChatParams {
   fetchImpl?: typeof fetch;
 }
 
+export type NpcChatActionVerdict = 'ride_together' | 'walk_together' | 'end_togetherness';
+
+export function normalizeNpcChatAction(raw: unknown): NpcChatActionVerdict | null {
+  if (raw === 'ride_together' || raw === 'walk_together' || raw === 'end_togetherness') {
+    return raw;
+  }
+  return null;
+}
+
 export interface NpcChatClientResult {
   ok: boolean;
   npcId: NpcId | null;
@@ -42,6 +51,8 @@ export interface NpcChatClientResult {
   emotion: NpcEmotionTag;
   closenessDelta: number;
   fallback: boolean;
+  /** Optional togetherness verdict action returned by `/api/npc-chat`. */
+  action?: NpcChatActionVerdict | null;
 }
 
 function buildClientFallback(
@@ -113,6 +124,7 @@ export async function sendNpcChatMessage(
       emotion?: unknown;
       closenessDelta?: unknown;
       fallback?: boolean;
+      action?: unknown;
     };
 
     if (res.ok && data?.ok && typeof data.reply === 'string' && data.reply.trim()) {
@@ -123,6 +135,7 @@ export async function sendNpcChatMessage(
         emotion: normalizeNpcEmotionTag(data.emotion),
         closenessDelta: clampClientDelta(data.closenessDelta),
         fallback: Boolean(data.fallback),
+        action: normalizeNpcChatAction(data.action),
       };
     }
   } catch {

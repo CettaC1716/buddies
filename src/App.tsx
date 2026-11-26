@@ -1254,12 +1254,15 @@ export default function App() {
       npcClosenessStoreRef.current = res.closenessResult.store;
       setNpcClosenessStore(res.closenessResult.store);
       saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
-      dispatchNpcTogethernessCommand({ type: 'start_walk', npcId });
-      setIsCitizenDialogueOpen(false);
-      if (activeSpecialModal === 'npc_merchant') {
-        setActiveSpecialModal('none');
+      // WS21: Let the NPC's acceptance line render briefly in chat, then auto-close modal, release dialogue camera, and execute walk_together!
+      window.setTimeout(() => {
+        setIsCitizenDialogueOpen(false);
+        if (activeSpecialModal === 'npc_merchant') {
+          setActiveSpecialModal('none');
+        }
         window.dispatchEvent(new CustomEvent('close-npc-ui'));
-      }
+        dispatchNpcTogethernessCommand({ type: 'start_walk', npcId });
+      }, 650);
       return { accepted: true, replyLine: decision.replyLine };
     },
     [activeSpecialModal],
@@ -1332,12 +1335,15 @@ export default function App() {
       npcClosenessStoreRef.current = res.closenessResult.store;
       setNpcClosenessStore(res.closenessResult.store);
       saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
-      dispatchNpcTogethernessCommand({ type: 'start_ride', npcId });
-      setIsCitizenDialogueOpen(false);
-      if (activeSpecialModal === 'npc_merchant') {
-        setActiveSpecialModal('none');
+      // WS21: Show acceptance reply briefly, then auto-close modal, release dialogue camera, and execute ride_together!
+      window.setTimeout(() => {
+        setIsCitizenDialogueOpen(false);
+        if (activeSpecialModal === 'npc_merchant') {
+          setActiveSpecialModal('none');
+        }
         window.dispatchEvent(new CustomEvent('close-npc-ui'));
-      }
+        dispatchNpcTogethernessCommand({ type: 'start_ride', npcId });
+      }, 650);
       return { accepted: true, replyLine: decision.replyLine };
     },
     [activeSpecialModal],

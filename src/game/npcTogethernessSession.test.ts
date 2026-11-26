@@ -8,6 +8,9 @@ import {
 } from './npcClosenessEngine';
 import { EMPTY_NPC_TOGETHERNESS_STATE } from './npcTogetherness';
 import {
+  normalizeNpcChatAction,
+} from './npcTextChat';
+import {
   canStartDirectPairedPoseForTarget,
   detectChatTogethernessIntent,
   evaluateNpcGiftSubmission,
@@ -335,6 +338,76 @@ test('natural typed chat intent detects Indonesian & English walk/ride/end phras
   assert.equal(detectChatTogethernessIntent('let us get off here'), 'end');
   assert.equal(detectChatTogethernessIntent('halo, lagi ngapain hari ini?'), null);
   assert.equal(detectChatTogethernessIntent('nice weather in the plaza today'), null);
+});
+
+test('WS21 acceptance: mounted scooter bike free-chat invite -> verdict accept -> walk to pillion -> mount -> dismount ends ride', () => {
+  const nowMs = Date.UTC(2026, 10, 27, 2, 0, 0);
+  const store = buildStoreWithScore('hana', 90);
+
+  // 1. Free-chat invitation while mounted on electric_scooter_bike beside NPC
+  assert.equal(detectChatTogethernessIntent('bonceng yuk keliling kota'), 'ride');
+  assert.equal(normalizeNpcChatAction('ride_together'), 'ride_together');
+  assert.equal(normalizeNpcChatAction('walk_together'), 'walk_together');
+  assert.equal(normalizeNpcChatAction('end_togetherness'), 'end_togetherness');
+  assert.equal(normalizeNpcChatAction('unknown'), null);
+
+  // 2. Upstream verdict accepts on scooter bike (never kick scooter)
+  const kickDenied = evaluateTogethernessInvitation({
+    store,
+    npcId: 'hana',
+    kind: 'ride',
+    playerScooterKind: 'push_kick_scooter',
+    nowMs,
+  });
+  assert.equal(kickDenied.accepted, false);
+
+  const accepted = evaluateTogethernessInvitation({
+    store,
+    npcId: 'hana',
+    kind: 'ride',
+    playerScooterKind: 'electric_scooter_bike',
+    nowMs,
+  });
+  assert.equal(accepted.accepted, true);
+  assert.ok(accepted.replyLine.length > 0);
+
+  // 3. NPC walks (no teleport) to pillion anchor behind bike and mounts
+  let x = 0;
+  let z = 0;
+  let elapsed = 0;
+  let mounted = false;
+  for (let step = 0; step < 30 && !mounted; step++) {
+    elapsed += 0.2;
+    const res = stepNpcApproachVehicleForRide({
+      npcX: x,
+      npcZ: z,
+      npcYaw: 0,
+      pillionX: 3.5,
+      pillionZ: 0,
+      dt: 0.2,
+      elapsedSec: elapsed,
+    });
+    if (step === 0) {
+      assert.equal(res.reachedMount, false);
+      assert.ok(res.x > 0 && res.x < 3.5);
+    }
+    x = res.x;
+    z = res.z;
+    mounted = res.reachedMount;
+  }
+  assert.equal(mounted, true);
+
+  // 4. Player dismounts -> togetherness session ends cleanly
+  const afterDismount = shouldForceEndTogethernessSession({
+    mode: 'ride',
+    worldMode: 'safezone',
+    isInInterior: false,
+    isFishing: false,
+    playerScooterKind: null,
+    playerAlive: true,
+  });
+  assert.equal(afterDismount.shouldEnd, true);
+  assert.equal(afterDismount.reason, 'scooter_dismounted');
 });
 
 

@@ -5647,41 +5647,79 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             leanRollZ: scooterRideState.pose?.leanRollZ ?? 0,
           });
           if (activeRideTogether.phase === 'approaching') {
-            activeRideTogether.approachElapsedSec += dt;
-            const approach = stepNpcApproachVehicleForRide({
-              npcX: npc.x,
-              npcZ: npc.z,
-              npcYaw: npc.yaw,
-              pillionX: pillionTf.worldX,
-              pillionZ: pillionTf.worldZ,
-              dt,
-              elapsedSec: activeRideTogether.approachElapsedSec,
-            });
-            if (approach.reachedMount) {
-              activeRideTogether.phase = 'mounted';
+            // WS21: Abort cleanly if player drives beyond reach (> 14m) before NPC arrives at the bike.
+            const distToBike = Math.hypot(pillionTf.worldX - npc.x, pillionTf.worldZ - npc.z);
+            if (distToBike > 14.0) {
+              const abortedNpcId = activeRideTogether.npcId;
+              endRideTogetherNow();
+              window.dispatchEvent(
+                new CustomEvent('npc-togetherness-aborted', {
+                  detail: {
+                    npcId: abortedNpcId,
+                    reason: 'out_of_reach',
+                    line: 'Hey, wait up—you pulled away before I could hop on! Catch me next time.',
+                  },
+                }),
+              );
+              stepped = {
+                x: npc.x,
+                z: npc.z,
+                yaw: npc.yaw,
+                speedMps: 0,
+                isMoving: false,
+                isSitting: false,
+                activeActivity: 'walk_patrol',
+                activeStatusLabel: 'IDLE',
+                activeSeatLiftY: 0,
+                activeHoldingCafeItemId: null,
+                waypointIdx: npc.waypointIdx,
+                pauseTimer: 0,
+                navPath: [],
+                navWaypointIndex: 0,
+                navPathGoalKey: '',
+                stuckTimer: 0,
+                lastProgressX: npc.x,
+                lastProgressZ: npc.z,
+                avoidSide: 0,
+                avoidTimer: 0,
+              };
+            } else {
+              activeRideTogether.approachElapsedSec += dt;
+              const approach = stepNpcApproachVehicleForRide({
+                npcX: npc.x,
+                npcZ: npc.z,
+                npcYaw: npc.yaw,
+                pillionX: pillionTf.worldX,
+                pillionZ: pillionTf.worldZ,
+                dt,
+                elapsedSec: activeRideTogether.approachElapsedSec,
+              });
+              if (approach.reachedMount) {
+                activeRideTogether.phase = 'mounted';
+              }
+              stepped = {
+                x: approach.reachedMount ? pillionTf.worldX : approach.x,
+                z: approach.reachedMount ? pillionTf.worldZ : approach.z,
+                yaw: approach.reachedMount ? pillionTf.yaw : approach.yaw,
+                speedMps: approach.reachedMount ? 0 : approach.speedMps,
+                isMoving: !approach.reachedMount && approach.isMoving,
+                isSitting: approach.reachedMount,
+                activeActivity: approach.reachedMount ? 'sit_relax' : 'walk_patrol',
+                activeStatusLabel: 'RIDING TOGETHER',
+                activeSeatLiftY: approach.reachedMount ? pillionTf.bodyLiftY - 0.178 : 0,
+                activeHoldingCafeItemId: null,
+                waypointIdx: npc.waypointIdx,
+                pauseTimer: 0,
+                navPath: [],
+                navWaypointIndex: 0,
+                navPathGoalKey: '',
+                stuckTimer: 0,
+                lastProgressX: approach.x,
+                lastProgressZ: approach.z,
+                avoidSide: 0,
+                avoidTimer: 0,
+              };
             }
-            stepped = {
-              x: approach.reachedMount ? pillionTf.worldX : approach.x,
-              z: approach.reachedMount ? pillionTf.worldZ : approach.z,
-              yaw: approach.reachedMount ? pillionTf.yaw : approach.yaw,
-              speedMps: approach.reachedMount ? 0 : approach.speedMps,
-              isMoving: !approach.reachedMount && approach.isMoving,
-              isSitting: approach.reachedMount,
-              activeActivity: approach.reachedMount ? 'sit_relax' : 'walk_patrol',
-              activeStatusLabel: 'RIDING TOGETHER',
-              activeSeatLiftY: approach.reachedMount ? pillionTf.bodyLiftY - 0.178 : 0,
-              activeHoldingCafeItemId: null,
-              waypointIdx: npc.waypointIdx,
-              pauseTimer: 0,
-              navPath: [],
-              navWaypointIndex: 0,
-              navPathGoalKey: '',
-              stuckTimer: 0,
-              lastProgressX: approach.x,
-              lastProgressZ: approach.z,
-              avoidSide: 0,
-              avoidTimer: 0,
-            };
           } else {
             stepped = {
               x: pillionTf.worldX,
@@ -6431,7 +6469,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           playerAlive: Boolean(playerUnit && playerUnit.alive),
         });
         if (forceRide.shouldEnd) {
+          const wasApproaching = activeRideTogether.phase === 'approaching';
+          const abortedNpcId = activeRideTogether.npcId;
           endRideTogetherNow();
+          if (wasApproaching) {
+            window.dispatchEvent(
+              new CustomEvent('npc-togetherness-aborted', {
+                detail: {
+                  npcId: abortedNpcId,
+                  reason: forceRide.reason || 'dismounted',
+                  line: 'Oh, changed your mind? No worries—let me know when you want to ride.',
+                },
+              }),
+            );
+          }
         }
       }
       if (activeWalkTogether) {
@@ -6467,17 +6518,65 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             slopePitchX: scooterRideState.slopePitchX,
             leanRollZ: scooterRideState.pose?.leanRollZ ?? 0,
           });
-          mNpc.npcGrp.position.set(
-            pillionTf.worldX,
-            pillionTf.worldY + pillionTf.bodyLiftY,
-            pillionTf.worldZ,
-          );
-          mNpc.npcGrp.rotation.order = 'YXZ';
-          mNpc.npcGrp.rotation.set(
-            pillionTf.pitchX,
-            pillionTf.yaw + Math.PI / 2,
-            pillionTf.rollZ,
-          );
+          if (activeRideTogether.phase === 'approaching') {
+            const curX = mNpc.npcGrp.position.x;
+            const curZ = mNpc.npcGrp.position.z;
+            const distToBike = Math.hypot(pillionTf.worldX - curX, pillionTf.worldZ - curZ);
+            if (distToBike > 14.0) {
+              const abortedNpcId = activeRideTogether.npcId;
+              endRideTogetherNow();
+              window.dispatchEvent(
+                new CustomEvent('npc-togetherness-aborted', {
+                  detail: {
+                    npcId: abortedNpcId,
+                    reason: 'out_of_reach',
+                    line: 'Hey, wait up—you pulled away before I could hop on! Catch me next time.',
+                  },
+                }),
+              );
+            } else {
+              activeRideTogether.approachElapsedSec += dt;
+              const approach = stepNpcApproachVehicleForRide({
+                npcX: curX,
+                npcZ: curZ,
+                npcYaw: mNpc.npcGrp.rotation.y - Math.PI / 2,
+                pillionX: pillionTf.worldX,
+                pillionZ: pillionTf.worldZ,
+                dt,
+                elapsedSec: activeRideTogether.approachElapsedSec,
+              });
+              if (approach.reachedMount) {
+                activeRideTogether.phase = 'mounted';
+                mNpc.npcGrp.position.set(
+                  pillionTf.worldX,
+                  pillionTf.worldY + pillionTf.bodyLiftY,
+                  pillionTf.worldZ,
+                );
+                mNpc.npcGrp.rotation.order = 'YXZ';
+                mNpc.npcGrp.rotation.set(
+                  pillionTf.pitchX,
+                  pillionTf.yaw + Math.PI / 2,
+                  pillionTf.rollZ,
+                );
+              } else {
+                const groundAtNpc = getTerrainElevation(approach.x, approach.z);
+                mNpc.npcGrp.position.set(approach.x, groundAtNpc, approach.z);
+                mNpc.npcGrp.rotation.set(0, approach.yaw + Math.PI / 2, 0);
+              }
+            }
+          } else {
+            mNpc.npcGrp.position.set(
+              pillionTf.worldX,
+              pillionTf.worldY + pillionTf.bodyLiftY,
+              pillionTf.worldZ,
+            );
+            mNpc.npcGrp.rotation.order = 'YXZ';
+            mNpc.npcGrp.rotation.set(
+              pillionTf.pitchX,
+              pillionTf.yaw + Math.PI / 2,
+              pillionTf.rollZ,
+            );
+          }
           if (mNpc.npcRig.customGlbController?.clips.has('scooter_bike_idle.001')) {
             mNpc.npcRig.activeSocialClipName = 'scooter_bike_idle.001';
           }
@@ -39703,7 +39802,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       }
 
       if (cmd.type === 'start_walk') {
-        if (worldModeRef.current === 'warzone' || npcCameraMode !== 'none') return;
+        const isInterior =
+          npcCameraMode === 'cafe_interior' ||
+          npcCameraMode === 'casino_interior' ||
+          npcCameraMode === 'salon_interior' ||
+          npcCameraMode === 'house_interior' ||
+          npcCameraMode === 'house_visit';
+        if (worldModeRef.current === 'warzone' || isInterior) return;
+        // WS21: Release any active in-person dialogue camera automatically when togetherness starts.
+        if (npcCameraMode !== 'none') {
+          npcCameraMode = 'none';
+          activeCitizenDialogueId = null;
+        }
         endRideTogetherNow();
         stopActivePairedInteraction(true);
         const citizenId = npcIdToCitizenId(cmd.npcId);
@@ -39758,9 +39868,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       }
 
       if (cmd.type === 'start_ride') {
-        if (worldModeRef.current === 'warzone' || npcCameraMode !== 'none') return;
+        const isInterior =
+          npcCameraMode === 'cafe_interior' ||
+          npcCameraMode === 'casino_interior' ||
+          npcCameraMode === 'salon_interior' ||
+          npcCameraMode === 'house_interior' ||
+          npcCameraMode === 'house_visit';
+        if (worldModeRef.current === 'warzone' || isInterior) return;
         // WS12: Ride invitation only exists while mounted on electric_scooter_bike (never kick scooter or on foot).
         if (!scooterRideState || scooterRideState.kind !== 'electric_scooter_bike') return;
+        // WS21: Release any active in-person dialogue camera automatically when ride_together starts.
+        if (npcCameraMode !== 'none') {
+          npcCameraMode = 'none';
+          activeCitizenDialogueId = null;
+        }
         endWalkTogetherNow();
         stopActivePairedInteraction(true);
         const citizenId = npcIdToCitizenId(cmd.npcId);

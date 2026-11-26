@@ -370,6 +370,19 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
       window.setTimeout(() => {
         chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
       }, 40);
+
+      // WS21: Execute server-returned togetherness verdict action on the existing command channel
+      if (result.action === 'ride_together' && onToggleNpcRideTogether) {
+        onToggleNpcRideTogether(namedNpcId);
+      } else if (result.action === 'walk_together' && onToggleNpcWalkTogether) {
+        onToggleNpcWalkTogether(namedNpcId);
+      } else if (result.action === 'end_togetherness') {
+        if (npcTogethernessState.ridingNpcId === namedNpcId && onToggleNpcRideTogether) {
+          onToggleNpcRideTogether(namedNpcId);
+        } else if (npcTogethernessState.walkingNpcId === namedNpcId && onToggleNpcWalkTogether) {
+          onToggleNpcWalkTogether(namedNpcId);
+        }
+      }
     })();
   };
 
