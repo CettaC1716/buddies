@@ -139,7 +139,7 @@ export const NADIA_PERSONA: NpcPersonaPack = registerNpcPersona({
       anchorId: 'central_boutique_front',
       startHour: 12,
       endHour: 15,
-      activityLabel: 'styling outfits outside Central Plaza Boutique Tower',
+      activityLabel: 'styling outfits outside Central Plaza Vintage Cafe',
     },
     {
       window: 'afternoon',

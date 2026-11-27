@@ -6,6 +6,7 @@ import {
   tagCityWindowMesh,
 } from './buddiesWindowAuditRules';
 import { CENTRAL_PARK_MASTERPLAN } from './buddiesCentralParkRules';
+import { SALON_GLB_SCALE } from './buddiesBeautySalonRules';
 import {
   applyGrainUvs,
   buildArchedCasementWindow,
@@ -1666,25 +1667,28 @@ export const GLOW_STUDIO_SALON_GLB_PATH = '/assets/buildings/glow_studio_salon.g
 
 /**
  * Horizontal shift (m) applied to the GLB origin so the model's main entrance
- * lands exactly on the existing door anchor. The model's entry door frame
- * centre is local (+2.95, +4.26); under the masterplan yaw (PI) that maps to
- * world x = centreX - 2.95 = 26.55, which is 0.81 m east of
- * SALON_EXTERIOR_DOOR_TRIGGER.doorX (25.74), so the origin shifts west by
- * 0.81 m. Native scale, no resizing: the model was authored to this
- * masterplan (body 8.80 m deep = the old footprint depth, package 12.80 m
- * across vs the old 12.60 m podium, height 9.94 m vs 9.70 m).
+ * lands exactly on the existing door anchor at the mount scale
+ * (SALON_GLB_SCALE, see buddiesBeautySalonRules for the door-height
+ * derivation). The model's entry door frame centre is local (+2.95, +4.26),
+ * which scales to (+3.80, +5.49); under the masterplan yaw (PI) that maps
+ * to world x = centreX - 3.80, so the origin shifts east by 0.04 m to put
+ * the door on SALON_EXTERIOR_DOOR_TRIGGER.doorX (25.74). The model's own
+ * sidewalk slab was stripped in prep (it sits on the plaza floor) and the
+ * model re-grounded by the slab thickness, so the scaled body spans world
+ * x [23.87..35.21], z [9.33..20.67] and stands 12.61 m tall.
  */
-export const GLOW_STUDIO_SALON_GLB_ORIGIN_SHIFT_X = -0.81;
+export const GLOW_STUDIO_SALON_GLB_ORIGIN_SHIFT_X = 0.04;
 
 /**
  * Places the owner-supplied Glow Studio GLB as the salon's exterior visual,
  * following the same load-as-is GLTFLoader pattern as the rental shop
- * buildings. The separate interior at SALON_ORIGIN_Y
- * (buddiesBeautySalonInteriorBuilder) and every entry anchor in
- * buddiesBeautySalonRules stay untouched — entry is a teleport from
- * SALON_EXTERIOR_DOOR_TRIGGER, and the GLB's door now visually sits on that
- * anchor. If the model fails to load, the procedural builder above runs
- * instead so the landmark never disappears.
+ * buildings, scaled uniformly by SALON_GLB_SCALE so its proportions match
+ * the game's authored buildings. The separate interior scene at
+ * SALON_ORIGIN_Y (buddiesBeautySalonInteriorBuilder) mounts this same
+ * model at the same scale — entry is a teleport from
+ * SALON_EXTERIOR_DOOR_TRIGGER, whose door plane now sits on the model's
+ * scaled door. If the model fails to load, the procedural builder above
+ * runs instead so the landmark never disappears.
  */
 export function buildBeautySalonStudioGlb3D(ctx: UrbanPlazaBuildingsContext): void {
   const bs = CENTRAL_PARK_MASTERPLAN.beautySalon;
@@ -1692,6 +1696,7 @@ export function buildBeautySalonStudioGlb3D(ctx: UrbanPlazaBuildingsContext): vo
   grp.name = 'UrbanPlazaBeautySalonGlb3D';
   grp.position.set(bs.x + GLOW_STUDIO_SALON_GLB_ORIGIN_SHIFT_X, 0, bs.z);
   grp.rotation.y = bs.yaw;
+  grp.scale.setScalar(SALON_GLB_SCALE);
   ctx.staticGroup.add(grp);
 
   if (typeof window === 'undefined') return; // node/tests: skip the async load (same guard as the shop GLB loader)

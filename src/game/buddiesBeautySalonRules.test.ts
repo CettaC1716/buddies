@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import {
   SALON_EXTERIOR_DOOR_TRIGGER,
   SALON_EXTERIOR_WALL_THICKNESS,
+  SALON_GLB_SCALE,
   SALON_INTERIOR_BOUNDS,
   SALON_INTERIOR_COLLIDERS,
   SALON_INTERIOR_SEAT_SPOTS,
@@ -17,7 +18,7 @@ import {
 } from './buddiesBeautySalonRules';
 import { buildBeautySalonInterior } from './buddiesBeautySalonInteriorBuilder';
 import { LIGHTING_HYGIENE_LIMITS } from './buddiesHubRenderOptimizer';
-import { CENTRAL_PARK_MASTERPLAN, getCentralParkObstacles } from './buddiesCentralParkRules';
+import { getCentralParkObstacles } from './buddiesCentralParkRules';
 import { isFlatIndoorZoneKey } from './buddiesRemotePresenceSync';
 import { classifyFootstepSurface } from './buddiesAmbientAudioRules';
 
@@ -72,90 +73,109 @@ test('Beauty Salon exterior door threshold sits clear on North Promenade & zone/
 
   const salonObb = getCentralParkObstacles().find((o) => o.id === 'urban_plaza_beauty_salon');
   assert.ok(salonObb, 'Expected exterior Beauty Salon OBB obstacle');
-  // Entrance threshold (z = 9.55, exitSpawnZ = 9.35) sits strictly North of exterior front face (z = 10.40)
+  // Entrance threshold (z = 8.46, exitSpawnZ = 8.26) sits strictly North of the
+  // scaled GLB body's front face (obb front = z 9.13, model wall face z 9.35)
   assert.ok(SALON_EXTERIOR_DOOR_TRIGGER.z < salonObb.z - salonObb.halfZ);
   assert.ok(SALON_EXTERIOR_DOOR_TRIGGER.exitSpawnZ < salonObb.z - salonObb.halfZ);
-  // Interior floorplan must faithfully reflect the exterior footprint minus masonry wall thickness
-  const bs = CENTRAL_PARK_MASTERPLAN.beautySalon;
-  const extWidth = bs.halfX * 2;
-  const extDepth = bs.halfZ * 2;
+  // The door anchor x is unchanged and the OBB tracks the scaled GLB walls
+  assert.equal(SALON_EXTERIOR_DOOR_TRIGGER.doorX, 25.74);
+  assert.ok(Math.abs(salonObb.halfX - (4.4 * SALON_GLB_SCALE + 0.2)) < 0.01);
+  assert.ok(Math.abs(salonObb.x - 29.54) < 1e-6);
+  // Interior floorplan faithfully reflects the GLB exterior: the model's
+  // walls span 8.80m with SALON_EXTERIOR_WALL_THICKNESS (0.15m) of wall on
+  // every side, leaving the 8.50m terrazzo — scaled into scene units.
+  const extWidth = 8.8 * SALON_GLB_SCALE;
   const intWidth = SALON_INTERIOR_BOUNDS.maxX - SALON_INTERIOR_BOUNDS.minX;
   const intDepth = SALON_INTERIOR_BOUNDS.maxZ - SALON_INTERIOR_BOUNDS.minZ;
   assert.ok(
-    Math.abs(intWidth - (extWidth - SALON_EXTERIOR_WALL_THICKNESS * 2)) < 1e-6,
-    `Interior width (${intWidth}) must match exterior width (${extWidth}) minus 2x wall thickness`,
+    Math.abs(intWidth - (extWidth - SALON_EXTERIOR_WALL_THICKNESS * 2 * SALON_GLB_SCALE)) < 0.01,
+    `Interior width (${intWidth}) must match GLB exterior width (${extWidth}) minus 2x wall thickness, scaled`,
   );
   assert.ok(
-    Math.abs(intDepth - (extDepth - SALON_EXTERIOR_WALL_THICKNESS * 2)) < 1e-6,
-    `Interior depth (${intDepth}) must match exterior depth (${extDepth}) minus 2x wall thickness`,
+    Math.abs(intDepth - (extWidth - SALON_EXTERIOR_WALL_THICKNESS * 2 * SALON_GLB_SCALE)) < 0.01,
+    `Interior depth (${intDepth}) must match GLB exterior depth minus 2x wall thickness, scaled`,
   );
 });
 
-test('Beauty Salon 2-story U-turn staircase climbs continuously 1F (0.0m) -> Landing (1.5m) -> 2F (3.0m) and back down', () => {
-  // Ground floor start outside stair mouth
+test('Beauty Salon L-shaped staircase climbs continuously 1F (0.0m) -> Landing (3.09m) -> 2F (4.92m) and back down', () => {
+  // Ground floor start outside the flight A mouth (West end of the North wall)
   let y = 0.0;
-  y = resolveSalonInteriorFloorY(-0.4, -1.95, y);
+  y = resolveSalonInteriorFloorY(-1.35, -3.87, y);
   assert.equal(y, 0.0);
 
-  // Ascend Lower Flight (-0.85 -> -3.20 @ z = -1.95)
-  const lowerSamples = [-0.85, -1.45, -2.02, -2.62, -3.20];
+  // Ascend Flight A (-1.10 -> +3.29 @ z = -3.87)
+  const flightASamples = [-1.1, -0.25, 0.6, 1.45, 2.3, 3.29];
   let prevSampleY = -1;
-  for (const sx of lowerSamples) {
-    const res = clampSalonInteriorPosition(sx, -1.95, y);
-    assert.ok(res.floorY >= prevSampleY - 1e-6, `Expected monotonic climb on Lower Flight at x=${sx}`);
+  for (const sx of flightASamples) {
+    const res = clampSalonInteriorPosition(sx, -3.87, y);
+    assert.ok(res.floorY >= prevSampleY - 1e-6, `Expected monotonic climb on Flight A at x=${sx}`);
     prevSampleY = res.floorY;
     y = res.floorY;
   }
-  assert.ok(Math.abs(y - SALON_INTERIOR_BOUNDS.midLandingY) < 1e-4, `Expected midLandingY=1.50, got ${y}`);
+  assert.ok(Math.abs(y - SALON_INTERIOR_BOUNDS.midLandingY) < 1e-4, `Expected midLandingY=3.09, got ${y}`);
 
-  // Turn North onto Mid-Landing (-3.92, -1.95 -> -3.40)
-  const midTurn = clampSalonInteriorPosition(-3.92, -3.40, y);
-  assert.equal(midTurn.floorY, 1.5);
-  y = midTurn.floorY;
+  // Turn East onto the Mid-Landing corner (3.55, -3.87)
+  const landing = clampSalonInteriorPosition(3.55, -3.87, y);
+  assert.equal(landing.floorY, SALON_INTERIOR_BOUNDS.midLandingY);
+  y = landing.floorY;
 
-  // Ascend Upper Flight (-3.20 -> -0.85 @ z = -3.40)
-  const upperSamples = [-3.20, -2.62, -2.02, -1.45, -0.85];
-  for (const sx of upperSamples) {
-    const res = clampSalonInteriorPosition(sx, -3.40, y);
-    assert.ok(res.floorY >= y - 1e-6, `Expected monotonic climb on Upper Flight at x=${sx}`);
+  // Ascend Flight B (-3.09 -> -1.35 @ x = 3.55)
+  const flightBSamples = [-3.09, -2.65, -2.2, -1.75, -1.35];
+  for (const sz of flightBSamples) {
+    const res = clampSalonInteriorPosition(3.55, sz, y);
+    assert.ok(res.floorY >= y - 1e-6, `Expected monotonic climb on Flight B at z=${sz}`);
     y = res.floorY;
   }
-  assert.ok(Math.abs(y - SALON_INTERIOR_BOUNDS.secondFloorY) < 1e-4, `Expected secondFloorY=3.00, got ${y}`);
+  assert.ok(Math.abs(y - SALON_INTERIOR_BOUNDS.secondFloorY) < 1e-4, `Expected secondFloorY=4.92, got ${y}`);
 
-  // Walk onto 2F Spa Suite & Consultation Lounge; verify cannot walk past interior glass balustrade over void
-  const spaPos = clampSalonInteriorPosition(1.38, -2.08, y);
-  assert.equal(spaPos.floorY, 3.0);
+  // Walk onto the 2F mezzanine: stair-arrival strip and the spa suite deck
+  const stripPos = clampSalonInteriorPosition(3.55, -0.85, y);
+  assert.equal(stripPos.floorY, SALON_INTERIOR_BOUNDS.secondFloorY);
+  const spaPos = clampSalonInteriorPosition(-0.45, -2.24, y);
+  assert.equal(spaPos.floorY, SALON_INTERIOR_BOUNDS.secondFloorY);
 
-  const balustradeGuard = clampSalonInteriorPosition(1.0, 1.4, y);
-  assert.ok(
-    balustradeGuard.z <= SALON_INTERIOR_BOUNDS.mezzanineRear.maxZ + 0.01 ||
-      balustradeGuard.x >= SALON_INTERIOR_BOUNDS.mezzanineFrontWing.minX,
-    `Player walked off 2F mezzanine void guard to (${balustradeGuard.x}, ${balustradeGuard.z})`,
-  );
+  // The open void over the ground-floor showroom must not be walkable on 2F:
+  // clamping pulls the player back onto the deck union, still at 2F height
+  const voidGuard = clampSalonInteriorPosition(0.0, 2.5, y);
+  assert.equal(voidGuard.floorY, SALON_INTERIOR_BOUNDS.secondFloorY);
+  const b = SALON_INTERIOR_BOUNDS;
+  const inDeck =
+    (voidGuard.x >= b.mezzanineRear.minX - 0.01 &&
+      voidGuard.x <= b.mezzanineRear.maxX + 0.01 &&
+      voidGuard.z >= b.mezzanineRear.minZ - 0.01 &&
+      voidGuard.z <= b.mezzanineRear.maxZ + 0.01) ||
+    (voidGuard.x >= b.mezzanineFrontWing.minX - 0.01 &&
+      voidGuard.x <= b.mezzanineFrontWing.maxX + 0.01 &&
+      voidGuard.z >= b.mezzanineFrontWing.minZ - 0.01 &&
+      voidGuard.z <= b.mezzanineFrontWing.maxZ + 0.01) ||
+    (voidGuard.x >= b.mezzanineSouthWing.minX - 0.01 &&
+      voidGuard.x <= b.mezzanineSouthWing.maxX + 0.01 &&
+      voidGuard.z >= b.mezzanineSouthWing.minZ - 0.01 &&
+      voidGuard.z <= b.mezzanineSouthWing.maxZ + 0.01) ||
+    (voidGuard.x >= b.mezzanineEastStrip.minX - 0.01 &&
+      voidGuard.x <= b.mezzanineEastStrip.maxX + 0.01 &&
+      voidGuard.z >= b.mezzanineEastStrip.minZ - 0.01 &&
+      voidGuard.z <= b.mezzanineEastStrip.maxZ + 0.01);
+  assert.ok(inDeck, `Player walked off the 2F mezzanine into the void at (${voidGuard.x}, ${voidGuard.z})`);
 
-  // Descend back down Upper Flight (-1.2 -> -3.20 @ z = -3.40)
-  let descY = 3.0;
-  for (const sx of [-1.2, -1.9, -2.6, -3.20]) {
-    const res = clampSalonInteriorPosition(sx, -3.40, descY);
-    assert.ok(res.floorY <= descY + 1e-6, `Expected monotonic descent at x=${sx}`);
+  // Descend back down Flight B (-1.60 -> -3.09 @ x = 3.55)
+  let descY: number = SALON_INTERIOR_BOUNDS.secondFloorY;
+  for (const sz of [-1.6, -2.2, -2.8, -3.09]) {
+    const res = clampSalonInteriorPosition(3.55, sz, descY);
+    assert.ok(res.floorY <= descY + 1e-6, `Expected monotonic descent at z=${sz}`);
     descY = res.floorY;
   }
-  assert.ok(Math.abs(descY - 1.5) < 1e-4);
+  assert.ok(Math.abs(descY - SALON_INTERIOR_BOUNDS.midLandingY) < 1e-4);
 });
 
-test('Curved Front-Left storefront clamps avatars smoothly & floor-isolated seating/exit prompts resolve cleanly', () => {
-  // Attempt to walk outside the curved corner at (-5.9, +4.0)
-  const curved = clampSalonInteriorPosition(-5.9, 4.0, 0.0);
-  const radial = Math.hypot(
-    curved.x - SALON_INTERIOR_BOUNDS.curveCenterX,
-    curved.z - SALON_INTERIOR_BOUNDS.curveCenterZ,
-  );
-  assert.ok(
-    radial <= SALON_INTERIOR_BOUNDS.curveRadius - SALON_INTERIOR_BOUNDS.wallMargin + 1e-4,
-    `Expected curved corner clamp <= ${(SALON_INTERIOR_BOUNDS.curveRadius - SALON_INTERIOR_BOUNDS.wallMargin).toFixed(2)}, got ${radial.toFixed(3)}`,
-  );
+test('Rectangular GLB envelope clamps avatars & floor-isolated seating/exit prompts resolve cleanly', () => {
+  // Attempt to walk far outside the envelope
+  const clamped = clampSalonInteriorPosition(99, 99, 0.0);
+  assert.ok(clamped.x <= SALON_INTERIOR_BOUNDS.maxX - SALON_INTERIOR_BOUNDS.wallMargin + 1e-6);
+  assert.ok(clamped.z <= SALON_INTERIOR_BOUNDS.maxZ - SALON_INTERIOR_BOUNDS.wallMargin + 1e-6);
+  assert.equal(clamped.floorY, 0.0);
 
-  // Near 1F Exit Door
+  // Near 1F Exit Door (the model's main door, South wall)
   const exitPrompt = resolveNearestSalonPromptOrSeat(
     SALON_STATION_TARGETS.exitDoor.x - 0.5,
     SALON_STATION_TARGETS.exitDoor.z,
@@ -164,14 +184,15 @@ test('Curved Front-Left storefront clamps avatars smoothly & floor-isolated seat
   assert.equal(exitPrompt.target, 'station');
   assert.equal(exitPrompt.stationKind, 'exit_door');
 
-  // Same XY on 2F does not trigger 1F exit door or 1F vanities!
-  const upperCheck = resolveNearestSalonPromptOrSeat(2.65, -2.72, 3.0);
+  // On 2F above the vanity row, the 1F exit door and 1F vanities stay silent;
+  // the nearest seat is the 2F lounge sofa
+  const upperCheck = resolveNearestSalonPromptOrSeat(3.64, 2.0, SALON_INTERIOR_BOUNDS.secondFloorY);
   assert.notEqual(upperCheck.stationKind, 'exit_door');
   if (upperCheck.seatSpot) {
     assert.equal(upperCheck.seatSpot.floorLevel, '2f');
   }
 
-  // Stand-up positions for all 6 seats remain within walkable floor level & clear of seat OBBs
+  // Stand-up positions for all 6 seats remain within walkable floor level & clear of the seat itself
   assert.equal(SALON_INTERIOR_SEAT_SPOTS.length, 6);
   for (const spot of SALON_INTERIOR_SEAT_SPOTS) {
     const up = computeSalonSeatStandUpPosition(spot);
@@ -199,23 +220,35 @@ test('computeSalonOrbitCameraPose frames both 1F showroom and 2F mezzanine witho
 
   const pose2f = computeSalonOrbitCameraPose({
     originY: SALON_ORIGIN_Y,
-    anchorX: 1.38,
-    anchorZ: -2.08,
+    anchorX: SALON_STATION_TARGETS.spaSuite.x,
+    anchorZ: SALON_STATION_TARGETS.spaSuite.z,
     floorY: SALON_INTERIOR_BOUNDS.secondFloorY,
     yaw: 0.62,
     pitch: 0.48,
     dist: 6.4,
   });
-  assert.ok(pose2f.lookY >= SALON_ORIGIN_Y + 3.8);
+  assert.ok(pose2f.lookY >= SALON_ORIGIN_Y + SALON_INTERIOR_BOUNDS.secondFloorY + 0.9);
   assert.ok(pose2f.camY > pose1f.camY + 2.0);
 });
 
-test('buildBeautySalonInterior constructs finite 3D meshes, <=2 PointLights, 0 SpotLights, and disposes cleanly', () => {
+test('buildBeautySalonInterior mounts the Glow GLB at the interior origin with the seat-coin handle contract', () => {
   const salon = withMockDocumentCanvas(() => buildBeautySalonInterior());
+
+  // Root sits at the isolated interior origin; the GLB mount child carries
+  // the shared salon scale (the model itself loads async in the browser,
+  // so its meshes are not counted synchronously here).
+  assert.equal(salon.root.name, 'BeautyGlowSalonInterior3D');
+  assert.equal(salon.root.position.y, SALON_ORIGIN_Y);
+  const glbMount = salon.root.getObjectByName('BeautyGlowSalonInteriorGlb3D');
+  assert.ok(glbMount, 'Expected the interior GLB mount group');
+  assert.ok(Math.abs(glbMount.scale.x - SALON_GLB_SCALE) < 1e-9);
+
+  // One floating seat-coin indicator per sittable seat spot
+  assert.equal(salon.floorSpotIndicators.length, SALON_INTERIOR_SEAT_SPOTS.length);
+
   let meshCount = 0;
   const pointLights: THREE.PointLight[] = [];
   const spotLights: THREE.SpotLight[] = [];
-
   salon.root.traverse((obj) => {
     if ((obj as THREE.PointLight).isPointLight) pointLights.push(obj as THREE.PointLight);
     if ((obj as THREE.SpotLight).isSpotLight) spotLights.push(obj as THREE.SpotLight);
@@ -233,7 +266,7 @@ test('buildBeautySalonInterior constructs finite 3D meshes, <=2 PointLights, 0 S
     }
   });
 
-  assert.ok(meshCount >= 20, `Expected rich Beauty Salon interior mesh hierarchy, got ${meshCount}`);
+  assert.ok(meshCount >= 4, `Expected the exit pad + seat coin meshes, got ${meshCount}`);
   assert.equal(spotLights.length, 0);
   assert.ok(
     pointLights.length <= LIGHTING_HYGIENE_LIMITS.maxSalonInteriorPointLights,
@@ -245,6 +278,6 @@ test('buildBeautySalonInterior constructs finite 3D meshes, <=2 PointLights, 0 S
   }
 
   salon.updateVisuals(1.25, 'exit_door', 0.0);
-  salon.updateVisuals(2.50, null, 3.0);
+  salon.updateVisuals(2.5, null, SALON_INTERIOR_BOUNDS.secondFloorY);
   salon.dispose();
 });

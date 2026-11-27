@@ -1102,18 +1102,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     );
     enterGrandCasinoPromptBtn.setAttribute('data-enter-grand-casino-floating-btn', 'true');
 
-    const ENTER_BEAUTY_SALON_BTN_HTML = getGameStyleBottomDockHtml(
-      'ENTER SALON',
-      '#f9a8d4',
-      DOCK_ICON_DOOR_SVG,
-      'E',
-    );
-    const enterBeautySalonPromptBtn = createPromptButton(
-      ENTER_BEAUTY_SALON_BTN_HTML,
-      'ENTER SALON [E]',
-      'enterBeautySalon',
-    );
-    enterBeautySalonPromptBtn.setAttribute('data-enter-beauty-salon-floating-btn', 'true');
+    // (No bottom-dock ENTER SALON button: salon entry is radial-only via
+    // the door_salon pin's pin-anchored menu in App — owner's direction.)
 
     const getCafeStationBtnHtml = (
       label: string,
@@ -18685,6 +18675,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         }
 
         // 0B-6. Central Urban Plaza Beauty & Glow Salon Entrance Triangle
+        // (opens the same radial entry menu as the door pin — salon entry
+        // is radial-only; the trigger radius gate underneath is unchanged)
         if (
           worldModeRef.current !== 'warzone' &&
           npcCameraMode === 'none' &&
@@ -18697,7 +18689,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         ) {
           soundEngine.playUiClick();
           clearCharacterSelection();
-          window.dispatchEvent(new CustomEvent('enter-beauty-salon-interior'));
+          window.dispatchEvent(new CustomEvent('toggle-salon-entry-menu'));
           return;
         }
 
@@ -25752,7 +25744,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               clickToWalkSpeedScale =
                 npcCameraMode === 'salon_interior' &&
                 salonCurrentFloorY >= 0.1 &&
-                salonCurrentFloorY < 2.95
+                salonCurrentFloorY < SALON_INTERIOR_BOUNDS.secondFloorY - 0.05
                   ? Math.min(0.88, Math.max(0.55, stepRes.speedScale))
                   : Math.max(0.45, stepRes.speedScale);
             }
@@ -26732,7 +26724,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                 playerUnit.z = clampedSalon.z;
                 salonCurrentFloorY = clampedSalon.floorY;
                 const is1fGround = salonCurrentFloorY < 0.45;
-                const is2f = salonCurrentFloorY >= 1.95;
+                const is2f =
+                  salonCurrentFloorY >=
+                  (SALON_INTERIOR_BOUNDS.midLandingY + SALON_INTERIOR_BOUNDS.secondFloorY) / 2;
                 for (const c of SALON_INTERIOR_COLLIDERS) {
                   if (
                     c.floorLevel === 'all' ||
@@ -36904,12 +36898,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         enterGrandCasinoPromptBtn.style.display = 'none';
       }
 
-      if (!isAlreadySeatedOutdoors && isNearBeautySalonDoor) {
-        claimBottomDock(enterBeautySalonPromptBtn);
-      } else {
-        enterBeautySalonPromptBtn.style.display = 'none';
-      }
-
       if (!isAlreadySeatedOutdoors && nearClaimedHouseDoorPos && !isKioskModalOpenCanvas) {
         claimBottomDock(enterHousePromptBtn);
       } else {
@@ -37706,7 +37694,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                 label: 'Beauty Salon',
                 accent: 'amber',
                 onTrigger: () => {
-                  window.dispatchEvent(new CustomEvent('buddy-action', { detail: 'enterBeautySalon' }));
+                  // Entry goes through the pin-anchored radial menu in
+                  // App (owner's direction: salon entry via radial, for
+                  // a more aesthetic flow); the menu's Enter item fires
+                  // the classic 'enterBeautySalon' buddy-action chain.
+                  window.dispatchEvent(new CustomEvent('toggle-salon-entry-menu'));
                 },
               },
             );

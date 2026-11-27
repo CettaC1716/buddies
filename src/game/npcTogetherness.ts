@@ -355,7 +355,7 @@ export const CITY_LIFE_ANCHORS: Readonly<Record<string, CityLifeAnchor>> = {
   },
   central_boutique_front: {
     id: 'central_boutique_front',
-    label: 'Central Plaza Boutique Tower',
+    label: 'Central Plaza Vintage Cafe',
     x: 20.8,
     z: 0.0,
     yaw: Math.PI / 2,

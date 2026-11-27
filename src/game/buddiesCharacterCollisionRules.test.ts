@@ -406,8 +406,8 @@ test('all SE beachfront & stilt stairs allow multi-step ascents while Plaza/Park
     ['Municipal letterbox', -86.66, -33.67],
     ['Glasshouse entrance pot W', -92.7, 21.95],
     ['Tennis floodlight NW', -99.54, 38.9],
-    ['Boutique front bench', 17.12, 2.45],
-    ['Bites & Sips A-frame sign', 41.65, -4.75],
+    ['Vintage Cafe front bench', 16.91, 2.83],
+    ['Bites & Sips A-frame sign', 39.91, -6.78],
     ['Pergola corner plinth 0', 32.65, -14.61],
   ];
   for (const [label, px, pz] of propProbes) {

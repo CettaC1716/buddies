@@ -1570,24 +1570,28 @@ function runInteriorGridAStar(
   return { waypoints: smoothed, reached };
 }
 
-const SALON_STAIR_1F_MOUTH = { x: -0.45, z: -1.95, floorY: 0.0 };
-const SALON_STAIR_2F_MOUTH = { x: -0.45, z: -3.40, floorY: 3.0 };
+const SALON_STAIR_1F_MOUTH = { x: -1.35, z: -3.87, floorY: 0.0 };
+const SALON_STAIR_2F_MOUTH = { x: 3.55, z: -0.85, floorY: SALON_INTERIOR_BOUNDS.secondFloorY };
 
-// Incremental step waypoints along the U-turn staircase (keeps per-step climb <= ~0.55m for
-// both gradual elevation clamping and smooth 3D staircase breadcrumb chevron heights).
+// Incremental step waypoints along the Glow GLB's L-shaped staircase
+// (flight A climbs +X along the North wall to the mid landing, flight B
+// climbs +Z along the East wall onto the mezzanine; heights follow the
+// ramps in buddiesBeautySalonRules so per-step climb stays <= ~0.55m).
 const SALON_STAIR_ASCENT_STEPS: ReadonlyArray<ClickToWalkWaypoint> = [
   SALON_STAIR_1F_MOUTH,
-  { x: -1.60, z: -1.95, floorY: 0.05 },
-  { x: -2.30, z: -1.95, floorY: 0.45 },
-  { x: -2.95, z: -1.95, floorY: 0.90 },
-  { x: -3.45, z: -1.95, floorY: 1.25 },
-  { x: -3.92, z: -1.95, floorY: 1.50 },
-  { x: -3.92, z: -2.675, floorY: 1.50 },
-  { x: -3.92, z: -3.40, floorY: 1.50 },
-  { x: -3.40, z: -3.40, floorY: 1.50 },
-  { x: -2.70, z: -3.40, floorY: 1.82 },
-  { x: -2.02, z: -3.40, floorY: 2.25 },
-  { x: -1.35, z: -3.40, floorY: 2.68 },
+  { x: -0.80, z: -3.87, floorY: 0.21 },
+  { x: -0.25, z: -3.87, floorY: 0.60 },
+  { x: 0.30, z: -3.87, floorY: 0.99 },
+  { x: 0.85, z: -3.87, floorY: 1.37 },
+  { x: 1.40, z: -3.87, floorY: 1.76 },
+  { x: 1.95, z: -3.87, floorY: 2.15 },
+  { x: 2.50, z: -3.87, floorY: 2.53 },
+  { x: 3.05, z: -3.87, floorY: 2.92 },
+  { x: 3.55, z: -3.87, floorY: SALON_INTERIOR_BOUNDS.midLandingY },
+  { x: 3.55, z: -2.70, floorY: 3.50 },
+  { x: 3.55, z: -2.30, floorY: 3.92 },
+  { x: 3.55, z: -1.90, floorY: 4.34 },
+  { x: 3.55, z: -1.50, floorY: 4.76 },
   SALON_STAIR_2F_MOUTH,
 ];
 
@@ -1615,7 +1619,7 @@ function sliceSalonStairSteps(
 
 /**
  * Computes room-safe interior click-to-walk routes for Glasshouse Cafe, Grand Casino,
- * 2-Story Beauty Salon (including automatic U-turn staircase climbs between 1F and 2F),
+ * 2-Story Beauty Salon (including automatic L-staircase climbs between 1F and 2F),
  * and Private House visits without ever warping outside walls.
  */
 export function planInteriorClickToWalkRoute(params: {
@@ -1642,9 +1646,11 @@ export function planInteriorClickToWalkRoute(params: {
   if (room === 'salon_interior') {
     const startY = params.startFloorY ?? 0;
     const goalY = params.goalFloorY ?? 0;
-    const startOn2F = startY >= 1.95;
-    const goalOn2F = goalY >= 1.95;
-    const onStairsNow = startY >= 0.45 && startY < 1.95;
+    const salon2FThreshold =
+      (SALON_INTERIOR_BOUNDS.midLandingY + SALON_INTERIOR_BOUNDS.secondFloorY) / 2;
+    const startOn2F = startY >= salon2FThreshold;
+    const goalOn2F = goalY >= salon2FThreshold;
+    const onStairsNow = startY >= 0.45 && startY < salon2FThreshold;
 
     const filterSalonColliders = (level: '1f' | '2f') =>
       SALON_INTERIOR_COLLIDERS.filter(

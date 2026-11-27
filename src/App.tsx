@@ -976,6 +976,7 @@ export default function App() {
   const [unifiedBottomDockMode, setUnifiedBottomDockMode] =
     useState<UnifiedBottomDockActionMode>('none');
   const [isCafeRotaMenuExpanded, setIsCafeRotaMenuExpanded] = useState<boolean>(false);
+  const [isSalonEntryMenuExpanded, setIsSalonEntryMenuExpanded] = useState<boolean>(false);
   const [isCafeOrderSlideBannerVisible, setIsCafeOrderSlideBannerVisible] =
     useState<boolean>(false);
   const [hasUnreadCafeOrderNotif, setHasUnreadCafeOrderNotif] = useState<boolean>(false);
@@ -4303,6 +4304,9 @@ export default function App() {
       setUnifiedBottomDockMode('work_shift');
       setIsCafeRotaMenuExpanded((prev) => !prev);
     };
+    const onToggleSalonEntryMenu = () => {
+      setIsSalonEntryMenuExpanded((prev) => !prev);
+    };
     const onStopCafeWorkShiftEvent = () => {
       window.dispatchEvent(new CustomEvent('app-cafe-action', { detail: 'stop_shift' }));
     };
@@ -4597,6 +4601,7 @@ export default function App() {
     window.addEventListener('unified-bottom-dock-change', onUnifiedBottomDockChange);
     window.addEventListener('cafe-rota-proximity-change', onCafeRotaProximityChange);
     window.addEventListener('toggle-cafe-rota-dock-menu', onToggleCafeRotaDockMenu);
+    window.addEventListener('toggle-salon-entry-menu', onToggleSalonEntryMenu);
     window.addEventListener('start-cafe-work-shift', onStartCafeWorkShiftEvent);
     window.addEventListener('stop-cafe-work-shift', onStopCafeWorkShiftEvent);
     window.addEventListener('serve-cafe-active-order', onServeCafeActiveOrderEvent);
@@ -4667,6 +4672,7 @@ export default function App() {
       window.removeEventListener('unified-bottom-dock-change', onUnifiedBottomDockChange);
       window.removeEventListener('cafe-rota-proximity-change', onCafeRotaProximityChange);
       window.removeEventListener('toggle-cafe-rota-dock-menu', onToggleCafeRotaDockMenu);
+      window.removeEventListener('toggle-salon-entry-menu', onToggleSalonEntryMenu);
       window.removeEventListener('start-cafe-work-shift', onStartCafeWorkShiftEvent);
       window.removeEventListener('stop-cafe-work-shift', onStopCafeWorkShiftEvent);
       window.removeEventListener('serve-cafe-active-order', onServeCafeActiveOrderEvent);
@@ -14416,6 +14422,30 @@ export default function App() {
           </div>
         ) : undefined;
 
+        const salonEntryHeaderStrip = (
+          <div className="rounded-full px-3 py-1 bg-[#141926]/82 backdrop-blur-xl border border-white/25 shadow-lg text-white flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wider">
+            <span className="text-pink-300 truncate">Glow Studio Salon</span>
+            <span className="px-2 py-0.5 rounded-full bg-pink-400/20 text-pink-200 border border-pink-300/30 font-mono-tabular">
+              Beauty
+            </span>
+          </div>
+        );
+
+        const salonEntryMenuItems: PinAnchoredMenuItem[] = [
+          {
+            id: 'enter_salon',
+            label: 'Enter Salon',
+            icon: <LogIn className="w-3.5 h-3.5" aria-hidden="true" />,
+            iconWrapClassName: 'bg-pink-100 text-pink-700',
+            pillAccentClassName: 'border-pink-300/90 text-pink-950',
+            dataAttr: { 'data-salon-entry-enter-btn': 'true' },
+            onSelect: () => {
+              setIsSalonEntryMenuExpanded(false);
+              window.dispatchEvent(new CustomEvent('buddy-action', { detail: 'enterBeautySalon' }));
+            },
+          },
+        ];
+
         const targetPopupItems: PinAnchoredMenuItem[] = (() => {
           if (!dockEntity) return [];
           const cleanEntityName = dockEntity.name
@@ -14635,6 +14665,14 @@ export default function App() {
               menuDataAttrs={{ 'data-nearby-entity-action-menu': 'true' }}
               items={targetPopupItems}
               onClose={() => setIsPinTargetPopupOpen(false)}
+            />
+            <PinAnchoredInteractionMenu
+              isOpen={!isDockBlockedByModal && isSalonEntryMenuExpanded}
+              anchorPinId="door_salon"
+              menuDataAttrs={{ 'data-salon-entry-menu': 'true' }}
+              headerStrip={salonEntryHeaderStrip}
+              items={salonEntryMenuItems}
+              onClose={() => setIsSalonEntryMenuExpanded(false)}
             />
             <CafeWorkShiftBottomDock
             isVisible={effectiveDockMode !== 'none'}

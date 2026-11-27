@@ -264,8 +264,8 @@ test('interior click-to-walk routes stay strictly inside walls and traverse 2-st
   assert.equal(upRoute.reachable, true);
   assert.equal(upRoute.targetFloorY, SALON_INTERIOR_BOUNDS.secondFloorY);
   assert.ok(
-    upRoute.waypoints.some((w) => w.floorY === 1.5),
-    'Expected 1F->2F Salon route to ascend through mid-landing (1.5m)',
+    upRoute.waypoints.some((w) => w.floorY === SALON_INTERIOR_BOUNDS.midLandingY),
+    'Expected 1F->2F Salon route to ascend through the L-stair mid-landing',
   );
 
   // Verify every point on 1F->2F path stays inside salon envelope without falling off mezzanine
@@ -283,8 +283,8 @@ test('interior click-to-walk routes stay strictly inside walls and traverse 2-st
   // 2. Beauty Salon 2F -> 1F Exit Door
   const downRoute = planInteriorClickToWalkRoute({
     room: 'salon_interior',
-    startX: 4.1,
-    startZ: -1.6,
+    startX: spaSeat.standUpX,
+    startZ: spaSeat.standUpZ,
     startFloorY: SALON_INTERIOR_BOUNDS.secondFloorY,
     goalX: SALON_INTERIOR_BOUNDS.exitDoorX,
     goalZ: SALON_INTERIOR_BOUNDS.exitDoorZ,
@@ -292,7 +292,7 @@ test('interior click-to-walk routes stay strictly inside walls and traverse 2-st
   });
   assert.equal(downRoute.reachable, true);
   assert.equal(downRoute.targetFloorY, 0);
-  assert.ok(downRoute.waypoints.some((w) => w.floorY === 1.5));
+  assert.ok(downRoute.waypoints.some((w) => w.floorY === SALON_INTERIOR_BOUNDS.midLandingY));
 
   // 3. CozyBites Cafe interior route around barista counter & tables
   const cafeRoute = planInteriorClickToWalkRoute({

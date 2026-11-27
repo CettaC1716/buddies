@@ -1175,6 +1175,40 @@ function buildBoutiqueMannequinSilhouette(
   ctx.addPart(grp, new THREE.SphereGeometry(0.080, 10, 8), '#f0e2ca', [0, 1.56, 0], [0, 0, 0], { bounce: 2.68 });
 }
 
+/**
+ * Window flower box with lush foliage + pastel pink/lavender/cream flower
+ * tufts (zero strawberries). Factored out of `buildArchedCasementWindow`
+ * (which still calls it with identical geometry) so the Vintage Cafe GLB
+ * mount can dress the cafe model's bare ground-floor windows with the
+ * retired Boutique Tower's own flowers, per the owner's carry-over ask.
+ * Parts are added to `parent` in the window frame: box centred on x=0,
+ * sill level y=0, wall face z=0, outward +Z.
+ */
+export function buildWindowFlowerBox(
+  parent: THREE.Object3D,
+  ctx: UrbanPlazaBuildingsContext,
+  width: number,
+  withBalcony = false,
+): void {
+  const w = width;
+  const boxZ = withBalcony ? 0.25 : 0.145;
+  const boxY = withBalcony ? 0.14 : 0.075;
+  const boxD = withBalcony ? 0.18 : 0.17;
+  ctx.addPart(parent, new THREE.BoxGeometry(w * 0.92, 0.15, boxD), '#8f5f3b', [0, boxY, boxZ]);
+  ctx.addPart(parent, new THREE.BoxGeometry(w * 0.86, 0.04, boxD - 0.04), '#57402e', [0, boxY + 0.075, boxZ]);
+  // Lush foliage + pastel pink/lavender/cream flower tufts (zero strawberries)
+  const fCols = ['#f39dbb', '#c084fc', '#fde68a', '#f9a8d4', '#a78bfa'];
+  for (let f = 0; f < 5; f++) {
+    const fx = -w * 0.34 + (f / 4) * (w * 0.68);
+    ctx.addPart(parent, new THREE.SphereGeometry(0.08, 7, 6), '#4b8f42', [fx, boxY + 0.12, boxZ]);
+    ctx.addPart(parent, new THREE.SphereGeometry(0.052, 6, 5), fCols[f % fCols.length], [
+      fx + (f % 2 === 0 ? 0.02 : -0.02),
+      boxY + 0.17,
+      boxZ + 0.02,
+    ]);
+  }
+}
+
 export function buildArchedCasementWindow(
   parent: THREE.Object3D,
   ctx: UrbanPlazaBuildingsContext,
@@ -1342,22 +1376,7 @@ export function buildArchedCasementWindow(
   }
 
   if (opts.withFlowerBox) {
-    const boxZ = opts.withBalcony ? 0.25 : 0.145;
-    const boxY = opts.withBalcony ? 0.14 : 0.075;
-    const boxD = opts.withBalcony ? 0.18 : 0.17;
-    ctx.addPart(grp, new THREE.BoxGeometry(w * 0.92, 0.15, boxD), '#8f5f3b', [0, boxY, boxZ]);
-    ctx.addPart(grp, new THREE.BoxGeometry(w * 0.86, 0.04, boxD - 0.04), '#57402e', [0, boxY + 0.075, boxZ]);
-    // Lush foliage + pastel pink/lavender/cream flower tufts (zero strawberries)
-    const fCols = ['#f39dbb', '#c084fc', '#fde68a', '#f9a8d4', '#a78bfa'];
-    for (let f = 0; f < 5; f++) {
-      const fx = -w * 0.34 + (f / 4) * (w * 0.68);
-      ctx.addPart(grp, new THREE.SphereGeometry(0.08, 7, 6), '#4b8f42', [fx, boxY + 0.12, boxZ]);
-      ctx.addPart(grp, new THREE.SphereGeometry(0.052, 6, 5), fCols[f % fCols.length], [
-        fx + (f % 2 === 0 ? 0.02 : -0.02),
-        boxY + 0.17,
-        boxZ + 0.02,
-      ]);
-    }
+    buildWindowFlowerBox(grp, ctx, w, Boolean(opts.withBalcony));
   }
 
   if (opts.withAwning) {
@@ -1490,6 +1509,55 @@ function buildPerchedSongbird(
   ctx.addPart(grp, new THREE.BoxGeometry(0.04, 0.018, 0.095), '#78573e', [0, 0.095, -0.09], [0.35, 0, 0]);
 }
 
+/**
+ * One row of hydrangea/lavender planting for a planter trough: instanced
+ * shrubs composed into `ctx.shrubCollectors` (world frame via
+ * originX/originZ/groupYaw + the trough's local lx/ly/lz) plus direct
+ * green herb domes + pastel lavender spikes added to `grp` (the trough
+ * group, positioned at (lx, ly, lz) with rotation rotY; soil surface is
+ * grp-local y ~0.35). Factored out of `buildRooftopGardenPlanterBox`
+ * (which still calls it with identical output) so the Vintage Cafe GLB
+ * mount can plant the retired Boutique Tower's own blooms into the cafe
+ * model's existing terrace trough, per the owner's carry-over ask.
+ */
+export function buildPlanterBloomRow(
+  grp: THREE.Object3D,
+  ctx: UrbanPlazaBuildingsContext,
+  originX: number,
+  originZ: number,
+  groupYaw: number,
+  lx: number,
+  ly: number,
+  lz: number,
+  len: number,
+  rotY: number,
+): void {
+  const shrubCount = Math.max(2, Math.round(len / 0.55));
+  const bloomTints = ['#c4b5fd', '#ddd6fe', '#f5f3ff', '#dbeafe', '#f8f4e8'];
+  for (let s = 0; s < shrubCount; s++) {
+    const offX = -len * 0.34 + (shrubCount === 1 ? 0 : (s / (shrubCount - 1)) * (len * 0.68));
+    const cosR = Math.cos(rotY);
+    const sinR = Math.sin(rotY);
+    const px = lx + offX * cosR;
+    const pz = lz - offX * sinR;
+
+    // Ground-anchored instanced hydrangea/lavender herb shrub at soil surface (`y=0` base, scale 0.46..0.54 per #82)
+    const sc = 0.46 + (s % 3) * 0.04;
+    ctx.shrubCollectors.matrices.push(
+      composeWorldCollectorMatrix(originX, originZ, groupYaw, px, ly + 0.35, pz, s * 1.1, [sc, sc * 0.85, sc]),
+    );
+    ctx.shrubCollectors.colors.push(new THREE.Color(bloomTints[s % bloomTints.length]));
+
+    // Direct lush green herb domes + pastel lavender spikes (strictly NO red berries)
+    ctx.addPart(grp, new THREE.SphereGeometry(0.13, 8, 6), '#529342', [offX, 0.42, 0]);
+    ctx.addPart(grp, new THREE.ConeGeometry(0.042, 0.15, 6), s % 2 === 0 ? '#a78bfa' : '#e9d5ff', [
+      offX + 0.04,
+      0.54,
+      0.03,
+    ]);
+  }
+}
+
 export function buildRooftopGardenPlanterBox(
   parent: THREE.Object3D,
   ctx: UrbanPlazaBuildingsContext,
@@ -1524,30 +1592,7 @@ export function buildRooftopGardenPlanterBox(
     receiveShadow: recvShadow,
   });
 
-  const shrubCount = Math.max(2, Math.round(len / 0.55));
-  const bloomTints = ['#c4b5fd', '#ddd6fe', '#f5f3ff', '#dbeafe', '#f8f4e8'];
-  for (let s = 0; s < shrubCount; s++) {
-    const offX = -len * 0.34 + (shrubCount === 1 ? 0 : (s / (shrubCount - 1)) * (len * 0.68));
-    const cosR = Math.cos(rotY);
-    const sinR = Math.sin(rotY);
-    const px = lx + offX * cosR;
-    const pz = lz - offX * sinR;
-
-    // Ground-anchored instanced hydrangea/lavender herb shrub at soil surface (`y=0` base, scale 0.46..0.54 per #82)
-    const sc = 0.46 + (s % 3) * 0.04;
-    ctx.shrubCollectors.matrices.push(
-      composeWorldCollectorMatrix(originX, originZ, groupYaw, px, ly + 0.35, pz, s * 1.1, [sc, sc * 0.85, sc]),
-    );
-    ctx.shrubCollectors.colors.push(new THREE.Color(bloomTints[s % bloomTints.length]));
-
-    // Direct lush green herb domes + pastel lavender spikes (strictly NO red berries)
-    ctx.addPart(grp, new THREE.SphereGeometry(0.13, 8, 6), '#529342', [offX, 0.42, 0]);
-    ctx.addPart(grp, new THREE.ConeGeometry(0.042, 0.15, 6), s % 2 === 0 ? '#a78bfa' : '#e9d5ff', [
-      offX + 0.04,
-      0.54,
-      0.03,
-    ]);
-  }
+  buildPlanterBloomRow(grp, ctx, originX, originZ, groupYaw, lx, ly, lz, len, rotY);
 }
 
 // ============================================================================
@@ -2769,30 +2814,45 @@ export function buildCozyBitesCafePavilion3D(ctx: UrbanPlazaBuildingsContext): v
 /** Public path of the prepped owner model (its baked COL_* collider nodes stripped). */
 export const BITES_SIPS_PAVILION_GLB_PATH = '/assets/buildings/bites_sips_pavilion.glb';
 
-/** Top height (m) of the owner model's own sidewalk slab (its COL_FLOOR_Sidewalk spans y [0 .. 0.16]). */
-export const BITES_SIPS_PAVILION_SLAB_TOP_Y = 0.16;
+/**
+ * Uniform scale applied to the Bites & Sips GLB at its mount, derived by
+ * the door-height method: the replaced procedural pavilion's entrance was
+ * authored "Tall 4.02m"; the GLB's door frame (Door_Oak_Wood_Honey_Oak)
+ * measures 2.70m (y 0.16..2.86 in model units), so 4.02 / 2.70 = 1.489
+ * brings the model's door in line with the game's authored proportions.
+ * Cross-check: total heights agree (7.25 / 4.82 = 1.504).
+ */
+export const BITES_SIPS_PAVILION_GLB_SCALE = 1.489;
+
+/**
+ * Ground height (m) of the district bistro tables around the pavilion.
+ * The model's own sidewalk slab was stripped in prep (the building sits
+ * on the plaza floor, re-grounded by the slab thickness), so the tables
+ * stand on the plaza floor at y=0 like all other district furniture.
+ */
+export const BITES_SIPS_PAVILION_SLAB_TOP_Y = 0;
 
 /**
  * Places the owner-supplied Bites & Sips GLB as the pavilion's visual,
  * following the same load-as-is GLTFLoader pattern as the Glow Studio
- * salon. Placement is the masterplan anchor at native size with the
- * masterplan yaw (-PI/2), so the model's front (+Z local) faces West
- * toward the Civic Cascade Fountain exactly like the procedural
- * pavilion. The model's door (local centre (-2.20, +2.95)) lands at
- * world (42.25, -2.80) — on the same West face as the old entrance
- * (41.6, 0.25), further south along that face. The origin is
- * deliberately NOT shifted onto the old door point: shifting it south
- * would drag the model body (local x [-3.14..4.14], z [-4.14..3.14])
- * over the two south masterplan bistro tables and swallow them inside
- * its walls, while the centred placement has zero conflicts.
+ * salon. Placement is the masterplan anchor with the masterplan yaw
+ * (-PI/2), so the model's front (+Z local) faces West toward the Civic
+ * Cascade Fountain exactly like the procedural pavilion, scaled by
+ * BITES_SIPS_PAVILION_GLB_SCALE. The model's door (local centre
+ * (-2.20, +2.95)) lands at world (40.79, -3.88) — on the same West face
+ * as the old entrance (41.6, 0.25), further south along that face. The
+ * origin is deliberately NOT shifted onto the old door point: the
+ * pavilion has no door-anchored system (it is not walk-in), and its
+ * masterplan centre is the anchor the district layout is built around.
  * The 4 masterplan bistro tables are district furniture with their own
  * colliders in `getCentralParkObstacles`, so the mount rebuilds them
  * (same helper + chair-yaw rule as the procedural builder) standing on
- * the model's sidewalk slab — all four land on that slab, clear of the
- * model body and clear of the model's own single bistro set on its
- * north-west patio. If the model fails to load, the tables are removed
- * again and the procedural builder above runs instead, so the pavilion
- * never disappears.
+ * the plaza floor — their masterplan coordinates were moved in the same
+ * pass so the scaled body (world x [40.32..51.56], z [-5.48..5.76])
+ * clears every table and the model's own bike cart and bistro set. If
+ * the model fails to load, the tables are removed again and the
+ * procedural builder above runs instead, so the pavilion never
+ * disappears.
  */
 export function buildCozyBitesCafePavilionGlb3D(ctx: UrbanPlazaBuildingsContext): void {
   const cf = CENTRAL_PARK_MASTERPLAN.cozyCafePavilion;
@@ -2800,11 +2860,12 @@ export function buildCozyBitesCafePavilionGlb3D(ctx: UrbanPlazaBuildingsContext)
   grp.name = 'UrbanPlazaCozyBitesCafeGlb3D';
   grp.position.set(cf.x, 0, cf.z);
   grp.rotation.y = cf.yaw; // -PI/2 -> +Z_local faces West (-X toward Fountain), same as the procedural pavilion
+  grp.scale.setScalar(BITES_SIPS_PAVILION_GLB_SCALE);
   ctx.staticGroup.add(grp);
 
-  // District bistro tables at exact Masterplan coordinates, raised onto
-  // the GLB sidewalk slab. Kept in their own group so the load-failure
-  // fallback can remove them before the procedural builder rebuilds them.
+  // District bistro tables at exact Masterplan coordinates on the plaza
+  // floor. Kept in their own group so the load-failure fallback can
+  // remove them before the procedural builder rebuilds them.
   const tablesGrp = new THREE.Group();
   tablesGrp.name = 'UrbanPlazaCozyBitesCafeGlbPatioTables';
   ctx.staticGroup.add(tablesGrp);
@@ -2829,6 +2890,139 @@ export function buildCozyBitesCafePavilionGlb3D(ctx: UrbanPlazaBuildingsContext)
       ctx.staticGroup.remove(grp);
       ctx.staticGroup.remove(tablesGrp);
       buildCozyBitesCafePavilion3D(ctx);
+    },
+  );
+}
+
+// ============================================================================
+// VINTAGE CAFE — OWNER GLB EXTERIOR REPLACING THE BOUTIQUE & ROOFTOP GARDEN TOWER
+// ============================================================================
+
+/** Public path of the prepped owner model (its baked COL_* collider nodes stripped). */
+export const VINTAGE_CAFE_GLB_PATH = '/assets/buildings/cafe_vintage.glb';
+
+/**
+ * Uniform scale applied to the Vintage Cafe GLB at its mount, derived by
+ * the door-height method: the replaced procedural boutique's entrance was
+ * authored "Tall 4.02m"; the GLB's Cafe_Door frame measures 2.80m
+ * (y 0.16..2.96 in model units), so 4.02 / 2.80 = 1.436 brings the model's
+ * door in line with the game's authored proportions.
+ */
+export const VINTAGE_CAFE_GLB_SCALE = 1.436;
+
+/**
+ * Horizontal shift (m) applied to the GLB origin so the model's door
+ * stays on its anchor at the mount scale. The model's door (local centre
+ * (0, +3.85)) scales to +5.53 along the front axis; under the masterplan
+ * yaw (PI/2) it would land at world x = 12.2 + 5.53 = 17.73, so the
+ * origin shifts west by 1.68m and the door stays at world (16.05, -0.4) —
+ * the same East face and centreline as the old boutique entrance
+ * (16.4, -0.4), recessed by the model's own door reveal.
+ */
+export const VINTAGE_CAFE_GLB_ORIGIN_SHIFT_X = -1.68;
+
+/**
+ * Ground height (m) for the carried-over ground urns, in the model's
+ * local frame. The model's own sidewalk slab was stripped in prep (the
+ * building sits on the plaza floor) and the model re-grounded by the
+ * slab thickness, so its ground floor is y=0.
+ */
+export const VINTAGE_CAFE_SLAB_TOP_Y = 0;
+
+/** Terrace deck top height (m) of the owner model in its re-grounded local frame (Terrace_Deck spans y [4.02 .. 4.10]). */
+const VINTAGE_CAFE_TERRACE_DECK_TOP_Y = 4.10;
+
+/**
+ * Places the owner-supplied Vintage Cafe GLB where the procedural Boutique
+ * & Rooftop Garden Tower stood, following the same load-as-is GLTFLoader
+ * pattern as the Glow Studio salon and the Bites & Sips pavilion.
+ * Placement is the masterplan boutique anchor shifted west by
+ * VINTAGE_CAFE_GLB_ORIGIN_SHIFT_X with the masterplan yaw (PI/2), so the
+ * model's front (+Z local) faces East (+X) onto the Civic Cascade
+ * Fountain exactly like the boutique, scaled by VINTAGE_CAFE_GLB_SCALE.
+ * Local->world: (x, z) -> (10.52 + 1.436 * z, -0.4 - 1.436 * x). The
+ * model's door lands at world (16.05, -0.4), on its anchor. The 11.60m
+ * package spans world x [2.19..18.85], z [-8.73..7.93], clearing the
+ * fountain plaza circle (west edge x 20.9) by 2.05m; the two botanical
+ * beds west of the old tower were relocated to (1.0, -4.6) / (1.0, 3.8)
+ * in CENTRAL_PARK_BOTANICAL_BEDS, flanking the package on the plaza
+ * floor (the scaled body covers their old x 7.2 spot). The body
+ * collider in `getCentralParkObstacles` tracks the model's real walls
+ * (its stripped COL_WALL_Building box, local +/-4.04) instead of the
+ * retired shell.
+ *
+ * Carried-over flowers (owner's ask): the retired boutique's own flower
+ * dressing is rebuilt onto the model in its local frame, reusing the
+ * boutique's own helpers — `buildWindowFlowerBox` (factored out of its
+ * arched casement windows) under the cafe's bare ground-floor windows,
+ * `buildPlanterBloomRow` (factored out of its rooftop planter boxes)
+ * planted into the model's existing terrace trough (local x
+ * [-3.72..3.18], z [0.88..3.72], soil top y 4.52 after re-grounding), and
+ * `buildUrnBoxwoodPlanter` urns flanking the front benches and on the
+ * terrace deck. The flower subgroup is a child of the mount group, so
+ * it follows the mount scale automatically, and if the model fails to
+ * load the whole mount (flowers included) is removed and the
+ * procedural boutique builder runs instead, so the landmark never
+ * disappears.
+ */
+export function buildVintageCafeGlb3D(ctx: UrbanPlazaBuildingsContext): void {
+  const bt = CENTRAL_PARK_MASTERPLAN.boutiqueTower;
+  const grp = new THREE.Group();
+  grp.name = 'UrbanPlazaVintageCafeGlb3D';
+  grp.position.set(bt.x + VINTAGE_CAFE_GLB_ORIGIN_SHIFT_X, 0, bt.z);
+  grp.rotation.y = bt.yaw; // PI/2 -> +Z_local faces East (+X toward Fountain), same as the procedural boutique
+  grp.scale.setScalar(VINTAGE_CAFE_GLB_SCALE);
+  ctx.staticGroup.add(grp);
+
+  // --- Carried-over Boutique flowers, in the model's local frame ---
+  const flowersGrp = new THREE.Group();
+  flowersGrp.name = 'UrbanPlazaVintageCafeCarriedFlowers';
+  grp.add(flowersGrp);
+
+  // Window flower boxes under the ground-floor windows (sill y 0.80 in
+  // the re-grounded frame, wall faces z +4.04 front / x -4.04 left; box
+  // backs sit flush on the faces).
+  const windowBoxSites: ReadonlyArray<{ pos: [number, number, number]; rotY: number }> = [
+    { pos: [-2.21, 0.66, 3.96], rotY: 0 }, // front-left window (local x -2.21)
+    { pos: [2.21, 0.66, 3.96], rotY: 0 }, // front-right window (local x +2.21)
+    { pos: [-3.96, 0.66, 0], rotY: -Math.PI / 2 }, // left-face window (local z 0)
+  ];
+  for (const site of windowBoxSites) {
+    const boxGrp = new THREE.Group();
+    boxGrp.position.set(site.pos[0], site.pos[1], site.pos[2]);
+    boxGrp.rotation.y = site.rotY;
+    flowersGrp.add(boxGrp);
+    buildWindowFlowerBox(boxGrp, ctx, 2.5, false);
+  }
+
+  // Hydrangea/lavender bloom rows planted into the model's terrace trough
+  // (two 3.6m segments at the boutique planter boxes' own planting
+  // density; trough soil top y 4.52, deck top y 4.10 = segment base).
+  for (const segX of [-2.2, 1.3] as const) {
+    const segGrp = new THREE.Group();
+    segGrp.position.set(segX, VINTAGE_CAFE_TERRACE_DECK_TOP_Y, 2.3);
+    flowersGrp.add(segGrp);
+    buildPlanterBloomRow(segGrp, ctx, bt.x, bt.z, bt.yaw, segX, VINTAGE_CAFE_TERRACE_DECK_TOP_Y, 2.3, 3.6, 0);
+  }
+
+  // Boxwood urn planters: a pair flanking the model's front benches on
+  // its sidewalk slab, plus one on the terrace deck east of the trough.
+  buildUrnBoxwoodPlanter(flowersGrp, ctx, [-3.45, VINTAGE_CAFE_SLAB_TOP_Y, 4.45], 1.0, 'cone');
+  buildUrnBoxwoodPlanter(flowersGrp, ctx, [3.45, VINTAGE_CAFE_SLAB_TOP_Y, 4.45], 1.0, 'sphere');
+  buildUrnBoxwoodPlanter(flowersGrp, ctx, [3.55, VINTAGE_CAFE_TERRACE_DECK_TOP_Y, 3.55], 0.92, 'sphere');
+
+  if (typeof window === 'undefined') return; // node/tests: skip the async load (same guard as the shop GLB loader)
+  new GLTFLoader().load(
+    VINTAGE_CAFE_GLB_PATH,
+    (gltf) => {
+      if (grp.parent !== ctx.staticGroup) return; // park scene was torn down meanwhile
+      grp.add(gltf.scene);
+    },
+    undefined,
+    () => {
+      if (grp.parent !== ctx.staticGroup) return;
+      ctx.staticGroup.remove(grp);
+      buildBoutiqueRooftopTower3D(ctx);
     },
   );
 }

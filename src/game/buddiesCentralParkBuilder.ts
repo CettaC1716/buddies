@@ -26,9 +26,9 @@ import {
 } from './buddiesCityLightingAndTrafficBuilder';
 import { evaluateLanternCoreAndSpriteState } from './buddiesCityLightingAndTrafficRules';
 import {
-  buildBoutiqueRooftopTower3D,
   buildCozyBitesCafePavilionGlb3D,
   buildTimberPergolaAndLilyPond3D,
+  buildVintageCafeGlb3D,
   type UrbanPlazaBuildingsContext,
 } from './buddiesUrbanPlazaBuildingsBuilder';
 import { buildBeautySalonStudioGlb3D } from './buddiesBeautySalonBuilder';
@@ -2995,7 +2995,10 @@ export function buildCentralBotanicalPark3D(
     shrubCollectors,
   };
 
-  buildBoutiqueRooftopTower3D(buildingsCtx);
+  // Vintage Cafe exterior is the owner-supplied GLB, replacing the Boutique
+  // Tower at its masterplan anchor; the procedural boutique builder remains
+  // as its load-failure fallback (buddiesUrbanPlazaBuildingsBuilder).
+  buildVintageCafeGlb3D(buildingsCtx);
   // Cozy Bites & Sips pavilion exterior is the owner-supplied GLB; the procedural
   // builder remains as its load-failure fallback (buddiesUrbanPlazaBuildingsBuilder).
   buildCozyBitesCafePavilionGlb3D(buildingsCtx);

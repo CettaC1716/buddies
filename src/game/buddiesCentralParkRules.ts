@@ -188,11 +188,16 @@ export const CENTRAL_PARK_MASTERPLAN = {
     secondFloorHeight: 8.35,
     totalHeight: 9.7,
   },
+  // District bistro tables around the Cozy Bites pavilion. The two south
+  // tables moved south (z 4.95 -> 8.30) and the two west tables west/north
+  // (x 40.25 -> 38.80) in the polish pass: the pavilion GLB's 1.489
+  // proportion scale would otherwise swallow the south pair inside its
+  // walls and press the west pair against its west face and bike cart.
   bistroTables: [
-    { id: 'cozy_cafe_table_fn', x: 40.25, z: -2.55 },
-    { id: 'cozy_cafe_table_fs', x: 40.25, z: 1.45 },
-    { id: 'cozy_cafe_table_sn', x: 43.35, z: 4.95 },
-    { id: 'cozy_cafe_table_ss', x: 46.95, z: 4.95 },
+    { id: 'cozy_cafe_table_fn', x: 38.8, z: -4.6 },
+    { id: 'cozy_cafe_table_fs', x: 38.8, z: 2.6 },
+    { id: 'cozy_cafe_table_sn', x: 43.35, z: 8.3 },
+    { id: 'cozy_cafe_table_ss', x: 46.95, z: 8.3 },
   ] as const,
 } as const;
 
@@ -319,12 +324,16 @@ export const CENTRAL_PARK_BOTANICAL_BEDS: readonly CentralParkBotanicalClusterSp
     push(sp, px, pz, px * 0.5, 0.98, cv);
   }
 
-  // Boutique Tower & Cafe Pavilion Side Borders
+  // Boutique Tower (now Vintage Cafe) & Cafe Pavilion Side Borders.
+  // Polish pass relocations: the west pair moved from x 7.2 to x 1.0 (the
+  // rescaled Vintage Cafe body now covers x 7.2) and the east pair from
+  // x 49.6 to x 52.6 (the rescaled Bites & Sips body now covers x 49.6);
+  // both pairs keep flanking their buildings on the plaza floor.
   for (const [bx, bz, sp, cv] of [
-    [7.2, -4.6, 'hydrangea', 1],
-    [7.2, 3.8, 'english_rose', 0],
-    [49.6, -4.2, 'english_lavender', 1],
-    [49.6, 3.0, 'hydrangea', 2],
+    [1.0, -4.6, 'hydrangea', 1],
+    [1.0, 3.8, 'english_rose', 0],
+    [52.6, -4.2, 'english_lavender', 1],
+    [52.6, 3.0, 'hydrangea', 2],
   ] as const) {
     push(sp, bx, bz, bx * 0.3, 0.96, cv);
   }
@@ -487,36 +496,49 @@ export function getCentralParkObstacles(): StaticWorldStructureObb[] {
     mat: 'concrete',
   });
 
-  // 2. Boutique & Rooftop Garden Tower (West Wing)
+  // 2. Vintage Cafe (West Wing) — owner GLB body box.
+  // The Boutique & Rooftop Garden Tower visual is now the owner-supplied
+  // Vintage Cafe GLB (cafe_vintage.glb, yaw PI/2). Its body (the source
+  // model's COL_WALL_Building) spans local x/z [-4.04..4.04]. The mount
+  // scales the model by 1.436 (door-height proportion pass, see
+  // buddiesUrbanPlazaBuildingsBuilder) and shifts the origin west to
+  // (10.52, -0.4) so the scaled door stays on its anchor, so the body
+  // maps to world x [4.72..16.32], z [-6.20..5.00] — centre (10.52, -0.4),
+  // half extents 5.80. The collider tracks the model's real walls (+0.2m
+  // margin, as before) instead of the retired procedural shell (8.8 x
+  // 9.6m), so no invisible wall crosses the model's plaza frontage, and
+  // the tower above stays inside the same footprint.
   obs.push({
     id: 'urban_plaza_boutique_tower',
-    x: mp.boutiqueTower.x,
-    z: mp.boutiqueTower.z,
-    halfX: mp.boutiqueTower.halfX + 0.2,
-    halfZ: mp.boutiqueTower.halfZ + 0.2,
+    x: 10.52,
+    z: -0.4,
+    halfX: 6.0,
+    halfZ: 6.0,
     rotY: 0,
-    heightY: mp.boutiqueTower.totalHeight,
+    heightY: 16.17,
     mat: 'concrete',
   });
 
   // 3. Cozy Bites & Sips Cafe Pavilion (East Wing) — owner GLB body box.
   // The pavilion visual is now the owner-supplied GLB (bites_sips_pavilion.glb,
-  // placed at the masterplan anchor at native size, yaw -PI/2). Its cafe body
-  // (the source model's COL_WALL_CafeBody) spans local x [-3.14..4.14],
-  // z [-4.14..3.14], which under that yaw maps to world x [42.06..49.34],
-  // z [-3.74..3.54] — centre (45.70, -0.10), half extents 3.64. The collider
-  // tracks the model's real walls (+0.2m margin, as before) instead of the
-  // retired procedural shell (7.2 x 8.2m centred on the anchor), so no
-  // invisible wall crosses the model's west sidewalk or door, and the body
-  // no longer pokes out past its collider on the east side.
+  // placed at the masterplan anchor, yaw -PI/2, scaled by 1.489 in the
+  // door-height proportion pass — see buddiesUrbanPlazaBuildingsBuilder).
+  // Its cafe body (the source model's COL_WALL_CafeBody) spans local
+  // x [-3.14..4.14], z [-4.14..3.14], which scaled and under that yaw maps
+  // to world x [40.32..51.56], z [-5.48..5.76] — centre (45.94, 0.14),
+  // half extents 5.42. The collider tracks the model's real walls (+0.2m
+  // margin, as before) instead of the retired procedural shell (7.2 x
+  // 8.2m centred on the anchor), so no invisible wall crosses the model's
+  // plaza frontage or door, and the body no longer pokes out past its
+  // collider on the east side.
   obs.push({
     id: 'urban_plaza_cozy_cafe',
-    x: 45.7,
-    z: -0.1,
-    halfX: 3.84,
-    halfZ: 3.84,
+    x: 45.94,
+    z: 0.14,
+    halfX: 5.62,
+    halfZ: 5.62,
     rotY: 0,
-    heightY: 4.82,
+    heightY: 6.94,
     mat: 'concrete',
   });
 
@@ -547,14 +569,19 @@ export function getCentralParkObstacles(): StaticWorldStructureObb[] {
   });
 
   // 6. Central Urban Plaza Beauty Salon ("BEAUTY & GLOW / GLOW STUDIO", South)
+  // Owner GLB body box: the model's walls span local +/-4.40m, mounted at
+  // SALON_GLB_SCALE (1.289) around origin (29.54, 15.0) — see
+  // buddiesBeautySalonBuilder / buddiesBeautySalonRules. The collider
+  // tracks the scaled real walls (+0.2m margin, as before) instead of the
+  // retired procedural shell (12.6 x 8.8m).
   obs.push({
     id: 'urban_plaza_beauty_salon',
-    x: mp.beautySalon.x,
-    z: mp.beautySalon.z,
-    halfX: mp.beautySalon.halfX + 0.2,
-    halfZ: mp.beautySalon.halfZ + 0.2,
+    x: 29.54,
+    z: 15.0,
+    halfX: 5.87,
+    halfZ: 5.87,
     rotY: 0,
-    heightY: mp.beautySalon.totalHeight,
+    heightY: 12.61,
     mat: 'concrete',
   });
 
