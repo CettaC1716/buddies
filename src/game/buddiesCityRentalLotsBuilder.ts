@@ -131,11 +131,11 @@ function createLotGroundPlaqueTexture(
 }
 
 /**
- * Builds one of the 3 compact standardized shop building shells (9.6m x 9.6m footprint,
- * height ~5.5m-5.8m, prominent storefront glazing + signboard area facing local +Z).
- * The returned group has its origin at the lot center and shifts the building body by
- * `localDepthOffsetTowardRearM = -1.2m` along local Z so the front apron (+3.6m..+7.5m)
- * faces directly toward the nearest road.
+ * Builds the procedural fallback shell shown while a shop building GLB streams in
+ * (compact 9.6m x 9.6m stand-in, height ~5.5m-5.8m, storefront glazing + signboard
+ * area facing local +Z). The real catalog buildings are complete packages up to
+ * 14m x 14m placed CENTRED on the lot (package standard, 27 Nov 2026), so the
+ * group origin is the lot center and `localDepthOffsetTowardRearM` is 0.
  */
 function buildStandardShopShellForLot(
   spec: CityRentalLotSpec,
@@ -166,7 +166,7 @@ function buildStandardShopShellForLot(
   const group = new THREE.Group();
   group.name = `StandardShopShell_${spec.slotId}_${variantId}`;
 
-  const buildingCenterZ = STANDARD_SHOP_FOOTPRINT_SPEC.localDepthOffsetTowardRearM; // -1.2m
+  const buildingCenterZ = STANDARD_SHOP_FOOTPRINT_SPEC.localDepthOffsetTowardRearM; // 0m — centred (package standard)
   const shellRoot = new THREE.Group();
   shellRoot.position.set(0, 0, buildingCenterZ);
   group.add(shellRoot);

@@ -50,7 +50,7 @@ export interface MerchantCatalogItem {
   buildingFormId?: ShopBuildingFormId;
   /** Official game-rendered catalog/NFT image path (blank neutral billboard) */
   renderImagePath?: string;
-  /** Human-readable footprint summary (e.g. '9.2 × 9.2 m') */
+  /** Human-readable footprint summary (e.g. '13.4 × 13.4 m') */
   footprintLabel?: string;
   /** 2D OBB footprint rectangles `[offsetX, offsetZ, width, depth]` in meters */
   footprints?: readonly [number, number, number, number][];
@@ -317,9 +317,9 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
     isNft: true,
     buildingFormId: 'glass_corner_3story',
     renderImagePath: '/assets/buildings/renders/shop_glass_corner_3story.png',
-    footprintLabel: '9.2 × 9.2 m · 3-Story',
+    footprintLabel: '13.4 × 13.4 m · 3-Story',
     description:
-      'Three-story glass and concrete corner building shell with steel-truss rooftop billboard. Empty neutral interior ready for any rented commercial lot.',
+      'Three-story glass and concrete corner tower shell with rooftop solar panels and a blank front sign band for your logo. Empty neutral interior ready for any rented commercial lot.',
   },
   {
     id: 'shop_canopy_storefront_2story',
@@ -334,7 +334,7 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
     isNft: true,
     buildingFormId: 'canopy_storefront_2story',
     renderImagePath: '/assets/buildings/renders/shop_canopy_storefront_2story.png',
-    footprintLabel: '9.2 × 9.0 m · 2-Story',
+    footprintLabel: '12.9 × 12.9 m · 2-Story',
     description:
       'Two-story limestone storefront shell with dark metal wrap-around canopy and rooftop billboard. Empty neutral interior ready for any rented commercial lot.',
   },
@@ -351,9 +351,9 @@ export const MERCHANT_CATALOG_ITEMS: readonly MerchantCatalogItem[] = [
     isNft: true,
     buildingFormId: 'brick_rooftop_deck',
     renderImagePath: '/assets/buildings/renders/shop_brick_rooftop_deck.png',
-    footprintLabel: '9.2 × 9.0 m · 2-Story + Deck',
+    footprintLabel: '12.6 × 12.6 m · 2-Story + Deck',
     description:
-      'Two-story brick and concrete building shell with balcony balustrade, timber rooftop deck, and steel-truss billboard. Empty neutral interior ready for any rented commercial lot.',
+      'Two-story brick and concrete building shell with timber rooftop terrace, blank fascia signboard, and panoramic rooftop billboard. Empty neutral interior ready for any rented commercial lot.',
   },
 ];
 

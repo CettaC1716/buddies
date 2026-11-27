@@ -5,6 +5,12 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 /**
+ * RETIRED (27 Nov 2026): the catalog shop buildings are now owner-supplied 3D models
+ * integrated under the package standard (see docs/commercial-block-layout.md §2 and
+ * src/game/buddiesCityRentalLotsRules.ts). Do NOT re-run this script — it would
+ * overwrite the real models in public/assets/buildings/ with the old procedural
+ * placeholders. Kept for history only.
+ *
  * Phase 1 (B1/B2/B3) — Builds all 3 Shop Building GLBs 1:1 with the owner's concept sheets
  * in form, geometry, color & avatar-balanced scale (3.30m player avatar):
  *   1. Glass Corner 3-Story          (9.2 x 9.2 x ~16.2 m — clearly taller 3-story tower)

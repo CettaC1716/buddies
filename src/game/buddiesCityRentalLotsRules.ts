@@ -9,8 +9,11 @@ import { MODEL_ESTATE_BASE_PLOT_SPEC, isCommanderBasePlotActive } from './buddie
  * - Sold item is the building's FORM, never a business type.
  * - Buildings are player-owned items placed on developer-owned rented land.
  *   Land is NEVER sold or deeded. Apartments/deeds are a separate layer.
- * - Lot geometry: 15.0m x 15.0m; building shell max 9.6m x 9.6m;
- *   front apron 3.9m, side margins 2.7m, rear margin 1.5m. Buildings never touch.
+ * - Lot geometry: 15.0m x 15.0m. PACKAGE STANDARD (Owner decision 27 Nov 2026):
+ *   the former 9.6m x 9.6m shell envelope is RETIRED for catalog buildings.
+ *   A catalog building is a complete package (building + its own paving) of at
+ *   most 14.0m x 14.0m, placed CENTRED on the lot (no rear shift); the
+ *   package's own paving is the lot surface treatment. Buildings never touch.
  * - Block layout: 4 blocks of 4 lots (16 total) between widened avenues
  *   (Roads 1, 3, 5 at x = -60, 0, +60 widened to 10.4m; divider Roads 2 & 4
  *   at x = -30, +30 closed). Inside each block, lots sit back-to-back on the
@@ -94,26 +97,27 @@ export const CITY_RENTAL_LOT_SIZE_M = {
 } as const;
 
 export const STANDARD_SHOP_FOOTPRINT_SPEC = {
-  width: 9.6,
-  depth: 9.6,
-  halfWidth: 4.8,
-  halfDepth: 4.8,
-  areaSqM: 92.16,
-  /** 92.16 / 225.0 = 0.4096 (40.96% <= 65% maximum coverage rule) */
-  lotCoverageRatio: (9.6 * 9.6) / (15.0 * 15.0),
-  maxAllowedCoverageRatio: 0.65,
+  /** Package envelope cap under the 27 Nov 2026 package standard (was the 9.6m shell). */
+  width: 14.0,
+  depth: 14.0,
+  halfWidth: 7.0,
+  halfDepth: 7.0,
+  areaSqM: 196.0,
+  /** 196.0 / 225.0 = 0.8711 (87.11% maximum coverage at the package envelope cap) */
+  lotCoverageRatio: (14.0 * 14.0) / (15.0 * 15.0),
+  maxAllowedCoverageRatio: (14.0 * 14.0) / (15.0 * 15.0),
   /**
    * Local Z offset along the lot's road-facing forward axis (+localZ = front toward avenue).
-   * Shifting the 9.6m building center by -1.2m toward the rear leaves:
-   * - Rear margin: 7.5 - (4.8 + 1.2) = 1.50m clear from block centerline
-   * - Side margins (Left & Right): 7.5 - 4.8 = 2.70m clear on both sides
-   * - Front apron inside lot: 7.5 - (4.8 - 1.2) = 3.90m clear forecourt facing the avenue
+   * Package standard: buildings are placed CENTRED on the 15m lot, so the offset is 0.
+   * Per-form margins are (15 - footprint) / 2 on every side (0.5m minimum at the 14m cap).
+   * (The retired shell standard shifted the 9.6m shell -1.2m toward the rear.)
    */
-  localDepthOffsetTowardRearM: -1.2,
-  sideMarginM: 2.7,
-  rearMarginM: 1.5,
-  frontApronMarginM: 3.9,
-  maxAwningProtrusionM: 0.85,
+  localDepthOffsetTowardRearM: 0,
+  sideMarginM: 0.5,
+  rearMarginM: 0.5,
+  frontApronMarginM: 0.5,
+  /** Awning/canopy protrusions are part of the measured package bounds, never extra. */
+  maxAwningProtrusionM: 0,
 } as const;
 
 /**
@@ -210,21 +214,21 @@ export const SHOP_BUILDING_FORMS: Readonly<Record<ShopBuildingFormId, ShopBuildi
     catalogItemId: 'shop_glass_corner_3story',
     tokenId: 'nep245:shop_building:glass_corner_3story',
     name: 'Glass Corner 3-Story',
-    subtitle: 'Three-story concrete and glass corner shell with steel-truss rooftop billboard',
+    subtitle: 'Three-story concrete and glass corner tower with rooftop solar panels and front sign band',
     stories: 3,
-    footprintWidthM: 9.2,
-    footprintDepthM: 9.2,
-    heightM: 11.4,
+    footprintWidthM: 13.4,
+    footprintDepthM: 13.4,
+    heightM: 13.07,
     defaultPriceRespite: 250,
     glbPath: '/assets/buildings/shop_glass_corner_3story.glb',
     renderImagePath: '/assets/buildings/renders/shop_glass_corner_3story.png',
     materialNotes:
-      'Light warm architectural concrete frame, large multi-story corner display glazing, dark anodized steel mullions, rooftop HVAC/solar detail, and steel scaffolding frame holding the neutral blank billboard.',
+      'Light architectural concrete frame and core, full-height corner display glazing with bronze mullions, dark steel rooftop frame with solar panels and satellite dish, and a blank front sign band holding the neutral default billboard.',
     billboard: {
       widthM: 6.4,
       heightM: 2.0,
-      centerYM: 9.5,
-      offsetFrontZM: 4.55,
+      centerYM: 9.4,
+      offsetFrontZM: 4.88,
     },
     palette: {
       wallHex: '#e8e4dc',
@@ -240,19 +244,21 @@ export const SHOP_BUILDING_FORMS: Readonly<Record<ShopBuildingFormId, ShopBuildi
     name: 'Canopy Storefront 2-Story',
     subtitle: 'Two-story limestone facade with dark metal wrap-around canopy and rooftop billboard',
     stories: 2,
-    footprintWidthM: 9.2,
-    footprintDepthM: 9.0,
-    heightM: 8.6,
+    // Footprint is the centred enclosing square of the measured package
+    // (actual span 12.92m: rear paving reaches -6.64m, front canopy +6.28m).
+    footprintWidthM: 13.28,
+    footprintDepthM: 13.28,
+    heightM: 10.27,
     defaultPriceRespite: 200,
     glbPath: '/assets/buildings/shop_canopy_storefront_2story.glb',
     renderImagePath: '/assets/buildings/renders/shop_canopy_storefront_2story.png',
     materialNotes:
       'Cream limestone stucco upper story with framed rectangular windows, dark charcoal steel & frosted-glass cantilevered storefront canopy, double glass entrance doors, and horizontal rooftop banner billboard.',
     billboard: {
-      widthM: 5.8,
-      heightM: 1.5,
-      centerYM: 7.75,
-      offsetFrontZM: 4.15,
+      widthM: 6.3,
+      heightM: 1.45,
+      centerYM: 9.57,
+      offsetFrontZM: 3.79,
     },
     palette: {
       wallHex: '#f2eadb',
@@ -266,21 +272,21 @@ export const SHOP_BUILDING_FORMS: Readonly<Record<ShopBuildingFormId, ShopBuildi
     catalogItemId: 'shop_brick_rooftop_deck',
     tokenId: 'nep245:shop_building:brick_rooftop_deck',
     name: 'Brick Block with Rooftop Deck',
-    subtitle: 'Two-story brick and concrete industrial shell with balcony, timber rooftop deck, and truss billboard',
+    subtitle: 'Two-story brick and concrete shell with timber rooftop terrace and rooftop billboard',
     stories: 2,
-    footprintWidthM: 9.2,
-    footprintDepthM: 9.0,
-    heightM: 9.2,
+    footprintWidthM: 12.6,
+    footprintDepthM: 12.6,
+    heightM: 9.53,
     defaultPriceRespite: 200,
     glbPath: '/assets/buildings/shop_brick_rooftop_deck.glb',
     renderImagePath: '/assets/buildings/renders/shop_brick_rooftop_deck.png',
     materialNotes:
-      'Ground-floor brushed concrete with dark steel framing, red-brick upper story with multi-pane industrial windows and balcony balustrade, timber-planked rooftop deck with perimeter railing, and panoramic steel-truss rooftop billboard.',
+      'Ground-floor concrete frame with clear glass storefront, terracotta brick upper story with multi-pane industrial windows, timber-planked rooftop terrace, blank fascia signboard, and panoramic rooftop billboard with spotlights.',
     billboard: {
-      widthM: 6.2,
-      heightM: 1.8,
-      centerYM: 8.2,
-      offsetFrontZM: 4.15,
+      widthM: 6.4,
+      heightM: 1.6,
+      centerYM: 8.26,
+      offsetFrontZM: 3.71,
     },
     palette: {
       wallHex: '#a85742',
@@ -564,11 +570,13 @@ export function computeStandardShopPlacementForLot(
 ): StandardShopPlacementBounds {
   const variantId = overrideVariantId ?? lot.buildingVariantId;
   const variant = SHOP_BUILDING_FORMS[variantId];
-  const shellW = STANDARD_SHOP_FOOTPRINT_SPEC.width;
-  const shellD = STANDARD_SHOP_FOOTPRINT_SPEC.depth;
+  // Package standard: placement bounds are the form's own measured package
+  // footprint (building + its paving), not a fixed shell size.
+  const shellW = variant.footprintWidthM;
+  const shellD = variant.footprintDepthM;
 
   const isEastWest = Math.abs(lot.frontDirX) >= Math.abs(lot.frontDirZ);
-  // Along the lot's forward axis, shift building center toward the rear by -1.2m
+  // Package standard: the building package is centred on the lot (offset 0).
   const shiftAlongFront = STANDARD_SHOP_FOOTPRINT_SPEC.localDepthOffsetTowardRearM;
   const centerX = lot.x + lot.frontDirX * shiftAlongFront;
   const centerZ = lot.z + lot.frontDirZ * shiftAlongFront;
@@ -632,11 +640,11 @@ export function computeStandardShopPlacementForLot(
     variant.footprintWidthM <= STANDARD_SHOP_FOOTPRINT_SPEC.width &&
     variant.footprintDepthM <= STANDARD_SHOP_FOOTPRINT_SPEC.depth &&
     lotCoverageRatio <= STANDARD_SHOP_FOOTPRINT_SPEC.maxAllowedCoverageRatio &&
-    leftMarginM >= 2.5 &&
-    rightMarginM >= 2.5 &&
-    rearMarginM >= 1.4 &&
-    frontApronMarginM >= 3.8 &&
-    awningFrontClearanceM >= 2.5 &&
+    leftMarginM >= STANDARD_SHOP_FOOTPRINT_SPEC.sideMarginM &&
+    rightMarginM >= STANDARD_SHOP_FOOTPRINT_SPEC.sideMarginM &&
+    rearMarginM >= STANDARD_SHOP_FOOTPRINT_SPEC.rearMarginM &&
+    frontApronMarginM >= STANDARD_SHOP_FOOTPRINT_SPEC.frontApronMarginM &&
+    awningFrontClearanceM >= STANDARD_SHOP_FOOTPRINT_SPEC.frontApronMarginM &&
     awningMinX > lot.minX &&
     awningMaxX < lot.maxX &&
     awningMinZ > lot.minZ &&

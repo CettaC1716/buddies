@@ -20,10 +20,9 @@ The Tram Ring (`|z| = 52`), Rear Promenade Roads (`|z| = 108`), and all other di
 
 ### Lot Geometry & Clearances
 - **Lot size:** `15.0 m × 15.0 m` (`225 m²`)
-- **Building shell max:** `9.6 m × 9.6 m` (`92.16 m²`, `40.96%` coverage)
-- **Front apron (avenue side):** `3.9 m` inside lot (+ `9.8 m` sidewalk to widened avenue curb)
-- **Side margins (N/S):** `2.7 m` each side
-- **Rear margin (block center line):** `1.5 m` each side → **`3.0 m` gap** between back-to-back buildings (buildings never touch)
+- **Building package max:** `14.0 m × 14.0 m` (`196 m²`, `87.11%` coverage) — package standard, 27 Nov 2026; the former `9.6 m × 9.6 m` shell max is retired for catalog buildings
+- **Placement:** package CENTRED on the lot; margins are `(15 − footprint) / 2` on every side (per form: 0.8 m glass tower, 0.86 m canopy storefront, 1.2 m brick block; minimum 0.5 m at the 14 m cap)
+- **Neighbour gap:** at least `1.0 m` between packages on adjacent lots along X (15 m lot pitch minus the 14 m cap, including back-to-back pairs across the block center line) and at least `4.0 m` between the front/rear rows along Z (18 m row pitch minus the cap) — buildings never touch
 
 ### Complete 16-Lot Manifest
 
@@ -50,13 +49,15 @@ The Tram Ring (`|z| = 52`), Rear Promenade Roads (`|z| = 108`), and all other di
 
 ## 2. Shop Building Forms (Sold by Architectural FORM Only)
 
-All 3 buildings are neutral empty shells (zero merchandise), cel-shaded with black outlines, footprint strictly within `9.6 × 9.6 m`, with a separate named rooftop billboard mesh (`rooftop_billboard_face` / material `rooftop_billboard_mat`) defaulting to a blank neutral texture.
+All 3 buildings are neutral empty shells (zero merchandise). PACKAGE STANDARD (owner decision 27 Nov 2026): the former `9.6 × 9.6 m` shell envelope is retired for catalog buildings — each building is a complete package (building + its own paving) of at most `14 × 14 m`, placed CENTRED on the 15 × 15 m lot, and the package paving is the lot surface treatment. Models render with their own materials under the scene lighting (loaded as-is). Each carries a separate named rooftop billboard mesh (`rooftop_billboard_face` / material `rooftop_billboard_mat`) defaulting to a blank neutral texture, which the owner-logo system swaps per lot.
 
 | Form ID | Name | Footprint | Height | Starting Price | GLB Asset | Official Render |
 | :--- | :--- | :---: | :---: | :---: | :--- | :--- |
-| `glass_corner_3story` | **Glass Corner 3-Story** | `9.2 × 9.2 m` | `11.4 m` | **250 RESPITE** | `/assets/buildings/shop_glass_corner_3story.glb` | `/assets/buildings/renders/shop_glass_corner_3story.png` |
-| `canopy_storefront_2story` | **Canopy Storefront 2-Story** | `9.2 × 9.0 m` | `8.6 m` | **200 RESPITE** | `/assets/buildings/shop_canopy_storefront_2story.glb` | `/assets/buildings/renders/shop_canopy_storefront_2story.png` |
-| `brick_rooftop_deck` | **Brick Block with Rooftop Deck** | `9.2 × 9.0 m` | `9.2 m` | **200 RESPITE** | `/assets/buildings/shop_brick_rooftop_deck.glb` | `/assets/buildings/renders/shop_brick_rooftop_deck.png` |
+| `glass_corner_3story` | **Glass Corner 3-Story** | `13.4 × 13.4 m` | `13.07 m` | **250 RESPITE** | `/assets/buildings/shop_glass_corner_3story.glb` | `/assets/buildings/renders/shop_glass_corner_3story.png` |
+| `canopy_storefront_2story` | **Canopy Storefront 2-Story** | `12.9 × 12.9 m` | `10.27 m` | **200 RESPITE** | `/assets/buildings/shop_canopy_storefront_2story.glb` | `/assets/buildings/renders/shop_canopy_storefront_2story.png` |
+| `brick_rooftop_deck` | **Brick Block with Rooftop Deck** | `12.6 × 12.6 m` | `9.53 m` | **200 RESPITE** | `/assets/buildings/shop_brick_rooftop_deck.glb` | `/assets/buildings/renders/shop_brick_rooftop_deck.png` |
+
+Note: placement math uses a centred enclosing square per form (canopy storefront: 13.28 m, since its rear paving reaches −6.64 m while the front canopy reaches +6.28 m); all forms keep ≥ 0.5 m clearance to every lot edge.
 
 ## 3. Shared Commercial Config (Super-Admin Editable)
 - **Rent:** `50 RESPITE` per `30 days` (dynamic via server-signed price quote; active rentals never change price mid-term)

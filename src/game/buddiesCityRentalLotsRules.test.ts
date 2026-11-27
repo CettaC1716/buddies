@@ -45,25 +45,31 @@ test('Phase 0 block layout: 16 lots in 4 blocks of 4, back-to-back on block cent
   }
 });
 
-test('Phase 0 building fit: all 3 forms fit strictly within 9.6x9.6m shell with required margins and never touch', () => {
+test('Phase 0 building fit: all 3 forms fit strictly within the 14x14m package envelope, centred with per-form margins and never touch', () => {
   assert.equal(SHOP_BUILDING_FORM_IDS.length, 3);
   assert.equal(SHOP_BUILDING_FORMS.glass_corner_3story.name, 'Glass Corner 3-Story');
   assert.equal(SHOP_BUILDING_FORMS.canopy_storefront_2story.name, 'Canopy Storefront 2-Story');
   assert.equal(SHOP_BUILDING_FORMS.brick_rooftop_deck.name, 'Brick Block with Rooftop Deck');
   assert.equal(SHOP_BILLBOARD_MESH_SPEC.meshName, 'rooftop_billboard_face');
   assert.equal(SHOP_BILLBOARD_MESH_SPEC.materialName, 'rooftop_billboard_mat');
+  assert.equal(STANDARD_SHOP_FOOTPRINT_SPEC.localDepthOffsetTowardRearM, 0);
 
   for (const formId of SHOP_BUILDING_FORM_IDS) {
     const form = SHOP_BUILDING_FORMS[formId];
     assert.ok(form.footprintWidthM <= STANDARD_SHOP_FOOTPRINT_SPEC.width);
     assert.ok(form.footprintDepthM <= STANDARD_SHOP_FOOTPRINT_SPEC.depth);
+    // Package standard: centred placement, so every side margin is (15 - footprint) / 2.
+    const expectedMargin = +(((CITY_RENTAL_LOT_SIZE_M.width - form.footprintWidthM) / 2).toFixed(3));
+    assert.ok(expectedMargin >= STANDARD_SHOP_FOOTPRINT_SPEC.sideMarginM);
     for (const lot of CITY_RENTAL_LOTS) {
       const bounds = computeStandardShopPlacementForLot(lot, formId);
       assert.equal(bounds.fitsStrictlyInsideLot, true, `${formId} must fit lot ${lot.slotId}`);
-      assert.equal(bounds.frontApronMarginM, 3.9);
-      assert.equal(bounds.rearMarginM, 1.5);
-      assert.equal(bounds.leftMarginM, 2.7);
-      assert.equal(bounds.rightMarginM, 2.7);
+      assert.equal(bounds.frontApronMarginM, expectedMargin);
+      assert.equal(bounds.rearMarginM, expectedMargin);
+      assert.equal(bounds.leftMarginM, expectedMargin);
+      assert.equal(bounds.rightMarginM, expectedMargin);
+      assert.equal(bounds.centerX, lot.x);
+      assert.equal(bounds.centerZ, lot.z);
     }
   }
 
