@@ -257,6 +257,7 @@ import {
   PLAYER_SPAWN_BLINK_DURATION_SEC,
   evaluateChunkSynced3DFogOfWar,
   resolveBottomChatSubmitTarget,
+  parseOptionalHouseArchitectureStyle,
   resolveOwnedHouseStyle,
   evaluateBasePlotProximityTriggers,
   buildWarzoneRaiderSpawnPlan,
@@ -5913,81 +5914,100 @@ test('resolveBottomChatSubmitTarget strictly isolates NPC dialogue from public a
   );
 });
 
-test('resolveOwnedHouseStyle, claimEmptyBasePlotWithNearGamepass, and syncMilitaryBasePlotsVisuals honor Plaza Manor vs Japanese Pavilion NFT styles', async () => {
-  // 1. Authoritative on-chain NFT house_style overrides Supabase/localStorage and locks
-  const onChainManor = resolveOwnedHouseStyle({
-    onChainHouseStyle: 'plaza_manor',
+test('resolveOwnedHouseStyle, claimEmptyBasePlotWithNearGamepass, and syncMilitaryBasePlotsVisuals resolve every house style to the single Glass Modern style', async () => {
+  // 0. Style parser: the current id and both retired ids (deeds, skin tags,
+  // purchase records) all alias to 'glass_modern'; unknown ids stay null.
+  assert.equal(parseOptionalHouseArchitectureStyle('glass_modern'), 'glass_modern');
+  assert.equal(parseOptionalHouseArchitectureStyle('plaza_manor'), 'glass_modern');
+  assert.equal(parseOptionalHouseArchitectureStyle('japanese_pavilion'), 'glass_modern');
+  assert.equal(parseOptionalHouseArchitectureStyle('house_style:japanese_pavilion'), 'glass_modern');
+  assert.equal(parseOptionalHouseArchitectureStyle('house_ownership:plaza_manor'), 'glass_modern');
+  assert.equal(parseOptionalHouseArchitectureStyle('Glass Modern House'), 'glass_modern');
+  assert.equal(parseOptionalHouseArchitectureStyle('treehouse'), null);
+  assert.equal(parseOptionalHouseArchitectureStyle(null), null);
+
+  // 1. Authoritative on-chain NFT house_style overrides Supabase/localStorage and locks.
+  // A legacy on-chain 'plaza_manor' value parses to Glass Modern and still locks.
+  const onChainLegacy = resolveOwnedHouseStyle({
+    onChainHouseStyle: parseOptionalHouseArchitectureStyle('plaza_manor'),
     unlockedSkins: ['default', 'house_style:japanese_pavilion'],
     marketTransactions: [{ item_id: 'house_ownership:japanese_pavilion', action_type: 'buy_item' }],
-    localSavedStyle: 'japanese_pavilion',
+    localSavedStyle: 'glass_modern',
   });
-  assert.deepEqual(onChainManor, { resolvedStyle: 'plaza_manor', isOnChainLocked: true });
+  assert.deepEqual(onChainLegacy, { resolvedStyle: 'glass_modern', isOnChainLocked: true });
 
-  // 2. Legacy deeds without on-chain metadata fall back cleanly: unlockedSkins -> tx -> local -> default
+  const onChainGlass = resolveOwnedHouseStyle({
+    onChainHouseStyle: 'glass_modern',
+    localSavedStyle: 'glass_modern',
+  });
+  assert.deepEqual(onChainGlass, { resolvedStyle: 'glass_modern', isOnChainLocked: true });
+
+  // 2. Legacy deeds without on-chain metadata fall back cleanly: unlockedSkins -> tx -> local -> default,
+  // with every legacy source resolving to Glass Modern.
   const fromSkins = resolveOwnedHouseStyle({
     onChainHouseStyle: null,
     unlockedSkins: ['default', 'gender:female', 'house_style:japanese_pavilion'],
-    localSavedStyle: 'plaza_manor',
+    localSavedStyle: 'glass_modern',
   });
-  assert.deepEqual(fromSkins, { resolvedStyle: 'japanese_pavilion', isOnChainLocked: false });
+  assert.deepEqual(fromSkins, { resolvedStyle: 'glass_modern', isOnChainLocked: false });
 
   const fromTx = resolveOwnedHouseStyle({
     onChainHouseStyle: null,
     unlockedSkins: ['default'],
     marketTransactions: [{ item_id: 'house_ownership:japanese_pavilion', action_type: 'buy_item' }],
-    localSavedStyle: 'plaza_manor',
+    localSavedStyle: 'glass_modern',
   });
-  assert.deepEqual(fromTx, { resolvedStyle: 'japanese_pavilion', isOnChainLocked: false });
+  assert.deepEqual(fromTx, { resolvedStyle: 'glass_modern', isOnChainLocked: false });
 
-  // 3. Model Estate (blue_0) remains permanently Japanese Pavilion; claimed plots inherit owned style
+  // 3. Every plot (Model Estate included) defaults to Glass Modern; claimed plots inherit the owned style
   const bluePlots = createIndividualCommanderBasesState('blue');
-  assert.equal(bluePlots[0].houseStyle, 'japanese_pavilion');
-  assert.equal(bluePlots[1].houseStyle, 'plaza_manor');
+  assert.equal(bluePlots[0].houseStyle, 'glass_modern');
+  assert.equal(bluePlots[1].houseStyle, 'glass_modern');
 
-  const manorSession = syncNearWalletSessionOwnership(
+  const legacySession = syncNearWalletSessionOwnership(
     createInitialNearGamepassSessionState(),
-    'manor.buddiesblitz.testnet',
+    'legacy.buddiesblitz.testnet',
     true,
     'house-deed-0010',
-    'plaza_manor',
+    parseOptionalHouseArchitectureStyle('plaza_manor'),
   );
-  const claimManorRes = claimEmptyBasePlotWithNearGamepass(manorSession, bluePlots, 'blue', 'blue', 1);
-  assert.equal(claimManorRes.success, true);
-  assert.equal(bluePlots[1].houseStyle, 'plaza_manor');
-  assert.equal(claimManorRes.updatedSession.houseStyle, 'plaza_manor');
+  const claimLegacyRes = claimEmptyBasePlotWithNearGamepass(legacySession, bluePlots, 'blue', 'blue', 1);
+  assert.equal(claimLegacyRes.success, true);
+  assert.equal(bluePlots[1].houseStyle, 'glass_modern');
+  assert.equal(claimLegacyRes.updatedSession.houseStyle, 'glass_modern');
 
-  const pavilionSession = syncNearWalletSessionOwnership(
+  const glassSession = syncNearWalletSessionOwnership(
     createInitialNearGamepassSessionState(),
-    'pavilion.buddiesblitz.testnet',
+    'glass.buddiesblitz.testnet',
     true,
     'house-deed-0011',
-    'japanese_pavilion',
+    'glass_modern',
   );
-  const claimPavilionRes = claimEmptyBasePlotWithNearGamepass(
-    pavilionSession,
+  const claimGlassRes = claimEmptyBasePlotWithNearGamepass(
+    glassSession,
     bluePlots,
     'blue',
     'blue',
     2,
   );
-  assert.equal(claimPavilionRes.success, true);
-  assert.equal(bluePlots[2].houseStyle, 'japanese_pavilion');
-  assert.equal(claimPavilionRes.updatedSession.houseStyle, 'japanese_pavilion');
+  assert.equal(claimGlassRes.success, true);
+  assert.equal(bluePlots[2].houseStyle, 'glass_modern');
+  assert.equal(claimGlassRes.updatedSession.houseStyle, 'glass_modern');
 
-  // 4. Classic Plaza Manor centered portico steps (z = hqZ - sign * 0.55) trigger house door entry
-  const manorPlot = bluePlots[1];
-  const manorDoorTrigger = evaluateBasePlotProximityTriggers({
-    actorX: manorPlot.plotCenterX,
+  // 4. Claimed plot portico steps (z = hqZ - sign * 0.55) trigger house door entry
+  const claimedPlot = bluePlots[1];
+  const doorTrigger = evaluateBasePlotProximityTriggers({
+    actorX: claimedPlot.plotCenterX,
     actorZ: 74.0 - 0.55,
     worldMode: 'safezone',
     blueCommanderBases: bluePlots,
     redCommanderBases: createIndividualCommanderBasesState('red'),
   });
-  assert.equal(manorDoorTrigger.canTriggerEnterHouseDoor, true);
-  assert.equal(manorDoorTrigger.nearestHouseDoorPlotIndex, 1);
-  assert.equal(manorDoorTrigger.nearestHouseDoorTeam, 'blue');
+  assert.equal(doorTrigger.canTriggerEnterHouseDoor, true);
+  assert.equal(doorTrigger.nearestHouseDoorPlotIndex, 1);
+  assert.equal(doorTrigger.nearestHouseDoorTeam, 'blue');
 
-  // 5. Visual sync switches between plazaManorBuilding and lv1Building strictly per plot houseStyle
+  // 5. Visual sync shows/hides whole plot roots per mode (no per-style building swap remains)
   const { syncMilitaryBasePlotsVisuals } = await import('./buddiesBlitzShadersAndAssets');
   const mockGroup = new THREE.Group();
   const makePlotCtrl = () => ({
@@ -5998,7 +6018,6 @@ test('resolveOwnedHouseStyle, claimEmptyBasePlotWithNearGamepass, and syncMilita
     lv1Building: new THREE.Group(),
     lv2Building: new THREE.Group(),
     lv3Building: new THREE.Group(),
-    plazaManorBuilding: new THREE.Group(),
     rubbleGroup: new THREE.Group(),
     fenceLv1Group: new THREE.Group(),
     fenceLv2Group: new THREE.Group(),
@@ -6025,7 +6044,6 @@ test('resolveOwnedHouseStyle, claimEmptyBasePlotWithNearGamepass, and syncMilita
   assert.equal(ctrls[2].plotRoot.visible, true);
   // blue_3 unclaimed -> hidden
   assert.equal(ctrls[3].plotRoot.visible, false);
-  assert.equal(ctrls[3].plazaManorBuilding.visible, false);
 });
 
 test('Warzone hostile Raider squad spawns on opposing team with mixed humanoid avatar genders outside Oasis Lake and base shields', () => {

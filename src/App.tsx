@@ -182,6 +182,7 @@ import type { MyThingsSectionId, PersonalWalletTabId } from './components/myThin
 import type { ShopBuildingFormId } from './game/buddiesCityRentalLotsRules';
 import {
   createEmptyLotRentalStore,
+  sweepExpiredLotRentals,
   type LotRentalStore,
 } from './game/shopRentalEngine';
 import {
@@ -191,6 +192,12 @@ import {
   removeBuildingFromLotToInventory,
   setPlacedBuildingBillboardLogo,
 } from './game/shopPlacementController';
+import {
+  endSimulatedLotRental,
+  extendSimulatedLotRental,
+  startSimulatedLotRental,
+} from './game/shopRentalSimulation';
+import { LotRentalModal } from './components/LotRentalModal';
 import {
   createInitialMerchantMarketState,
   executeLulToCyonExchange,
@@ -638,6 +645,42 @@ const QA_ALL_UNLOCKED_SCOOTER_IDS: readonly string[] = URBAN_SCOOTER_CATALOG_ITE
 const QA_ALL_UNLOCKED_MERCHANT_IDS: readonly string[] = MERCHANT_CATALOG_ITEMS.map(
   (item) => item.id,
 );
+
+/** localStorage key for the simulated shop-lot rental store (QC build). */
+const LOT_RENTALS_STORAGE_KEY = 'bb_lot_rentals_v1';
+
+/**
+ * Loads the persisted simulated lot rental store. Falls back to an empty
+ * store on any corruption (bad JSON, wrong version, rentals not an object),
+ * and sweeps leases that expired past their grace period while away.
+ */
+function loadPersistedLotRentalStore(): LotRentalStore {
+  if (typeof window === 'undefined') return createEmptyLotRentalStore();
+  try {
+    const raw = window.localStorage.getItem(LOT_RENTALS_STORAGE_KEY);
+    if (!raw) return createEmptyLotRentalStore();
+    const parsed = JSON.parse(raw) as Partial<LotRentalStore> | null;
+    if (
+      !parsed ||
+      parsed.version !== 1 ||
+      !parsed.rentalsByLotId ||
+      typeof parsed.rentalsByLotId !== 'object' ||
+      Array.isArray(parsed.rentalsByLotId)
+    ) {
+      return createEmptyLotRentalStore();
+    }
+    const store: LotRentalStore = {
+      version: 1,
+      rentalsByLotId: parsed.rentalsByLotId,
+      returnedToMyThings: Array.isArray(parsed.returnedToMyThings)
+        ? parsed.returnedToMyThings
+        : [],
+    };
+    return sweepExpiredLotRentals(store, Date.now()).store;
+  } catch {
+    return createEmptyLotRentalStore();
+  }
+}
 
 export default function App() {
   const adaptiveViewport = useAdaptiveViewport();
@@ -1407,16 +1450,68 @@ export default function App() {
   const [realEstateCatalogTab, setRealEstateCatalogTab] =
     useState<RealEstateCatalogTabId>('house');
   const [lotRentalStore, setLotRentalStore] = useState<LotRentalStore>(() =>
-    createEmptyLotRentalStore(),
+    loadPersistedLotRentalStore(),
   );
+  const [selectedRentalLotId, setSelectedRentalLotId] = useState<string | null>(null);
+  const [isLotRentalModalOpen, setIsLotRentalModalOpen] = useState<boolean>(false);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     window.dispatchEvent(
       new CustomEvent(SHOP_LOT_PLACEMENT_SYNC_EVENT, {
-        detail: buildShopLotPlacementSyncPayload(lotRentalStore),
+        detail: buildShopLotPlacementSyncPayload(
+          lotRentalStore,
+          Date.now(),
+          selectedRentalLotId,
+        ),
       }),
     );
-  }, [lotRentalStore]);
+    try {
+      window.localStorage.setItem(LOT_RENTALS_STORAGE_KEY, JSON.stringify(lotRentalStore));
+    } catch {
+      // Storage unavailable (private mode / quota): simulation state stays in memory.
+    }
+  }, [lotRentalStore, selectedRentalLotId]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onOpenLotRental = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ lotId?: string }>).detail;
+      if (!detail?.lotId) return;
+      setSelectedRentalLotId(detail.lotId);
+      setIsLotRentalModalOpen(true);
+    };
+    window.addEventListener('open-lot-rental', onOpenLotRental);
+    return () => window.removeEventListener('open-lot-rental', onOpenLotRental);
+  }, []);
+  const handleRentLotSimulated = useCallback(() => {
+    if (!selectedRentalLotId) return;
+    const acct = (hud.nearWalletId || playerUid || '').trim();
+    const res = startSimulatedLotRental({
+      store: lotRentalStore,
+      lotId: selectedRentalLotId,
+      accountId: acct,
+    });
+    if (res.ok) setLotRentalStore(res.store);
+  }, [hud.nearWalletId, playerUid, lotRentalStore, selectedRentalLotId]);
+  const handleExtendLotSimulated = useCallback(() => {
+    if (!selectedRentalLotId) return;
+    const acct = (hud.nearWalletId || playerUid || '').trim();
+    const res = extendSimulatedLotRental({
+      store: lotRentalStore,
+      lotId: selectedRentalLotId,
+      accountId: acct,
+    });
+    if (res.ok) setLotRentalStore(res.store);
+  }, [hud.nearWalletId, playerUid, lotRentalStore, selectedRentalLotId]);
+  const handleEndLotSimulated = useCallback(() => {
+    if (!selectedRentalLotId) return;
+    const acct = (hud.nearWalletId || playerUid || '').trim();
+    const res = endSimulatedLotRental({
+      store: lotRentalStore,
+      lotId: selectedRentalLotId,
+      accountId: acct,
+    });
+    if (res.ok) setLotRentalStore(res.store);
+  }, [hud.nearWalletId, playerUid, lotRentalStore, selectedRentalLotId]);
   const [isDexModalOpen, setIsDexModalOpen] = useState<boolean>(false);
   const loadOwnedScootersFromStorage = useCallback((acctKey: string): string[] => {
     let stored: string[] = [];
@@ -1734,7 +1829,10 @@ export default function App() {
     ): string[] => {
       const skins = ['default', `gender:${gender}`];
       const existingTag = existingSkins?.find(
-        (s) => s === 'house_style:plaza_manor' || s === 'house_style:japanese_pavilion',
+        (s) =>
+          s === 'house_style:glass_modern' ||
+          s === 'house_style:plaza_manor' ||
+          s === 'house_style:japanese_pavilion',
       );
       const resolvedStyle =
         ownedStyle ??
@@ -1779,7 +1877,7 @@ export default function App() {
   );
 
   const [houseArchitectureStyle, setHouseArchitectureStyle] =
-    useState<HouseArchitectureStyle>('plaza_manor');
+    useState<HouseArchitectureStyle>('glass_modern');
   const [ownedHouseStyle, setOwnedHouseStyle] = useState<HouseArchitectureStyle | null>(null);
   const [isOnChainHouseStyleLocked, setIsOnChainHouseStyleLocked] = useState<boolean>(false);
   const houseArchitectureStyleRef = useRef<HouseArchitectureStyle>(houseArchitectureStyle);
@@ -4099,9 +4197,9 @@ export default function App() {
         );
       const requestedInteriorStyle = parseOptionalHouseArchitectureStyle(entryDetail?.houseStyle);
       const targetInteriorStyle: HouseArchitectureStyle = isModelHousePlaqueEntry
-        ? requestedInteriorStyle ?? 'plaza_manor'
+        ? requestedInteriorStyle ?? 'glass_modern'
         : isSampleEntry
-          ? 'japanese_pavilion'
+          ? 'glass_modern'
           : requestedInteriorStyle ??
             ownedHouseStyleRef.current ??
             houseArchitectureStyleRef.current;
@@ -8588,7 +8686,7 @@ export default function App() {
 
   const handleViewModelHouse = (requestedStyle?: HouseArchitectureStyle) => {
     soundEngine.playUiClick();
-    const targetStyle = requestedStyle ?? 'plaza_manor';
+    const targetStyle = requestedStyle ?? 'glass_modern';
     setHouseArchitectureStyle(targetStyle);
     setActiveSpecialModal('none');
     setIsRealEstateCatalogModalOpen(false);
@@ -13622,7 +13720,7 @@ export default function App() {
             (hud.nearKioskPlotIndex === 0 || hud.nearKioskPlotIndex === null);
           setHouseArchitectureStyle(
             isSample
-              ? 'japanese_pavilion'
+              ? 'glass_modern'
               : ownedHouseStyleRef.current ?? houseArchitectureStyleRef.current,
           );
           lastEnteredHousePlotRef.current = {
@@ -15101,6 +15199,16 @@ export default function App() {
         onCancelPropertyListing={handleCancelPropertyListing}
         onBuyPropertyListing={handleBuyPropertyListing}
         onCompletePropertyTransfer={handleCompletePropertyTransfer}
+      />
+      <LotRentalModal
+        open={isLotRentalModalOpen && hud.worldMode !== 'warzone'}
+        lotId={selectedRentalLotId}
+        store={lotRentalStore}
+        accountId={(hud.nearWalletId || playerUid || '').trim()}
+        onClose={() => setIsLotRentalModalOpen(false)}
+        onRent={handleRentLotSimulated}
+        onExtend={handleExtendLotSimulated}
+        onEnd={handleEndLotSimulated}
       />
       <DexMarketplaceModal
         isOpen={isDexModalOpen && hud.worldMode !== 'warzone'}

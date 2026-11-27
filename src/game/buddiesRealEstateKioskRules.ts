@@ -118,7 +118,7 @@ export function evaluateRealEstateCatalogProximity(
 /**
  * World-space trigger & low 3D interaction triangle spec (`segitiga interaksi`)
  * anchored directly on the circular floor medallion in front of the Central Plaza
- * Classic Plaza Manor Model House double entrance doors (`x = -91.3, z = -24.26`).
+ * Glass Modern Model House double entrance doors (`x = -91.3, z = -24.26`).
  */
 export const PLAZA_MODEL_HOUSE_DOOR_TRIGGER = {
   x: -93.55,
@@ -126,7 +126,7 @@ export const PLAZA_MODEL_HOUSE_DOOR_TRIGGER = {
   deckY: 2.5,
   markerOffsetY: 0.56,
   triggerRadius: 2.65,
-  houseStyle: 'plaza_manor' as const,
+  houseStyle: 'glass_modern' as const,
 } as const;
 
 export function evaluatePlazaModelHouseDoorProximity(

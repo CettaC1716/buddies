@@ -6145,10 +6145,14 @@ export interface IndividualCommanderBaseState {
   safezoneAllowedFriends?: string[];
 }
 
-export type HouseArchitectureStyle = 'plaza_manor' | 'japanese_pavilion';
+export type HouseArchitectureStyle = 'glass_modern';
 
 /**
  * Parses an optional house architecture identifier, returning `null` if unknown.
+ * The Glass Modern house is the single supported style; the retired
+ * `plaza_manor` and `japanese_pavilion` identifiers remain accepted as
+ * aliases so existing deeds, profile skin tags, and local saves keep
+ * resolving to the surviving house instead of breaking.
  */
 export function parseOptionalHouseArchitectureStyle(
   raw: unknown,
@@ -6157,22 +6161,23 @@ export function parseOptionalHouseArchitectureStyle(
   const s = raw.trim().toLowerCase();
   if (!s) return null;
   if (
+    s === 'glass_modern' ||
+    s === 'house_style:glass_modern' ||
+    s === 'house_ownership:glass_modern' ||
+    s.includes('glass modern') ||
+    s.includes('glass_modern') ||
     s === 'japanese_pavilion' ||
     s === 'house_style:japanese_pavilion' ||
     s === 'house_ownership:japanese_pavilion' ||
     s.includes('japanese pavilion') ||
-    s.includes('japanese_pavilion')
-  ) {
-    return 'japanese_pavilion';
-  }
-  if (
+    s.includes('japanese_pavilion') ||
     s === 'plaza_manor' ||
     s === 'house_style:plaza_manor' ||
     s === 'house_ownership:plaza_manor' ||
     s.includes('plaza manor') ||
     s.includes('plaza_manor')
   ) {
-    return 'plaza_manor';
+    return 'glass_modern';
   }
   return null;
 }
@@ -6182,7 +6187,7 @@ export function parseOptionalHouseArchitectureStyle(
  */
 export function normalizeHouseArchitectureStyle(
   raw: unknown,
-  fallback: HouseArchitectureStyle = 'plaza_manor',
+  fallback: HouseArchitectureStyle = 'glass_modern',
 ): HouseArchitectureStyle {
   return parseOptionalHouseArchitectureStyle(raw) ?? fallback;
 }
@@ -6230,7 +6235,7 @@ export function resolveOwnedHouseStyle(params: {
   }
   const localStyle = parseOptionalHouseArchitectureStyle(params.localSavedStyle);
   return {
-    resolvedStyle: localStyle ?? 'plaza_manor',
+    resolvedStyle: localStyle ?? 'glass_modern',
     isOnChainLocked: false,
   };
 }
@@ -6317,7 +6322,7 @@ export function createIndividualCommanderBasesState(
       isClaimedOnlineSession: isModelEstate,
       claimedByNearAccount: isModelEstate ? 'model-estate.buddiesblitz.near' : null,
       claimedByNearWallet: isModelEstate ? 'model-estate.buddiesblitz.near' : null,
-      houseStyle: isModelEstate ? 'japanese_pavilion' : 'plaza_manor',
+      houseStyle: 'glass_modern',
       safezoneAccessMode: 'PUBLIC',
       safezoneAllowedFriends: [],
     };
@@ -12866,7 +12871,7 @@ export function connectNearWalletAndMintGamepass(
       : `${trimmed}.near`;
   const tokenId = `nep171-gamepass-${cleanAccount.replace(/[^a-z0-9]/g, '-')}-01`;
   const resolvedStyle =
-    parseOptionalHouseArchitectureStyle(houseStyle) ?? state.houseStyle ?? 'plaza_manor';
+    parseOptionalHouseArchitectureStyle(houseStyle) ?? state.houseStyle ?? 'glass_modern';
   return {
     ...state,
     walletConnected: true,
@@ -13029,7 +13034,7 @@ export function claimEmptyBasePlotWithNearGamepass(
     parseOptionalHouseArchitectureStyle(options?.houseStyle) ??
     parseOptionalHouseArchitectureStyle(activeSession.houseStyle) ??
     plot.houseStyle ??
-    'plaza_manor';
+    'glass_modern';
   plot.houseStyle = resolvedHouseStyle;
   plot.destroyed = false;
   plot.buildingHp = plot.buildingMaxHp;

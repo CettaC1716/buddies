@@ -52,13 +52,13 @@ export interface ChatTxSharedProps {
   hanaWelcomeNearClaimed: boolean;
   ownedItemIds: string[];
   playerNearAccount: string;
-  houseArchitectureStyle: 'plaza_manor' | 'japanese_pavilion';
-  ownedHouseStyle?: 'plaza_manor' | 'japanese_pavilion' | null;
+  houseArchitectureStyle: 'glass_modern';
+  ownedHouseStyle?: 'glass_modern' | null;
   onChainHouseStyleLocked?: boolean;
-  onSelectHouseArchitectureStyle?: (style: 'plaza_manor' | 'japanese_pavilion') => void;
+  onSelectHouseArchitectureStyle?: (style: 'glass_modern') => void;
   onConnectWallet?: () => void;
-  onViewModelHouse?: (style?: 'plaza_manor' | 'japanese_pavilion') => void;
-  onEnterOwnHouse?: (style?: 'plaza_manor' | 'japanese_pavilion') => void;
+  onViewModelHouse?: (style?: 'glass_modern') => void;
+  onEnterOwnHouse?: (style?: 'glass_modern') => void;
   onExchangeLulToCyon: (customLulSpent?: number, customCyonGranted?: number) => void;
   onSwapNearAndRespite?: (
     direction: 'near_to_respite' | 'respite_to_near',
@@ -72,7 +72,7 @@ export interface ChatTxSharedProps {
   onSellMerchantItem: (item: MerchantCatalogItem, refund: number) => Promise<boolean>;
   onBuyHouseWithRespite?: (
     priceRespite: number,
-    style?: 'plaza_manor' | 'japanese_pavilion',
+    style?: 'glass_modern',
   ) => Promise<boolean> | boolean | void;
   onClaimHanaWelcomeNear?: () => Promise<{
     ok: boolean;
@@ -450,16 +450,16 @@ export function InlineHouseDealPanel({
   walletConnected: boolean;
   hasHouseOwnership: boolean;
   respiteBalance: number;
-  houseArchitectureStyle: 'plaza_manor' | 'japanese_pavilion';
-  ownedHouseStyle?: 'plaza_manor' | 'japanese_pavilion' | null;
+  houseArchitectureStyle: 'glass_modern';
+  ownedHouseStyle?: 'glass_modern' | null;
   onChainHouseStyleLocked?: boolean;
-  initialStyle?: 'plaza_manor' | 'japanese_pavilion';
-  onSelectHouseArchitectureStyle?: (style: 'plaza_manor' | 'japanese_pavilion') => void;
-  onViewModelHouse?: (style?: 'plaza_manor' | 'japanese_pavilion') => void;
-  onEnterOwnHouse?: (style?: 'plaza_manor' | 'japanese_pavilion') => void;
+  initialStyle?: 'glass_modern';
+  onSelectHouseArchitectureStyle?: (style: 'glass_modern') => void;
+  onViewModelHouse?: (style?: 'glass_modern') => void;
+  onEnterOwnHouse?: (style?: 'glass_modern') => void;
   onBuyHouseWithRespite?: (
     priceRespite: number,
-    style?: 'plaza_manor' | 'japanese_pavilion',
+    style?: 'glass_modern',
   ) => Promise<boolean> | boolean | void;
   onConnectWallet?: () => void;
   onSwitchToSwapNear: (suggestedNear: number) => void;
@@ -467,7 +467,7 @@ export function InlineHouseDealPanel({
 }) {
   const isOwned = Boolean(walletConnected && hasHouseOwnership);
   const effectiveOwnedStyle = isOwned ? ownedHouseStyle ?? houseArchitectureStyle : null;
-  const [selectedStyle, setSelectedStyle] = useState<'plaza_manor' | 'japanese_pavilion'>(
+  const [selectedStyle, setSelectedStyle] = useState<'glass_modern'>(
     initialStyle ?? effectiveOwnedStyle ?? houseArchitectureStyle,
   );
   const [busy, setBusy] = useState(false);
@@ -491,13 +491,8 @@ export function InlineHouseDealPanel({
 
   return (
     <div className="space-y-2.5">
-      <div className="grid grid-cols-2 gap-2">
-        {(
-          [
-            { id: 'plaza_manor', label: 'Plaza Manor' },
-            { id: 'japanese_pavilion', label: 'Japanese Pavilion' },
-          ] as const
-        ).map((opt) => (
+      <div className="grid grid-cols-1 gap-2">
+        {([{ id: 'glass_modern', label: 'Glass Modern' }] as const).map((opt) => (
           <button
             key={opt.id}
             type="button"
@@ -587,8 +582,7 @@ export function InlineHouseDealPanel({
                 >
                   <Check className="w-3.5 h-3.5" aria-hidden="true" />
                   <span>
-                    Enter owned{' '}
-                    {effectiveOwnedStyle === 'japanese_pavilion' ? 'Pavilion' : 'Manor'}
+                    Enter owned Glass Modern
                   </span>
                 </button>
               )

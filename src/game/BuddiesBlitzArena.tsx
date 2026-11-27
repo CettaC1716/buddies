@@ -416,11 +416,6 @@ import {
   buildProceduralNuclearMissileMesh,
   buildProceduralNuclearLauncherTurret,
   NuclearLauncherTurretRig,
-  getMilitaryWindowPaneTexture,
-  getMilitaryLouverTexture,
-  getLv1SlateZincRoofTexture,
-  getLv1HorizontalTimberCladdingTexture,
-  getLv1AndoPlasterWallTexture,
   getWaterCascadeSheetTexture,
   getWaterBasinRippleTexture,
   loadAndAttachExternalStyleAnimationClip,
@@ -542,6 +537,10 @@ import {
   buildBeautySalonInterior,
   type SalonInteriorSceneHandle,
 } from './buddiesBeautySalonInteriorBuilder';
+import {
+  buildGlassModernHouseScene,
+  type HouseSceneColliderAabb,
+} from './buddiesHouseSceneBuilder';
 import {
   RadialInteractPinManager,
   type RadialInteractPinDescriptor,
@@ -690,10 +689,6 @@ import {
   type LocalPedestrianAvoidanceResult,
   type PedestrianAvoidanceCapsule2D,
 } from './buddiesCharacterCollisionRules';
-import {
-  createCityWindowSpec,
-  tagCityWindowMesh,
-} from './buddiesWindowAuditRules';
 import { updateCityWindowNightLighting } from './buddiesNightLightingRules';
 import {
   buildCityNavGrid,
@@ -2439,8 +2434,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                 activeCafeOrderLabel?: string;
                 activeCafeOrderAccent?: string;
                 activeCafeOrderCategory?: 'drink' | 'pastry' | null;
-                houseArchitectureStyle?: 'plaza_manor' | 'japanese_pavilion';
-                ownedHouseStyle?: 'plaza_manor' | 'japanese_pavilion' | null;
+                houseArchitectureStyle?: HouseArchitectureStyle;
+                ownedHouseStyle?: HouseArchitectureStyle | null;
                 onboardingCompleted?: boolean;
                 characterGender?: CharacterGender;
                 playerDisplayName?: string;
@@ -7415,30 +7410,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     wallStuccoCanvasTex.wrapS = THREE.RepeatWrapping;
     wallStuccoCanvasTex.wrapT = THREE.RepeatWrapping;
 
-    const scaleBoxUvsToWorldMeters = (
-      geo: THREE.BoxGeometry,
-      w: number,
-      h: number,
-      d: number,
-      tileMeters = 1.8,
-    ) => {
-      const uv = geo.attributes.uv;
-      if (!uv) return geo;
-      for (let i = 0; i < uv.count; i++) {
-        const u0 = uv.getX(i);
-        const v0 = uv.getY(i);
-        if (i < 8) {
-          uv.setXY(i, (u0 * d) / tileMeters, (v0 * h) / tileMeters);
-        } else if (i < 16) {
-          uv.setXY(i, (u0 * w) / tileMeters, (v0 * d) / tileMeters);
-        } else {
-          uv.setXY(i, (u0 * w) / tileMeters, (v0 * h) / tileMeters);
-        }
-      }
-      uv.needsUpdate = true;
-      return geo;
-    };
-
     const interiorWallMat = new THREE.MeshStandardMaterial({
       color: '#f2eadc',
       map: wallStuccoCanvasTex,
@@ -7454,28 +7425,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       color: '#7e522b',
       roughness: 0.58,
     });
-    const kumaSoffitMat = new THREE.MeshStandardMaterial({
-      color: '#cc955e',
-      roughness: 0.6,
-    });
-    const shojiWarmMat = new THREE.MeshStandardMaterial({
-      color: '#ede3ce',
-      roughness: 0.78,
-    });
-    const basaltDarkMat = new THREE.MeshStandardMaterial({
-      color: '#3a3d44',
-      roughness: 0.55,
-      metalness: 0.25,
-    });
     const basaltPlinthMat = new THREE.MeshStandardMaterial({
       color: '#5c6068',
       roughness: 0.58,
       metalness: 0.2,
-    });
-    const serviceDoorLeafMat = new THREE.MeshStandardMaterial({
-      color: '#7b8088',
-      roughness: 0.48,
-      metalness: 0.35,
     });
     const interiorFloorMat = new THREE.MeshStandardMaterial({
       color: '#f3e7d3',
@@ -7488,15 +7441,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       color: '#23272e',
       roughness: 0.45,
       metalness: 0.4,
-    });
-    const capWallMat = new THREE.MeshStandardMaterial({
-      color: '#4e5662',
-      roughness: 0.55,
-    });
-    const mullionDarkMat = new THREE.MeshStandardMaterial({
-      color: '#4e5662',
-      roughness: 0.48,
-      metalness: 0.25,
     });
     const plinthGlowMat = new THREE.MeshBasicMaterial({
       color: '#ffb468',
@@ -7527,29 +7471,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         }
       }
       return mesh;
-    };
-
-    const addHouseArchPart = (
-      parent: THREE.Object3D,
-      geo: THREE.BufferGeometry,
-      mat: THREE.Material,
-      pos: readonly [number, number, number],
-      strokeWidth = 0.0048,
-      rot?: readonly [number, number, number],
-    ) => {
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(pos[0], pos[1], pos[2]);
-      if (rot) {
-        m.rotation.set(rot[0], rot[1], rot[2]);
-      }
-      m.castShadow = true;
-      m.receiveShadow = true;
-      m.raycast = () => {};
-      if (strokeWidth > 0) {
-        attachHouseToonStroke(m, strokeWidth);
-      }
-      parent.add(m);
-      return m;
     };
 
     // Consolidated Indoor Room Lighting Rig (2-PointLight budget, self-contained so outdoor presets/shadows never leak indoors)
@@ -7598,18 +7519,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     houseInteriorRoomGrp.add(houseWarmLampPointLight);
 
     // 1. Cutaway Studio Plinth + Main Room Floor (10.6m x 7.4m)
-    const {
-      minX: A,
-      maxX: J,
-      minZ: T,
-      maxZ: N,
-      wallThickness: L,
-      fullWallHeight: ee,
-      cutawayWallHeight: Yn,
-      slatEndZ: ko,
-      windowLeft: winL,
-      windowBack: winB,
-    } = CUTAWAY_ROOM_BOUNDS;
+    const { minX: A, maxX: J, minZ: T, maxZ: N } = CUTAWAY_ROOM_BOUNDS;
 
     const plinthUpper = attachHouseToonStroke(
       new THREE.Mesh(new THREE.BoxGeometry(J - A + 1.35, 0.24, N - T + 1.35), basaltPlinthMat),
@@ -7646,1762 +7556,44 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     roomFloor.receiveShadow = true;
     houseInteriorRoomGrp.add(roomFloor);
 
-    const windowGlassMat = new THREE.MeshBasicMaterial({
-      color: '#bfe3ff',
-      transparent: true,
-      opacity: 0.28,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-
-    // Shared sunny garden & plaza sky backdrop outside window & door apertures
-    const backdropCanvas = document.createElement('canvas');
-    backdropCanvas.width = 256;
-    backdropCanvas.height = 256;
-    const backdropCtx = backdropCanvas.getContext('2d');
-    if (backdropCtx) {
-      const grad = backdropCtx.createLinearGradient(0, 0, 0, 256);
-      grad.addColorStop(0, '#cfe4f2');
-      grad.addColorStop(0.45, '#e8f0e4');
-      grad.addColorStop(0.62, '#a8c48d');
-      grad.addColorStop(1, '#7fae67');
-      backdropCtx.fillStyle = grad;
-      backdropCtx.fillRect(0, 0, 256, 256);
-      backdropCtx.fillStyle = 'rgba(110, 150, 92, 0.55)';
-      for (const [bx, by, br] of [
-        [40, 190, 34],
-        [110, 205, 42],
-        [185, 192, 36],
-        [235, 210, 30],
-        [70, 215, 26],
-      ] as const) {
-        backdropCtx.beginPath();
-        backdropCtx.arc(bx, by, br, 0, Math.PI * 2);
-        backdropCtx.fill();
-      }
-      backdropCtx.fillStyle = 'rgba(90, 130, 74, 0.5)';
-      for (const [bx, by, br] of [
-        [80, 225, 30],
-        [160, 228, 34],
-        [220, 232, 24],
-      ] as const) {
-        backdropCtx.beginPath();
-        backdropCtx.arc(bx, by, br, 0, Math.PI * 2);
-        backdropCtx.fill();
-      }
-    }
-    const backdropMat = new THREE.MeshBasicMaterial({
-      map: new THREE.CanvasTexture(backdropCanvas),
-      fog: false,
-    });
 
     // =========================================================================
-    // ARCHITECTURE STYLE A: MODERN JAPANESE WOODEN PAVILION (`japanese_pavilion`)
-    // Preserved as a Catalog House Product (`TroopQuartersFieldBarracks` 1:1)
     // =========================================================================
-    const japanesePavilionArchGrp = new THREE.Group();
-    japanesePavilionArchGrp.name = 'JapanesePavilionArchGrp';
-    houseInteriorRoomGrp.add(japanesePavilionArchGrp);
-
-    const addCutawayWallSegment = (
-      x0: number,
-      x1: number,
-      y0: number,
-      y1: number,
-      z0: number,
-      z1: number,
-      mat: THREE.Material = interiorWallMat,
-      targetGrp: THREE.Object3D = japanesePavilionArchGrp,
-      copingMat: THREE.Material = capWallMat,
-    ) => {
-      const w = x1 - x0;
-      const h = y1 - y0;
-      const d = z1 - z0;
-      const wallMesh = attachHouseToonStroke(
-        new THREE.Mesh(scaleBoxUvsToWorldMeters(new THREE.BoxGeometry(w, h, d), w, h, d), mat),
-        0.005,
-      );
-      wallMesh.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
-      wallMesh.castShadow = false;
-      wallMesh.receiveShadow = true;
-      wallMesh.raycast = () => {};
-      targetGrp.add(wallMesh);
-
-      const capMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(w + 0.012, 0.03, d + 0.012),
-        copingMat,
-      );
-      capMesh.position.set((x0 + x1) / 2, y1 + 0.015, (z0 + z1) / 2);
-      capMesh.raycast = () => {};
-      targetGrp.add(capMesh);
-    };
-
-    // Left Wall (`wallL`, height `ee = 4.0m`) with Left Koushi Timber Window Bay (`winL: z in [1.3, 2.8]`)
-    addCutawayWallSegment(A - L, A, 0, ee, T, winL.z0);
-    addCutawayWallSegment(A - L, A, 0, ee, winL.z1, N);
-    addCutawayWallSegment(A - L, A, 0, winL.y0, winL.z0, winL.z1);
-    addCutawayWallSegment(A - L, A, winL.y1, ee, winL.z0, winL.z1);
-
-    // Back Wall (`wallB`, height `ee = 4.0m`) with Panoramic Glazed Sliding Shoji Window Bay (`winB: x in [-2.35, 0.75]`)
-    addCutawayWallSegment(A - L, winB.x0, 0, ee, T - L, T);
-    addCutawayWallSegment(winB.x1, J + L, 0, ee, T - L, T);
-    addCutawayWallSegment(winB.x0, winB.x1, 0, winB.y0, T - L, T);
-    addCutawayWallSegment(winB.x0, winB.x1, winB.y1, ee, T - L, T);
-
-    // Low Cutaway Front & Right Walls (`Yn = 0.45m`) leaving the 2.64m Twin Sliding Entrance Door bay open (`x in [-1.32, +1.32]`)
-    addCutawayWallSegment(A - L, -1.32, 0, Yn, N, N + L);
-    addCutawayWallSegment(1.32, J + L, 0, Yn, N, N + L);
-    addCutawayWallSegment(J, J + L, 0, Yn, T, N);
-
-    // 1. Structural Dark Cedar Columns (`COL_KUMA_CEDAR_DARK`) + Basalt Base Shoes (`tsuka-ishi`) along Back & Left Full Walls
-    for (const [cx, cz] of [
-      [A + 0.05, T + 0.05],
-      [winB.x0 - 0.06, T + 0.05],
-      [winB.x1 + 0.06, T + 0.05],
-      [J - 0.05, T + 0.05],
-      [A + 0.05, winL.z0 - 0.06],
-      [A + 0.05, winL.z1 + 0.06],
-      [A + 0.05, N - 0.05],
-    ] as const) {
-      addHouseArchPart(
-        japanesePavilionArchGrp,
-        new THREE.BoxGeometry(0.14, ee, 0.14),
-        kumaCedarDarkMat,
-        [cx, ee / 2, cz],
-        0.0048,
-      );
-      addHouseArchPart(
-        japanesePavilionArchGrp,
-        new THREE.BoxGeometry(0.19, 0.08, 0.19),
-        basaltDarkMat,
-        [cx, 0.04, cz],
-        0.0045,
-      );
-    }
-
-    // 2. Continuous Horizontal Dark Cedar Nageshi Tie-Beams (`y = 2.52`, `y = 3.28`, and `y = ee - 0.12 = 3.88`)
-    for (const beamY of [2.52, 3.28, ee - 0.12] as const) {
-      addHouseArchPart(
-        japanesePavilionArchGrp,
-        new THREE.BoxGeometry(J - A, 0.09, 0.11),
-        kumaCedarDarkMat,
-        [0, beamY, T + 0.048],
-        0.0048,
-      );
-      addHouseArchPart(
-        japanesePavilionArchGrp,
-        new THREE.BoxGeometry(0.11, 0.09, N - T),
-        kumaCedarDarkMat,
-        [A + 0.048, beamY, 0],
-        0.0048,
-      );
-    }
-
-    // 3. Upper 4-Pane Transom / Clerestory Ribbon Window Band on Back Wall (`y = 2.90`)
-    let jpClerestoryIdx = 0;
-    for (const [bayX0, bayX1] of [
-      [-5.02, -2.52],
-      [0.94, 5.02],
-    ] as const) {
-      const bayW = bayX1 - bayX0;
-      const bayCx = (bayX0 + bayX1) / 2;
-      addHouseArchPart(
-        japanesePavilionArchGrp,
-        new THREE.BoxGeometry(bayW, 0.56, 0.09),
-        mullionDarkMat,
-        [bayCx, 2.9, T + 0.035],
-        0.0045,
-      );
-      const paneW = (bayW - 0.18) / 2;
-      for (const side of [-1, 1] as const) {
-        const px = bayCx + side * (paneW / 2 + 0.025);
-        // Glass box proud of dark backing frame (`T + 0.080`) so never occluded inside frame volume
-        const glassPane = new THREE.Mesh(new THREE.BoxGeometry(paneW, 0.42, 0.034), windowGlassMat);
-        glassPane.position.set(px, 2.9, T + 0.072);
-        glassPane.raycast = () => {};
-        tagCityWindowMesh(
-          glassPane,
-          createCityWindowSpec(
-            `cutaway-jp-clerestory-${jpClerestoryIdx}`,
-            'upper_floor',
-            '#c8dfeb',
-            2,
-            jpClerestoryIdx,
-          ),
-        );
-        jpClerestoryIdx += 1;
-        japanesePavilionArchGrp.add(glassPane);
-        addHouseArchPart(
-          japanesePavilionArchGrp,
-          new THREE.BoxGeometry(0.03, 0.44, 0.06),
-          shojiWarmMat,
-          [px, 2.9, T + 0.076],
-          0,
-        );
-      }
-    }
-
-    // 4. Horizontal Kuma Cedar Shiplap Timber Cladding on Back Left Wall Pier (`x in [-5.1, -2.48]`, `y in [0.12, 2.1]`)
-    for (let row = 0; row < 8; row++) {
-      const py = 0.2 + row * 0.24;
-      addHouseArchPart(
-        japanesePavilionArchGrp,
-        new THREE.BoxGeometry(2.6, 0.18, 0.045),
-        row % 2 === 0 ? interiorTrimMat : kumaSoffitMat,
-        [-3.78, py, T + 0.022],
-        0.0045,
-      );
-    }
-
-    // 5. Back Panoramic Glazed Sliding Shoji Window Bay (`winB: x in [-2.35, 0.75], y in [0.1, 2.5]`)
-    const winBW = winB.x1 - winB.x0;
-    const winBH = winB.y1 - winB.y0;
-    const winBCx = (winB.x0 + winB.x1) / 2;
-    const winBCy = (winB.y0 + winB.y1) / 2;
-    addHouseArchPart(
-      japanesePavilionArchGrp,
-      new THREE.BoxGeometry(winBW + 0.08, 0.08, 0.26),
-      mullionDarkMat,
-      [winBCx, winB.y0 + 0.03, T - L / 2],
-      0.0048,
-    );
-    addHouseArchPart(
-      japanesePavilionArchGrp,
-      new THREE.BoxGeometry(winBW + 0.08, 0.08, 0.26),
-      mullionDarkMat,
-      [winBCx, winB.y1 - 0.03, T - L / 2],
-      0.0048,
-    );
-    for (const sx of [winB.x0 + 0.03, winB.x1 - 0.03]) {
-      addHouseArchPart(
-        japanesePavilionArchGrp,
-        new THREE.BoxGeometry(0.08, winBH, 0.26),
-        mullionDarkMat,
-        [sx, winBCy, T - L / 2],
-        0.0048,
-      );
-    }
-    const backGlass = new THREE.Mesh(
-      new THREE.BoxGeometry(winBW - 0.08, winBH - 0.08, 0.024),
-      windowGlassMat,
-    );
-    backGlass.position.set(winBCx, winBCy, T - L / 2);
-    backGlass.raycast = () => {};
-    tagCityWindowMesh(
-      backGlass,
-      createCityWindowSpec('cutaway-jp-back-sliding', 'storefront', '#c8dfeb', 1, 0),
-    );
-    japanesePavilionArchGrp.add(backGlass);
-
-    // 2 Large Sliding Glass & Shoji Kumiko Panels inside `winB`
-    const slidePaneW = winBW / 2 + 0.03;
-    const slidePaneH = winBH - 0.12;
-    for (const [pIdx, paneCx, zOff] of [
-      [0, winB.x0 + slidePaneW / 2 + 0.02, T - L / 2 + 0.025],
-      [1, winB.x1 - slidePaneW / 2 - 0.02, T - L / 2 - 0.02],
-    ] as const) {
-      addHouseArchPart(
-        japanesePavilionArchGrp,
-        new THREE.BoxGeometry(slidePaneW, 0.06, 0.05),
-        mullionDarkMat,
-        [paneCx, winB.y0 + 0.08, zOff],
-        0.0045,
-      );
-      addHouseArchPart(
-        japanesePavilionArchGrp,
-        new THREE.BoxGeometry(slidePaneW, 0.06, 0.05),
-        mullionDarkMat,
-        [paneCx, winB.y1 - 0.08, zOff],
-        0.0045,
-      );
-      for (const stileX of [paneCx - slidePaneW / 2 + 0.03, paneCx + slidePaneW / 2 - 0.03]) {
-        addHouseArchPart(
-          japanesePavilionArchGrp,
-          new THREE.BoxGeometry(0.06, slidePaneH, 0.05),
-          mullionDarkMat,
-          [stileX, winBCy, zOff],
-          0.0045,
-        );
-      }
-      // Warm interior shoji kumiko lattice strips (no black stroke on delicate 2.8cm strips!)
-      addHouseArchPart(
-        japanesePavilionArchGrp,
-        new THREE.BoxGeometry(0.028, slidePaneH - 0.1, 0.032),
-        shojiWarmMat,
-        [paneCx, winBCy, zOff],
-        0,
-      );
-      for (const kumikoY of [0.72, 1.32, 1.92]) {
-        addHouseArchPart(
-          japanesePavilionArchGrp,
-          new THREE.BoxGeometry(slidePaneW - 0.1, 0.028, 0.032),
-          shojiWarmMat,
-          [paneCx, kumikoY, zOff],
-          0,
-        );
-      }
-      const kickSign = pIdx === 0 ? 1 : -1;
-      addHouseArchPart(
-        japanesePavilionArchGrp,
-        new THREE.BoxGeometry(0.02, 0.22, 0.035),
-        mullionDarkMat,
-        [paneCx + kickSign * (slidePaneW / 2 - 0.09), 1.15, zOff + 0.025],
-        0,
-      );
-    }
-
-    // 6. Left Wall Recessed Cedar Timber & Koushi Window Bay (`winL: z in [1.3, 2.8], y in [0.55, 2.4]`)
-    const winLW = winL.z1 - winL.z0;
-    const winLH = winL.y1 - winL.y0;
-    const winLCz = (winL.z0 + winL.z1) / 2;
-    const winLCy = (winL.y0 + winL.y1) / 2;
-    addHouseArchPart(
-      japanesePavilionArchGrp,
-      new THREE.BoxGeometry(0.26, 0.08, winLW + 0.08),
-      kumaCedarDarkMat,
-      [A - L / 2, winL.y0 + 0.03, winLCz],
-      0.0048,
-    );
-    addHouseArchPart(
-      japanesePavilionArchGrp,
-      new THREE.BoxGeometry(0.28, 0.09, winLW + 0.14),
-      mullionDarkMat,
-      [A - L / 2, winL.y1 - 0.03, winLCz],
-      0.0048,
-    );
-    for (const sz of [winL.z0 + 0.03, winL.z1 - 0.03, winLCz]) {
-      addHouseArchPart(
-        japanesePavilionArchGrp,
-        new THREE.BoxGeometry(0.24, winLH, 0.065),
-        kumaCedarDarkMat,
-        [A - L / 2, winLCy, sz],
-        0.0048,
-      );
-    }
-    const leftGlass = new THREE.Mesh(
-      new THREE.PlaneGeometry(winLW - 0.06, winLH - 0.06),
-      windowGlassMat,
-    );
-    leftGlass.rotation.y = Math.PI / 2;
-    leftGlass.position.set(A - L / 2, winLCy, winLCz);
-    leftGlass.raycast = () => {};
-    japanesePavilionArchGrp.add(leftGlass);
-
-    for (let i = 0; i < 6; i++) {
-      const lz = winL.z0 + 0.12 + i * 0.11;
-      addHouseArchPart(
-        japanesePavilionArchGrp,
-        new THREE.BoxGeometry(0.06, winLH - 0.12, 0.042),
-        interiorTrimMat,
-        [A - 0.03, winLCy, lz],
-        0,
-      );
-    }
-    for (let j = 0; j < 7; j++) {
-      const ly = winL.y0 + 0.18 + j * 0.23;
-      addHouseArchPart(
-        japanesePavilionArchGrp,
-        new THREE.BoxGeometry(0.06, 0.048, winLW / 2 - 0.08),
-        interiorTrimMat,
-        [A - 0.03, ly, winLCz + winLW * 0.25],
-        0,
-      );
-    }
-
-    // Vertical Wooden Koushi Slat Feature Wall (`slats`) along Left Wall from z = T to z = ko (0.95)
-    const slatCount = 34;
-    const slatSpan = ko - (T + 0.08);
-    const slatStep = slatSpan / slatCount;
-    for (let d = 0; d < slatCount; d++) {
-      const sz = T + 0.08 + slatStep * (d + 0.5);
-      addHouseArchPart(
-        japanesePavilionArchGrp,
-        new THREE.BoxGeometry(0.042, ee - 0.14, 0.046),
-        interiorTrimMat,
-        [A + 0.024, ee / 2 - 0.04, sz],
-        0,
-      );
-    }
-
-    // Full-Height Wall Completions for `japanese_pavilion` in `house_visit` mode
-    const japaneseVisitWallGrp = new THREE.Group();
-    japaneseVisitWallGrp.name = 'JapanesePavilionVisitWalls';
-    const addVisitWall = (
-      x0: number,
-      x1: number,
-      y0: number,
-      y1: number,
-      z0: number,
-      z1: number,
-      mat: THREE.Material = interiorWallMat,
-      targetGrp: THREE.Object3D = japaneseVisitWallGrp,
-      copingMat: THREE.Material = capWallMat,
-    ) => {
-      const w = x1 - x0;
-      const h = y1 - y0;
-      const d = z1 - z0;
-      const m = attachHouseToonStroke(
-        new THREE.Mesh(scaleBoxUvsToWorldMeters(new THREE.BoxGeometry(w, h, d), w, h, d), mat),
-        0.005,
-      );
-      m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
-      m.castShadow = false;
-      m.receiveShadow = true;
-      m.raycast = () => {};
-      targetGrp.add(m);
-      const cap = new THREE.Mesh(
-        new THREE.BoxGeometry(x1 - x0 + 0.012, 0.03, z1 - z0 + 0.012),
-        copingMat,
-      );
-      cap.position.set((x0 + x1) / 2, y1 + 0.015, (z0 + z1) / 2);
-      cap.raycast = () => {};
-      targetGrp.add(cap);
-    };
-
-    addVisitWall(A - L, -3.35, Yn, ee, N, N + L);
-    addVisitWall(-3.35, -1.75, Yn, 0.55, N, N + L);
-    addVisitWall(-3.35, -1.75, 2.22, ee, N, N + L);
-    addVisitWall(-1.75, -1.32, Yn, ee, N, N + L);
-    addVisitWall(1.32, J + L, Yn, ee, N, N + L);
-    addVisitWall(-1.32, 1.32, 2.22, ee, N, N + L);
-
-    addHouseArchPart(
-      japaneseVisitWallGrp,
-      new THREE.BoxGeometry(1.64, 0.08, 0.26),
-      mullionDarkMat,
-      [-2.55, 0.57, N + L / 2],
-      0.0048,
-    );
-    addHouseArchPart(
-      japaneseVisitWallGrp,
-      new THREE.BoxGeometry(1.64, 0.08, 0.26),
-      mullionDarkMat,
-      [-2.55, 2.2, N + L / 2],
-      0.0048,
-    );
-    const frontKoushiGlass = new THREE.Mesh(new THREE.PlaneGeometry(1.56, 1.62), windowGlassMat);
-    frontKoushiGlass.position.set(-2.55, 1.385, N + L / 2);
-    frontKoushiGlass.raycast = () => {};
-    japaneseVisitWallGrp.add(frontKoushiGlass);
-    for (let i = 0; i < 11; i++) {
-      addHouseArchPart(
-        japaneseVisitWallGrp,
-        new THREE.BoxGeometry(0.052, 1.6, 0.08),
-        interiorTrimMat,
-        [-3.22 + i * 0.134, 1.385, N + 0.03],
-        0,
-      );
-    }
-
-    addVisitWall(J, J + L, Yn, ee, T, -2.65);
-    addVisitWall(J, J + L, Yn, 0.55, -2.65, -1.15);
-    addVisitWall(J, J + L, 2.22, ee, -2.65, -1.15);
-    addVisitWall(J, J + L, Yn, ee, -1.15, N);
-    addHouseArchPart(
-      japaneseVisitWallGrp,
-      new THREE.BoxGeometry(0.26, 0.08, 1.54),
-      mullionDarkMat,
-      [J + L / 2, 0.57, -1.9],
-      0.0048,
-    );
-    addHouseArchPart(
-      japaneseVisitWallGrp,
-      new THREE.BoxGeometry(0.26, 0.08, 1.54),
-      mullionDarkMat,
-      [J + L / 2, 2.2, -1.9],
-      0.0048,
-    );
-    const rightKoushiGlass = new THREE.Mesh(new THREE.PlaneGeometry(1.46, 1.62), windowGlassMat);
-    rightKoushiGlass.rotation.y = Math.PI / 2;
-    rightKoushiGlass.position.set(J + L / 2, 1.385, -1.9);
-    rightKoushiGlass.raycast = () => {};
-    japaneseVisitWallGrp.add(rightKoushiGlass);
-    for (let i = 0; i < 9; i++) {
-      addHouseArchPart(
-        japaneseVisitWallGrp,
-        new THREE.BoxGeometry(0.08, 1.6, 0.052),
-        interiorTrimMat,
-        [J - 0.02, 1.385, -2.52 + i * 0.155],
-        0,
-      );
-    }
-
-    // Secondary Flush Service Door on Front-Right Wall
-    addHouseArchPart(
-      japaneseVisitWallGrp,
-      new THREE.BoxGeometry(1.02, 2.08, 0.07),
-      mullionDarkMat,
-      [3.35, 1.04, N - 0.02],
-      0.0048,
-    );
-    addHouseArchPart(
-      japaneseVisitWallGrp,
-      new THREE.BoxGeometry(0.88, 1.96, 0.085),
-      serviceDoorLeafMat,
-      [3.35, 1.02, N - 0.03],
-      0.0045,
-    );
-    addHouseArchPart(
-      japaneseVisitWallGrp,
-      new THREE.BoxGeometry(0.72, 1.72, 0.095),
-      basaltPlinthMat,
-      [3.35, 1.04, N - 0.036],
-      0.0045,
-    );
-    addHouseArchPart(
-      japaneseVisitWallGrp,
-      new THREE.BoxGeometry(0.14, 0.04, 0.06),
-      mullionDarkMat,
-      [3.02, 1.02, N - 0.065],
-      0,
-    );
-
-    for (const [cx, cz] of [
-      [-3.38, N - 0.05],
-      [-1.72, N - 0.05],
-      [1.42, N - 0.05],
-      [J - 0.05, N - 0.05],
-      [J - 0.05, -2.68],
-      [J - 0.05, -1.12],
-      [J - 0.05, 1.15],
-    ] as const) {
-      addHouseArchPart(
-        japaneseVisitWallGrp,
-        new THREE.BoxGeometry(0.14, ee, 0.14),
-        kumaCedarDarkMat,
-        [cx, ee / 2, cz],
-        0.0048,
-      );
-    }
-    for (const beamY of [2.52, 3.28, ee - 0.12] as const) {
-      addHouseArchPart(
-        japaneseVisitWallGrp,
-        new THREE.BoxGeometry(J - A, 0.09, 0.1),
-        kumaCedarDarkMat,
-        [0, beamY, N - 0.045],
-        0.0048,
-      );
-      addHouseArchPart(
-        japaneseVisitWallGrp,
-        new THREE.BoxGeometry(0.1, 0.09, N - T),
-        kumaCedarDarkMat,
-        [J - 0.045, beamY, 0],
-        0.0048,
-      );
-    }
-
-    const visitCeiling = new THREE.Mesh(
-      new THREE.BoxGeometry(J - A + 0.3, 0.08, N - T + 0.3),
-      interiorWallMat,
-    );
-    visitCeiling.position.set(0, ee + 0.04, 0);
-    visitCeiling.castShadow = false;
-    visitCeiling.receiveShadow = false;
-    visitCeiling.raycast = () => {};
-    japaneseVisitWallGrp.add(visitCeiling);
-    for (let rx = -4.2; rx <= 4.21; rx += 1.68) {
-      addHouseArchPart(
-        japaneseVisitWallGrp,
-        new THREE.BoxGeometry(0.14, 0.12, N - T - 0.1),
-        kumaCedarDarkMat,
-        [rx, ee - 0.05, 0],
-        0.0048,
-      );
-    }
-    // 3 Warm Japanese Andon Ceiling Lanterns under the 4.0m Pavilion Ceiling
-    for (const lx of [-2.9, 0.0, 2.9] as const) {
-      addHouseArchPart(
-        japaneseVisitWallGrp,
-        new THREE.BoxGeometry(0.64, 0.08, 0.64),
-        kumaCedarDarkMat,
-        [lx, ee - 0.06, 0],
-        0.0045,
-      );
-      addHouseArchPart(
-        japaneseVisitWallGrp,
-        new THREE.BoxGeometry(0.52, 0.12, 0.52),
-        lampWarmEmissiveMat,
-        [lx, ee - 0.12, 0],
-        0,
-      );
-    }
-
-    const backBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(8.2, 4.8), backdropMat);
-    backBackdrop.position.set(-0.8, 2.1, T - 0.85);
-    backBackdrop.raycast = () => {};
-    japaneseVisitWallGrp.add(backBackdrop);
-    const leftBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 4.8), backdropMat);
-    leftBackdrop.rotation.y = Math.PI / 2;
-    leftBackdrop.position.set(A - 0.85, 2.1, 2.05);
-    leftBackdrop.raycast = () => {};
-    japaneseVisitWallGrp.add(leftBackdrop);
-    const frontBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(9.2, 4.8), backdropMat);
-    frontBackdrop.rotation.y = Math.PI;
-    frontBackdrop.position.set(0, 2.1, N + 3.4);
-    frontBackdrop.raycast = () => {};
-    japaneseVisitWallGrp.add(frontBackdrop);
-
-    addHouseArchPart(
-      japaneseVisitWallGrp,
-      new THREE.BoxGeometry(3.6, 0.1, 1.35),
-      interiorTrimMat,
-      [0, -0.04, N + 0.78],
-      0.0048,
-    );
-    addHouseArchPart(
-      japaneseVisitWallGrp,
-      new THREE.BoxGeometry(1.6, 0.12, 0.55),
-      basaltPlinthMat,
-      [0, -0.1, N + 1.62],
-      0.0048,
-    );
-
-    // Japanese Pavilion Twin Sliding Entrance Doors (`z = N = 3.7`)
-    const japaneseExitDoorGrp = new THREE.Group();
-    japaneseExitDoorGrp.position.set(0, 0, N);
-    const doorHandleMat = new THREE.MeshStandardMaterial({
-      color: '#d4af37',
-      roughness: 0.28,
-      metalness: 0.85,
-    });
-
-    addHouseArchPart(
-      japaneseExitDoorGrp,
-      new THREE.BoxGeometry(0.12, 2.22, 0.24),
-      mullionDarkMat,
-      [-1.3, 1.11, 0.04],
-      0.0048,
-    );
-    addHouseArchPart(
-      japaneseExitDoorGrp,
-      new THREE.BoxGeometry(0.12, 2.22, 0.24),
-      mullionDarkMat,
-      [1.3, 1.11, 0.04],
-      0.0048,
-    );
-    addHouseArchPart(
-      japaneseExitDoorGrp,
-      new THREE.BoxGeometry(2.74, 0.12, 0.26),
-      mullionDarkMat,
-      [0, 2.2, 0.04],
-      0.0048,
-    );
-    addHouseArchPart(
-      japaneseExitDoorGrp,
-      new THREE.BoxGeometry(2.74, 0.44, 0.16),
-      mullionDarkMat,
-      [0, 2.48, 0.04],
-      0.0048,
-    );
-    for (const cwX of [-0.84, 0, 0.84]) {
-      const cwGlass = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.3, 0.18), windowGlassMat);
-      cwGlass.position.set(cwX, 2.48, 0.04);
-      cwGlass.raycast = () => {};
-      japaneseExitDoorGrp.add(cwGlass);
-    }
-    for (const sconceX of [-1.52, 1.52]) {
-      addHouseArchPart(
-        japaneseExitDoorGrp,
-        new THREE.BoxGeometry(0.16, 0.36, 0.12),
-        mullionDarkMat,
-        [sconceX, 1.68, -0.02],
-        0.0045,
-      );
-      addHouseArchPart(
-        japaneseExitDoorGrp,
-        new THREE.BoxGeometry(0.11, 0.24, 0.13),
-        lampWarmEmissiveMat,
-        [sconceX, 1.68, -0.03],
-        0,
-      );
-    }
-
-    const buildSlidingEntranceLeaf = (sideSign: -1 | 1) => {
-      const leafGrp = new THREE.Group();
-      const leafW = 1.24;
-      const leafH = 2.12;
-      addHouseArchPart(leafGrp, new THREE.BoxGeometry(leafW, 0.07, 0.055), mullionDarkMat, [0, 0.035, 0], 0.0045);
-      addHouseArchPart(leafGrp, new THREE.BoxGeometry(leafW, 0.07, 0.055), mullionDarkMat, [0, leafH - 0.035, 0], 0.0045);
-      addHouseArchPart(
-        leafGrp,
-        new THREE.BoxGeometry(0.07, leafH, 0.055),
-        mullionDarkMat,
-        [-leafW / 2 + 0.035, leafH / 2, 0],
-        0.0045,
-      );
-      addHouseArchPart(
-        leafGrp,
-        new THREE.BoxGeometry(0.07, leafH, 0.055),
-        mullionDarkMat,
-        [leafW / 2 - 0.035, leafH / 2, 0],
-        0.0045,
-      );
-      const leafGlass = new THREE.Mesh(
-        new THREE.BoxGeometry(leafW - 0.12, leafH - 0.12, 0.024),
-        windowGlassMat,
-      );
-      leafGlass.position.set(0, leafH / 2, 0);
-      leafGlass.raycast = () => {};
-      leafGrp.add(leafGlass);
-      addHouseArchPart(
-        leafGrp,
-        new THREE.BoxGeometry(0.03, leafH - 0.14, 0.036),
-        shojiWarmMat,
-        [0, leafH / 2, 0],
-        0,
-      );
-      for (const ky of [0.62, 1.18, 1.68]) {
-        addHouseArchPart(
-          leafGrp,
-          new THREE.BoxGeometry(leafW - 0.14, 0.03, 0.036),
-          shojiWarmMat,
-          [0, ky, 0],
-          0,
-        );
-      }
-      const handleX = -sideSign * (leafW / 2 - 0.11);
-      addHouseArchPart(
-        leafGrp,
-        new THREE.BoxGeometry(0.032, 0.28, 0.075),
-        doorHandleMat,
-        [handleX, 1.05, -0.025],
-        0,
-      );
-      return leafGrp;
-    };
-
-    const houseExitDoorLeftSlide = buildSlidingEntranceLeaf(-1);
-    houseExitDoorLeftSlide.position.set(-0.62, 0, 0.025);
-    const houseExitDoorRightSlide = buildSlidingEntranceLeaf(1);
-    houseExitDoorRightSlide.position.set(0.62, 0, 0.055);
-    const houseExitDoorPivot = new THREE.Group();
-    houseExitDoorPivot.add(houseExitDoorLeftSlide, houseExitDoorRightSlide);
-
-    const exitFloorMat = new THREE.Mesh(new THREE.BoxGeometry(2.36, 0.022, 0.68), basaltDarkMat);
-    exitFloorMat.position.set(0, 0.011, -0.38);
-    japaneseExitDoorGrp.add(houseExitDoorPivot, exitFloorMat);
-    japaneseExitDoorGrp.traverse((c) => {
-      c.raycast = () => {};
-    });
-    japanesePavilionArchGrp.add(japaneseExitDoorGrp);
-
+    // HOUSE SCENE: GLASS MODERN HOUSE (`glass_modern`) — the single house
+    // architecture. The owner-supplied GLB (buddiesHouseSceneBuilder) is
+    // mounted under the room group in place of the retired procedural
+    // Japanese Pavilion / Plaza Manor shells: its own backdrop dome is
+    // stripped on load (the room dome above stays), its hidden Col_* meshes
+    // feed walk-in collision, and its Roof_*/Ceiling_* nodes are toggled per
+    // camera mode (hidden in the top-down studio, shown on walk-in visits).
     // =========================================================================
-    // ARCHITECTURE STYLE B: CLASSIC PLAZA MANOR (`plaza_manor` — BUILDING BEHIND HANA)
-    // Default Model House (`VIEW MODEL HOUSE`) & Catalog House Option
-    // 1:1 with `LobbyMunicipalClockTowerHall` (`src/game/buddiesBlitzShadersAndAssets.ts` lines 16271-16940):
-    // - Cream-Stucco Walls (`#ede2ce` + `getLv1AndoPlasterWallTexture()`)
-    // - Stepped Limestone Plinths/Lintels/Sills & Classical Doric Columns (`#d6cebe`, `#b5ad9e`, `#e8dec9`)
-    // - Sage-Green Molded Eaves Cornice/Frieze (`#6b8c76` & `#4f6b58`) + Standing-Seam Slate Roof Border (`#667782` + `getLv1SlateZincRoofTexture()`)
-    // - Exposed Terracotta Brick Corner Quoins, Stepped Upper-Wall Brick Patches & Rear Fireplace (`#c48768` & `#ab6f52`)
-    // - 6 Mullioned White-Framed 6-Pane Windows (`#f5f1e6` frame, `#96bcc7` + `getMilitaryWindowPaneTexture(1, 1, false)` glass, `#6b8c76` + `getMilitaryLouverTexture(false)` shutters)
-    // - Arched Double Wooden Entrance Doors (`#9c7148` + `getLv1HorizontalTimberCladdingTexture()` & `#6e4c2c`), Semicircular `#6b8c76` Arch with Solid `#a8cbd4` Fanlight, & 2 Coach Lanterns (`#2b3036` + `#ffe896`)
-    // =========================================================================
-    const makePlazaToonMat = (
-      colorHex: string,
-      mapTex?: THREE.Texture,
-      uvScaleX = 1.0,
-      uvScaleY = 1.0,
-    ): THREE.ShaderMaterial => {
-      const baseColor = new THREE.Color(colorHex);
-      const luma = 0.2126 * baseColor.r + 0.7152 * baseColor.g + 0.0722 * baseColor.b;
-      if (mapTex) {
-        mapTex.colorSpace = THREE.SRGBColorSpace;
-        // 1:1 with `addLobbyPart` (lines 13475-13481): prevent double-darkening in linear space
-        // so `lobbyTimberTex` (`#9c7148`) and `lobbyLouverTex` (`#6b8c76`) render at their true golden-ochre & olive-green colors!
-        if (luma < 0.28) {
-          baseColor.set('#ffffff');
-        } else {
-          baseColor.lerp(new THREE.Color('#ffffff'), 0.65);
-        }
-      } else if (luma < 0.08) {
-        baseColor.lerp(new THREE.Color('#5a6575'), 0.48);
-      }
-      return new THREE.ShaderMaterial({
-        uniforms: {
-          uMap: { value: mapTex ?? null },
-          uHasMap: { value: mapTex ? 1.0 : 0.0 },
-          uUvScale: { value: new THREE.Vector2(uvScaleX, uvScaleY) },
-          uBaseColor: { value: baseColor },
-          uLightColor: { value: new THREE.Color('#fff4d2') },
-          uShadowColor: { value: new THREE.Color('#3b404e') },
-          uEmissive: { value: new THREE.Color(0x000000) },
-          uEmissiveIntensity: { value: 0.0 },
-        },
-        vertexShader: /* glsl */ `
-          varying vec2 vUv;
-          varying vec3 vWorldNormal;
-          void main() {
-            vUv = uv;
-            mat4 worldMat = modelMatrix;
-            vec4 worldPosition = worldMat * vec4(position, 1.0);
-            vWorldNormal = normalize(mat3(worldMat) * normal);
-            gl_Position = projectionMatrix * viewMatrix * worldPosition;
-          }
-        `,
-        fragmentShader: /* glsl */ `
-          uniform sampler2D uMap;
-          uniform float uHasMap;
-          uniform vec2 uUvScale;
-          uniform vec3 uBaseColor;
-          uniform vec3 uLightColor;
-          uniform vec3 uShadowColor;
-          uniform vec3 uEmissive;
-          uniform float uEmissiveIntensity;
-          varying vec2 vUv;
-          varying vec3 vWorldNormal;
+    const glassModernHouseScene = buildGlassModernHouseScene();
+    houseInteriorRoomGrp.add(glassModernHouseScene.root);
 
-          float blitzHalftone(vec2 coord, float scale, float radius) {
-            float c = cos(0.785398);
-            float s = sin(0.785398);
-            vec2 rot = vec2(coord.x * c - coord.y * s, coord.x * s + coord.y * c) * scale;
-            float dist = length(fract(rot) - 0.5);
-            float r = radius * 0.7071;
-            return smoothstep(r - 0.08, r + 0.08, dist);
-          }
-
-          void main() {
-            vec3 albedo = uBaseColor;
-            if (uHasMap > 0.5) {
-              vec4 texCol = texture2D(uMap, vUv * uUvScale);
-              albedo *= texCol.rgb;
-            }
-            vec3 N = normalize(vWorldNormal);
-            vec3 L1 = normalize(vec3(0.35, 0.85, 0.48));
-            vec3 L2 = normalize(vec3(-0.35, 0.78, -0.48));
-            float ndl = max(dot(N, L1), dot(N, L2) * 0.92);
-            float litFactor = clamp((ndl - 0.12) / 0.48, 0.0, 1.0);
-            float shadowFactor = 1.0 - litFactor;
-
-            vec2 screenCoord = gl_FragCoord.xy * 0.0045;
-            float dots = blitzHalftone(screenCoord, 34.0, shadowFactor * 0.45);
-            float shadowBlend = clamp(shadowFactor * (1.0 - dots * 0.06), 0.0, 1.0) * 0.34;
-
-            vec3 litColor = albedo * mix(vec3(1.0), uLightColor, 0.42) * (0.94 + 0.06 * litFactor);
-            vec3 shadedColor = albedo * mix(vec3(0.76, 0.76, 0.80), uShadowColor * 1.45, 0.38);
-            vec3 finalRgb = mix(litColor, shadedColor, shadowBlend) + uEmissive * uEmissiveIntensity;
-
-            gl_FragColor = vec4(finalRgb, 1.0);
-            #include <tonemapping_fragment>
-            #include <colorspace_fragment>
-          }
-        `,
-        side: THREE.DoubleSide,
-      });
-    };
-
-    // Exact Exterior Procedural Textures from `LobbyMunicipalClockTowerHall`
-    const plazaConcreteTex = getLv1AndoPlasterWallTexture().clone();
-    plazaConcreteTex.wrapS = THREE.RepeatWrapping;
-    plazaConcreteTex.wrapT = THREE.RepeatWrapping;
-    plazaConcreteTex.colorSpace = THREE.SRGBColorSpace;
-    plazaConcreteTex.needsUpdate = true;
-
-    const plazaLouverTex = getMilitaryLouverTexture(false);
-    const plazaWindowTex = getMilitaryWindowPaneTexture(1, 1, false);
-
-    const plazaTimberTex = getLv1HorizontalTimberCladdingTexture().clone();
-    plazaTimberTex.wrapS = THREE.RepeatWrapping;
-    plazaTimberTex.wrapT = THREE.RepeatWrapping;
-    plazaTimberTex.colorSpace = THREE.SRGBColorSpace;
-    plazaTimberTex.needsUpdate = true;
-
-    const plazaSlateTex = getLv1SlateZincRoofTexture().clone();
-    plazaSlateTex.wrapS = THREE.RepeatWrapping;
-    plazaSlateTex.wrapT = THREE.RepeatWrapping;
-    plazaSlateTex.colorSpace = THREE.SRGBColorSpace;
-    plazaSlateTex.needsUpdate = true;
-
-    // Plaza Travertine Stone Paver & Fan-Pattern Porphyry Floor Textures (matching the Plaza ground in the screenshot)
-    const plazaTravertineFloorTex = (() => {
-      const c = document.createElement('canvas');
-      c.width = 512;
-      c.height = 512;
-      const ctx = c.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = '#e6dfd1';
-        ctx.fillRect(0, 0, 512, 512);
-        const courseH = 64;
-        const paverTones = ['#eae3d5', '#dfd7c7', '#ece6d9', '#dad1c0', '#e4dccd'];
-        for (let r = 0; r < 8; r++) {
-          const y = r * courseH;
-          const shift = (r % 2) * 64;
-          for (let col = -1; col < 5; col++) {
-            const x = col * 128 + shift;
-            ctx.fillStyle = paverTones[(r * 3 + col + 5) % paverTones.length];
-            ctx.fillRect(x, y, 128, courseH);
-            // Subtle warm stone mottling inside each slab
-            ctx.fillStyle = (r + col) % 2 === 0 ? 'rgba(176, 164, 146, 0.14)' : 'rgba(255, 252, 244, 0.16)';
-            ctx.fillRect(x + 10, y + 8, 108, courseH - 16);
-            // Crisp bevel highlight + warm taupe stone mortar joints
-            ctx.fillStyle = 'rgba(255, 253, 246, 0.45)';
-            ctx.fillRect(x + 3, y + 3, 122, 2);
-            ctx.fillStyle = '#b0a695';
-            ctx.fillRect(x, y + courseH - 3.5, 128, 3.5);
-            ctx.fillRect(x + 124.5, y, 3.5, courseH);
-          }
-        }
-      }
-      const t = new THREE.CanvasTexture(c);
-      t.colorSpace = THREE.SRGBColorSpace;
-      t.wrapS = THREE.RepeatWrapping;
-      t.wrapT = THREE.RepeatWrapping;
-      return t;
-    })();
-
-    const plazaPorphyryFanTex = (() => {
-      const c = document.createElement('canvas');
-      c.width = 512;
-      c.height = 512;
-      const ctx = c.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = '#a8948b';
-        ctx.fillRect(0, 0, 512, 512);
-        const fanCols = ['#b8a399', '#9e8980', '#c2aea4', '#8f7b72'];
-        const spacingX = 128;
-        const spacingY = 86;
-        for (let row = -1; row <= 7; row++) {
-          const cy = row * spacingY;
-          const xShift = (row % 2) * (spacingX * 0.5);
-          for (let col = -1; col <= 5; col++) {
-            const cx = col * spacingX + xShift;
-            for (let ring = 4; ring >= 1; ring--) {
-              const rOuter = ring * 18;
-              ctx.beginPath();
-              ctx.arc(cx, cy, rOuter, Math.PI * 1.12, Math.PI * 1.88);
-              ctx.strokeStyle = fanCols[(row + col + ring + 8) % fanCols.length];
-              ctx.lineWidth = 14;
-              ctx.stroke();
-              ctx.beginPath();
-              ctx.arc(cx, cy, rOuter + 7, Math.PI * 1.1, Math.PI * 1.9);
-              ctx.strokeStyle = '#6e5f58';
-              ctx.lineWidth = 2.2;
-              ctx.stroke();
-            }
-            ctx.strokeStyle = '#6e5f58';
-            ctx.lineWidth = 2;
-            for (let a = 0; a <= 8; a++) {
-              const ang = Math.PI * (1.12 + (a / 8) * 0.76);
-              ctx.beginPath();
-              ctx.moveTo(cx + Math.cos(ang) * 14, cy + Math.sin(ang) * 14);
-              ctx.lineTo(cx + Math.cos(ang) * 76, cy + Math.sin(ang) * 76);
-              ctx.stroke();
-            }
-          }
-        }
-      }
-      const t = new THREE.CanvasTexture(c);
-      t.colorSpace = THREE.SRGBColorSpace;
-      t.wrapS = THREE.RepeatWrapping;
-      t.wrapT = THREE.RepeatWrapping;
-      return t;
-    })();
-
-    const plazaStuccoMat = makePlazaToonMat('#ede2ce', plazaConcreteTex, 0.65, 0.65);
-    const plazaCeilingMat = makePlazaToonMat('#ede2ce', plazaConcreteTex, 3.5, 2.5);
-    const plazaStoneMat = makePlazaToonMat('#d6cebe', plazaConcreteTex, 1.0, 1.0);
-    const plazaStoneDarkMat = makePlazaToonMat('#b5ad9e', plazaConcreteTex, 1.0, 1.0);
-    const plazaColumnShaftMat = makePlazaToonMat('#e8dec9');
-    const plazaSageMat = makePlazaToonMat('#6b8c76');
-    const plazaSageDarkMat = makePlazaToonMat('#4f6b58');
-    const plazaShutterLouverMat = makePlazaToonMat('#6b8c76', plazaLouverTex);
-    const plazaWindowPaneMat = makePlazaToonMat('#96bcc7', plazaWindowTex);
-    const plazaDoorPaneMat = makePlazaToonMat('#9ec2cc', plazaWindowTex);
-    const plazaFanlightMat = makePlazaToonMat('#a8cbd4');
-    const plazaBrickMat = makePlazaToonMat('#c48768');
-    const plazaBrickDarkMat = makePlazaToonMat('#ab6f52');
-    const plazaWoodMat = makePlazaToonMat('#9c7148', plazaTimberTex, 0.48, 1.44);
-    const plazaWoodDarkMat = makePlazaToonMat('#6e4c2c');
-    const plazaSlateRoofMat = makePlazaToonMat('#667782', plazaSlateTex, 5.0, 1.0);
-    const plazaFrameWhiteMat = makePlazaToonMat('#f5f1e6');
-    const plazaGoldMat = makePlazaToonMat('#d9a636');
-    const plazaIronDarkMat = makePlazaToonMat('#2b3036');
-    const plazaLeafGreenMat = makePlazaToonMat('#5c8d46');
-    const plazaHydrangeaPinkMat = makePlazaToonMat('#f0a3b0');
-    const plazaTravertineFloorMat = makePlazaToonMat('#e6dfd1', plazaTravertineFloorTex, 4.5, 3.2);
-    const plazaPorphyryFloorMat = makePlazaToonMat('#c4b4aa', plazaPorphyryFanTex, 2.2, 1.2);
-    const plazaLanternGlowMat = new THREE.MeshBasicMaterial({
-      color: '#ffe896',
-      fog: false,
-    });
-
-    const plazaManorArchGrp = new THREE.Group();
-    plazaManorArchGrp.name = 'PlazaManorArchGrp';
-    houseInteriorRoomGrp.add(plazaManorArchGrp);
-
-    // Dedicated Plaza Manor Travertine Stone Floor & Entrance Fan-Pattern Porphyry Promenade Inlay
-    const plazaManorFloorMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(J - A, 0.042, N - T),
-      plazaTravertineFloorMat,
-    );
-    plazaManorFloorMesh.position.set(0, -0.019, 0);
-    plazaManorFloorMesh.receiveShadow = true;
-    plazaManorArchGrp.add(plazaManorFloorMesh);
-
-    // Fan-Pattern Porphyry Cobblestone Entrance Foyer Mat (`#a8948b`) right inside the Double Entrance Doors
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(3.16, 0.014, 1.48),
-      plazaPorphyryFloorMat,
-      [0, 0.007, N - 0.82],
-      0.0042,
-    );
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(3.32, 0.01, 1.64),
-      plazaStoneDarkMat,
-      [0, 0.004, N - 0.82],
-      0,
-    );
-
-    const plazaManorVisitWallGrp = new THREE.Group();
-    plazaManorVisitWallGrp.name = 'PlazaManorVisitWalls';
-
-    // Helper: 1:1 Plaza Mullioned 6-Pane Window with White Frame, Stone Lintel/Sill, Slate-Teal Glass (`lobbyWindowTex`),
-    // Sage-Green Louvered Shutters (`lobbyLouverTex`) & Exterior Blooming Window Box (`buildCivicShutteredWindow`)
-    let plazaBayWindowSeq = 0;
-    const buildPlazaShutteredWindowBay = (
-      parent: THREE.Object3D,
-      cx: number,
-      cy: number,
-      cz: number,
-      rotY: number,
-      winW = 1.18,
-      winH = 1.48,
-      shutterOpts?: {
-        shutterWidth?: number;
-        omitLeftInterior?: boolean;
-        omitRightInterior?: boolean;
-        omitLeftExterior?: boolean;
-        omitRightExterior?: boolean;
-        windowId?: string;
-      },
-    ) => {
-      const bayIdx = plazaBayWindowSeq++;
-      const wGrp = new THREE.Group();
-      wGrp.position.set(cx, cy, cz);
-      wGrp.rotation.y = rotY;
-
-      // Projecting Stone Lintel Header & Sill (`COL_CH_STONE = #d6cebe` & `COL_CH_STONE_DARK = #b5ad9e`, 1:1 with line 16899)
-      addHouseArchPart(
-        wGrp,
-        new THREE.BoxGeometry(winW + 0.24, 0.14, 0.28),
-        plazaStoneMat,
-        [0, winH / 2 + 0.06, 0],
-        0.0048,
-      );
-      addHouseArchPart(
-        wGrp,
-        new THREE.BoxGeometry(winW + 0.22, 0.1, 0.28),
-        plazaStoneMat,
-        [0, -winH / 2 - 0.04, 0],
-        0.0045,
-      );
-      addHouseArchPart(
-        wGrp,
-        new THREE.BoxGeometry(winW + 0.26, 0.05, 0.3),
-        plazaStoneDarkMat,
-        [0, -winH / 2 - 0.08, 0],
-        0,
-      );
-
-      // Crisp White Outer Window Frame (`#f5f1e6`, 1:1 with line 16900)
-      addHouseArchPart(
-        wGrp,
-        new THREE.BoxGeometry(winW, winH, 0.18),
-        plazaFrameWhiteMat,
-        [0, 0, 0],
-        0.0048,
-      );
-
-      // Deep Slate-Teal Reflective Glass Pane with Dark Olive-Steel Inner Frame (`#96bcc7` + `lobbyWindowTex`, tagged for night sync)
-      const glassPaneMesh = addHouseArchPart(
-        wGrp,
-        new THREE.BoxGeometry(winW - 0.14, winH - 0.14, 0.2),
-        plazaWindowPaneMat,
-        [0, 0, 0],
-        0.0042,
-      );
-      tagCityWindowMesh(
-        glassPaneMesh,
-        createCityWindowSpec(
-          shutterOpts?.windowId ?? `cutaway-plaza-win-${bayIdx}`,
-          'civic',
-          '#96bcc7',
-          1,
-          bayIdx,
-        ),
-      );
-
-      // 6-Pane Crisp White Mullion Crossbars (`#f5f1e6`, 1 vertical, 2 horizontal — 1:1 with lines 16902-16905)
-      addHouseArchPart(
-        wGrp,
-        new THREE.BoxGeometry(0.052, winH - 0.14, 0.22),
-        plazaFrameWhiteMat,
-        [0, 0, 0],
-        0,
-      );
-      for (const my of [-winH * 0.165, winH * 0.165]) {
-        addHouseArchPart(
-          wGrp,
-          new THREE.BoxGeometry(winW - 0.14, 0.046, 0.22),
-          plazaFrameWhiteMat,
-          [0, my, 0],
-          0,
-        );
-      }
-
-      // Left & Right Sage-Green Louvered Wooden Shutters (`zFace = ±0.135` proud of 0.24m stucco walls -> zero coplanar Z-fighting)
-      const shutterW = shutterOpts?.shutterWidth ?? 0.36;
-      for (const sSide of [-1, 1] as const) {
-        const shX = sSide * (winW / 2 + shutterW / 2 + 0.025);
-        for (const zFace of [-0.135, 0.135] as const) {
-          const isExterior = zFace < 0;
-          if (sSide < 0 && isExterior && shutterOpts?.omitLeftExterior) continue;
-          if (sSide < 0 && !isExterior && shutterOpts?.omitLeftInterior) continue;
-          if (sSide > 0 && isExterior && shutterOpts?.omitRightExterior) continue;
-          if (sSide > 0 && !isExterior && shutterOpts?.omitRightInterior) continue;
-          addHouseArchPart(
-            wGrp,
-            new THREE.BoxGeometry(shutterW, winH - 0.04, 0.06),
-            plazaShutterLouverMat,
-            [shX, 0, zFace],
-            0.0045,
-          );
-        }
-      }
-
-      // Wooden Window Flower Box + 3 Green & Pink Hydrangea Blooms on the Exterior Sill (`#9c7148` + `lobbyTimberTex`, 1:1 with lines 16922-16928)
-      addHouseArchPart(
-        wGrp,
-        new THREE.BoxGeometry(winW - 0.04, 0.22, 0.26),
-        plazaWoodMat,
-        [0, -winH / 2 - 0.16, -0.18],
-        0.0045,
-      );
-      for (const bx of [-0.34, 0.0, 0.34] as const) {
-        const bushG = new THREE.DodecahedronGeometry(0.15, 1);
-        bushG.scale(1.15, 0.8, 1.05);
-        addHouseArchPart(wGrp, bushG, plazaLeafGreenMat, [bx, -winH / 2 - 0.02, -0.19], 0.0042);
-        addHouseArchPart(
-          wGrp,
-          new THREE.DodecahedronGeometry(0.1, 0),
-          plazaHydrangeaPinkMat,
-          [bx, -winH / 2 + 0.07, -0.21],
-          0.004,
-        );
-      }
-
-      parent.add(wGrp);
-    };
-
-    // Helper: Alternating Exposed Terracotta Brick Corner Quoins (`COL_CH_BRICK = #c48768` & `#ab6f52`, 1:1 with lines 16743-16765)
-    const buildPlazaCornerQuoins = (
-      parent: THREE.Object3D,
-      cornerX: number,
-      cornerZ: number,
-      maxHeight = ee,
-    ) => {
-      const quoinCount = Math.floor((maxHeight - 0.32) / 0.34);
-      for (let q = 0; q < quoinCount; q++) {
-        const qy = 0.36 + q * 0.34;
-        const isLongX = q % 2 === 0;
-        const qw = isLongX ? 0.42 : 0.26;
-        const qd = isLongX ? 0.26 : 0.42;
-        const mat = q % 3 === 0 ? plazaBrickDarkMat : plazaBrickMat;
-        addHouseArchPart(
-          parent,
-          new THREE.BoxGeometry(qw, 0.25, qd),
-          mat,
-          [cornerX, qy, cornerZ],
-          0.0045,
-        );
-      }
-    };
-
-    // Helper: Stepped Rustic Exposed Terracotta Brick Wall Patches under the Eaves (1:1 with lines 16767-16773 in the screenshot!)
-    const addPlazaSteppedBrickPatch = (
-      parent: THREE.Object3D,
-      px: number,
-      py: number,
-      pz: number,
-      rotY: number,
-    ) => {
-      const pGrp = new THREE.Group();
-      pGrp.position.set(px, py, pz);
-      pGrp.rotation.y = rotY;
-      addHouseArchPart(
-        pGrp,
-        new THREE.BoxGeometry(0.86, 0.24, 0.06),
-        plazaBrickMat,
-        [-0.14, 0.13, 0],
-        0.0045,
-      );
-      addHouseArchPart(
-        pGrp,
-        new THREE.BoxGeometry(0.54, 0.2, 0.06),
-        plazaBrickDarkMat,
-        [0.14, -0.11, 0],
-        0.0045,
-      );
-      parent.add(pGrp);
-    };
-
-    // 1. Plaza Manor Left Wall (`x = A = -5.3`, full height `ee = 4.0m`) with 2 Mullioned Shuttered Windows (`z = -2.1` & `z = 2.05`)
-    addCutawayWallSegment(A - L, A, 0, ee, T, -2.7, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
-    addCutawayWallSegment(A - L, A, 0, 0.82, -2.7, -1.5, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
-    addCutawayWallSegment(A - L, A, 2.5, ee, -2.7, -1.5, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
-    addCutawayWallSegment(A - L, A, 0, ee, -1.5, 1.45, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
-    addCutawayWallSegment(A - L, A, 0, 0.82, 1.45, 2.65, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
-    addCutawayWallSegment(A - L, A, 2.5, ee, 1.45, 2.65, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
-    addCutawayWallSegment(A - L, A, 0, ee, 2.65, N, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
-
-    buildPlazaShutteredWindowBay(plazaManorArchGrp, A - L / 2, 1.66, -2.1, Math.PI / 2, 1.18, 1.68);
-    buildPlazaShutteredWindowBay(plazaManorArchGrp, A - L / 2, 1.66, 2.05, Math.PI / 2, 1.18, 1.68);
-    // Stepped Terracotta Brick Patches above the Left Wall Windows
-    addPlazaSteppedBrickPatch(plazaManorArchGrp, A + 0.02, 3.12, -2.05, Math.PI / 2);
-    addPlazaSteppedBrickPatch(plazaManorArchGrp, A + 0.02, 3.12, 2.1, Math.PI / 2);
-
-    // 2. Plaza Manor Back Wall (`z = T = -3.7`, full height `ee = 4.0m`) with Twin Mullioned Shuttered Windows (`winB: x in [-2.35, 0.75]`)
-    addCutawayWallSegment(A - L, winB.x0, 0, ee, T - L, T, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
-    addCutawayWallSegment(winB.x1, J + L, 0, ee, T - L, T, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
-    addCutawayWallSegment(winB.x0, winB.x1, 0, 0.82, T - L, T, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
-    addCutawayWallSegment(winB.x0, winB.x1, 2.5, ee, T - L, T, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
-    addCutawayWallSegment(-1.02, -0.58, 0.82, 2.5, T - L, T, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
-
-    buildPlazaShutteredWindowBay(plazaManorArchGrp, -1.68, 1.66, T - L / 2, 0, 1.18, 1.68, {
-      shutterWidth: 0.24,
-      windowId: 'cutaway-plaza-back-left',
-    });
-    buildPlazaShutteredWindowBay(plazaManorArchGrp, 0.08, 1.66, T - L / 2, 0, 1.18, 1.68, {
-      shutterWidth: 0.24,
-      omitRightInterior: true,
-      windowId: 'cutaway-plaza-back-right',
-    });
-    // Stepped Terracotta Brick Patches above the Back Wall Windows
-    addPlazaSteppedBrickPatch(plazaManorArchGrp, -3.55, 3.12, T + 0.02, 0);
-    addPlazaSteppedBrickPatch(plazaManorArchGrp, 3.25, 3.12, T + 0.02, 0);
-
-    // 3. Plaza Manor Low Cutaway Front & Right Walls (`Yn = 0.45m`) in Studio Mode
-    addCutawayWallSegment(A - L, -1.32, 0, Yn, N, N + L, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
-    addCutawayWallSegment(1.32, J + L, 0, Yn, N, N + L, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
-    addCutawayWallSegment(J, J + L, 0, Yn, T, N, plazaStuccoMat, plazaManorArchGrp, plazaSageDarkMat);
-
-    // 4. Stepped Grey-Stone Foundation Plinth (`COL_CH_STONE_DARK = #b5ad9e` & `COL_CH_STONE = #d6cebe`) & Upper Molded Sage-Green Eaves Cornice + Slate Roof Border on Back & Left Walls
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(J - A, 0.22, 0.08),
-      plazaStoneDarkMat,
-      [0, 0.11, T + 0.04],
-      0.0045,
-    );
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(J - A, 0.06, 0.095),
-      plazaStoneMat,
-      [0, 0.24, T + 0.045],
-      0,
-    );
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(0.08, 0.22, N - T),
-      plazaStoneDarkMat,
-      [A + 0.04, 0.11, 0],
-      0.0045,
-    );
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(0.095, 0.06, N - T),
-      plazaStoneMat,
-      [A + 0.045, 0.24, 0],
-      0,
-    );
-
-    // Molded Sage-Green Upper Cornice, Dark-Sage Frieze Lip & Standing-Seam Slate Roof Border (`y = ee - 0.30 .. ee`)
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(J - A, 0.2, 0.12),
-      plazaSageMat,
-      [0, ee - 0.28, T + 0.055],
-      0.0048,
-    );
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(J - A, 0.08, 0.16),
-      plazaSageDarkMat,
-      [0, ee - 0.14, T + 0.07],
-      0.0045,
-    );
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(J - A, 0.12, 0.24),
-      plazaSlateRoofMat,
-      [0, ee - 0.04, T + 0.11],
-      0.0045,
-    );
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(0.12, 0.2, N - T),
-      plazaSageMat,
-      [A + 0.055, ee - 0.28, 0],
-      0.0048,
-    );
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(0.16, 0.08, N - T),
-      plazaSageDarkMat,
-      [A + 0.07, ee - 0.14, 0],
-      0.0045,
-    );
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(0.24, 0.12, N - T),
-      plazaSlateRoofMat,
-      [A + 0.11, ee - 0.04, 0],
-      0.0045,
-    );
-
-    // 5. Exposed Terracotta Red-Brick Corner Quoins at the Room Corners (`COL_CH_BRICK`)
-    buildPlazaCornerQuoins(plazaManorArchGrp, A + 0.06, T + 0.06, ee);
-    buildPlazaCornerQuoins(plazaManorArchGrp, J - 0.06, T + 0.06, ee);
-    buildPlazaCornerQuoins(plazaManorArchGrp, A + 0.06, N - 0.06, ee);
-
-    // 6. Sculpted Terracotta Red-Brick Chimney Breast & Classical Limestone Fireplace Mantel on Rear Wall (`x = 1.18`, matching exterior chimney stack!)
-    const chimneyX = 1.18;
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(0.76, ee - 0.18, 0.24),
-      plazaBrickMat,
-      [chimneyX, (ee - 0.18) / 2, T + 0.12],
-      0.0048,
-    );
-    for (let cyRow = 0; cyRow < 11; cyRow++) {
-      addHouseArchPart(
-        plazaManorArchGrp,
-        new THREE.BoxGeometry(0.8, 0.14, 0.26),
-        cyRow % 2 === 0 ? plazaBrickDarkMat : plazaBrickMat,
-        [chimneyX, 1.28 + cyRow * 0.22, T + 0.12],
-        0,
-      );
-    }
-    // Limestone Fireplace Mantel Surround & Warm Hearth Glow
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(0.92, 0.1, 0.32),
-      plazaStoneMat,
-      [chimneyX, 1.08, T + 0.15],
-      0.0045,
-    );
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(0.14, 0.98, 0.28),
-      plazaStoneMat,
-      [chimneyX - 0.34, 0.54, T + 0.14],
-      0.0045,
-    );
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(0.14, 0.98, 0.28),
-      plazaStoneMat,
-      [chimneyX + 0.34, 0.54, T + 0.14],
-      0.0045,
-    );
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(0.54, 0.78, 0.22),
-      plazaIronDarkMat,
-      [chimneyX, 0.44, T + 0.14],
-      0,
-    );
-    addHouseArchPart(
-      plazaManorArchGrp,
-      new THREE.BoxGeometry(0.38, 0.22, 0.24),
-      plazaLanternGlowMat,
-      [chimneyX, 0.22, T + 0.15],
-      0,
-    );
-
-    // 7. Full-Height Wall Completions for `plaza_manor` in `house_visit` mode
-    // Front Wall (`z = N`) with 2 Front Mullioned Shuttered Windows (`x = -3.25` and `x = +3.25`) flanking the Arched Double Entrance Doors
-    addVisitWall(A - L, -3.84, Yn, ee, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
-    addVisitWall(-3.84, -2.66, Yn, 0.82, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
-    addVisitWall(-3.84, -2.66, 2.5, ee, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
-    addVisitWall(-2.66, -1.32, Yn, ee, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
-    addVisitWall(-1.32, 1.32, 2.28, ee, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
-    addVisitWall(1.32, 2.66, Yn, ee, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
-    addVisitWall(2.66, 3.84, Yn, 0.82, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
-    addVisitWall(2.66, 3.84, 2.5, ee, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
-    addVisitWall(3.84, J + L, Yn, ee, N, N + L, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
-
-    buildPlazaShutteredWindowBay(plazaManorVisitWallGrp, -3.25, 1.66, N + L / 2, Math.PI, 1.18, 1.68);
-    buildPlazaShutteredWindowBay(plazaManorVisitWallGrp, 3.25, 1.66, N + L / 2, Math.PI, 1.18, 1.68);
-    // Stepped Exposed Terracotta Brick Patches above the Front Wall Windows (1:1 with the screenshot!)
-    addPlazaSteppedBrickPatch(plazaManorVisitWallGrp, -3.25, 3.12, N - 0.02, Math.PI);
-    addPlazaSteppedBrickPatch(plazaManorVisitWallGrp, 3.25, 3.12, N - 0.02, Math.PI);
-    addPlazaSteppedBrickPatch(plazaManorVisitWallGrp, -3.25, 3.12, N + L + 0.02, 0);
-    addPlazaSteppedBrickPatch(plazaManorVisitWallGrp, 3.25, 3.12, N + L + 0.02, 0);
-
-    // Right Wall (`x = J = +5.3`) with 2 Mullioned Shuttered Windows (`z = -1.9` & `z = 1.55`, matching the 2 East-elevation windows)
-    addVisitWall(J, J + L, Yn, ee, T, -2.49, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
-    addVisitWall(J, J + L, Yn, 0.82, -2.49, -1.31, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
-    addVisitWall(J, J + L, 2.5, ee, -2.49, -1.31, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
-    addVisitWall(J, J + L, Yn, ee, -1.31, 0.96, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
-    addVisitWall(J, J + L, Yn, 0.82, 0.96, 2.14, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
-    addVisitWall(J, J + L, 2.5, ee, 0.96, 2.14, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
-    addVisitWall(J, J + L, Yn, ee, 2.14, N, plazaStuccoMat, plazaManorVisitWallGrp, plazaSageDarkMat);
-
-    buildPlazaShutteredWindowBay(plazaManorVisitWallGrp, J + L / 2, 1.66, -1.9, -Math.PI / 2, 1.18, 1.68);
-    buildPlazaShutteredWindowBay(plazaManorVisitWallGrp, J + L / 2, 1.66, 1.55, -Math.PI / 2, 1.18, 1.68);
-    addPlazaSteppedBrickPatch(plazaManorVisitWallGrp, J - 0.02, 3.12, -1.85, -Math.PI / 2);
-    addPlazaSteppedBrickPatch(plazaManorVisitWallGrp, J - 0.02, 3.12, 1.6, -Math.PI / 2);
-    buildPlazaCornerQuoins(plazaManorVisitWallGrp, J - 0.06, N - 0.06, ee);
-
-    // Stepped Grey-Stone Foundation Plinth + Molded Sage-Green Upper Cornice, Frieze & Standing-Seam Slate Roof Border on Front & Right Visit Walls
-    addHouseArchPart(
-      plazaManorVisitWallGrp,
-      new THREE.BoxGeometry(0.08, 0.22, N - T),
-      plazaStoneDarkMat,
-      [J - 0.04, 0.11, 0],
-      0.0045,
-    );
-    addHouseArchPart(
-      plazaManorVisitWallGrp,
-      new THREE.BoxGeometry(J - A, 0.2, 0.12),
-      plazaSageMat,
-      [0, ee - 0.28, N - 0.055],
-      0.0048,
-    );
-    addHouseArchPart(
-      plazaManorVisitWallGrp,
-      new THREE.BoxGeometry(J - A, 0.08, 0.16),
-      plazaSageDarkMat,
-      [0, ee - 0.14, N - 0.07],
-      0.0045,
-    );
-    addHouseArchPart(
-      plazaManorVisitWallGrp,
-      new THREE.BoxGeometry(J - A, 0.12, 0.24),
-      plazaSlateRoofMat,
-      [0, ee - 0.04, N - 0.11],
-      0.0045,
-    );
-    addHouseArchPart(
-      plazaManorVisitWallGrp,
-      new THREE.BoxGeometry(0.12, 0.2, N - T),
-      plazaSageMat,
-      [J - 0.055, ee - 0.28, 0],
-      0.0048,
-    );
-    addHouseArchPart(
-      plazaManorVisitWallGrp,
-      new THREE.BoxGeometry(0.16, 0.08, N - T),
-      plazaSageDarkMat,
-      [J - 0.07, ee - 0.14, 0],
-      0.0045,
-    );
-    addHouseArchPart(
-      plazaManorVisitWallGrp,
-      new THREE.BoxGeometry(0.24, 0.12, N - T),
-      plazaSlateRoofMat,
-      [J - 0.11, ee - 0.04, 0],
-      0.0045,
-    );
-
-    // Plaza Manor High Coffered Cream-Plaster Ceiling (`y = ee = 4.0m`) with Horizontal-Plank Timber Beams & 3 Classic Brass Ceiling Luminaires
-    const plazaVisitCeiling = new THREE.Mesh(
-      new THREE.BoxGeometry(J - A + 0.3, 0.08, N - T + 0.3),
-      plazaCeilingMat,
-    );
-    plazaVisitCeiling.position.set(0, ee + 0.04, 0);
-    plazaVisitCeiling.castShadow = false;
-    plazaVisitCeiling.receiveShadow = false;
-    plazaVisitCeiling.raycast = () => {};
-    plazaManorVisitWallGrp.add(plazaVisitCeiling);
-    for (let rx = -4.2; rx <= 4.21; rx += 1.68) {
-      addHouseArchPart(
-        plazaManorVisitWallGrp,
-        new THREE.BoxGeometry(0.16, 0.12, N - T - 0.1),
-        plazaWoodMat,
-        [rx, ee - 0.05, 0],
-        0.0048,
-      );
-    }
-    // 3 Classic Brass & Warm Milk-Glass Ceiling Plafond Luminaires along the 4.0m Ceiling Centerline
-    for (const lx of [-2.9, 0.0, 2.9] as const) {
-      addHouseArchPart(
-        plazaManorVisitWallGrp,
-        new THREE.CylinderGeometry(0.36, 0.38, 0.06, 20),
-        plazaGoldMat,
-        [lx, ee - 0.04, 0],
-        0.0042,
-      );
-      addHouseArchPart(
-        plazaManorVisitWallGrp,
-        new THREE.CylinderGeometry(0.31, 0.24, 0.14, 20),
-        plazaLanternGlowMat,
-        [lx, ee - 0.12, 0],
-        0,
-      );
-    }
-
-    // Sunny Plaza Garden Backdrops outside all 4 walls for Plaza Manor
-    const plazaBackBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(8.8, 4.8), backdropMat);
-    plazaBackBackdrop.position.set(-0.6, 2.1, T - 0.85);
-    plazaBackBackdrop.raycast = () => {};
-    plazaManorVisitWallGrp.add(plazaBackBackdrop);
-    const plazaLeftBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(7.8, 4.8), backdropMat);
-    plazaLeftBackdrop.rotation.y = Math.PI / 2;
-    plazaLeftBackdrop.position.set(A - 0.85, 2.1, 0);
-    plazaLeftBackdrop.raycast = () => {};
-    plazaManorVisitWallGrp.add(plazaLeftBackdrop);
-    const plazaRightBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(7.8, 4.8), backdropMat);
-    plazaRightBackdrop.rotation.y = -Math.PI / 2;
-    plazaRightBackdrop.position.set(J + 0.85, 2.1, 0);
-    plazaRightBackdrop.raycast = () => {};
-    plazaManorVisitWallGrp.add(plazaRightBackdrop);
-    const plazaFrontBackdrop = new THREE.Mesh(new THREE.PlaneGeometry(9.6, 4.8), backdropMat);
-    plazaFrontBackdrop.rotation.y = Math.PI;
-    plazaFrontBackdrop.position.set(0, 2.1, N + 3.4);
-    plazaFrontBackdrop.raycast = () => {};
-    plazaManorVisitWallGrp.add(plazaFrontBackdrop);
-
-    // Stepped Limestone Entrance Steps & Fan-Pattern Porphyry Promenade outside the Plaza Manor Front Door
-    addHouseArchPart(
-      plazaManorVisitWallGrp,
-      new THREE.BoxGeometry(3.72, 0.12, 1.35),
-      plazaStoneMat,
-      [0, -0.04, N + 0.72],
-      0.0048,
-    );
-    addHouseArchPart(
-      plazaManorVisitWallGrp,
-      new THREE.BoxGeometry(3.96, 0.12, 1.65),
-      plazaPorphyryFloorMat,
-      [0, -0.11, N + 1.58],
-      0.0048,
-    );
-
-    // 8. Plaza Manor Arched Double Wooden Entrance Doors, Semicircular Fanlight, 2 Coach Lanterns & 2 Classical Fluted Doric Stone Columns (`z = N = 3.7`)
-    // 1:1 with `LobbyMunicipalClockTowerHall` lines 16804-16885 in `screenshot_3_a4ff8f1c.png`!
-    const plazaManorExitDoorGrp = new THREE.Group();
-    plazaManorExitDoorGrp.position.set(0, 0, N);
-
-    // Cream-Stone Portal Surround Frame (`COL_CH_STONE = #d6cebe`, 1:1 with line 16859 in `screenshot_3_a4ff8f1c.png`)
-    addHouseArchPart(
-      plazaManorExitDoorGrp,
-      new THREE.BoxGeometry(0.18, 2.26, 0.3),
-      plazaStoneMat,
-      [-1.28, 1.13, 0.08],
-      0.0048,
-    );
-    addHouseArchPart(
-      plazaManorExitDoorGrp,
-      new THREE.BoxGeometry(0.18, 2.26, 0.3),
-      plazaStoneMat,
-      [1.28, 1.13, 0.08],
-      0.0048,
-    );
-    addHouseArchPart(
-      plazaManorExitDoorGrp,
-      new THREE.BoxGeometry(2.74, 0.16, 0.32),
-      plazaStoneMat,
-      [0, 2.2, 0.08],
-      0.0048,
-    );
-
-    // 2 Classical Fluted Doric/Tuscan Cream-Stone Columns (`#e8dec9` shaft, `#d6cebe` pedestal/capital, `#b5ad9e` torus/abacus — 1:1 with lines 16805-16814)
-    for (const colSide of [-1, 1] as const) {
-      const cx = colSide * 1.92;
-      const cz = -0.14;
-      addHouseArchPart(
-        plazaManorVisitWallGrp,
-        new THREE.BoxGeometry(0.46, 0.42, 0.46),
-        plazaStoneMat,
-        [cx, 0.21, N + cz],
-        0.0048,
-      );
-      addHouseArchPart(
-        plazaManorVisitWallGrp,
-        new THREE.CylinderGeometry(0.2, 0.22, 0.1, 12),
-        plazaStoneDarkMat,
-        [cx, 0.47, N + cz],
-        0.0045,
-      );
-      addHouseArchPart(
-        plazaManorVisitWallGrp,
-        new THREE.CylinderGeometry(0.16, 0.19, 2.86, 12),
-        plazaColumnShaftMat,
-        [cx, 1.95, N + cz],
-        0.0048,
-      );
-      addHouseArchPart(
-        plazaManorVisitWallGrp,
-        new THREE.CylinderGeometry(0.22, 0.17, 0.12, 12),
-        plazaStoneMat,
-        [cx, 3.44, N + cz],
-        0.0045,
-      );
-      addHouseArchPart(
-        plazaManorVisitWallGrp,
-        new THREE.BoxGeometry(0.46, 0.1, 0.46),
-        plazaStoneDarkMat,
-        [cx, 3.55, N + cz],
-        0.0045,
-      );
-    }
-
-    // Semicircular Sage-Green Arch & Solid Soft Dusty-Aqua Fanlight Transom above the Double Doors (`#6b8c76` & `#a8cbd4`, 1:1 with lines 16870-16877)
-    // Protrudes proudly on both the interior (`z = -0.05`) and exterior (`z = +0.27`) wall faces so it is 100% visible above the stone lintel!
-    const fanlightArchOuterGeo = new THREE.CylinderGeometry(1.16, 1.16, 0.3, 24, 1, false, 0, Math.PI);
-    fanlightArchOuterGeo.rotateZ(Math.PI / 2);
-    fanlightArchOuterGeo.rotateY(Math.PI / 2);
-    addHouseArchPart(
-      plazaManorExitDoorGrp,
-      fanlightArchOuterGeo,
-      plazaSageMat,
-      [0, 2.26, 0.1],
-      0.0048,
-    );
-
-    const fanlightGlassGeo = new THREE.CylinderGeometry(0.96, 0.96, 0.33, 24, 1, false, 0, Math.PI);
-    fanlightGlassGeo.rotateZ(Math.PI / 2);
-    fanlightGlassGeo.rotateY(Math.PI / 2);
-    addHouseArchPart(
-      plazaManorExitDoorGrp,
-      fanlightGlassGeo,
-      plazaFanlightMat,
-      [0, 2.26, 0.1],
-      0.0042,
-    );
-
-    // 2 Vintage Coach Wall Lanterns flanking the Entrance Door (`#2b3036` dark iron bracket/cap + `#ffe896` 4-sided tapered lantern glass — 1:1 with lines 16880-16885)
-    for (const lx of [-1.54, 1.54] as const) {
-      addHouseArchPart(
-        plazaManorExitDoorGrp,
-        new THREE.BoxGeometry(0.09, 0.22, 0.14),
-        plazaIronDarkMat,
-        [lx, 1.72, -0.04],
-        0.004,
-      );
-      addHouseArchPart(
-        plazaManorExitDoorGrp,
-        new THREE.CylinderGeometry(0.12, 0.08, 0.26, 4),
-        plazaLanternGlowMat,
-        [lx, 1.72, -0.14],
-        0.0042,
-        [0, Math.PI / 4, 0],
-      );
-      addHouseArchPart(
-        plazaManorExitDoorGrp,
-        new THREE.ConeGeometry(0.15, 0.12, 4),
-        plazaIronDarkMat,
-        [lx, 1.9, -0.14],
-        0.004,
-        [0, Math.PI / 4, 0],
-      );
-    }
-
-    // Build Hinged Double Wooden Entrance Door Leaves (`#9c7148` + `lobbyTimberTex` with `#ffffff` base tint so planks are bright golden-ochre,
-    // cream-stone outer border trim `#d6cebe`, upper `#9ec2cc` + `lobbyWindowTex` dark-framed glass pane, lower `#6e4c2c` recessed brown panel, and `#d9a636` round gold knob — 1:1 with `screenshot_3_a4ff8f1c.png`!)
-    const buildPlazaTimberDoorLeaf = (sideSign: -1 | 1) => {
-      const pivotGrp = new THREE.Group();
-      const leafW = 1.14;
-      const leafH = 2.12;
-      const offsetX = -sideSign * (leafW / 2 + 0.02);
-
-      // Cream-stone inner meeting/astragal edge strip (`#d6cebe`) matching the vertical cream-stone center strip in `screenshot_3_a4ff8f1c.png`
-      addHouseArchPart(
-        pivotGrp,
-        new THREE.BoxGeometry(0.045, leafH, 0.1),
-        plazaStoneMat,
-        [-sideSign * (leafW + 0.02), leafH / 2, 0],
-        0,
-      );
-
-      // Main warm golden-ochre horizontal-plank timber door leaf (`COL_CH_WOOD = #9c7148` + `lobbyTimberTex`)
-      addHouseArchPart(
-        pivotGrp,
-        new THREE.BoxGeometry(leafW, leafH, 0.085),
-        plazaWoodMat,
-        [offsetX, leafH / 2, 0],
-        0.0048,
-      );
-      // Upper glazed window inset with dark olive-charcoal frame & diagonal sky reflection (`#9ec2cc` + `lobbyWindowTex`, 1:1 with line 16864)
-      addHouseArchPart(
-        pivotGrp,
-        new THREE.BoxGeometry(leafW - 0.32, 0.82, 0.115),
-        plazaDoorPaneMat,
-        [offsetX, 1.48, 0],
-        0.0042,
-      );
-      // Lower recessed warm brown wood panel (`COL_CH_WOOD_DARK = #6e4c2c`, 1:1 with line 16865)
-      addHouseArchPart(
-        pivotGrp,
-        new THREE.BoxGeometry(leafW - 0.32, 0.72, 0.115),
-        plazaWoodDarkMat,
-        [offsetX, 0.54, 0],
-        0.0042,
-      );
-      // Round Gold/Brass Door Knob (`COL_CH_GOLD = #d9a636`, 1:1 with line 16867 in `screenshot_3_a4ff8f1c.png`)
-      for (const zKnob of [-0.075, 0.075] as const) {
-        addHouseArchPart(
-          pivotGrp,
-          new THREE.SphereGeometry(0.048, 10, 10),
-          plazaGoldMat,
-          [offsetX - sideSign * (leafW * 0.36), 0.99, zKnob],
-          0.0042,
-        );
-      }
-      return pivotGrp;
-    };
-
-    const plazaDoorLeftPivot = buildPlazaTimberDoorLeaf(-1);
-    plazaDoorLeftPivot.position.set(-1.17, 0, 0.04);
-    const plazaDoorRightPivot = buildPlazaTimberDoorLeaf(1);
-    plazaDoorRightPivot.position.set(1.17, 0, 0.04);
-
-    const plazaThresholdMat = new THREE.Mesh(
-      new THREE.BoxGeometry(2.56, 0.026, 0.52),
-      plazaStoneMat,
-    );
-    plazaThresholdMat.position.set(0, 0.013, -0.22);
-    plazaManorExitDoorGrp.add(plazaDoorLeftPivot, plazaDoorRightPivot, plazaThresholdMat);
-    plazaManorExitDoorGrp.traverse((c) => {
-      c.raycast = () => {};
-    });
-    plazaManorArchGrp.add(plazaManorExitDoorGrp);
-
-    // Master Visit-Wall Container holding both architecture styles' visit walls
+    // Master Visit-Wall Container (holds the walk-in exit-door floor pad)
     const houseVisitWallGrp = new THREE.Group();
     houseVisitWallGrp.name = 'HouseVisitFullWalls';
-    houseVisitWallGrp.add(plazaManorVisitWallGrp, japaneseVisitWallGrp);
     houseVisitWallGrp.visible = false;
     houseInteriorRoomGrp.add(houseVisitWallGrp);
 
-    let currentHouseArchStyle: 'plaza_manor' | 'japanese_pavilion' = 'plaza_manor';
-    const syncHouseArchitectureStyle = (style: 'plaza_manor' | 'japanese_pavilion') => {
+    let currentHouseArchStyle: HouseArchitectureStyle = 'glass_modern';
+    const syncHouseArchitectureStyle = (style: HouseArchitectureStyle) => {
       currentHouseArchStyle = style;
-      const isPlaza = style === 'plaza_manor';
-      plazaManorArchGrp.visible = isPlaza;
-      plazaManorVisitWallGrp.visible = isPlaza;
-      roomFloor.visible = !isPlaza;
-      japanesePavilionArchGrp.visible = !isPlaza;
-      japaneseVisitWallGrp.visible = !isPlaza;
+      glassModernHouseScene.root.visible = true;
+      // The GLB brings its own floor slabs, so the shared cutaway floor
+      // (previously shown for the pavilion shell) stays hidden.
+      roomFloor.visible = false;
     };
-    syncHouseArchitectureStyle('plaza_manor');
+    syncHouseArchitectureStyle('glass_modern');
 
-    const syncHouseSlidingEntranceDoors = (swingFrac: number) => {
-      // Japanese Pavilion sliding glass/shoji doors
-      const slideOffset = swingFrac * 0.98;
-      houseExitDoorLeftSlide.position.x = -0.62 - slideOffset;
-      houseExitDoorRightSlide.position.x = 0.62 + slideOffset;
-      // Classic Plaza Manor hinged double timber doors
-      const swingAngle = swingFrac * 1.18;
-      plazaDoorLeftPivot.rotation.y = -swingAngle;
-      plazaDoorRightPivot.rotation.y = swingAngle;
+    // Walk-in visits see the full house (visit walls + roof/ceiling); the
+    // top-down decor studio hides the roof/ceiling for the cutaway view.
+    // The GLB's entrance doors are static, so no door-swing sync remains.
+    const syncHouseSceneModeVisibility = (isVisitMode: boolean) => {
+      houseVisitWallGrp.visible = isVisitMode;
+      glassModernHouseScene.setRoofCeilingVisible(isVisitMode);
     };
 
-    let houseDoorSwing = 0;
-    let houseDoorSwingPrevT = 0;
 
     // Framed Dynamic Wall Art on Back Wall above the bed headboard (`y = 1.78`, cleanly above headboard top `y = 1.34` and below beam `y = 2.15`, zero z-fighting!)
     const wallArtCanvas = document.createElement('canvas');
@@ -9760,11 +7952,20 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       }
     };
 
-    // Indoor collision for `house_visit`: the partition walls (with their
-    // doorway gaps left open), the background-zone furniture in the sample
-    // house, and any furniture placed in the player's own house. The avatar
-    // is a circle pushed out of each oriented footprint box.
+    // Indoor collision for `house_visit`: the Glass Modern GLB's wall /
+    // partition collider footprints, the background-zone furniture in the
+    // sample house, and any furniture placed in the player's own house.
+    // The avatar is a circle pushed out of each oriented footprint box.
     const HOUSE_PLAYER_RADIUS = 0.34;
+    // Only the GLB colliders that form the house's walls, room partitions,
+    // and fixed joinery block walk-in movement; floors, glass door panels,
+    // and the yard dressing (bamboo, maples, pond, courtyard) stay passable
+    // or sit outside the clamped room bounds.
+    const HOUSE_GLB_WALL_COLLIDER_PREFIXES = ['Col_Wall_', 'Col_Part_', 'Col_Kitchen_'];
+    const isHouseGlbWallCollider = (c: HouseSceneColliderAabb): boolean =>
+      HOUSE_GLB_WALL_COLLIDER_PREFIXES.some((p) => c.name.startsWith(p)) ||
+      c.name === 'Col_Wardrobe' ||
+      c.name === 'Col_BathTub';
     const pushPlayerOutOfHouseObb = (
       cx: number,
       cz: number,
@@ -9804,6 +8005,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     };
     const resolveHouseVisitCollisions = () => {
       if (!playerUnit) return;
+      for (const c of glassModernHouseScene.colliders) {
+        if (isHouseGlbWallCollider(c)) {
+          pushPlayerOutOfHouseObb(c.x, c.z, c.hw, c.hd, 0);
+        }
+      }
       if (sampleHouseZonesGrp && sampleHouseZonesGrp.visible) {
         for (const c of BUDDIES_ZONE_COLLIDERS) {
           pushPlayerOutOfHouseObb(c.x, c.z, c.hw, c.hd, c.ry);
@@ -9971,7 +8177,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     let currentOwnedHouseStyle: HouseArchitectureStyle =
       parseOptionalHouseArchitectureStyle(
         initialMpAppSync?.ownedHouseStyle ?? initialMpAppSync?.houseArchitectureStyle,
-      ) ?? 'plaza_manor';
+      ) ?? 'glass_modern';
     let syncClaimedPlotHouseStyleVisuals: ((style: HouseArchitectureStyle) => void) | null =
       null;
     let flyTargetMode: 'character_select' | 'gameplay' =
@@ -10110,8 +8316,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           activeCafeOrderLabel?: string;
           activeCafeOrderAccent?: string;
           activeCafeOrderCategory?: 'drink' | 'pastry' | null;
-          houseArchitectureStyle?: 'plaza_manor' | 'japanese_pavilion';
-          ownedHouseStyle?: 'plaza_manor' | 'japanese_pavilion' | null;
+          houseArchitectureStyle?: HouseArchitectureStyle;
+          ownedHouseStyle?: HouseArchitectureStyle | null;
           onboardingCompleted?: boolean;
           characterGender?: CharacterGender;
           playerDisplayName?: string;
@@ -10218,13 +8424,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       if (typeof detail.isSampleHouse === 'boolean') {
         mpIsSampleHouse = detail.isSampleHouse;
       }
-      if (
-        detail.houseArchitectureStyle === 'plaza_manor' ||
-        detail.houseArchitectureStyle === 'japanese_pavilion'
-      ) {
-        syncHouseArchitectureStyle(detail.houseArchitectureStyle);
-      } else if (detail.isSampleHouse === true && currentHouseArchStyle !== 'plaza_manor') {
-        syncHouseArchitectureStyle('plaza_manor');
+      const requestedHouseStyle = parseOptionalHouseArchitectureStyle(
+        detail.houseArchitectureStyle,
+      );
+      if (requestedHouseStyle) {
+        syncHouseArchitectureStyle(requestedHouseStyle);
+      } else if (detail.isSampleHouse === true && currentHouseArchStyle !== 'glass_modern') {
+        syncHouseArchitectureStyle('glass_modern');
       }
       const nextOwnedStyle = parseOptionalHouseArchitectureStyle(detail.ownedHouseStyle);
       if (nextOwnedStyle) {
@@ -10639,11 +8845,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           if (sampleHouseZonesGrp && typeof detail.isSampleHouse === 'boolean') {
             sampleHouseZonesGrp.visible = detail.isSampleHouse;
           }
-          houseVisitWallGrp.visible = detail.mode === 'house_visit';
-          if (detail.mode !== 'house_visit') {
-            houseDoorSwing = 0;
-            syncHouseSlidingEntranceDoors(0);
-          }
+          syncHouseSceneModeVisibility(detail.mode === 'house_visit');
           if (!wasHouseMode && playerUnit) {
             savedOutdoorHousePos = {
               x: playerUnit.x,
@@ -30802,13 +29004,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             lastRenderedFov = applyFov;
             hasLastRenderedCamPose = true;
           }
-          // Slide the twin shoji/glass entrance doors apart as the player approaches
-          const doorDt = clamp(timeSec - houseDoorSwingPrevT, 0, 0.05);
-          houseDoorSwingPrevT = timeSec;
-          const distToDoor = Math.hypot(playerUnit.x, playerUnit.z - 3.35);
-          const doorTarget = distToDoor <= 2.2 ? 1 : 0;
-          houseDoorSwing += (doorTarget - houseDoorSwing) * Math.min(1, doorDt * 5.5);
-          syncHouseSlidingEntranceDoors(houseDoorSwing);
         } else {
           const targetEditFov = 34;
           if (camera.fov !== targetEditFov) {
@@ -36693,7 +34888,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                 lv1Building: THREE.Group;
                 lv2Building: THREE.Group;
                 lv3Building: THREE.Group;
-                plazaManorBuilding?: THREE.Group;
               }>;
             }
           ).__plotControllers;
@@ -36702,10 +34896,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             (pc) =>
               Boolean(
                 pc.plotRoot.visible &&
-                  (pc.lv1Building.visible ||
-                    pc.lv2Building.visible ||
-                    pc.lv3Building.visible ||
-                    pc.plazaManorBuilding?.visible),
+                  (pc.lv1Building.visible || pc.lv2Building.visible || pc.lv3Building.visible),
               ),
           );
         };
@@ -37373,6 +35564,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         Boolean(document.querySelector('[data-scooter-showroom-modal="true"]')) ||
         Boolean(document.querySelector('[data-fashion-boutique-modal="true"]')) ||
         Boolean(document.querySelector('[data-realestate-catalog-modal="true"]')) ||
+        Boolean(document.querySelector('[data-lot-rental-modal="true"]')) ||
         Boolean(document.querySelector('[data-cafe-prep-modal="true"]')) ||
         Boolean(document.querySelector('[data-cafe-barista-modal="true"]'));
 
@@ -37755,6 +35947,40 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                   },
                 },
               );
+            }
+          }
+
+          // Commercial Rental Lot Kiosk Pins — simulation front door (owner QC):
+          // standing at a lot's claim kiosk offers Rent Lot (available/freeing)
+          // or Manage Lot (rented/grace), opening the lot rental panel in App.
+          if (
+            !playerUnit.isSitting &&
+            worldModeRef.current !== 'warzone' &&
+            cityRentalLotsController.rootGroup.visible
+          ) {
+            for (let li = 0; li < cityRentalLotsController.lotNodes.length; li++) {
+              const node = cityRentalLotsController.lotNodes[li];
+              if (!node.lotRoot.visible) continue;
+              const dLot = getPlanetShortestDistance(actorX, actorZ, node.spec.x, node.spec.z);
+              if (dLot > 3.4) continue;
+              const lotStatus = shopLotPlacementState.lotStatusBySlotId[node.spec.slotId];
+              const isManaged = lotStatus === 'rented' || lotStatus === 'grace';
+              const slotId = node.spec.slotId;
+              const y = getTerrainElevation(node.spec.x, node.spec.z) + 2.95;
+              pushWorldPin(node.spec.x, y, node.spec.z, {
+                id: isManaged ? `lot_manage_${slotId}` : `lot_rent_${slotId}`,
+                inRange: true,
+                distance: dLot,
+                priority: 30,
+                icon: 'shop_estate',
+                label: isManaged ? 'Manage Lot' : 'Rent Lot',
+                accent: isManaged ? 'amber' : 'emerald',
+                onTrigger: () => {
+                  window.dispatchEvent(
+                    new CustomEvent('open-lot-rental', { detail: { lotId: slotId } }),
+                  );
+                },
+              });
             }
           }
 
@@ -39641,6 +37867,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         if (salonInterior) salonInterior.root.visible = false;
         houseInteriorRoomGrp.visible = true;
         houseVisitWallGrp.visible = true;
+        const prevHouseRoofVis = glassModernHouseScene.isRoofCeilingVisible();
+        glassModernHouseScene.setRoofCeilingVisible(true);
         if (sampleHouseZonesGrp) sampleHouseZonesGrp.visible = true;
         applyHouseDaylightVisuals(13.0, 0);
         snapCam.fov = 48;
@@ -39648,6 +37876,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         snapCam.position.set(3.5, HOUSE_ORIGIN_Y + 2.55, 3.5);
         snapCam.lookAt(-0.8, HOUSE_ORIGIN_Y + 1.05, -1.2);
         thumbnails.my_house = renderCurrentViewToDataUrl();
+        glassModernHouseScene.setRoofCeilingVisible(prevHouseRoofVis);
         if (sampleHouseZonesGrp) sampleHouseZonesGrp.visible = prevSampleZonesVis;
 
         // 9. jobs_cafe & cafe_glasshouse: Clean Glasshouse Cafe view (reuse interior when loaded,

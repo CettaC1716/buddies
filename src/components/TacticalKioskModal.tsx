@@ -887,12 +887,10 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
                         >
                           <div className="min-w-0">
                             <div className="text-xs font-bold uppercase text-white">
-                              {style === 'plaza_manor' ? 'Classic Plaza Manor' : 'Japanese Pavilion'}
+                              Glass Modern House
                             </div>
                             <div className="text-[10.5px] font-medium text-slate-300">
-                              {style === 'plaza_manor'
-                                ? 'Stone manor, round front porch, twin stairs.'
-                                : 'Wooden pavilion, tiled roof, garden front.'}
+                              Glass walls, zen garden, lotus pond.
                             </div>
                             <div className="text-[9.5px] font-bold uppercase text-emerald-400 mt-0.5">
                               From your deed NFT

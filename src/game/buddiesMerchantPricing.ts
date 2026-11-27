@@ -569,22 +569,17 @@ export function formatHouseDeedBadgeLabel(deedTokenId?: string | null): string {
   return 'HOUSE DEED';
 }
 
-export function getHouseStyleDisplaySpec(style: 'plaza_manor' | 'japanese_pavilion'): {
+export function getHouseStyleDisplaySpec(style: 'glass_modern'): {
   title: string;
   imageSrc: string;
   description: string;
 } {
-  if (style === 'japanese_pavilion') {
-    return {
-      title: 'JAPANESE PAVILION HOUSE',
-      imageSrc: '/assets/kiosk/house_exterior.jpg',
-      description: 'Japanese Pavilion house deed — unlocks residential plots and interior customization.',
-    };
-  }
+  void style;
   return {
-    title: 'CLASSIC PLAZA MANOR',
-    imageSrc: '/assets/kiosk/plaza_manor_exterior.jpg',
-    description: 'Classic Plaza Manor house deed — unlocks residential plots and interior customization.',
+    title: 'GLASS MODERN HOUSE',
+    imageSrc: '/assets/kiosk/glass_modern_exterior.jpg',
+    description:
+      'Glass Modern house deed — unlocks residential plots and interior customization.',
   };
 }
 
@@ -2390,7 +2385,7 @@ export function evaluateRoomMoodScores(params: {
 export type NpcChatTransactionIntent =
   | { kind: 'exchange_lul_cyon'; suggestedLulAmount: number | null }
   | { kind: 'swap_near_respite'; suggestedNearAmount: number | null }
-  | { kind: 'buy_house'; style?: 'plaza_manor' | 'japanese_pavilion' }
+  | { kind: 'buy_house'; style?: 'glass_modern' }
   | { kind: 'buy_catalog_item'; itemId: string }
   | { kind: 'browse_catalog'; scope: 'house' | 'furniture' | 'fishing_gear' }
   | { kind: 'invest_shop' }
@@ -2493,12 +2488,11 @@ export function parseNpcChatTransactionIntent(
 
   if (
     (hasActionVerb && /\b(house|home|rumah|deed|sertifikat|properti|property)\b/.test(q)) ||
-    /\b(plaza manor|japanese pavilion|model house)\b/.test(q)
+    /\b(glass modern|plaza manor|japanese pavilion|model house)\b/.test(q)
   ) {
-    const style = /\b(pavilion|japanese|kuma|jepang)\b/.test(q)
-      ? 'japanese_pavilion'
-      : 'plaza_manor';
-    return { kind: 'buy_house', style };
+    // Single house style: every house-buying phrasing (including the retired
+    // Plaza Manor / Japanese Pavilion names) resolves to Glass Modern.
+    return { kind: 'buy_house', style: 'glass_modern' };
   }
 
   if (

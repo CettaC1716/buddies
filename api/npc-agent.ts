@@ -120,7 +120,7 @@ export interface NpcAgentChatAction {
     | 'teleport_places';
   amount?: number | null;
   itemId?: string;
-  style?: 'plaza_manor' | 'japanese_pavilion';
+  style?: 'glass_modern';
   scope?: 'house' | 'furniture' | 'fishing_gear';
   focusStationId?: NpcAgentTeleportStationId | null;
 }
@@ -177,9 +177,11 @@ export function extractAndStripNpcChatAction(
       amount: Number.isFinite(num) && num > 0 ? num : null,
     };
   } else if (kind === 'buy_house') {
+    // Single house style: any buy_house tag (including the retired
+    // plaza_manor / japanese_pavilion args) resolves to Glass Modern.
     action = {
       type: 'buy_house',
-      style: arg === 'japanese_pavilion' ? 'japanese_pavilion' : 'plaza_manor',
+      style: 'glass_modern',
     };
   } else if (kind === 'buy_item' && arg) {
     const safeId = arg.toLowerCase();
@@ -291,7 +293,7 @@ export function buildNpcSystemInstruction(
     '3. MATCH PLAYER LANGUAGE: Reply in the EXACT SAME LANGUAGE the player used in their latest message (e.g. Bahasa Indonesia -> Bahasa Indonesia, English -> English, Japanese -> Japanese, Spanish -> Spanish, etc.).',
     '4. CLEAN SIMPLE STYLE: Keep replies natural, friendly, and concise (1 to 4 short sentences, maximum 85 words). Plain text ONLY: NO emojis, NO markdown asterisks/bold/lists, and NO developer jargon (never say sub-wallet, master wallet, smart contract, NEP-141, NEP-171, NEP-245, Ed25519, RPC, or AI model/Gemini). Simply say wallet, Fish NFT, House, or Fish Market.',
     '5. IN-CHAT TRANSACTION & TELEPORT CARDS (ONLY WHEN NOT IN FISH TRADE NEGOTIATION):',
-    '   - If the player asks to exchange LUL/CYON, swap NEAR/RESPITE, buy a House, buy or inspect a specific catalog item, browse shop items directly, support a low shop reserve, or claim their starter bonus, append ONE tag at the very end of your reply on its own line using an exact format: [[ACTION:exchange_lul_cyon|100]], [[ACTION:swap_near_respite|0.25]], [[ACTION:buy_house|plaza_manor]], [[ACTION:buy_house|japanese_pavilion]], [[ACTION:buy_item|CATALOG_ID]], [[ACTION:browse_catalog|furniture]], [[ACTION:invest_shop]], or [[ACTION:claim_welcome]]. Use ONLY exact bracket IDs from the catalog list below.',
+    '   - If the player asks to exchange LUL/CYON, swap NEAR/RESPITE, buy a House, buy or inspect a specific catalog item, browse shop items directly, support a low shop reserve, or claim their starter bonus, append ONE tag at the very end of your reply on its own line using an exact format: [[ACTION:exchange_lul_cyon|100]], [[ACTION:swap_near_respite|0.25]], [[ACTION:buy_house|glass_modern]], [[ACTION:buy_item|CATALOG_ID]], [[ACTION:browse_catalog|furniture]], [[ACTION:invest_shop]], or [[ACTION:claim_welcome]]. Use ONLY exact bracket IDs from the catalog list below.',
     '   - If the player asks WHERE any city location, NPC, fishing spot, residential plot, or the Warzone is, asks for directions/map, or wants to go/teleport somewhere, ALWAYS append ONE tag at the end on its own line so interactive teleport cards appear in chat: [[ACTION:teleport_places|STATION_ID]] where STATION_ID is central_plaza, beachfront_harbor, kai_fish_market, nw_fishing_lake, north_residence, south_residence, warzone_arena, or all. Omit action tags only when chatting casually about unrelated general topics.',
     '',
     'BUDDIES BLITZ WORLD GUIDE:',

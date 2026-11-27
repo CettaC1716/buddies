@@ -569,7 +569,7 @@ export interface NearGamepassNftMetadata {
   title: string;
   description: string;
   tier: 'Commander Genesis Pass';
-  houseStyle?: 'plaza_manor' | 'japanese_pavilion' | null;
+  houseStyle?: 'glass_modern' | null;
   issuedAt: string;
   perks: string[];
 }
@@ -863,9 +863,11 @@ export async function fetchNep141Balance(
 }
 
 /**
- * Extracts house architecture style ('plaza_manor' | 'japanese_pavilion') from
- * NEP-171 House Deed token metadata (`extra` JSON or `title`/`description`), or
- * returns `null` when a legacy deed does not encode an architecture style yet.
+ * Extracts house architecture style ('glass_modern') from NEP-171 House Deed
+ * token metadata (`extra` JSON or `title`/`description`), or returns `null`
+ * when a legacy deed does not encode an architecture style yet. Glass Modern
+ * is the single house style; deeds minted for the retired Plaza Manor /
+ * Japanese Pavilion styles resolve to it as well.
  */
 export function extractHouseStyleFromNftMetadata(
   metadata?: {
@@ -873,17 +875,23 @@ export function extractHouseStyleFromNftMetadata(
     description?: string | null;
     extra?: string | null;
   } | null,
-): 'plaza_manor' | 'japanese_pavilion' | null {
+): 'glass_modern' | null {
   if (!metadata) return null;
-  const parseStyleText = (raw: unknown): 'plaza_manor' | 'japanese_pavilion' | null => {
+  const parseStyleText = (raw: unknown): 'glass_modern' | null => {
     if (typeof raw !== 'string') return null;
     const s = raw.trim().toLowerCase();
     if (!s) return null;
-    if (s === 'japanese_pavilion' || s.includes('japanese pavilion') || s.includes('pavilion')) {
-      return 'japanese_pavilion';
-    }
-    if (s === 'plaza_manor' || s.includes('plaza manor') || s.includes('manor')) {
-      return 'plaza_manor';
+    if (
+      s === 'glass_modern' ||
+      s.includes('glass modern') ||
+      s === 'japanese_pavilion' ||
+      s.includes('japanese pavilion') ||
+      s.includes('pavilion') ||
+      s === 'plaza_manor' ||
+      s.includes('plaza manor') ||
+      s.includes('manor')
+    ) {
+      return 'glass_modern';
     }
     return null;
   };
@@ -923,7 +931,7 @@ export function extractHouseStyleFromNftMetadata(
 export async function verifyNep171GamepassOwnership(accountId: string): Promise<{
   verified: boolean;
   token: NearGamepassNftMetadata | null;
-  houseStyle: 'plaza_manor' | 'japanese_pavilion' | null;
+  houseStyle: 'glass_modern' | null;
   source: 'near-rpc';
 }> {
   const cleanId = accountId.trim();

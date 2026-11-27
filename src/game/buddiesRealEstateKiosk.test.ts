@@ -319,13 +319,13 @@ test('Real Estate Catalog A-frame trigger sits cleanly beside the sidewalk sign 
   assert.equal(REAL_ESTATE_CATALOG_TRIGGER.markerOffsetY, 0.38);
 });
 
-test('Classic Plaza Manor Model House door triangle sits on front circular medallion between balustrades', async () => {
+test('Glass Modern Model House door triangle sits on front circular medallion between balustrades', async () => {
   const { PLAZA_MODEL_HOUSE_DOOR_TRIGGER, evaluatePlazaModelHouseDoorProximity } = await import(
     './buddiesRealEstateKioskRules'
   );
   assert.equal(PLAZA_MODEL_HOUSE_DOOR_TRIGGER.x, -93.55);
   assert.equal(PLAZA_MODEL_HOUSE_DOOR_TRIGGER.z, -24.26);
-  assert.equal(PLAZA_MODEL_HOUSE_DOOR_TRIGGER.houseStyle, 'plaza_manor');
+  assert.equal(PLAZA_MODEL_HOUSE_DOOR_TRIGGER.houseStyle, 'glass_modern');
 
   // Must sit squarely in the portico opening between West (-96.30) and East (-90.80) balustrades
   assert.ok(PLAZA_MODEL_HOUSE_DOOR_TRIGGER.x > -96.30 && PLAZA_MODEL_HOUSE_DOOR_TRIGGER.x < -90.80);

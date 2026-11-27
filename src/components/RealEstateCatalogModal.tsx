@@ -49,7 +49,7 @@ import {
 } from './Furniture3dThumbnail';
 
 export type RealEstateCatalogTabId = 'house' | 'shops' | 'furniture' | 'market';
-export type HouseStyleId = 'plaza_manor' | 'japanese_pavilion';
+export type HouseStyleId = 'glass_modern';
 
 export interface RealEstateCatalogModalProps {
   isOpen: boolean;
@@ -108,39 +108,20 @@ interface HouseSeriesSpec {
 
 const HOUSE_SERIES_CATALOG: readonly HouseSeriesSpec[] = [
   {
-    id: 'plaza_manor',
-    katalogCardId: 'buddies_house_ownership',
-    tokenId: 'nep171:house:plaza_manor',
-    title: 'Classic Plaza Manor',
+    id: 'glass_modern',
+    katalogCardId: 'buddies_glass_modern',
+    tokenId: 'nep171:house:glass_modern',
+    title: 'Glass Modern House',
     subtitle: 'NFT Property Deed · Model House',
-    location: 'Central Plaza',
+    location: 'Glass Walls & Zen Garden',
     description:
-      'Neo-classical twin-column town residence with carved pediment entry, stone balustrades, planter boxes, and a full private cutaway studio inside.',
-    exteriorImg: '/assets/kiosk/plaza_manor_exterior.jpg',
-    interiorImg: '/assets/kiosk/house_interior.jpg',
+      'Glass-walled modern house wrapped around a private zen garden with lotus pond, bamboo grove, and maple shade, plus a full private cutaway studio inside.',
+    exteriorImg: '/assets/kiosk/glass_modern_exterior.jpg',
+    interiorImg: '/assets/kiosk/glass_modern_interior.jpg',
     previewLabel: 'View Model House',
     specs: [
       { label: 'Plot Zoning', value: 'Private Residence Deed' },
-      { label: 'Architecture', value: 'Plaza Manor Facade' },
-      { label: 'Studio Slots', value: '5 Custom Placements' },
-      { label: 'Settlement', value: 'NEAR Testnet NFT' },
-    ],
-  },
-  {
-    id: 'japanese_pavilion',
-    katalogCardId: 'buddies_japanese_pavilion',
-    tokenId: 'nep171:house:japanese_pavilion',
-    title: 'Japanese Pavilion',
-    subtitle: 'NFT Property Deed · Catalog Series',
-    location: 'Kuma Cedar & Shoji',
-    description:
-      'Timber-framed Japanese pavilion featuring warm cedar louvers, translucent shoji sliding screens, courtyard lanterns, and free-layout interior decor studio.',
-    exteriorImg: '/assets/kiosk/house_exterior.jpg',
-    interiorImg: '/assets/kiosk/house_interior.jpg',
-    previewLabel: 'Preview House',
-    specs: [
-      { label: 'Plot Zoning', value: 'Private Residence Deed' },
-      { label: 'Architecture', value: 'Cedar & Shoji Pavilion' },
+      { label: 'Architecture', value: 'Glass Modern & Zen Garden' },
       { label: 'Studio Slots', value: '5 Custom Placements' },
       { label: 'Settlement', value: 'NEAR Testnet NFT' },
     ],
@@ -171,7 +152,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
   playerNearAccount = '',
   hasHouseOwnership = false,
   ownedItemIds,
-  houseArchitectureStyle = 'plaza_manor',
+  houseArchitectureStyle = 'glass_modern',
   ownedHouseStyle = null,
   onChainHouseStyleLocked = false,
   propertyListings = [],
@@ -532,15 +513,10 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
         onSelectHouseArchitectureStyle?.(style);
         setActionFeedback({
           ok: true,
-          text: `Updated your deed plot style to ${
-            style === 'japanese_pavilion' ? 'Japanese Pavilion' : 'Classic Plaza Manor'
-          }.`,
+          text: 'Updated your deed plot style to Glass Modern House.',
         });
       } else {
-        const ownedLabel =
-          effectiveOwnedStyle === 'japanese_pavilion'
-            ? 'Japanese Pavilion'
-            : 'Classic Plaza Manor';
+        const ownedLabel = 'Glass Modern House';
         setActionFeedback({
           ok: true,
           text: `You own ${ownedLabel}. Tap Go to Your House to step inside.`,
@@ -1072,12 +1048,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                       ) : onViewModelHouse ? (
                         <button
                           type="button"
-                          data-catalog-view-model-house-btn={
-                            selectedHouse.id === 'plaza_manor' ? 'true' : undefined
-                          }
-                          data-catalog-preview-pavilion-btn={
-                            selectedHouse.id === 'japanese_pavilion' ? 'true' : undefined
-                          }
+                          data-catalog-view-model-house-btn="true"
                           onClick={() => {
                             soundEngine.playUiClick();
                             onClose();

@@ -166,7 +166,7 @@ interface NpcMerchantAndHouseModalProps {
   hasHouseOwnership?: boolean;
   onBuyHouseWithRespite?: (
     priceRespite: number,
-    style?: 'plaza_manor' | 'japanese_pavilion',
+    style?: 'glass_modern',
   ) => Promise<boolean> | boolean | void;
   recruitedFamilyMembers?: RecruitedFamilyMemberAgent[];
   propertyListings?: DbPropertyListingRow[];
@@ -261,12 +261,12 @@ interface NpcMerchantAndHouseModalProps {
     error?: string;
   }>;
   hanaPitchOrigin?: 'kiosk' | 'browse' | null;
-  onViewModelHouse?: (style?: 'plaza_manor' | 'japanese_pavilion') => void;
-  onEnterOwnHouse?: (style?: 'plaza_manor' | 'japanese_pavilion') => void;
-  houseArchitectureStyle?: 'plaza_manor' | 'japanese_pavilion';
-  ownedHouseStyle?: 'plaza_manor' | 'japanese_pavilion' | null;
+  onViewModelHouse?: (style?: 'glass_modern') => void;
+  onEnterOwnHouse?: (style?: 'glass_modern') => void;
+  houseArchitectureStyle?: 'glass_modern';
+  ownedHouseStyle?: 'glass_modern' | null;
   onChainHouseStyleLocked?: boolean;
-  onSelectHouseArchitectureStyle?: (style: 'plaza_manor' | 'japanese_pavilion') => void;
+  onSelectHouseArchitectureStyle?: (style: 'glass_modern') => void;
   onOpenTeleportKioskFromPitch?: () => void;
   onTeleportToDestination?: (
     destination: CityTransitDestinationSpec,
@@ -513,7 +513,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   hanaPitchOrigin = null,
   onViewModelHouse,
   onEnterOwnHouse,
-  houseArchitectureStyle = 'plaza_manor',
+  houseArchitectureStyle = 'glass_modern',
   ownedHouseStyle = null,
   onChainHouseStyleLocked = false,
   onSelectHouseArchitectureStyle,
@@ -590,7 +590,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const [quickSwapNearOverride, setQuickSwapNearOverride] = useState<number | null>(null);
   const [quickLulAmountOverride, setQuickLulAmountOverride] = useState<number | null>(null);
   const [quickHouseStyleOverride, setQuickHouseStyleOverride] = useState<
-    'plaza_manor' | 'japanese_pavilion' | undefined
+    'glass_modern' | undefined
   >(undefined);
   const [quickTeleportFocusId, setQuickTeleportFocusId] = useState<CityTransitStationId | null>(
     null,

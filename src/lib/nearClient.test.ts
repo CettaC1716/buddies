@@ -808,13 +808,9 @@ test('wallet MY ITEMS house formatting reflects chosen style and real deed token
   assert.equal(formatHouseDeedBadgeLabel('house-deed-0001'), 'DEED #001');
   assert.equal(formatHouseDeedBadgeLabel(null), 'HOUSE DEED');
 
-  const plaza = getHouseStyleDisplaySpec('plaza_manor');
-  assert.equal(plaza.title, 'CLASSIC PLAZA MANOR');
-  assert.equal(plaza.imageSrc, '/assets/kiosk/plaza_manor_exterior.jpg');
-
-  const pavilion = getHouseStyleDisplaySpec('japanese_pavilion');
-  assert.equal(pavilion.title, 'JAPANESE PAVILION HOUSE');
-  assert.equal(pavilion.imageSrc, '/assets/kiosk/house_exterior.jpg');
+  const glass = getHouseStyleDisplaySpec('glass_modern');
+  assert.equal(glass.title, 'GLASS MODERN HOUSE');
+  assert.equal(glass.imageSrc, '/assets/kiosk/glass_modern_exterior.jpg');
 });
 
 test('wallet HISTORY formatting normalizes EXCHANGE label and real item/starter amounts', () => {
@@ -1240,8 +1236,9 @@ test('parseNpcChatTransactionIntent and buildOfflineChatTransactionAck detect In
   const swapIntent = parseNpcChatTransactionIntent('swap 0.25 near ke respite', 'lobby_cafe');
   assert.deepEqual(swapIntent, { kind: 'swap_near_respite', suggestedNearAmount: 0.25 });
 
+  // Retired style names in chat still resolve to the single Glass Modern house.
   const houseIntent = parseNpcChatTransactionIntent('beli rumah japanese pavilion dong', 'lobby_cafe');
-  assert.deepEqual(houseIntent, { kind: 'buy_house', style: 'japanese_pavilion' });
+  assert.deepEqual(houseIntent, { kind: 'buy_house', style: 'glass_modern' });
 
   const tableIntent = parseNpcChatTransactionIntent('mau beli meja tatami', 'lobby_cafe');
   assert.deepEqual(tableIntent, { kind: 'buy_catalog_item', itemId: 'tatami_tea_table' });
@@ -1295,20 +1292,28 @@ test('parseNpcChatTransactionIntent and buildOfflineChatTransactionAck detect In
   assert.equal(detectHousingPromptLang('Tell me about buying a house'), 'en');
 });
 
-test('extractHouseStyleFromNftMetadata and verifyNep171GamepassOwnership resolve explicit house_style without locking legacy deeds', async () => {
+test('extractHouseStyleFromNftMetadata and verifyNep171GamepassOwnership resolve explicit house_style to Glass Modern without locking legacy deeds', async () => {
+  assert.equal(
+    extractHouseStyleFromNftMetadata({
+      title: 'Buddies Blitz Glass Modern House Deed #4',
+      extra: JSON.stringify({ kind: 'house_deed', house_style: 'glass_modern' }),
+    }),
+    'glass_modern',
+  );
+  // Deeds minted for the retired styles resolve to Glass Modern as well.
   assert.equal(
     extractHouseStyleFromNftMetadata({
       title: 'Buddies Blitz Classic Plaza Manor Deed #2',
       extra: JSON.stringify({ kind: 'house_deed', house_style: 'plaza_manor' }),
     }),
-    'plaza_manor',
+    'glass_modern',
   );
   assert.equal(
     extractHouseStyleFromNftMetadata({
       title: 'Buddies Blitz Japanese Pavilion Deed #3',
       extra: JSON.stringify({ kind: 'house_deed', house_style: 'japanese_pavilion' }),
     }),
-    'japanese_pavilion',
+    'glass_modern',
   );
   // Pre-upgrade contract deeds titled "Modern Japanese Wooden Pavilion Deed #N" without
   // extra.house_style must remain null so legacy owners keep their chosen/Supabase style.
@@ -1323,7 +1328,7 @@ test('extractHouseStyleFromNftMetadata and verifyNep171GamepassOwnership resolve
 
   const originalFetch = globalThis.fetch;
   try {
-    const plazaTokens = [
+    const legacyTokens = [
       {
         token_id: 'house-deed-0007',
         metadata: {
@@ -1342,15 +1347,15 @@ test('extractHouseStyleFromNftMetadata and verifyNep171GamepassOwnership resolve
         ok: true,
         json: async () => ({
           result: {
-            result: Array.from(new TextEncoder().encode(JSON.stringify(plazaTokens))),
+            result: Array.from(new TextEncoder().encode(JSON.stringify(legacyTokens))),
           },
         }),
       }) as Response) as typeof fetch;
 
-    const verifiedPlaza = await verifyNep171GamepassOwnership('manorowner.testnet');
-    assert.equal(verifiedPlaza.verified, true);
-    assert.equal(verifiedPlaza.houseStyle, 'plaza_manor');
-    assert.equal(verifiedPlaza.token?.houseStyle, 'plaza_manor');
+    const verifiedLegacy = await verifyNep171GamepassOwnership('manorowner.testnet');
+    assert.equal(verifiedLegacy.verified, true);
+    assert.equal(verifiedLegacy.houseStyle, 'glass_modern');
+    assert.equal(verifiedLegacy.token?.houseStyle, 'glass_modern');
   } finally {
     globalThis.fetch = originalFetch;
   }
