@@ -566,23 +566,15 @@ test('buildCentralBotanicalPark3D exposes unbaked cityWindowSpec 3D glass meshes
     assert.ok(ids.has('boutique-2f-terrace-door'));
     assert.ok(ids.has('cozy-cafe-1f-entry-door'));
     assert.ok(ids.has('cozy-cafe-roof-skylight'));
-    assert.ok(ids.has('beauty-salon-1f-glass-curve-a'));
-    assert.ok(ids.has('beauty-salon-1f-door-front'));
-    assert.ok(ids.has('beauty-salon-2f-front-door'));
-    assert.ok(ids.has('beauty-salon-2f-right-8'));
-
-    const beautyGlassHost = park.group.getObjectByName('UrbanPlazaBeautySalonGlassHost');
-    assert.ok(beautyGlassHost, 'UrbanPlazaBeautySalonGlassHost must remain unbaked in animatedGroup');
-    let transparentSalonPanes = 0;
-    beautyGlassHost.traverse((obj) => {
-      if (obj instanceof THREE.Mesh && obj.userData?.cityWindowSpec?.kind === 'storefront') {
-        const mat = obj.material as THREE.MeshStandardMaterial;
-        assert.equal(mat.transparent, true, `${obj.userData.cityWindowSpec.id} must be transparent to reveal interior`);
-        assert.ok(mat.opacity <= 0.35, `${obj.userData.cityWindowSpec.id} opacity must stay clear`);
-        transparentSalonPanes++;
-      }
-    });
-    assert.equal(transparentSalonPanes, 8, 'Expected 5 curved showcase glass segments + 3 glazed salon doors');
+    // The Beauty Salon exterior is now the owner-supplied Glow Studio GLB
+    // (loaded as-is, like the rental shop GLBs): in the built park it carries
+    // no cityWindowSpec tags and no unbaked glass host. The procedural
+    // salon's glass stays covered by the direct buildBeautySalonStudio3D
+    // tests below, since that builder remains the GLB load-failure fallback.
+    assert.ok(
+      park.group.getObjectByName('UrbanPlazaBeautySalonGlb3D'),
+      'UrbanPlazaBeautySalonGlb3D mount must exist in the park',
+    );
 
     const boutiqueGlassHost = park.group.getObjectByName('UrbanPlazaBoutiqueTowerGlassHost');
     assert.ok(boutiqueGlassHost, 'UrbanPlazaBoutiqueTowerGlassHost must remain unbaked in animatedGroup');

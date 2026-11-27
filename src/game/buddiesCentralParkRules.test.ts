@@ -487,7 +487,9 @@ test('buildCentralBotanicalPark3D constructs Terrazzo plaza, Cascade Fountain, W
     assert.ok((instanceCounts.get('CentralParkSakuraCanopyInstanced') ?? 0) >= 48, 'Expected 6 sakura trees * >= 8 crown clusters');
     assert.ok((instanceCounts.get('CentralParkOakCanopyInstanced') ?? 0) >= 24, 'Expected 3 oak trees * >= 8 crown clusters');
     assert.equal(instanceCounts.get('CentralParkLanternNightGlowInstanced'), 10, 'Expected 10 lamppost halos');
-    assert.ok(park.group.getObjectByName('UrbanPlazaBeautySalonGlassHost'), 'Missing Beauty Salon unbaked glass host');
+    // Beauty Salon exterior is the owner Glow Studio GLB mount (the procedural
+    // glass host only appears if the GLB fails to load and the fallback runs).
+    assert.ok(park.group.getObjectByName('UrbanPlazaBeautySalonGlb3D'), 'Missing Beauty Salon GLB mount');
 
     // Verify flanking tree canopies clear Beauty Salon 1F podium and 2F upper story with zero clipping
     const bs = CENTRAL_PARK_MASTERPLAN.beautySalon;

@@ -31,7 +31,7 @@ import {
   buildTimberPergolaAndLilyPond3D,
   type UrbanPlazaBuildingsContext,
 } from './buddiesUrbanPlazaBuildingsBuilder';
-import { buildBeautySalonStudio3D } from './buddiesBeautySalonBuilder';
+import { buildBeautySalonStudioGlb3D } from './buddiesBeautySalonBuilder';
 
 export interface BuildCentralBotanicalParkOptions {
   windUniforms: BlitzWindUniforms;
@@ -2998,7 +2998,9 @@ export function buildCentralBotanicalPark3D(
   buildBoutiqueRooftopTower3D(buildingsCtx);
   buildCozyBitesCafePavilion3D(buildingsCtx);
   buildTimberPergolaAndLilyPond3D(buildingsCtx);
-  buildBeautySalonStudio3D(buildingsCtx);
+  // Glow Studio Salon exterior is the owner-supplied GLB; the procedural
+  // builder remains as its load-failure fallback (buddiesBeautySalonBuilder).
+  buildBeautySalonStudioGlb3D(buildingsCtx);
 
   // Collect all `isAnimatedWater` meshes added by buildings + fountain so `update()` animates every texture & shader cleanly
   const animatedWaterTextures = new Set<THREE.Texture>([pondWaterTex, fountainBasinTex]);
