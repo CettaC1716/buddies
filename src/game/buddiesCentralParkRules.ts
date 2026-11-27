@@ -499,15 +499,24 @@ export function getCentralParkObstacles(): StaticWorldStructureObb[] {
     mat: 'concrete',
   });
 
-  // 3. Cozy Bites & Sips Cafe Pavilion (East Wing)
+  // 3. Cozy Bites & Sips Cafe Pavilion (East Wing) — owner GLB body box.
+  // The pavilion visual is now the owner-supplied GLB (bites_sips_pavilion.glb,
+  // placed at the masterplan anchor at native size, yaw -PI/2). Its cafe body
+  // (the source model's COL_WALL_CafeBody) spans local x [-3.14..4.14],
+  // z [-4.14..3.14], which under that yaw maps to world x [42.06..49.34],
+  // z [-3.74..3.54] — centre (45.70, -0.10), half extents 3.64. The collider
+  // tracks the model's real walls (+0.2m margin, as before) instead of the
+  // retired procedural shell (7.2 x 8.2m centred on the anchor), so no
+  // invisible wall crosses the model's west sidewalk or door, and the body
+  // no longer pokes out past its collider on the east side.
   obs.push({
     id: 'urban_plaza_cozy_cafe',
-    x: mp.cozyCafePavilion.x,
-    z: mp.cozyCafePavilion.z,
-    halfX: mp.cozyCafePavilion.halfX + 0.2,
-    halfZ: mp.cozyCafePavilion.halfZ + 0.2,
+    x: 45.7,
+    z: -0.1,
+    halfX: 3.84,
+    halfZ: 3.84,
     rotY: 0,
-    heightY: mp.cozyCafePavilion.totalHeight,
+    heightY: 4.82,
     mat: 'concrete',
   });
 

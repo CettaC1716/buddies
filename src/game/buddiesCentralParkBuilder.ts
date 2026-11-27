@@ -27,7 +27,7 @@ import {
 import { evaluateLanternCoreAndSpriteState } from './buddiesCityLightingAndTrafficRules';
 import {
   buildBoutiqueRooftopTower3D,
-  buildCozyBitesCafePavilion3D,
+  buildCozyBitesCafePavilionGlb3D,
   buildTimberPergolaAndLilyPond3D,
   type UrbanPlazaBuildingsContext,
 } from './buddiesUrbanPlazaBuildingsBuilder';
@@ -2996,7 +2996,9 @@ export function buildCentralBotanicalPark3D(
   };
 
   buildBoutiqueRooftopTower3D(buildingsCtx);
-  buildCozyBitesCafePavilion3D(buildingsCtx);
+  // Cozy Bites & Sips pavilion exterior is the owner-supplied GLB; the procedural
+  // builder remains as its load-failure fallback (buddiesUrbanPlazaBuildingsBuilder).
+  buildCozyBitesCafePavilionGlb3D(buildingsCtx);
   buildTimberPergolaAndLilyPond3D(buildingsCtx);
   // Glow Studio Salon exterior is the owner-supplied GLB; the procedural
   // builder remains as its load-failure fallback (buddiesBeautySalonBuilder).

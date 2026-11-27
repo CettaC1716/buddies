@@ -505,7 +505,7 @@ test('buildGrandCasino3D tags instanced and lobby door glass cleanly, clears Eas
   });
 });
 
-test('buildCentralBotanicalPark3D exposes unbaked cityWindowSpec 3D glass meshes on BoutiqueTower and CozyBitesCafe', async () => {
+test('buildCentralBotanicalPark3D exposes unbaked cityWindowSpec 3D glass meshes on BoutiqueTower and mounts the owner CozyBites GLB', async () => {
   const { buildCentralBotanicalPark3D } = await import('./buddiesCentralParkBuilder');
   const {
     bakeStaticGroupMeshes,
@@ -562,10 +562,21 @@ test('buildCentralBotanicalPark3D exposes unbaked cityWindowSpec 3D glass meshes
     assert.ok(taggedWindows.length >= 40, `Expected >= 40 tagged Urban Plaza window meshes, got ${taggedWindows.length}`);
     assert.ok(kinds.has('storefront'));
     assert.ok(kinds.has('upper_floor'));
-    assert.ok(kinds.has('dormer'));
+    // No 'dormer' assertion here anymore: the park's only dormer-kind pane
+    // was the procedural Cozy Bites pavilion's roof skylight, and that
+    // pavilion is now the owner GLB mount asserted below. The skylight
+    // stays covered by the direct buildCozyBitesCafePavilion3D tests.
     assert.ok(ids.has('boutique-2f-terrace-door'));
-    assert.ok(ids.has('cozy-cafe-1f-entry-door'));
-    assert.ok(ids.has('cozy-cafe-roof-skylight'));
+    // The Cozy Bites & Sips pavilion exterior is now the owner-supplied
+    // Bites & Sips GLB (loaded as-is, like the rental shop GLBs): in the
+    // built park it carries no cityWindowSpec tags and no unbaked glass
+    // host. The procedural pavilion's glass stays covered by the direct
+    // buildCozyBitesCafePavilion3D tests below, since that builder
+    // remains the GLB load-failure fallback.
+    assert.ok(
+      park.group.getObjectByName('UrbanPlazaCozyBitesCafeGlb3D'),
+      'UrbanPlazaCozyBitesCafeGlb3D mount must exist in the park',
+    );
     // The Beauty Salon exterior is now the owner-supplied Glow Studio GLB
     // (loaded as-is, like the rental shop GLBs): in the built park it carries
     // no cityWindowSpec tags and no unbaked glass host. The procedural
@@ -590,21 +601,6 @@ test('buildCentralBotanicalPark3D exposes unbaked cityWindowSpec 3D glass meshes
       }
     });
     assert.equal(boutiqueBayGlassCount, 8, 'Expected 8 transparent 1F display bay glass panes on BoutiqueTower');
-
-    const cozyCafeGlassHost = park.group.getObjectByName('UrbanPlazaCozyBitesCafeGlassHost');
-    assert.ok(cozyCafeGlassHost, 'UrbanPlazaCozyBitesCafeGlassHost must remain unbaked in animatedGroup');
-    let cozyBayGlassCount = 0;
-    cozyCafeGlassHost.traverse((obj) => {
-      if (obj instanceof THREE.Mesh && obj.name.startsWith('CozyBitesShowcaseGlass_')) {
-        const mat = obj.material as THREE.MeshStandardMaterial;
-        assert.equal(obj.userData?.cityWindowSpec?.kind, 'storefront');
-        assert.equal(mat.transparent, true, `${obj.name} must be transparent to reveal interior pastry stands`);
-        assert.ok(mat.opacity <= 0.35, `${obj.name} opacity must stay clear`);
-        assert.equal(mat.depthWrite, false, `${obj.name} must keep depthWrite=false for crisp see-through vitrines`);
-        cozyBayGlassCount++;
-      }
-    });
-    assert.equal(cozyBayGlassCount, 7, 'Expected 7 transparent 1F showcase glass panes on CozyBitesCafe');
 
     park.dispose();
   });

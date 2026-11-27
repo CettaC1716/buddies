@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { CENTRAL_PARK_MASTERPLAN } from './buddiesCentralParkRules';
 import { createUnifiedWaterSurfaceMaterial, type BlitzWindUniforms } from './buddiesBlitzShadersAndAssets';
@@ -2759,6 +2760,77 @@ export function buildCozyBitesCafePavilion3D(ctx: UrbanPlazaBuildingsContext): v
     const chairYaw = isWestPatio ? 0.18 : Math.PI * 0.5;
     buildBistroTableWithChairs(ctx.staticGroup, ctx, [tbl.x, 0, tbl.z], chairYaw, honeyOakTex);
   }
+}
+
+// ============================================================================
+// COZY BITES & SIPS — OWNER GLB EXTERIOR (visual replacement)
+// ============================================================================
+
+/** Public path of the prepped owner model (its baked COL_* collider nodes stripped). */
+export const BITES_SIPS_PAVILION_GLB_PATH = '/assets/buildings/bites_sips_pavilion.glb';
+
+/** Top height (m) of the owner model's own sidewalk slab (its COL_FLOOR_Sidewalk spans y [0 .. 0.16]). */
+export const BITES_SIPS_PAVILION_SLAB_TOP_Y = 0.16;
+
+/**
+ * Places the owner-supplied Bites & Sips GLB as the pavilion's visual,
+ * following the same load-as-is GLTFLoader pattern as the Glow Studio
+ * salon. Placement is the masterplan anchor at native size with the
+ * masterplan yaw (-PI/2), so the model's front (+Z local) faces West
+ * toward the Civic Cascade Fountain exactly like the procedural
+ * pavilion. The model's door (local centre (-2.20, +2.95)) lands at
+ * world (42.25, -2.80) — on the same West face as the old entrance
+ * (41.6, 0.25), further south along that face. The origin is
+ * deliberately NOT shifted onto the old door point: shifting it south
+ * would drag the model body (local x [-3.14..4.14], z [-4.14..3.14])
+ * over the two south masterplan bistro tables and swallow them inside
+ * its walls, while the centred placement has zero conflicts.
+ * The 4 masterplan bistro tables are district furniture with their own
+ * colliders in `getCentralParkObstacles`, so the mount rebuilds them
+ * (same helper + chair-yaw rule as the procedural builder) standing on
+ * the model's sidewalk slab — all four land on that slab, clear of the
+ * model body and clear of the model's own single bistro set on its
+ * north-west patio. If the model fails to load, the tables are removed
+ * again and the procedural builder above runs instead, so the pavilion
+ * never disappears.
+ */
+export function buildCozyBitesCafePavilionGlb3D(ctx: UrbanPlazaBuildingsContext): void {
+  const cf = CENTRAL_PARK_MASTERPLAN.cozyCafePavilion;
+  const grp = new THREE.Group();
+  grp.name = 'UrbanPlazaCozyBitesCafeGlb3D';
+  grp.position.set(cf.x, 0, cf.z);
+  grp.rotation.y = cf.yaw; // -PI/2 -> +Z_local faces West (-X toward Fountain), same as the procedural pavilion
+  ctx.staticGroup.add(grp);
+
+  // District bistro tables at exact Masterplan coordinates, raised onto
+  // the GLB sidewalk slab. Kept in their own group so the load-failure
+  // fallback can remove them before the procedural builder rebuilds them.
+  const tablesGrp = new THREE.Group();
+  tablesGrp.name = 'UrbanPlazaCozyBitesCafeGlbPatioTables';
+  ctx.staticGroup.add(tablesGrp);
+  const honeyOakTex = createHoneyOakTimberTexture(ctx);
+  for (const tbl of CENTRAL_PARK_MASTERPLAN.bistroTables) {
+    // Orient West front patio tables' chairs North-South (`0`), South patio tables' chairs East-West (`Math.PI / 2`)
+    const isWestPatio = tbl.x < cf.x - 2.0;
+    const chairYaw = isWestPatio ? 0.18 : Math.PI * 0.5;
+    buildBistroTableWithChairs(tablesGrp, ctx, [tbl.x, BITES_SIPS_PAVILION_SLAB_TOP_Y, tbl.z], chairYaw, honeyOakTex);
+  }
+
+  if (typeof window === 'undefined') return; // node/tests: skip the async load (same guard as the shop GLB loader)
+  new GLTFLoader().load(
+    BITES_SIPS_PAVILION_GLB_PATH,
+    (gltf) => {
+      if (grp.parent !== ctx.staticGroup) return; // park scene was torn down meanwhile
+      grp.add(gltf.scene);
+    },
+    undefined,
+    () => {
+      if (grp.parent !== ctx.staticGroup) return;
+      ctx.staticGroup.remove(grp);
+      ctx.staticGroup.remove(tablesGrp);
+      buildCozyBitesCafePavilion3D(ctx);
+    },
+  );
 }
 
 // ============================================================================
