@@ -1,4 +1,8 @@
-import { DEFAULT_COMMERCIAL_CONFIG } from './buddiesCityRentalLotsRules';
+import {
+  DEFAULT_COMMERCIAL_CONFIG,
+  SHOP_BUILDING_FORMS,
+  type ShopBuildingFormId,
+} from './buddiesCityRentalLotsRules';
 import {
   MS_PER_DAY,
   resolveLotLifecycleStatus,
@@ -112,6 +116,93 @@ export function extendSimulatedLotRental(params: {
       rentalsByLotId: {
         ...params.store.rentalsByLotId,
         [updated.lotId]: updated,
+      },
+    },
+  };
+}
+
+/**
+ * Places a free test building on a simulated rental — the QC counterpart of
+ * `placeBuildingFromMyThingsOnLot`, minus the ownership requirement: any of
+ * the SHOP_BUILDING_FORMS may be placed so the full rent → build → visit
+ * loop can be quality-checked before real buildings are bought. Only the
+ * renter may place, and only while the lease is 'rented' or in 'grace'.
+ * Simulation buildings are NOT added to My Things.
+ */
+export function placeSimulatedBuildingOnLot(params: {
+  store: LotRentalStore;
+  lotId: string;
+  accountId: string;
+  buildingFormId: ShopBuildingFormId;
+  nowMs?: number;
+}): { ok: true; store: LotRentalStore } | { ok: false; error: string } {
+  const nowMs = params.nowMs ?? Date.now();
+  const rec = params.store.rentalsByLotId[params.lotId];
+  if (!rec) {
+    return { ok: false, error: 'You must rent this lot before placing a building.' };
+  }
+  if (!sameAccount(rec.renterAccountId, params.accountId)) {
+    return { ok: false, error: 'Only the active lot renter can place a building here.' };
+  }
+  const status = resolveLotLifecycleStatus(rec, nowMs);
+  if (status !== 'rented' && status !== 'grace') {
+    return { ok: false, error: 'This lot lease has expired.' };
+  }
+  if (!SHOP_BUILDING_FORMS[params.buildingFormId]) {
+    return { ok: false, error: 'Unknown building form.' };
+  }
+
+  return {
+    ok: true,
+    store: {
+      ...params.store,
+      rentalsByLotId: {
+        ...params.store.rentalsByLotId,
+        [params.lotId]: {
+          ...rec,
+          placedBuildingFormId: params.buildingFormId,
+        },
+      },
+    },
+  };
+}
+
+/**
+ * Removes a building from a simulated rental. Mirrors
+ * `removeBuildingFromLotToInventory`: renter-only, fails when nothing is
+ * placed, and clears the billboard logo along with the building.
+ */
+export function removeSimulatedBuildingFromLot(params: {
+  store: LotRentalStore;
+  lotId: string;
+  accountId: string;
+}):
+  | { ok: true; store: LotRentalStore; removedFormId: ShopBuildingFormId }
+  | { ok: false; error: string } {
+  const rec = params.store.rentalsByLotId[params.lotId];
+  if (!rec) {
+    return { ok: false, error: 'Lot has no active rental.' };
+  }
+  if (!sameAccount(rec.renterAccountId, params.accountId)) {
+    return { ok: false, error: 'Only the lot owner can remove this building.' };
+  }
+  if (!rec.placedBuildingFormId) {
+    return { ok: false, error: 'No building is currently placed on this lot.' };
+  }
+
+  const removedFormId = rec.placedBuildingFormId;
+  return {
+    ok: true,
+    removedFormId,
+    store: {
+      ...params.store,
+      rentalsByLotId: {
+        ...params.store.rentalsByLotId,
+        [params.lotId]: {
+          ...rec,
+          placedBuildingFormId: null,
+          billboardLogoUrl: null,
+        },
       },
     },
   };

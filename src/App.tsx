@@ -180,6 +180,7 @@ import {
 import { MyThingsPanel } from './components/MyThingsPanel';
 import type { MyThingsSectionId, PersonalWalletTabId } from './components/myThingsRules';
 import type { ShopBuildingFormId } from './game/buddiesCityRentalLotsRules';
+import { SHOP_BUILDING_FORMS } from './game/buddiesCityRentalLotsRules';
 import {
   createEmptyLotRentalStore,
   sweepExpiredLotRentals,
@@ -195,6 +196,8 @@ import {
 import {
   endSimulatedLotRental,
   extendSimulatedLotRental,
+  placeSimulatedBuildingOnLot,
+  removeSimulatedBuildingFromLot,
   startSimulatedLotRental,
 } from './game/shopRentalSimulation';
 import { LotRentalModal } from './components/LotRentalModal';
@@ -1506,6 +1509,30 @@ export default function App() {
     if (!selectedRentalLotId) return;
     const acct = (hud.nearWalletId || playerUid || '').trim();
     const res = endSimulatedLotRental({
+      store: lotRentalStore,
+      lotId: selectedRentalLotId,
+      accountId: acct,
+    });
+    if (res.ok) setLotRentalStore(res.store);
+  }, [hud.nearWalletId, playerUid, lotRentalStore, selectedRentalLotId]);
+  const handlePlaceLotBuildingSimulated = useCallback(
+    (formId: string) => {
+      if (!selectedRentalLotId) return;
+      const acct = (hud.nearWalletId || playerUid || '').trim();
+      const res = placeSimulatedBuildingOnLot({
+        store: lotRentalStore,
+        lotId: selectedRentalLotId,
+        accountId: acct,
+        buildingFormId: formId as ShopBuildingFormId,
+      });
+      if (res.ok) setLotRentalStore(res.store);
+    },
+    [hud.nearWalletId, playerUid, lotRentalStore, selectedRentalLotId],
+  );
+  const handleRemoveLotBuildingSimulated = useCallback(() => {
+    if (!selectedRentalLotId) return;
+    const acct = (hud.nearWalletId || playerUid || '').trim();
+    const res = removeSimulatedBuildingFromLot({
       store: lotRentalStore,
       lotId: selectedRentalLotId,
       accountId: acct,
@@ -15209,6 +15236,17 @@ export default function App() {
         onRent={handleRentLotSimulated}
         onExtend={handleExtendLotSimulated}
         onEnd={handleEndLotSimulated}
+        onPlaceBuilding={handlePlaceLotBuildingSimulated}
+        onRemoveBuilding={handleRemoveLotBuildingSimulated}
+        placedBuildingOwned={(() => {
+          const rec = selectedRentalLotId
+            ? lotRentalStore.rentalsByLotId[selectedRentalLotId]
+            : undefined;
+          const formId = rec?.placedBuildingFormId;
+          if (!formId) return false;
+          const spec = SHOP_BUILDING_FORMS[formId];
+          return spec ? ownedMerchantItemIds.includes(spec.catalogItemId) : false;
+        })()}
       />
       <DexMarketplaceModal
         isOpen={isDexModalOpen && hud.worldMode !== 'warzone'}

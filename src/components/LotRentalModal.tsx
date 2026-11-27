@@ -1,5 +1,5 @@
 import React from 'react';
-import { CalendarDays, MapPin, Store, X } from 'lucide-react';
+import { Building2, CalendarDays, MapPin, Store, X } from 'lucide-react';
 import {
   CITY_RENTAL_LOTS,
   DEFAULT_COMMERCIAL_CONFIG,
@@ -22,6 +22,16 @@ export interface LotRentalModalProps {
   onRent: () => void;
   onExtend: () => void;
   onEnd: () => void;
+  /** Places a free simulation building of the given form on this lot. */
+  onPlaceBuilding: (formId: string) => void;
+  /** Removes the building currently placed on this lot. */
+  onRemoveBuilding: () => void;
+  /**
+   * True when the placed building's catalog item is owned by the account
+   * (a real My Things building); false for a free simulation build, which
+   * simply disappears when the rental ends instead of returning anywhere.
+   */
+  placedBuildingOwned: boolean;
 }
 
 function formatDateTime(ms: number): string {
@@ -49,6 +59,9 @@ export const LotRentalModal: React.FC<LotRentalModalProps> = ({
   onRent,
   onExtend,
   onEnd,
+  onPlaceBuilding,
+  onRemoveBuilding,
+  placedBuildingOwned,
 }) => {
   if (!open || !lotId) return null;
   const spec = CITY_RENTAL_LOTS.find((lot) => lot.slotId === lotId);
@@ -173,7 +186,59 @@ export const LotRentalModal: React.FC<LotRentalModalProps> = ({
                 {placedForm.name}
               </div>
               <p className="mt-1 text-white/50">
-                A building is placed on this lot. Ending the rental returns it to My Things.
+                {placedBuildingOwned
+                  ? 'A building is placed on this lot. Ending the rental returns it to My Things.'
+                  : 'This is a simulation building — ending the rental removes it.'}
+              </p>
+            </div>
+          )}
+
+          {/* Build a shop — simulation (own active rental only) */}
+          {record && isMine && !isAvailable && (
+            <div className="rounded-xl bg-white/[0.04] border border-white/10 px-3.5 py-3 space-y-2">
+              <div className="flex items-center gap-2 text-xs font-bold tracking-wide text-white/85">
+                <Building2 className="w-3.5 h-3.5 text-lime-300 shrink-0" aria-hidden="true" />
+                BUILD A SHOP — SIMULATION
+              </div>
+              {placedForm ? (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-white/70 min-w-0 truncate">
+                    {placedForm.name}
+                  </span>
+                  <button
+                    type="button"
+                    data-lot-rental-remove-building="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      onRemoveBuilding();
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-400/40 text-rose-200 text-xs font-bold transition-colors cursor-pointer shrink-0"
+                  >
+                    Remove building
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {Object.values(SHOP_BUILDING_FORMS).map((form) => (
+                    <div key={form.id} className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-white/70 min-w-0 truncate">{form.name}</span>
+                      <button
+                        type="button"
+                        data-lot-rental-place-building={form.id}
+                        onClick={() => {
+                          soundEngine.playUiClick();
+                          onPlaceBuilding(form.id);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-lime-500 hover:bg-lime-400 text-slate-950 text-xs font-extrabold transition-colors cursor-pointer shrink-0"
+                      >
+                        Place
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-[11px] text-white/45">
+                Simulation buildings are free test builds — they are not added to My Things.
               </p>
             </div>
           )}
