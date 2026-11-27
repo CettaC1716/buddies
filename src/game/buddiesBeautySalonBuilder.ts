@@ -6,13 +6,14 @@ import {
   tagCityWindowMesh,
 } from './buddiesWindowAuditRules';
 import { CENTRAL_PARK_MASTERPLAN } from './buddiesCentralParkRules';
-import { SALON_GLB_SCALE } from './buddiesBeautySalonRules';
+import { SALON_EXTERIOR_GLB_SCALE } from './buddiesBeautySalonRules';
 import {
   applyGrainUvs,
   buildArchedCasementWindow,
   buildRooftopGardenPlanterBox,
   buildTubularDoorPull,
   buildUrnBoxwoodPlanter,
+  CENTRAL_PLAZA_GLB_MOUNT_Y,
   createBeveledBox,
   createCreamStuccoTexture,
   createHoneyOakTimberTexture,
@@ -23,6 +24,10 @@ import {
   makeBuildingCanvasTexture,
   type UrbanPlazaBuildingsContext,
 } from './buddiesUrbanPlazaBuildingsBuilder';
+import {
+  createPlazaBuildingGlowUniforms,
+  optimizeCentralPlazaBuildingGlb,
+} from './buddiesCentralPlazaGlbOptimizer';
 
 // ============================================================================
 // BEAUTY SALON PALETTE & GEOMETRIC CONSTANTS
@@ -1666,44 +1671,40 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
 export const GLOW_STUDIO_SALON_GLB_PATH = '/assets/buildings/glow_studio_salon.glb';
 
 /**
- * Horizontal shift (m) applied to the GLB origin so the model's main entrance
- * lands exactly on the existing door anchor at the mount scale
- * (SALON_GLB_SCALE, see buddiesBeautySalonRules for the door-height
- * derivation). The model's entry door frame centre is local (+2.95, +4.26),
- * which scales to (+3.80, +5.49); under the masterplan yaw (PI) that maps
- * to world x = centreX - 3.80, so the origin shifts east by 0.04 m to put
- * the door on SALON_EXTERIOR_DOOR_TRIGGER.doorX (25.74). The model's own
- * sidewalk slab was stripped in prep (it sits on the plaza floor) and the
- * model re-grounded by the slab thickness, so the scaled body spans world
- * x [23.87..35.21], z [9.33..20.67] and stands 12.61 m tall.
+ * Horizontal shifts (m) applied to the GLB origin at SALON_EXTERIOR_GLB_SCALE
+ * (1.40, calibrated for the 3.31m outdoor avatar) so the model's entry door
+ * frame centre (local +2.95, +4.26) lands on world (25.74, 8.94) under yaw PI
+ * — keeping SALON_EXTERIOR_DOOR_TRIGGER.doorX = 25.74 exact while clearing both
+ * the South curb and Central Fountain ring.
  */
-export const GLOW_STUDIO_SALON_GLB_ORIGIN_SHIFT_X = 0.04;
+export const GLOW_STUDIO_SALON_GLB_ORIGIN_SHIFT_X = 0.37;
+export const GLOW_STUDIO_SALON_GLB_ORIGIN_SHIFT_Z = -0.1;
 
-/**
- * Places the owner-supplied Glow Studio GLB as the salon's exterior visual,
- * following the same load-as-is GLTFLoader pattern as the rental shop
- * buildings, scaled uniformly by SALON_GLB_SCALE so its proportions match
- * the game's authored buildings. The separate interior scene at
- * SALON_ORIGIN_Y (buddiesBeautySalonInteriorBuilder) mounts this same
- * model at the same scale — entry is a teleport from
- * SALON_EXTERIOR_DOOR_TRIGGER, whose door plane now sits on the model's
- * scaled door. If the model fails to load, the procedural builder above
- * runs instead so the landmark never disappears.
- */
 export function buildBeautySalonStudioGlb3D(ctx: UrbanPlazaBuildingsContext): void {
   const bs = CENTRAL_PARK_MASTERPLAN.beautySalon;
   const grp = new THREE.Group();
   grp.name = 'UrbanPlazaBeautySalonGlb3D';
-  grp.position.set(bs.x + GLOW_STUDIO_SALON_GLB_ORIGIN_SHIFT_X, 0, bs.z);
+  grp.position.set(
+    bs.x + GLOW_STUDIO_SALON_GLB_ORIGIN_SHIFT_X,
+    CENTRAL_PLAZA_GLB_MOUNT_Y,
+    bs.z + GLOW_STUDIO_SALON_GLB_ORIGIN_SHIFT_Z,
+  );
   grp.rotation.y = bs.yaw;
-  grp.scale.setScalar(SALON_GLB_SCALE);
+  grp.scale.setScalar(SALON_EXTERIOR_GLB_SCALE);
   ctx.staticGroup.add(grp);
 
-  if (typeof window === 'undefined') return; // node/tests: skip the async load (same guard as the shop GLB loader)
+  if (typeof window === 'undefined') return; // node/tests: skip async load
+  const glowUniforms = ctx.plazaBuildingGlowUniforms ?? createPlazaBuildingGlowUniforms();
   new GLTFLoader().load(
     GLOW_STUDIO_SALON_GLB_PATH,
     (gltf) => {
-      if (grp.parent !== ctx.staticGroup) return; // park scene was torn down meanwhile
+      if (grp.parent !== ctx.staticGroup) return;
+      optimizeCentralPlazaBuildingGlb(gltf.scene, {
+        buildingId: 'GlowStudioSalon',
+        glowUniforms,
+        isSoftwareGl: ctx.isSoftwareGl,
+        glassWarmTintHex: '#ffe3b5',
+      });
       grp.add(gltf.scene);
     },
     undefined,

@@ -23,6 +23,7 @@ import { formatClock24h } from '../game/buddiesWeatherSystem';
 import type { LightingPresetKey, WeatherConditionKey } from '../game/buddiesBlitzRules';
 import type { CityNewsCardSummary } from '../lib/phoneHomeCityNews';
 import { useAdaptiveViewport } from '../lib/useAdaptiveViewport';
+import { CERRIA_CITY_NAME } from '../lib/cerriaBrand';
 
 export type SmartphoneAppId =
   | 'home'
@@ -419,7 +420,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
                   <div className="flex items-center gap-2 text-right">
                     <div>
                       <div className="text-xs font-semibold text-white/95">{weatherMeta.label}</div>
-                      <div className="text-[10px] text-white/70">Buddies City</div>
+                      <div className="text-[10px] text-white/70">{CERRIA_CITY_NAME}</div>
                     </div>
                     <span aria-hidden="true" className="text-2xl leading-none drop-shadow">
                       {weatherMeta.icon}

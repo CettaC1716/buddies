@@ -15,6 +15,10 @@ import {
   type NpcPacingStore,
 } from './npcTogethernessRegistry';
 import { ensureAllNpcPersonasRegistered } from './personas/index';
+import {
+  buildLocalProactiveTopic,
+  type ProactiveTopicTriggerReason,
+} from './npcProactiveTopics';
 import { resolveApiUrl } from '../lib/nearClient';
 
 /**
@@ -190,6 +194,7 @@ function buildClientFallback(
   npcId: NpcId,
   closenessBand: ClosenessBand,
   reason: string,
+  recentOpenings?: readonly string[],
 ): NpcChatClientResult {
   console.warn('[npc-chat] client fallback reply used', {
     npcId,
@@ -198,16 +203,24 @@ function buildClientFallback(
   });
   ensureAllNpcPersonasRegistered();
   const pack = getNpcPersona(npcId);
-  const bank = pack?.fallbackReplies?.[closenessBand];
+  const bank = pack?.fallbackReplies?.[closenessBand] ?? [];
+  const recentSet = new Set(
+    (recentOpenings ?? []).map((op) => op.trim().toLowerCase().slice(0, 24)),
+  );
+  const fresh = bank.filter((line) => !recentSet.has(line.trim().toLowerCase().slice(0, 24)));
+  const pool = fresh.length > 0 ? fresh : bank;
   const reply =
-    bank && bank.length > 0
-      ? bank[0]
+    pool.length > 0
+      ? pool[Math.abs(recentSet.size + Date.now()) % pool.length]
       : `Good to see you! Let's chat more when you have a moment.`;
   return {
     ok: true,
     npcId,
     reply,
-    emotion: 'neutral',
+    emotion:
+      closenessBand === 'friendly' || closenessBand === 'close' || closenessBand === 'trusted'
+        ? 'happy'
+        : 'neutral',
     closenessDelta: 1,
     fallback: true,
   };
@@ -281,13 +294,115 @@ export async function sendNpcChatMessage(
         action: normalizeNpcChatAction(data.action),
       };
     }
-    return buildClientFallback(npcId, params.closenessBand, `http_${res.status}`);
+    return buildClientFallback(npcId, params.closenessBand, `http_${res.status}`, recentOpenings);
   } catch (err) {
     // Fall back gracefully if offline / network error
     return buildClientFallback(
       npcId,
       params.closenessBand,
       err instanceof Error ? err.message : 'network_error',
+      recentOpenings,
     );
   }
+}
+
+export interface RequestNpcProactiveTopicParams {
+  npcId: string;
+  history?: NpcTextChatHistoryTurn[];
+  closenessBand: ClosenessBand;
+  canLongConversation: boolean;
+  playerName?: string;
+  situation: NpcChatSituation;
+  recentOpenings?: string[];
+  triggerReason?: ProactiveTopicTriggerReason;
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * Requests a natural, persona-grounded proactive conversation starter from `/api/npc-chat`
+ * (`mode: 'proactive_opener'`), falling back cleanly to `buildLocalProactiveTopic` when
+ * offline or when the API key is unavailable.
+ */
+export async function requestNpcProactiveTopic(
+  params: RequestNpcProactiveTopicParams,
+): Promise<NpcChatClientResult> {
+  const npcId = resolveNpcId(params.npcId);
+  if (!npcId) {
+    return {
+      ok: false,
+      npcId: null,
+      reply: '',
+      emotion: 'neutral',
+      closenessDelta: 0,
+      fallback: true,
+    };
+  }
+
+  const recentOpenings =
+    params.recentOpenings && params.recentOpenings.length > 0
+      ? params.recentOpenings.slice(-3)
+      : extractRecentNpcReplyOpenings(params.history ?? [], 3);
+
+  const localTopic = buildLocalProactiveTopic({
+    npcId,
+    closenessBand: params.closenessBand,
+    situation: params.situation,
+    playerName: params.playerName,
+    recentOpenings,
+    triggerReason: params.triggerReason,
+  });
+
+  const fetchFn = params.fetchImpl ?? fetch;
+  try {
+    const res = await fetchFn(resolveApiUrl('/api/npc-chat'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        npcId,
+        mode: 'proactive_opener',
+        message: '',
+        history: (params.history ?? []).slice(-8),
+        closenessBand: params.closenessBand,
+        canLongConversation: params.canLongConversation,
+        ...(params.playerName ? { playerName: params.playerName } : {}),
+        situation: params.situation,
+        ...(recentOpenings.length > 0 ? { recentOpenings } : {}),
+      }),
+    });
+
+    const data = (await res.json()) as {
+      ok?: boolean;
+      reply?: string;
+      emotion?: unknown;
+      fallback?: boolean;
+    };
+
+    if (
+      res.ok &&
+      data?.ok &&
+      !data.fallback &&
+      typeof data.reply === 'string' &&
+      data.reply.trim()
+    ) {
+      return {
+        ok: true,
+        npcId,
+        reply: data.reply.trim(),
+        emotion: normalizeNpcEmotionTag(data.emotion),
+        closenessDelta: 0,
+        fallback: false,
+      };
+    }
+  } catch {
+    // Fall back cleanly to persona-situational local proactive topic below
+  }
+
+  return {
+    ok: true,
+    npcId,
+    reply: localTopic.reply,
+    emotion: localTopic.emotion,
+    closenessDelta: 0,
+    fallback: true,
+  };
 }

@@ -1,5 +1,7 @@
+import { CERRIA_CITY_NAME } from './cerriaBrand';
+
 /**
- * Pure domain rules for the Buddies City Letters inbox (email model).
+ * Pure domain rules for the Cerria Letters inbox (email model).
  *
  * Letters represent formal city messages that a player reads and optionally
  * answers:
@@ -178,7 +180,7 @@ export function getLetterSenderDisplayName(
     return (
       letter.payload.sellerName?.trim() ||
       letter.payload.sellerAccount?.trim() ||
-      'Buddies City'
+      CERRIA_CITY_NAME
     );
   }
   if (letter.kind === 'announcement') {

@@ -1,4 +1,5 @@
 import { resolveCanonicalCitizenId, type CitizenId } from './buddiesCitizenRoles';
+import { MS_PER_DAY } from '../lib/cerriaBrand';
 
 /**
  * Hidden Closeness Engine (Foundation F1)
@@ -147,7 +148,6 @@ export const CLOSENESS_MAX_SCORE = 100;
 export const CLOSENESS_DECAY_GRACE_DAYS = 3;
 export const CLOSENESS_DECAY_PER_DAY = 1;
 export const CLOSENESS_DECAY_SAFE_FLOOR = 10;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export const CONVERSATION_DELTA_MIN = -5;
 export const CONVERSATION_DELTA_MAX = 12;

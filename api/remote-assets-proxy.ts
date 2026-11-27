@@ -83,7 +83,7 @@ function downloadUrlBuffer(
       {
         agent: isHttps ? httpsAgent : httpAgent,
         headers: {
-          'User-Agent': 'BuddiesBlitz-AssetProxy/1.0',
+          'User-Agent': 'Cerria-AssetProxy/1.0',
           Accept: '*/*',
         },
       },
@@ -280,7 +280,7 @@ export function createRemoteAssetsProxyMiddleware(options?: { stripPrefix?: bool
         }
       })
       .catch((err) => {
-        console.warn(`[Buddies Blitz] Remote asset proxy failed for ${decodedRelPath}:`, err);
+        console.warn(`[Cerria] Remote asset proxy failed for ${decodedRelPath}:`, err);
         if (!res.writableEnded) {
           res.statusCode = 502;
           res.end();

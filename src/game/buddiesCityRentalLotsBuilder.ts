@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { IndividualCommanderBaseState } from './buddiesBlitzRules';
 import {
   CITY_RENTAL_LOTS,
+  CITY_RENTAL_LOT_SIZE_M,
   COMMERCIAL_SIDEWALK_STRIPS,
   SHOP_BILLBOARD_MESH_SPEC,
   SHOP_BUILDING_FORMS,
@@ -14,18 +16,28 @@ import {
   type ShopBuildingFormId,
   type ShopBuildingFormSpec,
 } from './buddiesCityRentalLotsRules';
+import type { QaShopLiveTelemetrySummary, QaShopRenderMode } from './qaDirectorMode';
+
+const LOT_SURFACE_Y = 0.09; // Matches URBAN_SIDEWALK_TOP_Y on the 4-sided commercial block plateau
+const BUILDING_PAVING_TOP_Y = 0.104;
 
 export interface CityRentalLotNodeController {
   spec: CityRentalLotSpec;
   lotRoot: THREE.Group;
   emptyMarkerGroup: THREE.Group;
+  emptyTurfMesh: THREE.Mesh;
   claimKioskMesh: THREE.Group;
   lotPavingMesh: THREE.Mesh;
   shopBuildingGroup: THREE.Group;
+  proceduralShellByForm: Partial<Record<ShopBuildingFormId, THREE.Group>>;
+  activeProceduralFormId: ShopBuildingFormId | null;
   glbBuildingMount: THREE.Group;
   loadedGlbFormId: ShopBuildingFormId | null;
+  glbLoadStatus: 'idle' | 'loading' | 'loaded' | 'fallback';
   appliedBillboardLogoUrl: string | null;
+  activeBillboardMats: THREE.MeshStandardMaterial[];
   highlightGroup: THREE.Group;
+  qaBoundsGroup: THREE.Group;
   hitProxyMesh: THREE.Mesh;
   statusSignMat: THREE.MeshBasicMaterial;
   highlightRingMat: THREE.MeshBasicMaterial;
@@ -47,8 +59,11 @@ export interface CityRentalLotsVisualController {
     selectedSlotId?: string | null;
     hoveredSlotId?: string | null;
     previewAllBuildingsFit?: boolean;
+    debugShopBounds3D?: boolean;
     timeSec?: number;
   }) => void;
+  updateNightLighting: (nightFactor01: number, timeSec?: number) => void;
+  getQaTelemetrySummary: () => QaShopLiveTelemetrySummary;
   dispose: () => void;
 }
 
@@ -77,6 +92,46 @@ function createNeutralBillboardTexture(
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
+  tex.needsUpdate = true;
+  disposables.push(tex);
+  return tex;
+}
+
+/**
+ * Generates a soft 4-cone overhead spotlight wash texture for rooftop billboards at night.
+ * Rendered with AdditiveBlending & zero real Three.js lights for 60 FPS performance.
+ */
+function createBillboardSpotlightWashTexture(
+  disposables: Array<{ dispose: () => void }>,
+): THREE.CanvasTexture {
+  if (typeof document === 'undefined') {
+    const tex = new THREE.DataTexture(new Uint8Array([255, 236, 185, 200]), 1, 1);
+    tex.needsUpdate = true;
+    disposables.push(tex);
+    return tex as unknown as THREE.CanvasTexture;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 192;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    ctx.clearRect(0, 0, 512, 192);
+    const lampXs = [78, 194, 318, 434];
+    for (let i = 0; i < lampXs.length; i++) {
+      const lx = lampXs[i];
+      const grad = ctx.createRadialGradient(lx, 6, 4, lx, 62, 128);
+      grad.addColorStop(0.0, 'rgba(255, 246, 212, 0.92)');
+      grad.addColorStop(0.32, 'rgba(255, 224, 150, 0.52)');
+      grad.addColorStop(0.72, 'rgba(255, 200, 110, 0.16)');
+      grad.addColorStop(1.0, 'rgba(255, 190, 95, 0.0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 512, 192);
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
   disposables.push(tex);
   return tex;
@@ -119,7 +174,11 @@ function createLotGroundPlaqueTexture(
 
     ctx.fillStyle = '#f8fafc';
     ctx.font = '900 34px system-ui, -apple-system, sans-serif';
-    ctx.fillText(`LOT ${shortCode} · 15×15M`, canvas.width * 0.5, 88);
+    ctx.fillText(
+      `LOT ${shortCode} · ${CITY_RENTAL_LOT_SIZE_M.width}×${CITY_RENTAL_LOT_SIZE_M.depth}M`,
+      canvas.width * 0.5,
+      88,
+    );
   }
 
   const tex = new THREE.CanvasTexture(canvas);
@@ -130,139 +189,630 @@ function createLotGroundPlaqueTexture(
   return tex;
 }
 
-/**
- * Builds the procedural fallback shell shown while a shop building GLB streams in
- * (compact 9.6m x 9.6m stand-in, height ~5.5m-5.8m, storefront glazing + signboard
- * area facing local +Z). The real catalog buildings are complete packages up to
- * 14m x 14m placed CENTRED on the lot (package standard, 27 Nov 2026), so the
- * group origin is the lot center and `localDepthOffsetTowardRearM` is 0.
- */
-function buildStandardShopShellForLot(
-  spec: CityRentalLotSpec,
-  variantId: ShopBuildingFormId,
-  sharedGeos: {
-    plinthGeo: THREE.BufferGeometry;
-    mainBodyGeo: THREE.BufferGeometry;
-    upperCrownGeo: THREE.BufferGeometry;
-    pilasterGeo: THREE.BufferGeometry;
-    windowGlassGeo: THREE.BufferGeometry;
-    doorFrameGeo: THREE.BufferGeometry;
-    doorLeafGeo: THREE.BufferGeometry;
-    awningGeo: THREE.BufferGeometry;
-    signBackGeo: THREE.BufferGeometry;
-    signFaceGeo: THREE.BufferGeometry;
-    windowMullionHGeo: THREE.BufferGeometry;
-    sideWindowGeo: THREE.BufferGeometry;
-  },
-  sharedMats: {
-    stonePlinthMat: THREE.Material;
-    glassMat: THREE.Material;
-    darkFrameMat: THREE.Material;
-    brassHandleMat: THREE.Material;
-  },
-  disposables: Array<{ dispose: () => void }>,
-): THREE.Group {
-  const variant: ShopBuildingFormSpec = SHOP_BUILDING_FORMS[variantId];
-  const group = new THREE.Group();
-  group.name = `StandardShopShell_${spec.slotId}_${variantId}`;
+function createRectOutlineGeometry(width: number, depth: number, y: number): THREE.BufferGeometry {
+  const hw = width * 0.5;
+  const hd = depth * 0.5;
+  const positions = new Float32Array([
+    -hw, y, -hd, hw, y, -hd,
+    hw, y, -hd, hw, y, hd,
+    hw, y, hd, -hw, y, hd,
+    -hw, y, hd, -hw, y, -hd,
+  ]);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  return geo;
+}
 
-  const buildingCenterZ = STANDARD_SHOP_FOOTPRINT_SPEC.localDepthOffsetTowardRearM; // 0m — centred (package standard)
-  const shellRoot = new THREE.Group();
-  shellRoot.position.set(0, 0, buildingCenterZ);
-  group.add(shellRoot);
-
-  const wallMat = new THREE.MeshLambertMaterial({ color: variant.palette.wallHex });
-  const trimMat = new THREE.MeshLambertMaterial({ color: variant.palette.trimHex });
-  const roofMat = new THREE.MeshLambertMaterial({ color: variant.palette.roofHex });
-  const awningMat = new THREE.MeshLambertMaterial({ color: variant.palette.accentHex });
-  const signTex = createNeutralBillboardTexture(disposables);
-  const signFaceMat = new THREE.MeshBasicMaterial({ map: signTex });
-  signFaceMat.name = SHOP_BILLBOARD_MESH_SPEC.materialName;
-  disposables.push(wallMat, trimMat, roofMat, awningMat, signFaceMat);
-
-  // 1. Ground Stone Plinth (9.6m x 0.24m x 9.6m -> exact 40.96% footprint)
-  const plinth = new THREE.Mesh(sharedGeos.plinthGeo, sharedMats.stonePlinthMat);
-  plinth.position.set(0, 0.12, 0);
-  plinth.receiveShadow = true;
-  shellRoot.add(plinth);
-
-  // 2. Main Compact 1.5-Story Shop Volume (9.36m x 4.80m x 9.36m)
-  const body = new THREE.Mesh(sharedGeos.mainBodyGeo, wallMat);
-  body.position.set(0, 2.64, 0);
-  body.castShadow = true;
-  body.receiveShadow = true;
-  shellRoot.add(body);
-
-  // 3. Parapet Roof Crown & Architectural Variant Roofline (height 5.5m - 5.8m)
-  const crown = new THREE.Mesh(sharedGeos.upperCrownGeo, roofMat);
-  crown.position.set(0, 5.22, 0);
-  crown.castShadow = true;
-  crown.receiveShadow = true;
-  shellRoot.add(crown);
-
-  // Corner & Center Facade Pilasters along Front (+Z = +4.68m)
-  for (const px of [-4.48, -1.65, 1.65, 4.48]) {
-    const pilaster = new THREE.Mesh(sharedGeos.pilasterGeo, trimMat);
-    pilaster.position.set(px, 2.64, 4.66);
-    shellRoot.add(pilaster);
-  }
-
-  // 4. Left & Right Storefront Display Windows facing the road (+Z)
-  for (const wx of [-3.05, 3.05]) {
-    const winGlass = new THREE.Mesh(sharedGeos.windowGlassGeo, sharedMats.glassMat);
-    winGlass.position.set(wx, 1.88, 4.69);
-    shellRoot.add(winGlass);
-
-    const sill = new THREE.Mesh(sharedGeos.windowMullionHGeo, trimMat);
-    sill.position.set(wx, 0.72, 4.73);
-    shellRoot.add(sill);
-  }
-
-  // Side Display Windows (Left -X and Right +X facades)
-  for (const xSign of [-1, 1]) {
-    const sideGlass = new THREE.Mesh(sharedGeos.sideWindowGeo, sharedMats.glassMat);
-    sideGlass.position.set(xSign * 4.69, 2.1, 0.4);
-    sideGlass.rotation.y = xSign * (Math.PI * 0.5);
-    shellRoot.add(sideGlass);
-  }
-
-  // 5. Double Front Entrance Door centered on +Z facade
-  const doorFrame = new THREE.Mesh(sharedGeos.doorFrameGeo, sharedMats.darkFrameMat);
-  doorFrame.position.set(0, 1.48, 4.68);
-  shellRoot.add(doorFrame);
-
-  const doorGlass = new THREE.Mesh(sharedGeos.doorLeafGeo, sharedMats.glassMat);
-  doorGlass.position.set(0, 1.46, 4.71);
-  shellRoot.add(doorGlass);
-
-  // 6. Storefront Canopy Awning projecting 0.78m from +Z facade (stays well inside +7.5m front border)
-  const awning = new THREE.Mesh(sharedGeos.awningGeo, awningMat);
-  awning.position.set(0, 3.24, 5.05);
-  awning.rotation.x = 0.18;
-  awning.castShadow = true;
-  shellRoot.add(awning);
-
-  // 7. Rooftop Billboard Face (separate named mesh + replaceable texture material)
-  const signBack = new THREE.Mesh(sharedGeos.signBackGeo, trimMat);
-  signBack.position.set(0, variant.billboard.centerYM * 0.55, 4.74);
-  shellRoot.add(signBack);
-
-  const signFace = new THREE.Mesh(sharedGeos.signFaceGeo, signFaceMat);
-  signFace.name = SHOP_BILLBOARD_MESH_SPEC.meshName;
-  signFace.position.set(0, variant.billboard.centerYM * 0.55, 4.825);
-  shellRoot.add(signFace);
-
-  return group;
+function createFrontArrowGeometry(y: number): THREE.BufferGeometry {
+  const halfLot = CITY_RENTAL_LOT_SIZE_M.halfDepth;
+  const z0 = halfLot - 0.8;
+  const z1 = halfLot + 1.4;
+  const positions = new Float32Array([
+    0, y, z0, 0, y, z1,
+    0, y, z1, -0.85, y, z1 - 0.95,
+    0, y, z1, 0.85, y, z1 - 0.95,
+  ]);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  return geo;
 }
 
 /**
- * Builds the 3D scene representation for all 16 city rental lots:
- * - Open front facing the nearest road/sidewalk (NO front fence or gate).
- * - Low manicured hedge/curb boundary markers along the left, right, and rear edges only.
- * - Clean paved walk-in front threshold apron and subtle corner boundary stone markers.
- * - Resting state: EMPTY LAND with a low available-for-rent ground plaque.
- * - While rented (or during fit preview): displays the lot's standard shop building shell.
- * - Interactive 3D hover & selection border highlight ring.
+ * Normalizes a cloned BufferGeometry into non-indexed form with guaranteed consistent attributes
+ * so `mergeGeometries` can aggressively collapse dozens of meshes into 1 draw call safely.
+ */
+function normalizeGeometryForMerge(
+  source: THREE.BufferGeometry,
+  matrix: THREE.Matrix4,
+  options: { includeUv: boolean; vertexColor?: THREE.Color },
+): THREE.BufferGeometry | null {
+  const raw = source.index ? source.toNonIndexed() : source.clone();
+  const posAttr = raw.getAttribute('position');
+  if (!posAttr || posAttr.count === 0) {
+    raw.dispose();
+    return null;
+  }
+
+  raw.applyMatrix4(matrix);
+  if (!raw.getAttribute('normal')) {
+    raw.computeVertexNormals();
+  }
+
+  const out = new THREE.BufferGeometry();
+  const bakedPos = raw.getAttribute('position');
+  const bakedNorm = raw.getAttribute('normal');
+  out.setAttribute('position', bakedPos.clone());
+  out.setAttribute('normal', bakedNorm.clone());
+
+  const vCount = bakedPos.count;
+  if (options.includeUv) {
+    const srcUv = raw.getAttribute('uv');
+    if (srcUv && srcUv.count === vCount) {
+      out.setAttribute('uv', srcUv.clone());
+    } else {
+      out.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(vCount * 2), 2));
+    }
+  }
+
+  if (options.vertexColor) {
+    const colArr = new Float32Array(vCount * 3);
+    const r = options.vertexColor.r;
+    const g = options.vertexColor.g;
+    const b = options.vertexColor.b;
+    for (let i = 0; i < vCount; i++) {
+      const o = i * 3;
+      colArr[o] = r;
+      colArr[o + 1] = g;
+      colArr[o + 2] = b;
+    }
+    out.setAttribute('color', new THREE.BufferAttribute(colArr, 3));
+  }
+
+  raw.dispose();
+  return out;
+}
+
+function mergeBucketOrNull(
+  geos: THREE.BufferGeometry[],
+  disposables: Array<{ dispose: () => void }>,
+): THREE.BufferGeometry | null {
+  if (geos.length === 0) return null;
+  if (geos.length === 1) {
+    const g = geos[0];
+    g.computeBoundingBox();
+    g.computeBoundingSphere();
+    disposables.push(g);
+    return g;
+  }
+  const merged = mergeGeometries(geos, false);
+  for (let i = 0; i < geos.length; i++) {
+    geos[i].dispose();
+  }
+  if (!merged) return null;
+  merged.computeBoundingBox();
+  merged.computeBoundingSphere();
+  disposables.push(merged);
+  return merged;
+}
+
+/**
+ * Adds a compact 4-lamp overhead gooseneck spotlight bar + glowing bulbs + downward light-wash
+ * directly above a rooftop billboard face so ALL 3 shop forms illuminate their rooftop signage at night.
+ */
+function buildBillboardOverheadSpotlightRig(
+  bbCenterX: number,
+  bbTopY: number,
+  bbCenterY: number,
+  bbFrontZ: number,
+  bbWidth: number,
+  bbHeight: number,
+  includeArms: boolean,
+  sharedMats: {
+    lampHousingMat: THREE.Material;
+    lampBulbMat: THREE.Material;
+    billboardWashMat: THREE.Material;
+  },
+  disposables: Array<{ dispose: () => void }>,
+): THREE.Group {
+  const rig = new THREE.Group();
+  rig.name = 'BillboardOverheadSpotlightRig';
+
+  const armGeos: THREE.BufferGeometry[] = [];
+  const bulbGeos: THREE.BufferGeometry[] = [];
+  const mat4 = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const s = new THREE.Vector3(1, 1, 1);
+  const p = new THREE.Vector3();
+
+  const lampCount = 4;
+  const span = Math.max(2.0, bbWidth * 0.78);
+  const armLen = 0.72;
+  const lampY = bbTopY + 0.24;
+  const lampZ = bbFrontZ + armLen;
+
+  for (let i = 0; i < lampCount; i++) {
+    const t = i / (lampCount - 1);
+    const lx = bbCenterX + (t - 0.5) * span;
+
+    if (includeArms) {
+      // Horizontal gooseneck arm extending out over the front of the billboard
+      const armBox = new THREE.BoxGeometry(0.08, 0.08, armLen);
+      p.set(lx, lampY, bbFrontZ + armLen * 0.5);
+      q.identity();
+      mat4.compose(p, q, s);
+      const normArm = normalizeGeometryForMerge(armBox, mat4, { includeUv: false });
+      armBox.dispose();
+      if (normArm) armGeos.push(normArm);
+
+      // Angled spotlight hood aimed down at the billboard face
+      const hoodBox = new THREE.BoxGeometry(0.32, 0.14, 0.26);
+      p.set(lx, lampY - 0.04, lampZ);
+      q.setFromEuler(new THREE.Euler(0.42, 0, 0));
+      mat4.compose(p, q, s);
+      const normHood = normalizeGeometryForMerge(hoodBox, mat4, { includeUv: false });
+      hoodBox.dispose();
+      if (normHood) armGeos.push(normHood);
+    }
+
+    // Glowing overhead spotlight lens/bulb
+    const bulbGeo = new THREE.BoxGeometry(0.24, 0.08, 0.18);
+    p.set(lx, lampY - 0.11, lampZ - 0.03);
+    q.setFromEuler(new THREE.Euler(0.42, 0, 0));
+    mat4.compose(p, q, s);
+    const normBulb = normalizeGeometryForMerge(bulbGeo, mat4, { includeUv: false });
+    bulbGeo.dispose();
+    if (normBulb) bulbGeos.push(normBulb);
+  }
+
+  const mergedArms = mergeBucketOrNull(armGeos, disposables);
+  if (mergedArms) {
+    const armsMesh = new THREE.Mesh(mergedArms, sharedMats.lampHousingMat);
+    armsMesh.name = 'BillboardSpotlightArms';
+    rig.add(armsMesh);
+  }
+
+  const mergedBulbs = mergeBucketOrNull(bulbGeos, disposables);
+  if (mergedBulbs) {
+    const bulbsMesh = new THREE.Mesh(mergedBulbs, sharedMats.lampBulbMat);
+    bulbsMesh.name = 'BillboardSpotlightBulbs';
+    rig.add(bulbsMesh);
+  }
+
+  // Soft downward warm spotlight light-wash plane hovering 0.04m in front of the billboard face
+  const washGeo = new THREE.PlaneGeometry(bbWidth * 1.02, bbHeight * 1.02);
+  disposables.push(washGeo);
+  const washMesh = new THREE.Mesh(washGeo, sharedMats.billboardWashMat);
+  washMesh.name = 'BillboardSpotlightWash';
+  washMesh.position.set(bbCenterX, bbCenterY, bbFrontZ + 0.045);
+  washMesh.renderOrder = 3;
+  rig.add(washMesh);
+
+  return rig;
+}
+
+interface SharedShopLightingMaterials {
+  showcaseGlassMat: THREE.MeshStandardMaterial;
+  upperWindowMat: THREE.MeshStandardMaterial;
+  canopyGlassMat: THREE.MeshLambertMaterial;
+  fixtureLampMat: THREE.MeshStandardMaterial;
+  lampHousingMat: THREE.MeshLambertMaterial;
+  billboardWashMat: THREE.MeshBasicMaterial;
+  stonePlinthMat: THREE.MeshLambertMaterial;
+  darkFrameMat: THREE.MeshLambertMaterial;
+  woodDeckMat: THREE.MeshLambertMaterial;
+}
+
+/**
+ * Optimizes a loaded GLB shop building ONCE per form into a low-draw-call shared template:
+ * - Scales by `spec.glbScale` and grounds flush at `spec.glbGroundOffsetY` so the shop fills its 20m x 20m lot.
+ * - Merges all untextured opaque meshes into 1 single vertex-colored MeshLambertMaterial draw call.
+ * - Merges textured opaque meshes grouped by shared baseColor texture (1 draw call per texture).
+ * - Merges storefront & upper display windows into 1–2 night-glowing window draw calls.
+ * - Merges built-in spotlight/soffit/lantern fixtures into 1 night-glowing lamp draw call.
+ * - Preserves `rooftop_billboard_face` (`rooftop_billboard_mat`) standalone + adds overhead billboard spotlights!
+ */
+function optimizeShopGlbTemplate(
+  rawScene: THREE.Group,
+  formId: ShopBuildingFormId,
+  sharedMats: SharedShopLightingMaterials,
+  neutralBillboardTex: THREE.Texture,
+  disposables: Array<{ dispose: () => void }>,
+): THREE.Group {
+  const spec = SHOP_BUILDING_FORMS[formId];
+  rawScene.updateMatrixWorld(true);
+
+  const scaleAndGround = new THREE.Matrix4().compose(
+    new THREE.Vector3(0, spec.glbGroundOffsetY, 0),
+    new THREE.Quaternion(),
+    new THREE.Vector3(spec.glbScale, spec.glbScale, spec.glbScale),
+  );
+
+  const untexturedOpaqueGeos: THREE.BufferGeometry[] = [];
+  const texturedOpaqueBuckets = new Map<
+    THREE.Texture,
+    { geos: THREE.BufferGeometry[]; color: THREE.Color }
+  >();
+  const showcaseGlassGeos: THREE.BufferGeometry[] = [];
+  const upperWindowGeos: THREE.BufferGeometry[] = [];
+  const canopyGlassGeos: THREE.BufferGeometry[] = [];
+  const fixtureLampGeos: THREE.BufferGeometry[] = [];
+  const billboardGeos: THREE.BufferGeometry[] = [];
+  let hasBuiltInBillboardSpotlights = false;
+
+  const bakedMatrix = new THREE.Matrix4();
+  const fallbackColor = new THREE.Color('#d8d4cc');
+
+  rawScene.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.geometry) return;
+    const rawMat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+    if (!rawMat) return;
+
+    const meshName = mesh.name || '';
+    const matName = rawMat.name || '';
+    const combinedName = `${meshName} ${matName}`;
+
+    bakedMatrix.multiplyMatrices(scaleAndGround, mesh.matrixWorld);
+
+    // 1. Standalone Rooftop Billboard Face (replaceable per-lot logo + night illumination)
+    if (
+      meshName === SHOP_BILLBOARD_MESH_SPEC.meshName ||
+      matName === SHOP_BILLBOARD_MESH_SPEC.materialName
+    ) {
+      const norm = normalizeGeometryForMerge(mesh.geometry, bakedMatrix, { includeUv: true });
+      if (norm) billboardGeos.push(norm);
+      return;
+    }
+
+    // 2. Overhead Billboard Spotlights, Soffit LEDs & Facade Lanterns
+    if (/spot_warm_bulb|billboard_spotlight|lamp_amber|light_lens|soffit_warm_light/i.test(combinedName)) {
+      if (/billboard_spotlight|spot_warm_bulb/i.test(combinedName)) {
+        hasBuiltInBillboardSpotlights = true;
+      }
+      const norm = normalizeGeometryForMerge(mesh.geometry, bakedMatrix, { includeUv: false });
+      if (norm) fixtureLampGeos.push(norm);
+      return;
+    }
+
+    // 3. Frosted Overhead Canopy Glass (stays translucent, does not glow like showcase windows)
+    if (/canopy_frosted|glass_canopy/i.test(combinedName)) {
+      const norm = normalizeGeometryForMerge(mesh.geometry, bakedMatrix, { includeUv: false });
+      if (norm) canopyGlassGeos.push(norm);
+      return;
+    }
+
+    // 4. Storefront & Upper Showcase Windows (glow warm at dusk/night)
+    if (/upper_window_interior|glass_upper_window|glass_window_upper/i.test(combinedName)) {
+      const norm = normalizeGeometryForMerge(mesh.geometry, bakedMatrix, { includeUv: false });
+      if (norm) upperWindowGeos.push(norm);
+      return;
+    }
+    if (/glass_storefront_clear|clear_glass|glass_clear/i.test(combinedName)) {
+      const norm = normalizeGeometryForMerge(mesh.geometry, bakedMatrix, { includeUv: false });
+      if (norm) showcaseGlassGeos.push(norm);
+      return;
+    }
+
+    // 5. Opaque Structural / Architectural Meshes (merged by texture or single vertex-color batch)
+    const stdMat = rawMat as THREE.MeshStandardMaterial;
+    const mapTex = stdMat.map ?? null;
+    const baseColor = stdMat.color ? stdMat.color.clone() : fallbackColor.clone();
+
+    if (mapTex) {
+      let bucket = texturedOpaqueBuckets.get(mapTex);
+      if (!bucket) {
+        bucket = { geos: [], color: baseColor };
+        texturedOpaqueBuckets.set(mapTex, bucket);
+      }
+      const norm = normalizeGeometryForMerge(mesh.geometry, bakedMatrix, { includeUv: true });
+      if (norm) bucket.geos.push(norm);
+    } else {
+      const norm = normalizeGeometryForMerge(mesh.geometry, bakedMatrix, {
+        includeUv: false,
+        vertexColor: baseColor,
+      });
+      if (norm) untexturedOpaqueGeos.push(norm);
+    }
+  });
+
+  const optimized = new THREE.Group();
+  optimized.name = `OptimizedShopGlb_${formId}`;
+
+  // 1) Single merged vertex-colored opaque structure mesh (1 draw call for all untextured parts!)
+  const mergedUntextured = mergeBucketOrNull(untexturedOpaqueGeos, disposables);
+  if (mergedUntextured) {
+    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    disposables.push(mat);
+    const mesh = new THREE.Mesh(mergedUntextured, mat);
+    mesh.name = `ShopOpaqueSolid_${formId}`;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    optimized.add(mesh);
+  }
+
+  // 2) Merged textured opaque buckets (1 draw call per unique texture)
+  let texIdx = 0;
+  for (const [tex, bucket] of texturedOpaqueBuckets.entries()) {
+    const mergedTexGeo = mergeBucketOrNull(bucket.geos, disposables);
+    if (!mergedTexGeo) continue;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.MeshLambertMaterial({
+      map: tex,
+      color: bucket.color,
+    });
+    disposables.push(mat);
+    const mesh = new THREE.Mesh(mergedTexGeo, mat);
+    mesh.name = `ShopOpaqueTex_${formId}_${texIdx++}`;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    optimized.add(mesh);
+  }
+
+  // 3) Frosted canopy glass (1 draw call if present)
+  const mergedCanopyGlass = mergeBucketOrNull(canopyGlassGeos, disposables);
+  if (mergedCanopyGlass) {
+    const mesh = new THREE.Mesh(mergedCanopyGlass, sharedMats.canopyGlassMat);
+    mesh.name = `ShopCanopyGlass_${formId}`;
+    optimized.add(mesh);
+  }
+
+  // 4) Storefront showcase windows (1 draw call, glows warm at dusk/night)
+  const mergedShowcaseGlass = mergeBucketOrNull(showcaseGlassGeos, disposables);
+  if (mergedShowcaseGlass) {
+    const mesh = new THREE.Mesh(mergedShowcaseGlass, sharedMats.showcaseGlassMat);
+    mesh.name = `ShopShowcaseGlass_${formId}`;
+    mesh.renderOrder = 2;
+    optimized.add(mesh);
+  }
+
+  // 5) Upper display windows (1 draw call, glows warm at dusk/night)
+  const mergedUpperWindows = mergeBucketOrNull(upperWindowGeos, disposables);
+  if (mergedUpperWindows) {
+    const mesh = new THREE.Mesh(mergedUpperWindows, sharedMats.upperWindowMat);
+    mesh.name = `ShopUpperWindows_${formId}`;
+    optimized.add(mesh);
+  }
+
+  // 6) Built-in spotlight bulbs, facade lanterns & soffit LEDs (1 draw call, glows bright at night)
+  const mergedLamps = mergeBucketOrNull(fixtureLampGeos, disposables);
+  if (mergedLamps) {
+    const mesh = new THREE.Mesh(mergedLamps, sharedMats.fixtureLampMat);
+    mesh.name = `ShopFixtureLamps_${formId}`;
+    optimized.add(mesh);
+  }
+
+  // 7) Standalone Rooftop Billboard Face + Overhead Billboard Spotlight Rig
+  const mergedBillboard = mergeBucketOrNull(billboardGeos, disposables);
+  let bbCenterX = 0;
+  let bbCenterY = spec.billboard.centerYM;
+  let bbTopY = spec.billboard.centerYM + spec.billboard.heightM * 0.5;
+  let bbFrontZ = spec.billboard.offsetFrontZM;
+  let bbWidth = spec.billboard.widthM;
+  let bbHeight = spec.billboard.heightM;
+
+  if (mergedBillboard) {
+    const bbMat = new THREE.MeshStandardMaterial({
+      map: neutralBillboardTex,
+      emissiveMap: neutralBillboardTex,
+      color: '#ffffff',
+      emissive: new THREE.Color('#fff1d6'),
+      emissiveIntensity: 0.0,
+      roughness: 0.55,
+      metalness: 0.0,
+    });
+    bbMat.name = SHOP_BILLBOARD_MESH_SPEC.materialName;
+    disposables.push(bbMat);
+
+    const bbMesh = new THREE.Mesh(mergedBillboard, bbMat);
+    bbMesh.name = SHOP_BILLBOARD_MESH_SPEC.meshName;
+    optimized.add(bbMesh);
+
+    if (mergedBillboard.boundingBox) {
+      const b = mergedBillboard.boundingBox;
+      bbCenterX = (b.min.x + b.max.x) * 0.5;
+      bbCenterY = (b.min.y + b.max.y) * 0.5;
+      bbTopY = b.max.y;
+      bbFrontZ = b.max.z;
+      bbWidth = Math.max(2.0, b.max.x - b.min.x);
+      bbHeight = Math.max(0.8, b.max.y - b.min.y);
+    }
+  }
+
+  // Mount overhead billboard spotlight rig (adds gooseneck arms if GLB doesn't already have them, plus bulbs & warm light-wash)
+  const spotlightRig = buildBillboardOverheadSpotlightRig(
+    bbCenterX,
+    bbTopY,
+    bbCenterY,
+    bbFrontZ,
+    bbWidth,
+    bbHeight,
+    !hasBuiltInBillboardSpotlights,
+    {
+      lampHousingMat: sharedMats.lampHousingMat,
+      lampBulbMat: sharedMats.fixtureLampMat,
+      billboardWashMat: sharedMats.billboardWashMat,
+    },
+    disposables,
+  );
+  optimized.add(spotlightRig);
+
+  // Dispose raw unmerged geometries & materials to free memory immediately
+  rawScene.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.geometry?.dispose();
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (let i = 0; i < mats.length; i++) {
+      mats[i]?.dispose();
+    }
+  });
+
+  return optimized;
+}
+
+interface MergedProceduralFormTemplate {
+  solidGeo: THREE.BufferGeometry;
+  showcaseGlassGeo: THREE.BufferGeometry;
+  upperWindowGeo: THREE.BufferGeometry;
+  billboardFaceGeo: THREE.BufferGeometry;
+  spotlightRigTemplate: THREE.Group;
+}
+
+/**
+ * Builds a low-draw-call merged procedural fallback template for a shop form (~5 draw calls total)
+ * matching the scaled 20m x 20m lot proportions, with glowing showcase windows and overhead billboard spotlights.
+ */
+function createMergedProceduralFormTemplate(
+  formId: ShopBuildingFormId,
+  sharedMats: SharedShopLightingMaterials,
+  disposables: Array<{ dispose: () => void }>,
+): MergedProceduralFormTemplate {
+  const spec: ShopBuildingFormSpec = SHOP_BUILDING_FORMS[formId];
+  const bodyW = spec.wallColliderLocal.halfX * 2.0;
+  const bodyD = spec.wallColliderLocal.halfZ * 2.0;
+  const bodyH = formId === 'glass_corner_3story' ? 14.2 : formId === 'canopy_storefront_2story' ? 10.8 : 9.8;
+  const plinthH = 0.32;
+  const baseY = BUILDING_PAVING_TOP_Y;
+  const halfW = bodyW * 0.5;
+  const halfD = bodyD * 0.5;
+
+  const solidGeos: THREE.BufferGeometry[] = [];
+  const showcaseGeos: THREE.BufferGeometry[] = [];
+  const upperGeos: THREE.BufferGeometry[] = [];
+
+  const m4 = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const one = new THREE.Vector3(1, 1, 1);
+  const pos = new THREE.Vector3();
+
+  const pushBox = (
+    target: THREE.BufferGeometry[],
+    w: number,
+    h: number,
+    d: number,
+    x: number,
+    y: number,
+    z: number,
+    colorHex?: string,
+    rotX = 0,
+    rotY = 0,
+  ) => {
+    const g = new THREE.BoxGeometry(w, h, d);
+    pos.set(x, y, z);
+    q.setFromEuler(new THREE.Euler(rotX, rotY, 0));
+    m4.compose(pos, q, one);
+    const norm = normalizeGeometryForMerge(g, m4, {
+      includeUv: false,
+      vertexColor: colorHex ? new THREE.Color(colorHex) : undefined,
+    });
+    g.dispose();
+    if (norm) target.push(norm);
+  };
+
+  // Plinth, body, crown, pilasters, door frame, canopy awning
+  pushBox(solidGeos, bodyW + 0.6, plinthH, bodyD + 0.6, 0, baseY + plinthH * 0.5, 0, '#94a3b8');
+  pushBox(solidGeos, bodyW, bodyH, bodyD, 0, baseY + plinthH + bodyH * 0.5, 0, spec.palette.wallHex);
+  pushBox(solidGeos, bodyW + 0.45, 0.55, bodyD + 0.45, 0, baseY + plinthH + bodyH + 0.28, 0, spec.palette.roofHex);
+
+  for (const px of [-halfW + 0.35, -2.2, 2.2, halfW - 0.35]) {
+    pushBox(solidGeos, 0.45, bodyH, 0.24, px, baseY + plinthH + bodyH * 0.5, halfD + 0.06, spec.palette.trimHex);
+  }
+  // Entrance door frame + canopy awning
+  pushBox(solidGeos, 3.1, 3.6, 0.22, 0, baseY + plinthH + 1.8, halfD + 0.06, '#1e293b');
+  pushBox(
+    solidGeos,
+    bodyW - 0.8,
+    0.22,
+    1.55,
+    0,
+    baseY + plinthH + 4.35,
+    halfD + 0.72,
+    spec.palette.accentHex,
+    0.14,
+  );
+
+  // Storefront ground display windows + glass entrance door
+  const winOffsetX = halfW * 0.58;
+  for (const wx of [-winOffsetX, winOffsetX]) {
+    pushBox(showcaseGeos, 3.85, 3.15, 0.08, wx, baseY + plinthH + 2.1, halfD + 0.08);
+  }
+  pushBox(showcaseGeos, 2.65, 3.35, 0.08, 0, baseY + plinthH + 1.78, halfD + 0.14);
+
+  // Upper floor windows per architectural form
+  if (formId === 'glass_corner_3story') {
+    for (const fy of [baseY + plinthH + 6.9, baseY + plinthH + 11.2]) {
+      pushBox(showcaseGeos, bodyW - 1.2, 2.8, 0.08, 0, fy, halfD + 0.08);
+      for (const sx of [-1, 1]) {
+        pushBox(showcaseGeos, 0.08, 2.8, bodyD * 0.68, sx * (halfW + 0.08), fy, 0.4);
+      }
+    }
+  } else {
+    const upperY = baseY + plinthH + 7.4;
+    for (const wx of [-4.2, 0, 4.2]) {
+      pushBox(upperGeos, 2.75, 2.55, 0.08, wx, upperY, halfD + 0.08);
+    }
+    for (const sx of [-1, 1]) {
+      pushBox(upperGeos, 0.08, 2.55, bodyD * 0.58, sx * (halfW + 0.08), upperY, 0.2);
+    }
+    if (formId === 'brick_rooftop_deck') {
+      const deckY = baseY + plinthH + bodyH + 0.6;
+      const railY = deckY + 0.68;
+      for (const sz of [-1, 1]) {
+        pushBox(solidGeos, bodyW - 0.4, 0.14, 0.14, 0, railY, sz * (halfD - 0.22), '#1e293b');
+      }
+      for (const sx of [-1, 1]) {
+        pushBox(solidGeos, 0.14, 0.14, bodyD - 0.4, sx * (halfW - 0.22), railY, 0, '#1e293b');
+      }
+    }
+  }
+
+  // Rooftop billboard backing frame
+  const signW = spec.billboard.widthM;
+  const signH = spec.billboard.heightM;
+  const bbCenterY = baseY + plinthH + bodyH + 0.62 + signH * 0.52;
+  const bbFrontZ = halfD + 0.08;
+  pushBox(solidGeos, signW + 0.36, signH + 0.28, 0.32, 0, bbCenterY, halfD - 0.12, '#1e293b');
+
+  const solidGeo = mergeBucketOrNull(solidGeos, disposables) ?? new THREE.BoxGeometry(1, 1, 1);
+  const showcaseGlassGeo =
+    mergeBucketOrNull(showcaseGeos, disposables) ?? new THREE.BufferGeometry();
+  const upperWindowGeo = mergeBucketOrNull(upperGeos, disposables) ?? new THREE.BufferGeometry();
+
+  const billboardFaceGeo = new THREE.PlaneGeometry(signW, signH);
+  billboardFaceGeo.translate(0, bbCenterY, bbFrontZ);
+  disposables.push(billboardFaceGeo);
+
+  const spotlightRigTemplate = buildBillboardOverheadSpotlightRig(
+    0,
+    bbCenterY + signH * 0.5,
+    bbCenterY,
+    bbFrontZ,
+    signW,
+    signH,
+    true,
+    {
+      lampHousingMat: sharedMats.lampHousingMat,
+      lampBulbMat: sharedMats.fixtureLampMat,
+      billboardWashMat: sharedMats.billboardWashMat,
+    },
+    disposables,
+  );
+
+  return {
+    solidGeo,
+    showcaseGlassGeo,
+    upperWindowGeo,
+    billboardFaceGeo,
+    spotlightRigTemplate,
+  };
+}
+
+/**
+ * Builds the 3D scene representation for all 16 city rental lots (20m x 20m filling 100% of each block interior):
+ * - Visually distinct full-lot Building Paving ("Trotoar Bangunan") flush with the 4-sided curbed City Sidewalk ("Trotoar Kota").
+ * - Aggressively merged low-draw-call GLB & procedural shop buildings (~5–9 draw calls per building).
+ * - Nighttime glowing storefront/showcase windows & overhead rooftop billboard spotlights (0 extra Three.js lights).
+ * - Interactive hover/selection rings & optional 3D QA bounds overlay.
  */
 export function buildCityRentalLotsVisuals(options?: {
   createKioskMesh?: () => THREE.Group;
@@ -280,21 +830,61 @@ export function buildCityRentalLotsVisuals(options?: {
     return m;
   };
 
-  // Amendment 3: Per-building-form lot ground paving (14.4m x 14.4m inside 15m lot boundary; hidden when unbuilt so lot stays plain grass)
-  const lotPavingGeo = regGeo(new THREE.PlaneGeometry(14.4, 14.4));
-  lotPavingGeo.rotateX(-Math.PI * 0.5);
+  const lotW = CITY_RENTAL_LOT_SIZE_M.width;
+  const lotD = CITY_RENTAL_LOT_SIZE_M.depth;
+  const halfLotW = CITY_RENTAL_LOT_SIZE_M.halfWidth;
+  const halfLotD = CITY_RENTAL_LOT_SIZE_M.halfDepth;
 
-  const groundPlaqueFaceGeo = regGeo(new THREE.PlaneGeometry(2.52, 0.8));
+  // Full-lot Building Paving ("Trotoar Bangunan"): solid 19.98m x 19.98m architectural terrace slab
+  // filling 100% of the lot land flush to neighboring lots & the inner granite curb of Trotoar Kota
+  const lotPavingGeo = regGeo(new THREE.BoxGeometry(lotW - 0.02, 0.044, lotD - 0.02));
+  const emptyTurfGeo = regGeo(new THREE.BoxGeometry(lotW - 0.04, 0.036, lotD - 0.04));
+
+  const groundPlaqueFaceGeo = regGeo(new THREE.PlaneGeometry(3.1, 0.96));
   groundPlaqueFaceGeo.rotateX(-Math.PI * 0.5);
 
-  // Highlight ring along the 15.0m x 15.0m perimeter
-  const highlightNSGeo = regGeo(new THREE.PlaneGeometry(15.0, 0.28));
+  // Highlight ring along the 20.0m x 20.0m lot perimeter
+  const highlightNSGeo = regGeo(new THREE.PlaneGeometry(lotW, 0.34));
   highlightNSGeo.rotateX(-Math.PI * 0.5);
-  const highlightEWGeo = regGeo(new THREE.PlaneGeometry(0.28, 14.44));
+  const highlightEWGeo = regGeo(new THREE.PlaneGeometry(0.34, lotD - 0.68));
   highlightEWGeo.rotateX(-Math.PI * 0.5);
 
-  // Invisible hit proxy for raycasting clicks/hovers across the 15.0m x 15.0m lot
-  const hitProxyGeo = regGeo(new THREE.PlaneGeometry(15.0, 15.0));
+  // Shared 3D QA Bounds Overlay Geometries & Materials (20m lot, 19.6m package cap, front facing arrow)
+  const qaLotOutlineGeo = regGeo(createRectOutlineGeometry(lotW, lotD, BUILDING_PAVING_TOP_Y + 0.04));
+  const qaCapOutlineGeo = regGeo(
+    createRectOutlineGeometry(
+      STANDARD_SHOP_FOOTPRINT_SPEC.width,
+      STANDARD_SHOP_FOOTPRINT_SPEC.depth,
+      BUILDING_PAVING_TOP_Y + 0.05,
+    ),
+  );
+  const qaFrontArrowGeo = regGeo(createFrontArrowGeometry(BUILDING_PAVING_TOP_Y + 0.06));
+  const qaLotOutlineMat = regMat(new THREE.LineBasicMaterial({ color: '#22d3ee' }));
+  const qaCapOutlineMat = regMat(new THREE.LineBasicMaterial({ color: '#fbbf24' }));
+  const qaFrontArrowMat = regMat(new THREE.LineBasicMaterial({ color: '#a3e635' }));
+
+  // Shared flat white lot boundary markings (visible cleanly on unbuilt lots)
+  const whiteLineMat = regMat(
+    new THREE.MeshBasicMaterial({
+      color: '#ffffff',
+      transparent: true,
+      opacity: 0.84,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    }),
+  );
+  const whiteLineNSGeo = regGeo(new THREE.PlaneGeometry(lotW, 0.2));
+  whiteLineNSGeo.rotateX(-Math.PI * 0.5);
+  const whiteLineEWGeo = regGeo(new THREE.PlaneGeometry(0.2, lotD));
+  whiteLineEWGeo.rotateX(-Math.PI * 0.5);
+  const frontWhiteSegmentGeo = regGeo(new THREE.PlaneGeometry(6.0, 0.2));
+  frontWhiteSegmentGeo.rotateX(-Math.PI * 0.5);
+
+  // Invisible hit proxy for raycasting clicks/hovers across the 20.0m x 20.0m lot
+  const hitProxyGeo = regGeo(new THREE.PlaneGeometry(lotW, lotD));
   hitProxyGeo.rotateX(-Math.PI * 0.5);
   const hitProxyMat = regMat(
     new THREE.MeshBasicMaterial({
@@ -303,100 +893,202 @@ export function buildCityRentalLotsVisuals(options?: {
     }),
   );
 
-  // Shared Geometries for the Standard 9.6m x 9.6m Shop Building Shell
-  const sharedShopGeos = {
-    plinthGeo: regGeo(new RoundedBoxGeometry(9.6, 0.24, 9.6, 1, 0.02)),
-    mainBodyGeo: regGeo(new RoundedBoxGeometry(9.36, 4.8, 9.36, 2, 0.04)),
-    upperCrownGeo: regGeo(new RoundedBoxGeometry(9.56, 0.44, 9.56, 2, 0.03)),
-    pilasterGeo: regGeo(new RoundedBoxGeometry(0.36, 4.8, 0.18, 1, 0.02)),
-    windowGlassGeo: regGeo(new THREE.PlaneGeometry(2.35, 2.2)),
-    windowMullionHGeo: regGeo(new RoundedBoxGeometry(2.48, 0.14, 0.14, 1, 0.015)),
-    sideWindowGeo: regGeo(new THREE.PlaneGeometry(3.2, 2.0)),
-    doorFrameGeo: regGeo(new RoundedBoxGeometry(2.2, 2.68, 0.14, 1, 0.02)),
-    doorLeafGeo: regGeo(new THREE.PlaneGeometry(1.94, 2.52)),
-    awningGeo: regGeo(new RoundedBoxGeometry(8.8, 0.14, 0.82, 1, 0.02)),
-    signBackGeo: regGeo(new RoundedBoxGeometry(6.6, 1.12, 0.14, 1, 0.02)),
-    signFaceGeo: regGeo(new THREE.PlaneGeometry(6.36, 0.96)),
+  // Shared Night-Reactive Showcase Glass, Lamps & Billboard Spotlight Wash Materials
+  const billboardWashTex = createBillboardSpotlightWashTexture(disposables);
+  const sharedShopMats: SharedShopLightingMaterials = {
+    showcaseGlassMat: regMat(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#c8e4f4'),
+        emissive: new THREE.Color('#ffbe55'),
+        emissiveIntensity: 0.0,
+        roughness: 0.14,
+        metalness: 0.12,
+        transparent: true,
+        opacity: 0.44,
+        side: THREE.DoubleSide,
+      }),
+    ),
+    upperWindowMat: regMat(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#3b4c63'),
+        emissive: new THREE.Color('#f7ad3b'),
+        emissiveIntensity: 0.0,
+        roughness: 0.22,
+        metalness: 0.1,
+      }),
+    ),
+    canopyGlassMat: regMat(
+      new THREE.MeshLambertMaterial({
+        color: '#d8ecf8',
+        transparent: true,
+        opacity: 0.5,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
+    ),
+    fixtureLampMat: regMat(
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#e2e8f0'),
+        emissive: new THREE.Color('#ffe6a6'),
+        emissiveIntensity: 0.05,
+        roughness: 0.25,
+        metalness: 0.0,
+      }),
+    ),
+    lampHousingMat: regMat(new THREE.MeshLambertMaterial({ color: '#1e2430' })),
+    billboardWashMat: regMat(
+      new THREE.MeshBasicMaterial({
+        map: billboardWashTex,
+        color: new THREE.Color('#ffe5ad'),
+        transparent: true,
+        opacity: 0.0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
+    ),
+    stonePlinthMat: regMat(new THREE.MeshLambertMaterial({ color: '#94a3b8' })),
+    darkFrameMat: regMat(new THREE.MeshLambertMaterial({ color: '#1e293b' })),
+    woodDeckMat: regMat(new THREE.MeshLambertMaterial({ color: '#8b5a2b' })),
+  };
+  sharedShopMats.billboardWashMat.visible = false;
+
+  const proceduralSolidMat = regMat(new THREE.MeshLambertMaterial({ vertexColors: true }));
+
+  const proceduralTemplatesByForm: Record<ShopBuildingFormId, MergedProceduralFormTemplate> = {
+    glass_corner_3story: createMergedProceduralFormTemplate(
+      'glass_corner_3story',
+      sharedShopMats,
+      disposables,
+    ),
+    canopy_storefront_2story: createMergedProceduralFormTemplate(
+      'canopy_storefront_2story',
+      sharedShopMats,
+      disposables,
+    ),
+    brick_rooftop_deck: createMergedProceduralFormTemplate(
+      'brick_rooftop_deck',
+      sharedShopMats,
+      disposables,
+    ),
   };
 
-  // Shared Materials (Amendment 3 paving materials below)
-
-  // Amendment 3: Building-form styled lot paving materials (applied on placement, reverted to grass on removal/expiry)
+  /**
+   * Visually distinct Building Paving ("Trotoar Bangunan") textures:
+   * Warm architectural travertine/sandstone/terracotta terrace stone framed by a dark coping border,
+   * unmistakably distinct from the cool-grey flagstone City Block Sidewalk ("Trotoar Kota").
+   */
   const createBuildingFormPavingMat = (
     baseHex: string,
     groutHex: string,
     accentHex: string,
+    borderHex: string,
     tileCount: number,
   ): THREE.MeshLambertMaterial => {
     if (typeof document === 'undefined') {
       return regMat(new THREE.MeshLambertMaterial({ color: baseHex }));
     }
     const c = document.createElement('canvas');
-    c.width = 256;
-    c.height = 256;
+    c.width = 512;
+    c.height = 512;
     const ctx = c.getContext('2d');
     if (ctx) {
       ctx.fillStyle = baseHex;
-      ctx.fillRect(0, 0, 256, 256);
-      const step = 256 / tileCount;
+      ctx.fillRect(0, 0, 512, 512);
+
+      // Architectural staggered paver tiles
+      const step = 512 / tileCount;
+      ctx.fillStyle = accentHex;
+      for (let gy = 0; gy < tileCount; gy++) {
+        for (let gx = 0; gx < tileCount; gx++) {
+          ctx.globalAlpha = (gx + gy) % 2 === 0 ? 0.22 : 0.08;
+          ctx.fillRect(gx * step + 3, gy * step + 3, step - 6, step - 6);
+        }
+      }
+      ctx.globalAlpha = 1.0;
+
+      // Crisp mortar joints
       ctx.strokeStyle = groutHex;
       ctx.lineWidth = 3;
       for (let gx = 0; gx <= tileCount; gx++) {
         ctx.beginPath();
         ctx.moveTo(gx * step, 0);
-        ctx.lineTo(gx * step, 256);
+        ctx.lineTo(gx * step, 512);
         ctx.stroke();
       }
       for (let gy = 0; gy <= tileCount; gy++) {
         ctx.beginPath();
         ctx.moveTo(0, gy * step);
-        ctx.lineTo(256, gy * step);
+        ctx.lineTo(512, gy * step);
         ctx.stroke();
       }
-      ctx.fillStyle = accentHex;
-      ctx.globalAlpha = 0.24;
-      for (let gx = 0; gx < tileCount; gx++) {
-        for (let gy = 0; gy < tileCount; gy++) {
-          if ((gx + gy) % 2 === 0) {
-            ctx.fillRect(gx * step + 2, gy * step + 2, step - 4, step - 4);
-          }
-        }
-      }
+
+      // Perimeter architectural trim border clearly framing each building's private terrace paving
+      ctx.strokeStyle = borderHex;
+      ctx.lineWidth = 18;
+      ctx.strokeRect(9, 9, 494, 494);
+      ctx.strokeStyle = '#ffffff';
+      ctx.globalAlpha = 0.22;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(22, 22, 468, 468);
+      ctx.globalAlpha = 1.0;
     }
     const tex = new THREE.CanvasTexture(c);
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(3, 3);
+    tex.anisotropy = 4;
     tex.colorSpace = THREE.SRGBColorSpace;
     disposables.push(tex);
-    return regMat(
-      new THREE.MeshLambertMaterial({
-        map: tex,
-        polygonOffset: true,
-        polygonOffsetFactor: -1,
-        polygonOffsetUnits: -1,
-      }),
-    );
+    return regMat(new THREE.MeshLambertMaterial({ map: tex }));
   };
 
   const lotPavingMatByForm: Record<ShopBuildingFormId, THREE.MeshLambertMaterial> = {
-    glass_corner_3story: createBuildingFormPavingMat('#cbd5e1', '#94a3b8', '#e2e8f0', 4),
-    canopy_storefront_2story: createBuildingFormPavingMat('#dfd3c3', '#b8a99a', '#f0e6d8', 4),
-    brick_rooftop_deck: createBuildingFormPavingMat('#b8b2a6', '#78716c', '#d6d3d1', 6),
+    glass_corner_3story: createBuildingFormPavingMat(
+      '#ddd6c8',
+      '#b5ab9b',
+      '#ede7dc',
+      '#647082',
+      10,
+    ),
+    canopy_storefront_2story: createBuildingFormPavingMat(
+      '#e5d5bc',
+      '#bfa98b',
+      '#f3e7d4',
+      '#7d6b57',
+      10,
+    ),
+    brick_rooftop_deck: createBuildingFormPavingMat(
+      '#d2bba4',
+      '#9c816a',
+      '#e3cfba',
+      '#6b5344',
+      12,
+    ),
   };
 
-  const sharedShopMats = {
-    stonePlinthMat: regMat(new THREE.MeshLambertMaterial({ color: '#94a3b8' })),
-    glassMat: regMat(
-      new THREE.MeshLambertMaterial({
-        color: '#bae6fd',
-        emissive: new THREE.Color('#0c4a6e'),
-        emissiveIntensity: 0.35,
-      }),
-    ),
-    darkFrameMat: regMat(new THREE.MeshLambertMaterial({ color: '#1e293b' })),
-    brassHandleMat: regMat(new THREE.MeshLambertMaterial({ color: '#facc15' })),
-  };
+  // Clean manicured lot turf pad for empty lots flush at +0.09m block elevation
+  const emptyLotTurfMat = regMat(new THREE.MeshLambertMaterial({ color: '#6ec44a' }));
+
+  const gltfLoader = new GLTFLoader();
+  const textureLoader = new THREE.TextureLoader();
+  const glbTemplateCache = new Map<ShopBuildingFormId, Promise<THREE.Group | null>>();
+  const neutralBillboardTex = createNeutralBillboardTexture(disposables);
+  let disposed = false;
+  let lastPreviewAllBuildings = false;
+  let lastDebugShopBounds3D = false;
+  let lastNightFactor01 = 0;
+
+  // Scratch colors for zero-allocation night lighting updates
+  const tmpShowcaseColor = new THREE.Color();
+  const tmpUpperColor = new THREE.Color();
+  const tmpLampColor = new THREE.Color();
+  const tmpStreetGlobeColor = new THREE.Color();
+  const DAY_SHOWCASE_COLOR = new THREE.Color('#c8e4f4');
+  const NIGHT_SHOWCASE_COLOR = new THREE.Color('#ffe9bd');
+  const DAY_UPPER_COLOR = new THREE.Color('#3b4c63');
+  const NIGHT_UPPER_COLOR = new THREE.Color('#ffda96');
+  const DAY_LAMP_COLOR = new THREE.Color('#d8e0ea');
+  const NIGHT_LAMP_COLOR = new THREE.Color('#fff5d4');
+  const DAY_STREET_GLOBE = new THREE.Color('#dce3ec');
+  const NIGHT_STREET_GLOBE = new THREE.Color('#ffebb5');
 
   const lotNodes: CityRentalLotNodeController[] = [];
   const hitProxyMeshes: THREE.Mesh[] = [];
@@ -409,90 +1101,71 @@ export function buildCityRentalLotsVisuals(options?: {
     lotRoot.rotation.y = spec.facingYaw;
     rootGroup.add(lotRoot);
 
-    // 1. Flat White Ground Boundary Lines flush with terrain (NO 3D green hedges, NO protruding apron slabs)
+    // 1. Flat White Ground Boundary Lines flush with lot pad (visible when empty)
     const boundaryGroup = new THREE.Group();
     boundaryGroup.name = `LotBoundary_${spec.slotId}`;
     lotRoot.add(boundaryGroup);
 
-    const whiteLineMat = regMat(
-      new THREE.MeshBasicMaterial({
-        color: '#ffffff',
-        transparent: true,
-        opacity: 0.88,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-        polygonOffsetUnits: -2,
-      }),
-    );
-    const whiteLineNSGeo = regGeo(new THREE.PlaneGeometry(15.0, 0.18));
-    whiteLineNSGeo.rotateX(-Math.PI * 0.5);
-    const whiteLineEWGeo = regGeo(new THREE.PlaneGeometry(0.18, 15.0));
-    whiteLineEWGeo.rotateX(-Math.PI * 0.5);
-    const frontWhiteSegmentGeo = regGeo(new THREE.PlaneGeometry(4.4, 0.18));
-    frontWhiteSegmentGeo.rotateX(-Math.PI * 0.5);
-
-    // Rear white line (-Z = -7.41)
+    const lineY = LOT_SURFACE_Y + 0.022;
     const rearLine = new THREE.Mesh(whiteLineNSGeo, whiteLineMat);
-    rearLine.position.set(0, 0.025, -7.41);
+    rearLine.position.set(0, lineY, -(halfLotD - 0.12));
     boundaryGroup.add(rearLine);
 
-    // Left & Right white lines (-X = -7.41, +X = +7.41)
     for (const xSign of [-1, 1]) {
       const sideLine = new THREE.Mesh(whiteLineEWGeo, whiteLineMat);
-      sideLine.position.set(xSign * 7.41, 0.025, 0);
+      sideLine.position.set(xSign * (halfLotW - 0.12), lineY, 0);
       boundaryGroup.add(sideLine);
 
-      // Front white corner returns leaving a 6.2m open vehicle entrance in the middle (+Z = +7.41)
+      // Front white corner returns leaving an 8.0m open entrance in the middle
       const frontSeg = new THREE.Mesh(frontWhiteSegmentGeo, whiteLineMat);
-      frontSeg.position.set(xSign * 5.25, 0.025, 7.41);
+      frontSeg.position.set(xSign * (halfLotW - 3.0), lineY, halfLotD - 0.12);
       boundaryGroup.add(frontSeg);
     }
 
-    // 2. Resting Empty Land Presentation: Original Self-Service Tactical Claim Kiosk at exact center (0, 0, 0) of each kavling
+    // 2. Resting Empty Land Presentation: Clean manicured turf pad + Claim Kiosk at +0.09m
     const emptyMarkerGroup = new THREE.Group();
     emptyMarkerGroup.name = `LotEmptyMarker_${spec.slotId}`;
     lotRoot.add(emptyMarkerGroup);
+
+    const emptyTurfMesh = new THREE.Mesh(emptyTurfGeo, emptyLotTurfMat);
+    emptyTurfMesh.name = `LotEmptyTurf_${spec.slotId}`;
+    emptyTurfMesh.position.set(0, LOT_SURFACE_Y - 0.018, 0);
+    emptyTurfMesh.receiveShadow = true;
+    emptyMarkerGroup.add(emptyTurfMesh);
+    emptyMarkerGroup.add(boundaryGroup);
 
     const claimKioskMesh = options?.createKioskMesh
       ? options.createKioskMesh()
       : new THREE.Group();
     claimKioskMesh.name = `LotClaimKiosk_${spec.slotId}`;
-    claimKioskMesh.position.set(0, 0, 0);
+    claimKioskMesh.position.set(0, LOT_SURFACE_Y, 0);
     emptyMarkerGroup.add(claimKioskMesh);
 
     const availTex = createLotGroundPlaqueTexture(spec.shortCode, 'available', disposables);
     const statusSignMat = regMat(new THREE.MeshBasicMaterial({ map: availTex }));
-    // Subtle flat lot code marker on ground in front of the original kiosk when no custom mesh is passed
     if (!options?.createKioskMesh) {
       const plaqueFace = new THREE.Mesh(groundPlaqueFaceGeo, statusSignMat);
-      plaqueFace.position.set(0, 0.03, 1.35);
+      plaqueFace.position.set(0, LOT_SURFACE_Y + 0.028, 1.8);
       emptyMarkerGroup.add(plaqueFace);
     }
 
-    // 3. Standardized Compact Shop Building Shell (fallback while real GLB streams in)
-    const shopBuildingGroup = buildStandardShopShellForLot(
-      spec,
-      spec.buildingVariantId,
-      sharedShopGeos,
-      sharedShopMats,
-      disposables,
-    );
+    // 3. Dynamic Procedural Shop Building Container (low-draw-call merged fallback)
+    const shopBuildingGroup = new THREE.Group();
+    shopBuildingGroup.name = `ProceduralShopMount_${spec.slotId}`;
     shopBuildingGroup.visible = false;
     lotRoot.add(shopBuildingGroup);
 
-    // 3B. Real Game-Ready GLB Building Mount (loaded on demand when a building is placed on a rented lot)
+    // 3B. Optimized Low-Draw-Call GLB Building Mount
     const glbBuildingMount = new THREE.Group();
     glbBuildingMount.name = `ShopGlbMount_${spec.slotId}`;
     glbBuildingMount.position.set(0, 0, STANDARD_SHOP_FOOTPRINT_SPEC.localDepthOffsetTowardRearM);
     glbBuildingMount.visible = false;
     lotRoot.add(glbBuildingMount);
 
-    // 3C. Amendment 3: Per-building-form Ground Paving (covers inner lot grass ONLY while a building is placed; reverts to plain grass on removal/expiry)
+    // 3C. Distinct Full-Lot Building Paving ("Trotoar Bangunan") covering 100% of the 20m x 20m lot
     const lotPavingMesh = new THREE.Mesh(lotPavingGeo, lotPavingMatByForm.glass_corner_3story);
     lotPavingMesh.name = `LotBuildingPaving_${spec.slotId}`;
-    lotPavingMesh.position.set(0, 0.018, 0);
+    lotPavingMesh.position.set(0, BUILDING_PAVING_TOP_Y - 0.022, 0);
     lotPavingMesh.receiveShadow = true;
     lotPavingMesh.visible = false;
     lotRoot.add(lotPavingMesh);
@@ -513,20 +1186,30 @@ export function buildCityRentalLotsVisuals(options?: {
       }),
     );
 
+    const highlightY = BUILDING_PAVING_TOP_Y + 0.032;
     for (const zSign of [-1, 1]) {
       const hBar = new THREE.Mesh(highlightNSGeo, highlightRingMat);
-      hBar.position.set(0, 0.045, zSign * 7.36);
+      hBar.position.set(0, highlightY, zSign * (halfLotD - 0.17));
       highlightGroup.add(hBar);
     }
     for (const xSign of [-1, 1]) {
       const vBar = new THREE.Mesh(highlightEWGeo, highlightRingMat);
-      vBar.position.set(xSign * 7.36, 0.045, 0);
+      vBar.position.set(xSign * (halfLotW - 0.17), highlightY, 0);
       highlightGroup.add(vBar);
     }
 
+    // 4B. 3D Shop QA Bounds & Margin Overlay (20m outer cyan, 19.6m cap amber, +Z front arrow)
+    const qaBoundsGroup = new THREE.Group();
+    qaBoundsGroup.name = `LotQaBounds_${spec.slotId}`;
+    qaBoundsGroup.visible = false;
+    qaBoundsGroup.add(new THREE.LineSegments(qaLotOutlineGeo, qaLotOutlineMat));
+    qaBoundsGroup.add(new THREE.LineSegments(qaCapOutlineGeo, qaCapOutlineMat));
+    qaBoundsGroup.add(new THREE.LineSegments(qaFrontArrowGeo, qaFrontArrowMat));
+    lotRoot.add(qaBoundsGroup);
+
     // 5. Raycast Hit Proxy Mesh tagged with userData.cityRentalLotId
     const hitProxyMesh = new THREE.Mesh(hitProxyGeo, hitProxyMat);
-    hitProxyMesh.position.set(0, 0.05, 0);
+    hitProxyMesh.position.set(0, BUILDING_PAVING_TOP_Y + 0.02, 0);
     hitProxyMesh.userData.cityRentalLotId = spec.slotId;
     lotRoot.add(hitProxyMesh);
     hitProxyMeshes.push(hitProxyMesh);
@@ -535,110 +1218,184 @@ export function buildCityRentalLotsVisuals(options?: {
       spec,
       lotRoot,
       emptyMarkerGroup,
+      emptyTurfMesh,
       claimKioskMesh,
       lotPavingMesh,
       shopBuildingGroup,
+      proceduralShellByForm: {},
+      activeProceduralFormId: null,
       glbBuildingMount,
       loadedGlbFormId: null,
+      glbLoadStatus: 'idle',
       appliedBillboardLogoUrl: null,
+      activeBillboardMats: [],
       highlightGroup,
+      qaBoundsGroup,
       hitProxyMesh,
       statusSignMat,
       highlightRingMat,
     });
   }
 
-  // Amendment 2: 2.0m Commercial Avenue Sidewalks running full block length + street furniture
-  const sidewalkGroup = new THREE.Group();
-  sidewalkGroup.name = 'CommercialAvenueSidewalks';
-  rootGroup.add(sidewalkGroup);
+  // Street furniture neatly positioned along the outer curb of the new 4.80m curbed tram-style block sidewalks
+  // (batched with InstancedMesh so all 4 blocks' streetlamps, planters, benches & bike racks cost just 6 draw calls!)
+  const sidewalkFurnitureGroup = new THREE.Group();
+  sidewalkFurnitureGroup.name = 'CommercialAvenueStreetFurniture';
+  rootGroup.add(sidewalkFurnitureGroup);
 
-  const sidewalkSlabMat = regMat(new THREE.MeshLambertMaterial({ color: '#d8d4ca' }));
   const lampPostMat = regMat(new THREE.MeshLambertMaterial({ color: '#272c36' }));
-  const lampGlobeMat = regMat(new THREE.MeshBasicMaterial({ color: '#fef3c7' }));
+  const avenueLampGlobeMat = regMat(new THREE.MeshBasicMaterial({ color: '#dce3ec' }));
   const benchWoodMat = regMat(new THREE.MeshLambertMaterial({ color: '#9c6b3b' }));
   const planterPotMat = regMat(new THREE.MeshLambertMaterial({ color: '#5b6472' }));
   const planterFoliageMat = regMat(new THREE.MeshLambertMaterial({ color: '#2f855a' }));
 
   const lampPoleGeo = regGeo(new THREE.CylinderGeometry(0.06, 0.08, 3.6, 8));
-  const lampHeadGeo = regGeo(new THREE.SphereGeometry(0.2, 8, 8));
-  const benchSeatGeo = regGeo(new RoundedBoxGeometry(0.55, 0.12, 1.5, 1, 0.02));
-  const planterBoxGeo = regGeo(new RoundedBoxGeometry(0.65, 0.48, 0.65, 1, 0.03));
-  const planterBushGeo = regGeo(new THREE.SphereGeometry(0.42, 8, 8));
+  const lampHeadGeo = regGeo(new THREE.SphereGeometry(0.22, 8, 8));
+  const benchSeatGeo = regGeo(new RoundedBoxGeometry(0.55, 0.14, 1.6, 1, 0.02));
+  const planterBoxGeo = regGeo(new RoundedBoxGeometry(0.68, 0.5, 0.68, 1, 0.03));
+  const planterBushGeo = regGeo(new THREE.SphereGeometry(0.44, 8, 8));
   const bikeRackLoopGeo = regGeo(new THREE.TorusGeometry(0.28, 0.035, 6, 12, Math.PI));
+
+  const poleTransforms: THREE.Matrix4[] = [];
+  const globeTransforms: THREE.Matrix4[] = [];
+  const planterTransforms: THREE.Matrix4[] = [];
+  const bushTransforms: THREE.Matrix4[] = [];
+  const benchTransforms: THREE.Matrix4[] = [];
+  const rackTransforms: THREE.Matrix4[] = [];
 
   for (const strip of COMMERCIAL_SIDEWALK_STRIPS) {
     const isNorth = strip.maxZ < 0;
     const zSign = isNorth ? -1 : 1;
-    // Split each avenue sidewalk into 3 clean segments with 6.2m vehicle driveway cutouts centered on each lot (|z| = 70.5 & 89.5)
-    const segBoundsAbs: Array<[number, number]> = [
-      [60.3, 67.4],
-      [73.6, 86.4],
-      [92.6, 104.1],
-    ];
-    for (const [a, b] of segBoundsAbs) {
-      const segLen = b - a;
-      const segCenterZ = zSign * ((a + b) * 0.5);
-      const slabGeo = regGeo(new THREE.BoxGeometry(strip.widthM, 0.09, segLen));
-      const slab = new THREE.Mesh(slabGeo, sidewalkSlabMat);
-      slab.position.set(strip.centerX, 0.045, segCenterZ);
-      slab.receiveShadow = true;
-      sidewalkGroup.add(slab);
-    }
+    // Place furniture cleanly near the road-side curb of the 4.80m city sidewalk (leaving 3.2m+ clear walkway!)
+    const roadEdgeX = strip.sideOfAvenue === 'east' ? strip.minX : strip.maxX;
+    const inwardSign = strip.sideOfAvenue === 'east' ? 1 : -1;
+    const fx = roadEdgeX + inwardSign * 1.05;
+    const solidFurnitureZ = [zSign * 64.5, zSign * 80.33, zSign * 96.2];
 
-    // Place streetlamps, hardwood bench, planters, and bike racks strictly on the solid sidewalk segments (never blocking vehicle cutouts!)
-    const curbOffset = strip.sideOfAvenue === 'east' ? -0.58 : 0.58;
-    const fx = strip.centerX + curbOffset;
-    const solidFurnitureZ = [zSign * 63.8, zSign * 80.0, zSign * 98.4];
     for (let zi = 0; zi < solidFurnitureZ.length; zi++) {
       const fz = solidFurnitureZ[zi];
-      const pole = new THREE.Mesh(lampPoleGeo, lampPostMat);
-      pole.position.set(fx, 1.85, fz);
-      sidewalkGroup.add(pole);
-
-      const globe = new THREE.Mesh(lampHeadGeo, lampGlobeMat);
-      globe.position.set(fx, 3.7, fz);
-      sidewalkGroup.add(globe);
-
-      const planter = new THREE.Mesh(planterBoxGeo, planterPotMat);
-      planter.position.set(fx, 0.33, fz + zSign * 1.9);
-      sidewalkGroup.add(planter);
-
-      const bush = new THREE.Mesh(planterBushGeo, planterFoliageMat);
-      bush.position.set(fx, 0.72, fz + zSign * 1.9);
-      sidewalkGroup.add(bush);
+      poleTransforms.push(new THREE.Matrix4().makeTranslation(fx, LOT_SURFACE_Y + 1.8, fz));
+      globeTransforms.push(new THREE.Matrix4().makeTranslation(fx, LOT_SURFACE_Y + 3.66, fz));
+      planterTransforms.push(
+        new THREE.Matrix4().makeTranslation(fx, LOT_SURFACE_Y + 0.25, fz + zSign * 2.0),
+      );
+      bushTransforms.push(
+        new THREE.Matrix4().makeTranslation(fx, LOT_SURFACE_Y + 0.65, fz + zSign * 2.0),
+      );
 
       if (zi === 1) {
-        const bench = new THREE.Mesh(benchSeatGeo, benchWoodMat);
-        bench.position.set(fx, 0.45, fz - zSign * 2.4);
-        sidewalkGroup.add(bench);
-
+        benchTransforms.push(
+          new THREE.Matrix4().makeTranslation(fx, LOT_SURFACE_Y + 0.42, fz - zSign * 2.5),
+        );
         for (let r = 0; r < 2; r++) {
-          const rack = new THREE.Mesh(bikeRackLoopGeo, lampPostMat);
-          rack.position.set(fx, 0.12, fz + zSign * (3.8 + r * 0.65));
-          sidewalkGroup.add(rack);
+          rackTransforms.push(
+            new THREE.Matrix4().makeTranslation(
+              fx,
+              LOT_SURFACE_Y + 0.04,
+              fz + zSign * (3.9 + r * 0.68),
+            ),
+          );
         }
       }
     }
   }
 
-  // Rear promenade wrapping sidewalks along |z| = 103.1 so city sidewalks wrap all 4 sides of every commercial block
-  const rearWrapSlabGeo = regGeo(new THREE.BoxGeometry(49.6, 0.09, 2.0));
-  for (const bx of [-30.0, 30.0]) {
-    for (const zSign of [-1, 1]) {
-      const rearWrap = new THREE.Mesh(rearWrapSlabGeo, sidewalkSlabMat);
-      rearWrap.position.set(bx, 0.045, zSign * 103.1);
-      rearWrap.receiveShadow = true;
-      sidewalkGroup.add(rearWrap);
+  const addInstancedFurniture = (
+    name: string,
+    geo: THREE.BufferGeometry,
+    mat: THREE.Material,
+    transforms: THREE.Matrix4[],
+  ) => {
+    if (transforms.length === 0) return;
+    const inst = new THREE.InstancedMesh(geo, mat, transforms.length);
+    inst.name = name;
+    for (let idx = 0; idx < transforms.length; idx++) {
+      inst.setMatrixAt(idx, transforms[idx]);
     }
-  }
+    inst.instanceMatrix.needsUpdate = true;
+    sidewalkFurnitureGroup.add(inst);
+  };
 
-  // Real GLB cache + per-lot replaceable rooftop billboard texture loader
-  const gltfLoader = new GLTFLoader();
-  const textureLoader = new THREE.TextureLoader();
-  const glbTemplateCache = new Map<ShopBuildingFormId, Promise<THREE.Group | null>>();
-  const neutralBillboardTex = createNeutralBillboardTexture(disposables);
-  let disposed = false;
+  addInstancedFurniture('CommercialLampPoles', lampPoleGeo, lampPostMat, poleTransforms);
+  addInstancedFurniture('CommercialLampGlobes', lampHeadGeo, avenueLampGlobeMat, globeTransforms);
+  addInstancedFurniture('CommercialPlanterBoxes', planterBoxGeo, planterPotMat, planterTransforms);
+  addInstancedFurniture('CommercialPlanterBushes', planterBushGeo, planterFoliageMat, bushTransforms);
+  addInstancedFurniture('CommercialBenches', benchSeatGeo, benchWoodMat, benchTransforms);
+  addInstancedFurniture('CommercialBikeRacks', bikeRackLoopGeo, lampPostMat, rackTransforms);
+
+  const registerActiveBillboardMats = (node: CityRentalLotNodeController, root: THREE.Object3D) => {
+    node.activeBillboardMats.length = 0;
+    root.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mat = mesh.material as THREE.MeshStandardMaterial | undefined;
+      if (
+        mat &&
+        (mesh.name === SHOP_BILLBOARD_MESH_SPEC.meshName ||
+          mat.name === SHOP_BILLBOARD_MESH_SPEC.materialName)
+      ) {
+        if ('emissiveIntensity' in mat) {
+          mat.emissiveIntensity = lastNightFactor01 * 0.82;
+          node.activeBillboardMats.push(mat);
+        }
+      }
+    });
+  };
+
+  const ensureProceduralShellForNode = (
+    node: CityRentalLotNodeController,
+    formId: ShopBuildingFormId,
+  ): THREE.Group => {
+    let shell = node.proceduralShellByForm[formId];
+    if (!shell) {
+      const tpl = proceduralTemplatesByForm[formId];
+      shell = new THREE.Group();
+      shell.name = `ProceduralShop_${node.spec.slotId}_${formId}`;
+
+      const solidMesh = new THREE.Mesh(tpl.solidGeo, proceduralSolidMat);
+      solidMesh.castShadow = true;
+      solidMesh.receiveShadow = true;
+      shell.add(solidMesh);
+
+      if (tpl.showcaseGlassGeo.getAttribute('position')) {
+        const glassMesh = new THREE.Mesh(tpl.showcaseGlassGeo, sharedShopMats.showcaseGlassMat);
+        glassMesh.renderOrder = 2;
+        shell.add(glassMesh);
+      }
+      if (tpl.upperWindowGeo.getAttribute('position')) {
+        const upperMesh = new THREE.Mesh(tpl.upperWindowGeo, sharedShopMats.upperWindowMat);
+        shell.add(upperMesh);
+      }
+
+      const signFaceMat = new THREE.MeshStandardMaterial({
+        map: neutralBillboardTex,
+        emissiveMap: neutralBillboardTex,
+        color: '#ffffff',
+        emissive: new THREE.Color('#fff1d6'),
+        emissiveIntensity: lastNightFactor01 * 0.82,
+        roughness: 0.55,
+        metalness: 0.0,
+      });
+      signFaceMat.name = SHOP_BILLBOARD_MESH_SPEC.materialName;
+      disposables.push(signFaceMat);
+
+      const signFace = new THREE.Mesh(tpl.billboardFaceGeo, signFaceMat);
+      signFace.name = SHOP_BILLBOARD_MESH_SPEC.meshName;
+      shell.add(signFace);
+
+      shell.add(tpl.spotlightRigTemplate.clone(true));
+
+      node.proceduralShellByForm[formId] = shell;
+      node.shopBuildingGroup.add(shell);
+    }
+    if (node.activeProceduralFormId !== formId) {
+      for (const [fid, grp] of Object.entries(node.proceduralShellByForm)) {
+        if (grp) grp.visible = fid === formId;
+      }
+      node.activeProceduralFormId = formId;
+    }
+    return shell;
+  };
 
   const loadShopGlbTemplate = (formId: ShopBuildingFormId): Promise<THREE.Group | null> => {
     const cached = glbTemplateCache.get(formId);
@@ -651,7 +1408,20 @@ export function buildCityRentalLotsVisuals(options?: {
       }
       gltfLoader.load(
         spec.glbPath,
-        (gltf) => resolve(gltf.scene),
+        (gltf) => {
+          if (disposed) {
+            resolve(null);
+            return;
+          }
+          const optimized = optimizeShopGlbTemplate(
+            gltf.scene,
+            formId,
+            sharedShopMats,
+            neutralBillboardTex,
+            disposables,
+          );
+          resolve(optimized);
+        },
         undefined,
         () => resolve(null),
       );
@@ -672,6 +1442,9 @@ export function buildCityRentalLotsVisuals(options?: {
         ) {
           if (mat && 'map' in mat) {
             mat.map = tex;
+            if ('emissiveMap' in mat) {
+              mat.emissiveMap = tex;
+            }
             mat.needsUpdate = true;
           }
         }
@@ -700,9 +1473,51 @@ export function buildCityRentalLotsVisuals(options?: {
     );
   };
 
+  const updateNightLighting: CityRentalLotsVisualController['updateNightLighting'] = (
+    nightFactor01: number,
+  ) => {
+    const n = Math.max(0, Math.min(1, Number.isFinite(nightFactor01) ? nightFactor01 : 0));
+    lastNightFactor01 = n;
+
+    // 1. Storefront & Showcase Display Windows (clean daytime glass -> warm inviting golden glow at night)
+    tmpShowcaseColor.copy(DAY_SHOWCASE_COLOR).lerp(NIGHT_SHOWCASE_COLOR, n);
+    sharedShopMats.showcaseGlassMat.color.copy(tmpShowcaseColor);
+    sharedShopMats.showcaseGlassMat.emissiveIntensity = n * 1.25;
+    sharedShopMats.showcaseGlassMat.opacity = 0.44 + n * 0.42;
+
+    // 2. Upper Floor Showcase Windows
+    tmpUpperColor.copy(DAY_UPPER_COLOR).lerp(NIGHT_UPPER_COLOR, n);
+    sharedShopMats.upperWindowMat.color.copy(tmpUpperColor);
+    sharedShopMats.upperWindowMat.emissiveIntensity = n * 0.98;
+
+    // 3. Overhead Billboard Spotlight Bulbs, Facade Lanterns & Soffit LEDs
+    tmpLampColor.copy(DAY_LAMP_COLOR).lerp(NIGHT_LAMP_COLOR, n);
+    sharedShopMats.fixtureLampMat.color.copy(tmpLampColor);
+    sharedShopMats.fixtureLampMat.emissiveIntensity = 0.05 + n * 1.85;
+
+    // 4. Downward Overhead Billboard Spotlight Light-Wash Cone (0 overdraw during daytime)
+    sharedShopMats.billboardWashMat.opacity = n * 0.44;
+    sharedShopMats.billboardWashMat.visible = n > 0.02;
+
+    // 5. Commercial Avenue Streetlamp Globes
+    tmpStreetGlobeColor.copy(DAY_STREET_GLOBE).lerp(NIGHT_STREET_GLOBE, n);
+    avenueLampGlobeMat.color.copy(tmpStreetGlobeColor);
+
+    // 6. Active Rooftop Billboard Faces (spotlight-lit vibrancy at night)
+    const bbEmissive = n * 0.82;
+    for (let i = 0; i < lotNodes.length; i++) {
+      const mats = lotNodes[i].activeBillboardMats;
+      for (let m = 0; m < mats.length; m++) {
+        mats[m].emissiveIntensity = bbEmissive;
+      }
+    }
+  };
+
   const sync: CityRentalLotsVisualController['sync'] = (params) => {
     const visibleMode = params.isSafezoneMode && params.showOutdoor;
     rootGroup.visible = visibleMode;
+    lastPreviewAllBuildings = Boolean(params.previewAllBuildingsFit);
+    lastDebugShopBounds3D = Boolean(params.debugShopBounds3D);
     if (!visibleMode) return;
 
     const resolvedStates = resolveCityRentalLotsState({
@@ -725,22 +1540,35 @@ export function buildCityRentalLotsVisuals(options?: {
       node.lotRoot.visible = st.isVisibleInWorld;
       if (!st.isVisibleInWorld) continue;
 
+      node.qaBoundsGroup.visible = lastDebugShopBounds3D;
+
       const targetForm = st.showShopBuilding ? st.placedBuildingFormId : null;
       const targetLogoUrl = params.billboardLogoUrlBySlotId?.[node.spec.slotId] ?? null;
 
       if (targetForm) {
         node.lotPavingMesh.material = lotPavingMatByForm[targetForm];
         node.lotPavingMesh.visible = true;
+        const activeProceduralShell = ensureProceduralShellForNode(node, targetForm);
+
         if (node.loadedGlbFormId !== targetForm) {
           node.loadedGlbFormId = targetForm;
-          node.appliedBillboardLogoUrl = null;
+          node.glbLoadStatus = 'loading';
+          node.appliedBillboardLogoUrl = targetLogoUrl;
           node.glbBuildingMount.clear();
           node.glbBuildingMount.visible = false;
           node.shopBuildingGroup.visible = true;
+          applyBillboardLogoToObject(activeProceduralShell, targetLogoUrl);
+          registerActiveBillboardMats(node, activeProceduralShell);
+
           void loadShopGlbTemplate(targetForm).then((template) => {
-            if (!template || disposed || node.loadedGlbFormId !== targetForm) return;
+            if (disposed || node.loadedGlbFormId !== targetForm) return;
+            if (!template) {
+              node.glbLoadStatus = 'fallback';
+              return;
+            }
+            // Shallow clone shares all merged BufferGeometries & shared materials across all 16 lots!
             const clone = template.clone(true);
-            // Clone billboard material per placed building so logo textures NEVER leak to other lots
+            // Clone ONLY the per-lot rooftop billboard material so logo textures NEVER bleed across lots
             clone.traverse((obj) => {
               const mesh = obj as THREE.Mesh;
               if (
@@ -758,13 +1586,15 @@ export function buildCityRentalLotsVisuals(options?: {
             node.glbBuildingMount.add(clone);
             node.glbBuildingMount.visible = true;
             node.shopBuildingGroup.visible = false;
+            node.glbLoadStatus = 'loaded';
             node.appliedBillboardLogoUrl = targetLogoUrl;
             applyBillboardLogoToObject(clone, targetLogoUrl);
+            registerActiveBillboardMats(node, clone);
           });
         } else if (node.appliedBillboardLogoUrl !== targetLogoUrl) {
           node.appliedBillboardLogoUrl = targetLogoUrl;
           applyBillboardLogoToObject(
-            node.glbBuildingMount.visible ? node.glbBuildingMount : node.shopBuildingGroup,
+            node.glbBuildingMount.visible ? node.glbBuildingMount : activeProceduralShell,
             targetLogoUrl,
           );
         }
@@ -772,8 +1602,11 @@ export function buildCityRentalLotsVisuals(options?: {
         node.lotPavingMesh.visible = false;
         node.shopBuildingGroup.visible = false;
         node.glbBuildingMount.visible = false;
+        node.glbLoadStatus = 'idle';
+        node.activeBillboardMats.length = 0;
         if (node.loadedGlbFormId !== null) {
           node.loadedGlbFormId = null;
+          node.appliedBillboardLogoUrl = null;
           node.glbBuildingMount.clear();
         }
       }
@@ -793,6 +1626,43 @@ export function buildCityRentalLotsVisuals(options?: {
     }
   };
 
+  const getQaTelemetrySummary = (): QaShopLiveTelemetrySummary => {
+    const renderModeBySlotId: Record<string, QaShopRenderMode> = {};
+    const activeFormBySlotId: Record<string, ShopBuildingFormId | null> = {};
+    let visibleBuildingsCount = 0;
+    let glbLoadedCount = 0;
+    let proceduralFallbackCount = 0;
+
+    for (let i = 0; i < lotNodes.length; i++) {
+      const node = lotNodes[i];
+      const slotId = node.spec.slotId;
+      if (node.glbBuildingMount.visible && node.loadedGlbFormId) {
+        renderModeBySlotId[slotId] = 'glb';
+        activeFormBySlotId[slotId] = node.loadedGlbFormId;
+        visibleBuildingsCount++;
+        glbLoadedCount++;
+      } else if (node.shopBuildingGroup.visible && node.loadedGlbFormId) {
+        renderModeBySlotId[slotId] = 'procedural';
+        activeFormBySlotId[slotId] = node.loadedGlbFormId;
+        visibleBuildingsCount++;
+        proceduralFallbackCount++;
+      } else {
+        renderModeBySlotId[slotId] = 'none';
+        activeFormBySlotId[slotId] = null;
+      }
+    }
+
+    return {
+      previewAllBuildings: lastPreviewAllBuildings,
+      debugBounds3D: lastDebugShopBounds3D,
+      visibleBuildingsCount,
+      glbLoadedCount,
+      proceduralFallbackCount,
+      renderModeBySlotId,
+      activeFormBySlotId,
+    };
+  };
+
   const dispose = () => {
     disposed = true;
     for (let i = 0; i < disposables.length; i++) {
@@ -806,6 +1676,8 @@ export function buildCityRentalLotsVisuals(options?: {
     lotNodes,
     hitProxyMeshes,
     sync,
+    updateNightLighting,
+    getQaTelemetrySummary,
     dispose,
   };
 }

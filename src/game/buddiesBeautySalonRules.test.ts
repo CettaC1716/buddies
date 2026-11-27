@@ -3,6 +3,7 @@ import test from 'node:test';
 import * as THREE from 'three';
 import {
   SALON_EXTERIOR_DOOR_TRIGGER,
+  SALON_EXTERIOR_GLB_SCALE,
   SALON_EXTERIOR_WALL_THICKNESS,
   SALON_GLB_SCALE,
   SALON_INTERIOR_BOUNDS,
@@ -77,10 +78,10 @@ test('Beauty Salon exterior door threshold sits clear on North Promenade & zone/
   // scaled GLB body's front face (obb front = z 9.13, model wall face z 9.35)
   assert.ok(SALON_EXTERIOR_DOOR_TRIGGER.z < salonObb.z - salonObb.halfZ);
   assert.ok(SALON_EXTERIOR_DOOR_TRIGGER.exitSpawnZ < salonObb.z - salonObb.halfZ);
-  // The door anchor x is unchanged and the OBB tracks the scaled GLB walls
+  // The door anchor x is unchanged and the OBB tracks the 1.40x exterior GLB walls
   assert.equal(SALON_EXTERIOR_DOOR_TRIGGER.doorX, 25.74);
-  assert.ok(Math.abs(salonObb.halfX - (4.4 * SALON_GLB_SCALE + 0.2)) < 0.01);
-  assert.ok(Math.abs(salonObb.x - 29.54) < 1e-6);
+  assert.ok(Math.abs(salonObb.halfX - (4.4 * SALON_EXTERIOR_GLB_SCALE + 0.2)) < 0.01);
+  assert.ok(Math.abs(salonObb.x - 29.87) < 1e-6);
   // Interior floorplan faithfully reflects the GLB exterior: the model's
   // walls span 8.80m with SALON_EXTERIOR_WALL_THICKNESS (0.15m) of wall on
   // every side, leaving the 8.50m terrazzo — scaled into scene units.

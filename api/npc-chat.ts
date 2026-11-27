@@ -129,6 +129,7 @@ export interface NpcChatSituationPayload {
 export interface NpcChatRequestPayload {
   npcId?: string;
   message?: string;
+  mode?: 'reply' | 'proactive_opener';
   history?: NpcChatHistoryTurn[];
   closenessBand?: ClosenessBand;
   canLongConversation?: boolean;
@@ -1053,6 +1054,7 @@ export function buildNpcChatSystemInstruction(
     playerName?: string;
     situation?: NpcChatSituationPayload;
     recentOpenings?: readonly string[];
+    mode?: 'reply' | 'proactive_opener';
   },
 ): string {
   const band = options.closenessBand;
@@ -1110,6 +1112,17 @@ export function buildNpcChatSystemInstruction(
     lines.push(`- The player you are speaking with is named "${safePlayerName}".`);
   }
 
+  if (options.mode === 'proactive_opener') {
+    lines.push(
+      '',
+      'PROACTIVE TOPIC INITIATION MODE:',
+      '- YOU are starting a fresh, natural moment in conversation right now — the player has not typed a prompt yet.',
+      '- Bring up one concrete, persona-authentic observation, tiny story, or curious question grounded in RIGHT NOW (your current location, weather, time of day, shared activity, or one of your personal interests).',
+      '- End with an effortless, inviting hook the player can casually reply to. NEVER say robotic assistant lines like "How can I help you today?" or repeat recent openings.',
+      '- Set closenessDelta to 0 (proactive openers do not award closeness by themselves; closeness grows naturally when the player engages back).',
+    );
+  }
+
   lines.push(
     '',
     'STRICT CONVERSATION & SAFETY RULES:',
@@ -1123,7 +1136,9 @@ export function buildNpcChatSystemInstruction(
     '',
     'OUTPUT FORMAT (STRICT JSON ONLY — no extra text before or after the JSON object):',
     `Return exactly one JSON object: {"reply": string, "emotion": one of [${NPC_EMOTION_TAGS.map((t) => `"${t}"`).join(', ')}], "closenessDelta": integer between ${NPC_CHAT_CLOSENESS_DELTA_MIN} and ${NPC_CHAT_CLOSENESS_DELTA_MAX}}.`,
-    '- Set closenessDelta positive (+1 to +4, rarely +5/+6 for genuinely warm, thoughtful messages), 0 for neutral small talk, or negative (-1 to -3) if the player is rude or crosses a boundary.',
+    options.mode === 'proactive_opener'
+      ? '- For this proactive opener, set closenessDelta to 0 and choose a natural expressive emotion tag.'
+      : '- Set closenessDelta positive (+1 to +4, rarely +5/+6 for genuinely warm, thoughtful messages), 0 for neutral small talk, or negative (-1 to -3) if the player is rude or crosses a boundary.',
   );
 
   return lines.join('\n');
@@ -1133,16 +1148,43 @@ export function buildNpcChatFallbackResponse(
   pack: NpcServerPersonaData,
   closenessBand: ClosenessBand,
   message: string,
+  options?: {
+    situation?: NpcChatSituationPayload;
+    recentOpenings?: readonly string[];
+    mode?: 'reply' | 'proactive_opener';
+  },
 ): {
   reply: string;
   emotion: NpcEmotionTag;
   closenessDelta: number;
 } {
-  const bank = pack.fallbackReplies?.[closenessBand];
-  const fallbackLine =
-    bank && bank.length > 0
-      ? bank[Math.abs(message.length) % bank.length]
-      : `Good to see you here around ${pack.homeDistrict}. How is your day going?`;
+  const bank = pack.fallbackReplies?.[closenessBand] ?? [];
+  const recentKeys = new Set(
+    (options?.recentOpenings ?? []).map((op) => op.trim().toLowerCase().slice(0, 24)),
+  );
+  const freshBank = bank.filter(
+    (line) => !recentKeys.has(line.trim().toLowerCase().slice(0, 24)),
+  );
+  const pool = freshBank.length > 0 ? freshBank : bank;
+
+  const place = (options?.situation?.placeLabel || pack.homeDistrict || 'Central Plaza').trim();
+  const rainy = /rain|storm|drizzle/i.test(options?.situation?.weather || '');
+  const activity = options?.situation?.activity;
+
+  let fallbackLine =
+    pool.length > 0
+      ? pool[Math.abs(message.length + (options?.recentOpenings?.length ?? 0)) % pool.length]
+      : `Good to see you here around ${place}. How is your day going?`;
+
+  if (options?.mode === 'proactive_opener') {
+    if (activity === 'walking_with_player') {
+      fallbackLine = `Nice pace walking around ${place} together. Notice anything interesting along the way today?`;
+    } else if (activity === 'riding_as_passenger') {
+      fallbackLine = `The breeze past ${place} feels great from back here—where are we heading next?`;
+    } else if (rainy) {
+      fallbackLine = `This rain around ${place} totally changes the mood out here. Do you like rainy walks or prefer staying cozy indoors?`;
+    }
+  }
 
   const emotion: NpcEmotionTag =
     closenessBand === 'close' || closenessBand === 'trusted' || closenessBand === 'friendly'
@@ -1152,7 +1194,7 @@ export function buildNpcChatFallbackResponse(
   return {
     reply: sanitizeNpcChatReply(fallbackLine),
     emotion,
-    closenessDelta: 1,
+    closenessDelta: options?.mode === 'proactive_opener' ? 0 : 1,
   };
 }
 
@@ -1174,7 +1216,14 @@ export async function handleNpcChatRequest(
     };
   }
 
-  const message = typeof body?.message === 'string' ? body.message.trim().slice(0, 600) : '';
+  const mode: 'reply' | 'proactive_opener' =
+    body?.mode === 'proactive_opener' ? 'proactive_opener' : 'reply';
+  const rawMessage = typeof body?.message === 'string' ? body.message.trim().slice(0, 600) : '';
+  const message =
+    mode === 'proactive_opener'
+      ? rawMessage ||
+        `[Start a fresh, natural in-character topic or observation with the player right now based on your surroundings and personality.]`
+      : rawMessage;
   if (!message) {
     return {
       status: 400,
@@ -1199,6 +1248,8 @@ export async function handleNpcChatRequest(
   const closenessBand = normalizeClosenessBand(body?.closenessBand);
   const canLongConversation = Boolean(body?.canLongConversation);
   const playerName = typeof body?.playerName === 'string' ? body.playerName.trim().slice(0, 40) : undefined;
+  const rawHistory = Array.isArray(body?.history) ? body.history.slice(-10) : [];
+  const recentOpenings = extractRecentReplyOpenings(rawHistory, body?.recentOpenings, 3);
 
   const apiKey = (
     options.apiKeyOverride !== undefined
@@ -1211,14 +1262,14 @@ export async function handleNpcChatRequest(
     console.warn('[npc-chat] server fallback reply used', {
       npcId,
       closenessBand,
+      mode,
       reason: 'missing_api_key',
     });
-    console.warn('[npc-chat] server fallback reply used', {
-    npcId,
-    closenessBand,
-    reason: 'all_models_failed',
-  });
-  const fallback = buildNpcChatFallbackResponse(pack, closenessBand, message);
+    const fallback = buildNpcChatFallbackResponse(pack, closenessBand, message, {
+      situation: body?.situation,
+      recentOpenings,
+      mode,
+    });
     return {
       status: 200,
       payload: {
@@ -1232,15 +1283,13 @@ export async function handleNpcChatRequest(
     };
   }
 
-  const rawHistory = Array.isArray(body?.history) ? body.history.slice(-10) : [];
-  const recentOpenings = extractRecentReplyOpenings(rawHistory, body?.recentOpenings, 3);
-
   const systemText = buildNpcChatSystemInstruction(pack, {
     closenessBand,
     canLongConversation,
     playerName,
     situation: body?.situation,
     recentOpenings,
+    mode,
   });
 
   const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
@@ -1315,7 +1364,7 @@ export async function handleNpcChatRequest(
             npcId,
             reply: parsed.reply,
             emotion: parsed.emotion,
-            closenessDelta: parsed.closenessDelta,
+            closenessDelta: mode === 'proactive_opener' ? 0 : parsed.closenessDelta,
             model: modelId,
           },
         };
@@ -1328,9 +1377,14 @@ export async function handleNpcChatRequest(
   console.warn('[npc-chat] server fallback reply used', {
     npcId,
     closenessBand,
+    mode,
     reason: 'all_models_failed',
   });
-  const fallback = buildNpcChatFallbackResponse(pack, closenessBand, message);
+  const fallback = buildNpcChatFallbackResponse(pack, closenessBand, message, {
+    situation: body?.situation,
+    recentOpenings,
+    mode,
+  });
   return {
     status: 200,
     payload: {

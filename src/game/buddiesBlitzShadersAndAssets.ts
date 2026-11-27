@@ -615,6 +615,13 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     return d;
   }
 
+  float evalCommercialBlockSidewalkSdf(vec2 p) {
+    vec2 ap = abs(p);
+    float dOuter = sdRoundedBox2D(ap, vec2(30.0, 80.015), vec2(24.8, 24.085), 0.0);
+    float dInner = sdRoundedBox2D(ap, vec2(30.0, 80.33), vec2(20.0, 20.0), 0.0);
+    return max(dOuter, -dInner);
+  }
+
   float evalHaltePlatformSdf(vec2 p) {
     float dCentral = sdRoundedBox2D(p, vec2(-58.9, 4.6), vec2(3.6, 9.4), 0.4);
     float dNorth = sdRoundedBox2D(p, vec2(3.5, -40.87), vec2(9.4, 3.6), 0.4);
@@ -624,6 +631,7 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
     float dTennisClub = sdRoundedBox2D(p, vec2(-89.20, 51.90), vec2(15.20, 13.70), 0.3);
     float dOuterTramSidewalk = evalOuterTramSidewalkSdf(p);
     float dInnerTramSidewalk = evalInnerTramSidewalkSdf(p);
+    float dCommercialBlockSidewalk = evalCommercialBlockSidewalkSdf(p);
     float dGrandCasino = 50.0;
     if (p.x <= -62.5 && p.y <= -36.8 && p.y >= -105.5) {
       float dMainPerimeter = sdRoundedBox2D(p, vec2(-88.9, -70.6), vec2(12.75, 20.45), 0.8);
@@ -642,7 +650,7 @@ const PLANET_TERRAIN_GLSL_SNIPPET = /* glsl */ `
       );
     }
     return min(
-      min(dOuterTramSidewalk, dInnerTramSidewalk),
+      min(dOuterTramSidewalk, min(dInnerTramSidewalk, dCommercialBlockSidewalk)),
       min(
         dGrandCasino,
         min(dTennisClub, min(dPlazaSidewalk, min(dCentral, min(dNorth, min(dSouth, dBeach)))))
@@ -32079,20 +32087,75 @@ export function createCurvedPlanetEnvironment(
       addOpenSeamRect: addInnerOpenSeamRect,
     } = createSidewalkGroupBuilders(tramInnerSidewalkGroup);
 
-    // 1. North & South Outer Ring Collector Sidewalk Blocks (width = 4.40m: |z| in [55.93 .. 60.33])
-    const nsXIntervals: ReadonlyArray<readonly [number, number]> = [
-      [-56.07, -47.63],
-      [-42.37, -33.93],
-      [-26.07, -17.63],
-      [-12.37, -3.93],
-      [3.93, 12.37],
-      [17.63, 26.07],
-      [33.93, 42.37],
-      [47.63, 56.07],
+    // 1. Continuous 4-Sided Curbed Commercial Block City Sidewalks ("Trotoar Blok" in exact tram-sidewalk style)
+    // Wraps all 4 commercial blocks (block-nw, block-ne, block-sw, block-se) flush to asphalt roads on all 4 sides
+    // and flush to the inner 40m x 40m commercial lot pad (zero driveway gaps, zero leftover grass strips).
+    const commercialBlocks: ReadonlyArray<{
+      xOuterMin: number;
+      xOuterMax: number;
+      xInnerMin: number;
+      xInnerMax: number;
+      zOuterMin: number;
+      zOuterMax: number;
+      zInnerMin: number;
+      zInnerMax: number;
+    }> = [
+      // block-nw
+      { xOuterMin: -54.8, xOuterMax: -5.2, xInnerMin: -50.0, xInnerMax: -10.0, zOuterMin: -104.1, zOuterMax: -55.93, zInnerMin: -100.33, zInnerMax: -60.33 },
+      // block-ne
+      { xOuterMin: 5.2, xOuterMax: 54.8, xInnerMin: 10.0, xInnerMax: 50.0, zOuterMin: -104.1, zOuterMax: -55.93, zInnerMin: -100.33, zInnerMax: -60.33 },
+      // block-sw
+      { xOuterMin: -54.8, xOuterMax: -5.2, xInnerMin: -50.0, xInnerMax: -10.0, zOuterMin: 55.93, zOuterMax: 104.1, zInnerMin: 60.33, zInnerMax: 100.33 },
+      // block-se
+      { xOuterMin: 5.2, xOuterMax: 54.8, xInnerMin: 10.0, xInnerMax: 50.0, zOuterMin: 55.93, zOuterMax: 104.1, zInnerMin: 60.33, zInnerMax: 100.33 },
     ];
-    for (const [x0, x1] of nsXIntervals) {
-      addCurbedRectSidewalk(x0, x1, -60.33, -55.93);
-      addCurbedRectSidewalk(x0, x1, 55.93, 60.33);
+    for (const blk of commercialBlocks) {
+      // Top & bottom full-width strips (Tram side 4.40m & Rear collector side 3.77m)
+      addSidewalkSlabPoly([
+        [blk.xOuterMin, blk.zOuterMin],
+        [blk.xOuterMax, blk.zOuterMin],
+        [blk.xOuterMax, blk.zInnerMin],
+        [blk.xOuterMin, blk.zInnerMin],
+      ]);
+      addSidewalkSlabPoly([
+        [blk.xOuterMin, blk.zInnerMax],
+        [blk.xOuterMax, blk.zInnerMax],
+        [blk.xOuterMax, blk.zOuterMax],
+        [blk.xOuterMin, blk.zOuterMax],
+      ]);
+      // Left & right avenue strips (4.80m each, cleanly joined between top & bottom strips)
+      addSidewalkSlabPoly([
+        [blk.xOuterMin, blk.zInnerMin],
+        [blk.xInnerMin, blk.zInnerMin],
+        [blk.xInnerMin, blk.zInnerMax],
+        [blk.xOuterMin, blk.zInnerMax],
+      ]);
+      addSidewalkSlabPoly([
+        [blk.xInnerMax, blk.zInnerMin],
+        [blk.xOuterMax, blk.zInnerMin],
+        [blk.xOuterMax, blk.zInnerMax],
+        [blk.xInnerMax, blk.zInnerMax],
+      ]);
+      // Closed outer granite road curb framing the full commercial block perimeter
+      addSidewalkCurbRun(
+        [
+          [blk.xOuterMin + 0.1, blk.zOuterMin + 0.1],
+          [blk.xOuterMax - 0.1, blk.zOuterMin + 0.1],
+          [blk.xOuterMax - 0.1, blk.zOuterMax - 0.1],
+          [blk.xOuterMin + 0.1, blk.zOuterMax - 0.1],
+        ],
+        true,
+      );
+      // Closed inner granite curb separating City Block Sidewalk ("Trotoar Kota") from Lot Building Paving ("Trotoar Bangunan")
+      addSidewalkCurbRun(
+        [
+          [blk.xInnerMin - 0.1, blk.zInnerMin - 0.1],
+          [blk.xInnerMax + 0.1, blk.zInnerMin - 0.1],
+          [blk.xInnerMax + 0.1, blk.zInnerMax + 0.1],
+          [blk.xInnerMin - 0.1, blk.zInnerMax + 0.1],
+        ],
+        true,
+      );
     }
 
     // 2. East-Central Outer Tram Sidewalk Block between Harbor Entrance Spurs (x in [73.93 .. 78.33], z in [-11.07 .. +11.07])

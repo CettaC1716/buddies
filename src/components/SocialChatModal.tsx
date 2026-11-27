@@ -38,6 +38,7 @@ import {
   hasLetterDecisionCard,
   letterNeedsAnswer,
 } from '../lib/lettersRules';
+import { CERRIA_CITY_NAME } from '../lib/cerriaBrand';
 import { getNearBlocksTxUrl } from '../lib/nearClient';
 import {
   mergeRealtimeSocialChatMessage,
@@ -1175,7 +1176,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                   className="rounded-2xl bg-[#fffdf9] border border-stone-200/90 shadow-[0_14px_38px_rgba(0,0,0,0.34)] p-5 text-slate-900"
                 >
                   <div className="flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-widest text-stone-400">
-                    <span>Buddies City &middot; {kindLabel}</span>
+                    <span>{CERRIA_CITY_NAME} &middot; {kindLabel}</span>
                     <span>{formattedDate}</span>
                   </div>
                   <div className="mt-1.5 text-[15px] font-bold text-slate-900 leading-snug">
@@ -1278,11 +1279,11 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
                         ) : (
                           <p className="text-slate-600">
                             {openLetter.kind === 'invitation'
-                              ? `${senderName} invited you to an event in Buddies City.`
+                              ? `${senderName} invited you to an event in ${CERRIA_CITY_NAME}.`
                               : openLetter.kind === 'trade_offer'
                                 ? `${senderName} sent you a formal trade offer.`
                                 : openLetter.kind === 'friend_request'
-                                  ? `${senderName} would like to add you as a friend in Buddies City.`
+                                  ? `${senderName} would like to add you as a friend in ${CERRIA_CITY_NAME}.`
                                   : 'Official city message.'}
                           </p>
                         )}

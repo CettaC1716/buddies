@@ -70,7 +70,13 @@ import {
   type GiftItemInput,
 } from '../game/npcGiftEngine';
 import type { NpcEmotionTag } from '../game/npcPersonaRegistry';
-import { sendNpcChatMessage } from '../game/npcTextChat';
+import {
+  buildNpcChatSituation,
+  extractRecentNpcReplyOpenings,
+  requestNpcProactiveTopic,
+  sendNpcChatMessage,
+} from '../game/npcTextChat';
+import { NPC_PROACTIVE_TOPIC_EVENT } from '../game/qaDirectorMode';
 import {
   appendNpcChatTurns,
   clearNpcChatTranscript,
@@ -1427,13 +1433,24 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     void (async () => {
       if (!isMerchantTransactionQuery) {
         const closenessStore = npcClosenessStore ?? createEmptyNpcClosenessStore();
+        const historyTurns = nextHistory.slice(-10).map((h) => ({ role: h.role, text: h.text }));
+        const situation = buildNpcChatSituation({
+          npcId: activeNpcId,
+          placeLabel: merchantLocation === 'beach_house' ? 'Beachfront Harbor' : 'Central Plaza',
+          togethernessState: npcTogethernessState,
+          timePhase: 'day',
+          isRaining: false,
+        });
+        const recentOpenings = extractRecentNpcReplyOpenings(historyTurns, 3);
         const chatResult = await sendNpcChatMessage({
           npcId: activeNpcId,
           message: text,
-          history: nextHistory.slice(-10).map((h) => ({ role: h.role, text: h.text })),
+          history: historyTurns,
           closenessBand: getNpcClosenessBand(closenessStore, activeNpcId),
           canLongConversation: canLongConversation(closenessStore, activeNpcId),
           playerName: citizenDisplayName || undefined,
+          situation,
+          recentOpenings,
         });
         if (activeNpcRequestIdRef.current !== reqId) return;
         setIsNpcThinking(false);
@@ -1711,13 +1728,51 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
       }, 40);
     };
+    const onProactiveTopicTrigger = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ npcId?: NpcId }>).detail;
+      if (!detail?.npcId || detail.npcId !== merchantNpcId) return;
+      setActiveTab('sesi_chat');
+      const reqId = activeNpcRequestIdRef.current + 1;
+      activeNpcRequestIdRef.current = reqId;
+      setIsNpcThinking(true);
+      const closenessStore = npcClosenessStore ?? createEmptyNpcClosenessStore();
+      const situation = buildNpcChatSituation({
+        npcId: merchantNpcId,
+        placeLabel: merchantLocation === 'beach_house' ? 'Beachfront Harbor' : 'Central Plaza',
+        togethernessState: npcTogethernessState,
+        timePhase: 'day',
+        isRaining: false,
+      });
+      void (async () => {
+        const res = await requestNpcProactiveTopic({
+          npcId: merchantNpcId,
+          closenessBand: getNpcClosenessBand(closenessStore, merchantNpcId),
+          canLongConversation: canLongConversation(closenessStore, merchantNpcId),
+          playerName: citizenDisplayName || undefined,
+          situation,
+          triggerReason: 'qa_manual',
+        });
+        if (activeNpcRequestIdRef.current !== reqId) return;
+        setIsNpcThinking(false);
+        if (!res.ok || !res.reply.trim()) return;
+        const line = res.reply.trim();
+        onNpcConversationTurn?.(merchantNpcId, 0, res.emotion);
+        appendNpcChatTurns(chatAccountKey, merchantNpcId, [{ role: 'npc', text: line }]);
+        triggerNpcSpeech(line);
+        window.setTimeout(() => {
+          chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }, 40);
+      })();
+    };
     window.addEventListener('npc-merchant-user-chat', onUserChat);
     window.addEventListener('npc-chat-interaction-request', onDockInteractionRequest);
     window.addEventListener('npc-chat-gift-sent', onDockGiftSent);
+    window.addEventListener(NPC_PROACTIVE_TOPIC_EVENT, onProactiveTopicTrigger);
     return () => {
       window.removeEventListener('npc-merchant-user-chat', onUserChat);
       window.removeEventListener('npc-chat-interaction-request', onDockInteractionRequest);
       window.removeEventListener('npc-chat-gift-sent', onDockGiftSent);
+      window.removeEventListener(NPC_PROACTIVE_TOPIC_EVENT, onProactiveTopicTrigger);
     };
   }, [activeModalMode, merchantLocation, npcClosenessStore, npcFullText, onClose]);
 

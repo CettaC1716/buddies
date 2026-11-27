@@ -5,14 +5,84 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 export const GLASS_MODERN_HOUSE_GLB_PATH = '/assets/houses/glass_modern_house.glb';
 
 /**
+ * Vertical stretch factor applied around `y = 0` to the apartment's architectural
+ * shell (walls, glass facades, mullions, beams, door casings, ceilings, roofs,
+ * and their wall/partition colliders) so the ceiling height feels more open and
+ * spacious (~3.53m..3.71m clear soffit instead of ~2.85m..2.99m) while keeping
+ * floors, kitchen joinery, furniture, courtyard perimeter walls, and yard trees
+ * at 100% natural scale.
+ */
+export const HOUSE_SHELL_HEIGHT_SCALE = 1.24;
+
+/**
  * Mount offset (room-local metres) applied to the GLB scene so the model's
  * house floor block (`Col_Floor_House`, GLB centre (1.10, -3.70), size
  * 10.60 x 7.40) lands exactly on the shared cutaway room frame
  * (x -5.3..5.3, z -3.7..3.7, floor top at y 0). The entrance porch then sits
- * at room z ~ +3.6..4.0 beside the exit pad, and the north deck / zen garden
- * extend beyond the room's north edge as the house's outdoor backdrop.
+ * at room z ~ +3.7..4.4 and the courtyard garden surrounds the apartment
+ * within x -8.67..8.67, z -6.87..7.47.
  */
 export const GLASS_MODERN_HOUSE_MOUNT_OFFSET = { x: -1.1, y: 0, z: 3.7 } as const;
+
+const HOUSE_SHELL_STRETCH_PREFIXES = [
+  'Wall_',
+  'Part_',
+  'Glass_',
+  'Mullion_',
+  'Post_',
+  'Beam_',
+  'Brow_',
+  'Ceiling_',
+  'Roof_',
+  'DoorCasing_',
+  'MainDoor_',
+  'MainSlide_',
+  'BedSlide_',
+  'BathWin_',
+  'KitchenWin_',
+  'East_Timber_Battens',
+  'Col_Wall_',
+  'Col_Part_',
+  'Col_MainSlide_',
+  'Col_BedSlide_',
+] as const;
+
+/**
+ * Returns true if a GLB node belongs to the apartment's vertical architectural
+ * shell and should be stretched by `HOUSE_SHELL_HEIGHT_SCALE` around `y = 0`.
+ */
+export function isHouseShellHeightScaledNodeName(name: string): boolean {
+  if (!name) return false;
+  for (let i = 0; i < HOUSE_SHELL_STRETCH_PREFIXES.length; i++) {
+    if (name.startsWith(HOUSE_SHELL_STRETCH_PREFIXES[i])) return true;
+  }
+  return false;
+}
+
+const HOUSE_CAMERA_COLLIDER_PREFIXES = [
+  'Col_Wall_',
+  'Col_Part_',
+  'Col_Courtyard_',
+  'Col_MainSlide_',
+  'Col_BedSlide_',
+] as const;
+
+const HOUSE_CAMERA_ROOF_NODE_NAMES = new Set([
+  'Roof_Main_Slate',
+  'Roof_East_Ceiling',
+  'Roof_East_Cap',
+  'Ceiling_Main_OakSoffit',
+]);
+
+/** Returns true if a GLB node contributes a solid wall/roof obstruction box for the 3rd-person camera. */
+export function isHouseCameraObstructionNodeName(name: string): boolean {
+  if (!name) return false;
+  if (HOUSE_CAMERA_ROOF_NODE_NAMES.has(name)) return true;
+  for (let i = 0; i < HOUSE_CAMERA_COLLIDER_PREFIXES.length; i++) {
+    if (name.startsWith(HOUSE_CAMERA_COLLIDER_PREFIXES[i])) return true;
+  }
+  return false;
+}
 
 /** Room-local axis-aligned footprint of one hidden `Col_*` collider mesh. */
 export interface HouseSceneColliderAabb {
@@ -25,6 +95,21 @@ export interface HouseSceneColliderAabb {
   hw: number;
   /** Half extent along Z. */
   hd: number;
+  /** Bottom Y in room-local coordinates. */
+  minY?: number;
+  /** Top Y in room-local coordinates. */
+  maxY?: number;
+}
+
+/** Room-local 3D AABB used by the anti-wall-clipping camera solver. */
+export interface HouseCameraObstructionBox {
+  name: string;
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  minZ: number;
+  maxZ: number;
 }
 
 export interface GlassModernHouseSceneHandle {
@@ -36,6 +121,11 @@ export interface GlassModernHouseSceneHandle {
    * so frame loops can read it every frame without re-querying.
    */
   colliders: HouseSceneColliderAabb[];
+  /**
+   * Live list of room-local 3D wall/partition/courtyard/roof boxes used by the
+   * `house_visit` camera obstruction solver. Populated in place on GLB load.
+   */
+  cameraColliders: HouseCameraObstructionBox[];
   /** Shows/hides the tagged `Roof_*` / `Ceiling_*` nodes (visit vs studio). */
   setRoofCeilingVisible: (visible: boolean) => void;
   isRoofCeilingVisible: () => boolean;
@@ -54,9 +144,13 @@ export interface GlassModernHouseSceneHandle {
  * On load:
  * - the model's own `Backdrop_GoldenHour_SkyDome` is removed (the room
  *   already carries a radius-52 studio dome);
+ * - apartment shell nodes (walls, glass, mullions, beams, doors, ceiling, roof)
+ *   are vertically stretched around `y = 0` by `HOUSE_SHELL_HEIGHT_SCALE` so
+ *   the apartment roof is taller and more open without distorting furniture or
+ *   the outdoor garden;
  * - every `Col_*` mesh is hidden and its room-local AABB is reported as
- *   collision data (the Arena consumes the wall/partition subset for
- *   walk-in collision);
+ *   collision data (and solid walls/courtyard/roofs populate `cameraColliders`
+ *   for strict anti-wall-clipping camera containment);
  * - `Roof_*` / `Ceiling_*` nodes are tagged so the Arena can hide them in
  *   the top-down studio mode and show them in walk-in visit mode.
  */
@@ -72,6 +166,7 @@ export function buildGlassModernHouseScene(
   );
 
   const colliders: HouseSceneColliderAabb[] = [];
+  const cameraColliders: HouseCameraObstructionBox[] = [];
   const roofCeilingNodes: THREE.Object3D[] = [];
   let roofCeilingVisible = false;
 
@@ -88,13 +183,24 @@ export function buildGlassModernHouseScene(
       (gltf) => {
         if (!root.parent) return; // room was torn down meanwhile
         root.add(gltf.scene);
-        root.updateWorldMatrix(true, true);
 
         const backdrop = gltf.scene.getObjectByName('Backdrop_GoldenHour_SkyDome');
         if (backdrop && backdrop.parent) {
           backdrop.parent.remove(backdrop);
         }
 
+        // First pass: raise the apartment architectural shell around y = 0 so
+        // ceilings, beams, walls, glass mullions, and door headers lift
+        // cleanly together with zero gaps before extracting world AABBs.
+        gltf.scene.traverse((obj) => {
+          if (isHouseShellHeightScaledNodeName(obj.name)) {
+            obj.position.y *= HOUSE_SHELL_HEIGHT_SCALE;
+            obj.scale.y *= HOUSE_SHELL_HEIGHT_SCALE;
+          }
+        });
+        root.updateWorldMatrix(true, true);
+
+        const parentOffsetY = root.parent ? root.parent.position.y : 0;
         const box = new THREE.Box3();
         gltf.scene.traverse((obj) => {
           const mesh = obj as THREE.Mesh;
@@ -106,12 +212,40 @@ export function buildGlassModernHouseScene(
               obj.visible = false;
               box.setFromObject(obj);
               if (!box.isEmpty()) {
+                const minY = box.min.y - parentOffsetY;
+                const maxY = box.max.y - parentOffsetY;
                 colliders.push({
                   name: obj.name,
                   x: (box.min.x + box.max.x) / 2,
                   z: (box.min.z + box.max.z) / 2,
                   hw: Math.max(0.01, (box.max.x - box.min.x) / 2),
                   hd: Math.max(0.01, (box.max.z - box.min.z) / 2),
+                  minY,
+                  maxY,
+                });
+                if (isHouseCameraObstructionNodeName(obj.name)) {
+                  cameraColliders.push({
+                    name: obj.name,
+                    minX: box.min.x,
+                    maxX: box.max.x,
+                    minY,
+                    maxY,
+                    minZ: box.min.z,
+                    maxZ: box.max.z,
+                  });
+                }
+              }
+            } else if (isHouseCameraObstructionNodeName(obj.name)) {
+              box.setFromObject(obj);
+              if (!box.isEmpty()) {
+                cameraColliders.push({
+                  name: obj.name,
+                  minX: box.min.x,
+                  maxX: box.max.x,
+                  minY: box.min.y - parentOffsetY,
+                  maxY: box.max.y - parentOffsetY,
+                  minZ: box.min.z,
+                  maxZ: box.max.z,
                 });
               }
             }
@@ -155,6 +289,7 @@ export function buildGlassModernHouseScene(
   return {
     root,
     colliders,
+    cameraColliders,
     setRoofCeilingVisible,
     isRoofCeilingVisible: () => roofCeilingVisible,
     dispose,

@@ -12,6 +12,11 @@ import {
   tagCityWindowMesh,
   type CityWindowKind,
 } from './buddiesWindowAuditRules';
+import {
+  createPlazaBuildingGlowUniforms,
+  optimizeCentralPlazaBuildingGlb,
+  type PlazaBuildingGlowUniforms,
+} from './buddiesCentralPlazaGlbOptimizer';
 
 export type UrbanPlazaAddPartFn = (
   parent: THREE.Object3D,
@@ -61,6 +66,7 @@ export interface UrbanPlazaBuildingsContext {
     matrices: THREE.Matrix4[];
     colors: THREE.Color[];
   };
+  plazaBuildingGlowUniforms?: PlazaBuildingGlowUniforms;
 }
 
 const UP_AXIS = new THREE.Vector3(0, 1, 0);
@@ -2811,77 +2817,61 @@ export function buildCozyBitesCafePavilion3D(ctx: UrbanPlazaBuildingsContext): v
 // COZY BITES & SIPS — OWNER GLB EXTERIOR (visual replacement)
 // ============================================================================
 
+/**
+ * Vertical mount elevation (m) for all 3 Central Plaza exterior GLB buildings:
+ * seated +2mm above the Central Plaza terrazzo slab top (`0.042m`) so GLB ground
+ * slabs, plinths, and doorway thresholds never coplanar Z-fight with terrazzo.
+ */
+export const CENTRAL_PLAZA_GLB_MOUNT_Y = 0.044;
+
 /** Public path of the prepped owner model (its baked COL_* collider nodes stripped). */
 export const BITES_SIPS_PAVILION_GLB_PATH = '/assets/buildings/bites_sips_pavilion.glb';
 
 /**
- * Uniform scale applied to the Bites & Sips GLB at its mount, derived by
- * the door-height method: the replaced procedural pavilion's entrance was
- * authored "Tall 4.02m"; the GLB's door frame (Door_Oak_Wood_Honey_Oak)
- * measures 2.70m (y 0.16..2.86 in model units), so 4.02 / 2.70 = 1.489
- * brings the model's door in line with the game's authored proportions.
- * Cross-check: total heights agree (7.25 / 4.82 = 1.504).
+ * Uniform scale applied to the Bites & Sips GLB at its mount, balanced for the
+ * 3.31m outdoor plaza avatar: Door_Oak frame measures 2.70m -> 4.00m (1.21x avatar),
+ * awning scallop clears head at 3.57m, and total height is 6.92m.
  */
-export const BITES_SIPS_PAVILION_GLB_SCALE = 1.489;
+export const BITES_SIPS_PAVILION_GLB_SCALE = 1.48;
 
 /**
- * Ground height (m) of the district bistro tables around the pavilion.
- * The model's own sidewalk slab was stripped in prep (the building sits
- * on the plaza floor, re-grounded by the slab thickness), so the tables
- * stand on the plaza floor at y=0 like all other district furniture.
+ * Ground height (m) of the district bistro tables around the pavilion, seated
+ * flush on the Central Plaza terrazzo top (`0.042m`) so chair feet never sink.
  */
-export const BITES_SIPS_PAVILION_SLAB_TOP_Y = 0;
+export const BITES_SIPS_PAVILION_SLAB_TOP_Y = 0.042;
 
-/**
- * Places the owner-supplied Bites & Sips GLB as the pavilion's visual,
- * following the same load-as-is GLTFLoader pattern as the Glow Studio
- * salon. Placement is the masterplan anchor with the masterplan yaw
- * (-PI/2), so the model's front (+Z local) faces West toward the Civic
- * Cascade Fountain exactly like the procedural pavilion, scaled by
- * BITES_SIPS_PAVILION_GLB_SCALE. The model's door (local centre
- * (-2.20, +2.95)) lands at world (40.79, -3.88) — on the same West face
- * as the old entrance (41.6, 0.25), further south along that face. The
- * origin is deliberately NOT shifted onto the old door point: the
- * pavilion has no door-anchored system (it is not walk-in), and its
- * masterplan centre is the anchor the district layout is built around.
- * The 4 masterplan bistro tables are district furniture with their own
- * colliders in `getCentralParkObstacles`, so the mount rebuilds them
- * (same helper + chair-yaw rule as the procedural builder) standing on
- * the plaza floor — their masterplan coordinates were moved in the same
- * pass so the scaled body (world x [40.32..51.56], z [-5.48..5.76])
- * clears every table and the model's own bike cart and bistro set. If
- * the model fails to load, the tables are removed again and the
- * procedural builder above runs instead, so the pavilion never
- * disappears.
- */
 export function buildCozyBitesCafePavilionGlb3D(ctx: UrbanPlazaBuildingsContext): void {
   const cf = CENTRAL_PARK_MASTERPLAN.cozyCafePavilion;
   const grp = new THREE.Group();
   grp.name = 'UrbanPlazaCozyBitesCafeGlb3D';
-  grp.position.set(cf.x, 0, cf.z);
-  grp.rotation.y = cf.yaw; // -PI/2 -> +Z_local faces West (-X toward Fountain), same as the procedural pavilion
+  grp.position.set(cf.x, CENTRAL_PLAZA_GLB_MOUNT_Y, cf.z);
+  grp.rotation.y = cf.yaw; // -PI/2 -> +Z_local faces West (-X toward Fountain)
   grp.scale.setScalar(BITES_SIPS_PAVILION_GLB_SCALE);
   ctx.staticGroup.add(grp);
 
-  // District bistro tables at exact Masterplan coordinates on the plaza
-  // floor. Kept in their own group so the load-failure fallback can
-  // remove them before the procedural builder rebuilds them.
+  // District bistro tables at exact Masterplan coordinates on the plaza terrazzo top.
   const tablesGrp = new THREE.Group();
   tablesGrp.name = 'UrbanPlazaCozyBitesCafeGlbPatioTables';
   ctx.staticGroup.add(tablesGrp);
   const honeyOakTex = createHoneyOakTimberTexture(ctx);
   for (const tbl of CENTRAL_PARK_MASTERPLAN.bistroTables) {
-    // Orient West front patio tables' chairs North-South (`0`), South patio tables' chairs East-West (`Math.PI / 2`)
     const isWestPatio = tbl.x < cf.x - 2.0;
     const chairYaw = isWestPatio ? 0.18 : Math.PI * 0.5;
     buildBistroTableWithChairs(tablesGrp, ctx, [tbl.x, BITES_SIPS_PAVILION_SLAB_TOP_Y, tbl.z], chairYaw, honeyOakTex);
   }
 
-  if (typeof window === 'undefined') return; // node/tests: skip the async load (same guard as the shop GLB loader)
+  if (typeof window === 'undefined') return; // node/tests: skip async load
+  const glowUniforms = ctx.plazaBuildingGlowUniforms ?? createPlazaBuildingGlowUniforms();
   new GLTFLoader().load(
     BITES_SIPS_PAVILION_GLB_PATH,
     (gltf) => {
-      if (grp.parent !== ctx.staticGroup) return; // park scene was torn down meanwhile
+      if (grp.parent !== ctx.staticGroup) return;
+      optimizeCentralPlazaBuildingGlb(gltf.scene, {
+        buildingId: 'CozyBitesPavilion',
+        glowUniforms,
+        isSoftwareGl: ctx.isSoftwareGl,
+        glassWarmTintHex: '#ffdfa0',
+      });
       grp.add(gltf.scene);
     },
     undefined,
@@ -2902,75 +2892,35 @@ export function buildCozyBitesCafePavilionGlb3D(ctx: UrbanPlazaBuildingsContext)
 export const VINTAGE_CAFE_GLB_PATH = '/assets/buildings/cafe_vintage.glb';
 
 /**
- * Uniform scale applied to the Vintage Cafe GLB at its mount, derived by
- * the door-height method: the replaced procedural boutique's entrance was
- * authored "Tall 4.02m"; the GLB's Cafe_Door frame measures 2.80m
- * (y 0.16..2.96 in model units), so 4.02 / 2.80 = 1.436 brings the model's
- * door in line with the game's authored proportions.
+ * Uniform scale applied to the Vintage Cafe GLB at its mount, balanced for the
+ * 3.31m outdoor plaza avatar: Cafe_Door measures 2.80m -> 3.92m (1.18x avatar),
+ * awning valance clears head at 3.82m, and total height is 15.76m.
  */
-export const VINTAGE_CAFE_GLB_SCALE = 1.436;
+export const VINTAGE_CAFE_GLB_SCALE = 1.4;
 
 /**
- * Horizontal shift (m) applied to the GLB origin so the model's door
- * stays on its anchor at the mount scale. The model's door (local centre
- * (0, +3.85)) scales to +5.53 along the front axis; under the masterplan
- * yaw (PI/2) it would land at world x = 12.2 + 5.53 = 17.73, so the
- * origin shifts west by 1.68m and the door stays at world (16.05, -0.4) —
- * the same East face and centreline as the old boutique entrance
- * (16.4, -0.4), recessed by the model's own door reveal.
+ * Horizontal shift (m) applied to the GLB origin relative to
+ * CENTRAL_PARK_MASTERPLAN.boutiqueTower.x (`6.6`, already shifted West along the
+ * plaza esplanade while keeping >10m clearance from outer West curb -9.50).
  */
-export const VINTAGE_CAFE_GLB_ORIGIN_SHIFT_X = -1.68;
+export const VINTAGE_CAFE_GLB_ORIGIN_SHIFT_X = 0;
 
 /**
- * Ground height (m) for the carried-over ground urns, in the model's
- * local frame. The model's own sidewalk slab was stripped in prep (the
- * building sits on the plaza floor) and the model re-grounded by the
- * slab thickness, so its ground floor is y=0.
+ * Ground height (m) for the carried-over ground urns in the model's local frame
+ * (mount group sits at CENTRAL_PLAZA_GLB_MOUNT_Y = 0.044m above terrazzo).
  */
 export const VINTAGE_CAFE_SLAB_TOP_Y = 0;
 
 /** Terrace deck top height (m) of the owner model in its re-grounded local frame (Terrace_Deck spans y [4.02 .. 4.10]). */
 const VINTAGE_CAFE_TERRACE_DECK_TOP_Y = 4.10;
 
-/**
- * Places the owner-supplied Vintage Cafe GLB where the procedural Boutique
- * & Rooftop Garden Tower stood, following the same load-as-is GLTFLoader
- * pattern as the Glow Studio salon and the Bites & Sips pavilion.
- * Placement is the masterplan boutique anchor shifted west by
- * VINTAGE_CAFE_GLB_ORIGIN_SHIFT_X with the masterplan yaw (PI/2), so the
- * model's front (+Z local) faces East (+X) onto the Civic Cascade
- * Fountain exactly like the boutique, scaled by VINTAGE_CAFE_GLB_SCALE.
- * Local->world: (x, z) -> (10.52 + 1.436 * z, -0.4 - 1.436 * x). The
- * model's door lands at world (16.05, -0.4), on its anchor. The 11.60m
- * package spans world x [2.19..18.85], z [-8.73..7.93], clearing the
- * fountain plaza circle (west edge x 20.9) by 2.05m; the two botanical
- * beds west of the old tower were relocated to (1.0, -4.6) / (1.0, 3.8)
- * in CENTRAL_PARK_BOTANICAL_BEDS, flanking the package on the plaza
- * floor (the scaled body covers their old x 7.2 spot). The body
- * collider in `getCentralParkObstacles` tracks the model's real walls
- * (its stripped COL_WALL_Building box, local +/-4.04) instead of the
- * retired shell.
- *
- * Carried-over flowers (owner's ask): the retired boutique's own flower
- * dressing is rebuilt onto the model in its local frame, reusing the
- * boutique's own helpers — `buildWindowFlowerBox` (factored out of its
- * arched casement windows) under the cafe's bare ground-floor windows,
- * `buildPlanterBloomRow` (factored out of its rooftop planter boxes)
- * planted into the model's existing terrace trough (local x
- * [-3.72..3.18], z [0.88..3.72], soil top y 4.52 after re-grounding), and
- * `buildUrnBoxwoodPlanter` urns flanking the front benches and on the
- * terrace deck. The flower subgroup is a child of the mount group, so
- * it follows the mount scale automatically, and if the model fails to
- * load the whole mount (flowers included) is removed and the
- * procedural boutique builder runs instead, so the landmark never
- * disappears.
- */
 export function buildVintageCafeGlb3D(ctx: UrbanPlazaBuildingsContext): void {
   const bt = CENTRAL_PARK_MASTERPLAN.boutiqueTower;
+  const originX = bt.x + VINTAGE_CAFE_GLB_ORIGIN_SHIFT_X;
   const grp = new THREE.Group();
   grp.name = 'UrbanPlazaVintageCafeGlb3D';
-  grp.position.set(bt.x + VINTAGE_CAFE_GLB_ORIGIN_SHIFT_X, 0, bt.z);
-  grp.rotation.y = bt.yaw; // PI/2 -> +Z_local faces East (+X toward Fountain), same as the procedural boutique
+  grp.position.set(originX, CENTRAL_PLAZA_GLB_MOUNT_Y, bt.z);
+  grp.rotation.y = bt.yaw; // PI/2 -> +Z_local faces East (+X toward Fountain)
   grp.scale.setScalar(VINTAGE_CAFE_GLB_SCALE);
   ctx.staticGroup.add(grp);
 
@@ -2979,13 +2929,10 @@ export function buildVintageCafeGlb3D(ctx: UrbanPlazaBuildingsContext): void {
   flowersGrp.name = 'UrbanPlazaVintageCafeCarriedFlowers';
   grp.add(flowersGrp);
 
-  // Window flower boxes under the ground-floor windows (sill y 0.80 in
-  // the re-grounded frame, wall faces z +4.04 front / x -4.04 left; box
-  // backs sit flush on the faces).
   const windowBoxSites: ReadonlyArray<{ pos: [number, number, number]; rotY: number }> = [
-    { pos: [-2.21, 0.66, 3.96], rotY: 0 }, // front-left window (local x -2.21)
-    { pos: [2.21, 0.66, 3.96], rotY: 0 }, // front-right window (local x +2.21)
-    { pos: [-3.96, 0.66, 0], rotY: -Math.PI / 2 }, // left-face window (local z 0)
+    { pos: [-2.21, 0.66, 3.96], rotY: 0 },
+    { pos: [2.21, 0.66, 3.96], rotY: 0 },
+    { pos: [-3.96, 0.66, 0], rotY: -Math.PI / 2 },
   ];
   for (const site of windowBoxSites) {
     const boxGrp = new THREE.Group();
@@ -2995,27 +2942,40 @@ export function buildVintageCafeGlb3D(ctx: UrbanPlazaBuildingsContext): void {
     buildWindowFlowerBox(boxGrp, ctx, 2.5, false);
   }
 
-  // Hydrangea/lavender bloom rows planted into the model's terrace trough
-  // (two 3.6m segments at the boutique planter boxes' own planting
-  // density; trough soil top y 4.52, deck top y 4.10 = segment base).
   for (const segX of [-2.2, 1.3] as const) {
     const segGrp = new THREE.Group();
     segGrp.position.set(segX, VINTAGE_CAFE_TERRACE_DECK_TOP_Y, 2.3);
     flowersGrp.add(segGrp);
-    buildPlanterBloomRow(segGrp, ctx, bt.x, bt.z, bt.yaw, segX, VINTAGE_CAFE_TERRACE_DECK_TOP_Y, 2.3, 3.6, 0);
+    buildPlanterBloomRow(
+      segGrp,
+      ctx,
+      originX,
+      bt.z,
+      bt.yaw,
+      segX * VINTAGE_CAFE_GLB_SCALE,
+      VINTAGE_CAFE_TERRACE_DECK_TOP_Y * VINTAGE_CAFE_GLB_SCALE + CENTRAL_PLAZA_GLB_MOUNT_Y,
+      2.3 * VINTAGE_CAFE_GLB_SCALE,
+      3.6 * VINTAGE_CAFE_GLB_SCALE,
+      0,
+    );
   }
 
-  // Boxwood urn planters: a pair flanking the model's front benches on
-  // its sidewalk slab, plus one on the terrace deck east of the trough.
   buildUrnBoxwoodPlanter(flowersGrp, ctx, [-3.45, VINTAGE_CAFE_SLAB_TOP_Y, 4.45], 1.0, 'cone');
   buildUrnBoxwoodPlanter(flowersGrp, ctx, [3.45, VINTAGE_CAFE_SLAB_TOP_Y, 4.45], 1.0, 'sphere');
   buildUrnBoxwoodPlanter(flowersGrp, ctx, [3.55, VINTAGE_CAFE_TERRACE_DECK_TOP_Y, 3.55], 0.92, 'sphere');
 
-  if (typeof window === 'undefined') return; // node/tests: skip the async load (same guard as the shop GLB loader)
+  if (typeof window === 'undefined') return; // node/tests: skip async load
+  const glowUniforms = ctx.plazaBuildingGlowUniforms ?? createPlazaBuildingGlowUniforms();
   new GLTFLoader().load(
     VINTAGE_CAFE_GLB_PATH,
     (gltf) => {
-      if (grp.parent !== ctx.staticGroup) return; // park scene was torn down meanwhile
+      if (grp.parent !== ctx.staticGroup) return;
+      optimizeCentralPlazaBuildingGlb(gltf.scene, {
+        buildingId: 'VintageCafe',
+        glowUniforms,
+        isSoftwareGl: ctx.isSoftwareGl,
+        glassWarmTintHex: '#ffe0a3',
+      });
       grp.add(gltf.scene);
     },
     undefined,
@@ -3047,32 +3007,32 @@ export function buildTimberPergolaAndLilyPond3D(ctx: UrbanPlazaBuildingsContext)
   // -------------------------------------------------------------------------
   // CIRCULAR WATER LILY POND BASIN, COBBLE BED, LIMESTONE COPING & ANIMATED WATER
   // -------------------------------------------------------------------------
-  // Outer cobble apron skirt stepped above 0.042m terrazzo (y = 0.018..0.058m) + basin floor below waterY (0.045..0.095m)
-  const apronGeo = ctx.applyPlanarUvs(new THREE.CylinderGeometry(3.64, 3.72, 0.04, 44), 1.8);
-  ctx.addPart(grp, apronGeo, '#ffffff', [0, 0.038, 0], [0, 0, 0], {
+  // Outer cobble apron skirt cleanly above 0.042m terrazzo (`y = 0.044..0.066m`, zero Z-fighting!)
+  const apronGeo = ctx.applyPlanarUvs(new THREE.CylinderGeometry(3.64, 3.72, 0.022, 44), 1.8);
+  ctx.addPart(grp, apronGeo, '#ffffff', [0, 0.055, 0], [0, 0, 0], {
     map: ctx.textures.cobbleTex,
     receiveShadow: true,
     castShadow: false,
   });
 
-  // Visible sunken cobblestone basin floor (underneath translucent NW-Lake-matched water disc)
-  const bedGeo = ctx.applyPlanarUvs(new THREE.CylinderGeometry(innerR + 0.04, innerR + 0.04, 0.05, 44), 1.6);
-  ctx.addPart(grp, bedGeo, '#ffffff', [0, 0.070, 0], [0, 0, 0], {
+  // Visible sunken cobblestone basin floor (`y = 0.073..0.103m`, strictly above apron top 0.066m!)
+  const bedGeo = ctx.applyPlanarUvs(new THREE.CylinderGeometry(innerR + 0.04, innerR + 0.04, 0.03, 44), 1.6);
+  ctx.addPart(grp, bedGeo, '#ffffff', [0, 0.088, 0], [0, 0, 0], {
     map: ctx.textures.cobbleTex,
     receiveShadow: true,
     castShadow: false,
   });
 
-  // Lathe carved limestone pond coping wall (stepped base + wide overhanging rim)
+  // Lathe carved limestone pond coping wall resting cleanly on top of apron (`yBot = 0.067m > 0.066m`)
   const copingPts = [
-    new THREE.Vector2(innerR - 0.02, 0.04),
+    new THREE.Vector2(innerR - 0.02, 0.067),
     new THREE.Vector2(innerR, 0.36),
     new THREE.Vector2(innerR - 0.04, 0.42),
     new THREE.Vector2(innerR + 0.06, 0.45),
     new THREE.Vector2(outerR + 0.06, 0.45),
     new THREE.Vector2(outerR + 0.08, 0.36),
     new THREE.Vector2(outerR, 0.32),
-    new THREE.Vector2(outerR, 0.04),
+    new THREE.Vector2(outerR, 0.067),
   ];
   const copingGeo = ctx.scaleGeometryUvs(new THREE.LatheGeometry(copingPts, 48), 6.0, 1.0);
   ctx.addPart(grp, copingGeo, '#ffffff', [0, 0, 0], [0, 0, 0], {
@@ -3136,8 +3096,9 @@ export function buildTimberPergolaAndLilyPond3D(ctx: UrbanPlazaBuildingsContext)
   lotusPetalGeo.computeVertexNormals();
 
   for (const [lx, lz, rad, padCol, lotusKind] of lilyPads) {
+    // Raised cleanly to waterY + 0.036m so animated pond surface ripples never Z-fight through pads
     const padGeo = new THREE.CylinderGeometry(rad, rad * 0.96, 0.02, 18, 1, false, 0.24, Math.PI * 1.84);
-    ctx.addPart(grp, padGeo, padCol, [lx, waterY + 0.022, lz], [0, lx * 2.1 + lz, 0]);
+    ctx.addPart(grp, padGeo, padCol, [lx, waterY + 0.036, lz], [0, lx * 2.1 + lz, 0]);
     if (lotusKind !== 'none') {
       const outerCol = lotusKind === 'pink' ? '#f79ec3' : '#fdf7f0';
       const innerCol = lotusKind === 'pink' ? '#ffd5e7' : '#ffffff';
@@ -3147,7 +3108,7 @@ export function buildTimberPergolaAndLilyPond3D(ctx: UrbanPlazaBuildingsContext)
           grp,
           lotusPetalGeo.clone(),
           outerCol,
-          [lx + Math.cos(ang) * 0.03, waterY + 0.038, lz + Math.sin(ang) * 0.03],
+          [lx + Math.cos(ang) * 0.03, waterY + 0.052, lz + Math.sin(ang) * 0.03],
           [0.98, -ang + Math.PI * 0.5, 0],
         );
       }
@@ -3157,12 +3118,12 @@ export function buildTimberPergolaAndLilyPond3D(ctx: UrbanPlazaBuildingsContext)
           grp,
           lotusPetalGeo.clone(),
           innerCol,
-          [lx + Math.cos(ang) * 0.018, waterY + 0.048, lz + Math.sin(ang) * 0.018],
+          [lx + Math.cos(ang) * 0.018, waterY + 0.062, lz + Math.sin(ang) * 0.018],
           [0.54, -ang + Math.PI * 0.5, 0],
           { scale: [0.76, 0.85, 0.76] },
         );
       }
-      ctx.addPart(grp, new THREE.SphereGeometry(0.038, 7, 5), '#facc15', [lx, waterY + 0.075, lz]);
+      ctx.addPart(grp, new THREE.SphereGeometry(0.038, 7, 5), '#facc15', [lx, waterY + 0.089, lz]);
     }
   }
   lotusPetalGeo.dispose();

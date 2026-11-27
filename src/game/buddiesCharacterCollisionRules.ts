@@ -390,61 +390,56 @@ export function getAuditedStaticWorldStructures(
       mat: 'wood',
     },
     // Vintage Cafe (owner GLB) freestanding props on its East frontage.
-    // Positions & sizes are the source model's own COL_* collider
-    // measurements (stripped from the shipped GLB) plus the two carried-
-    // over boxwood urns the mount adds, mapped through the model's
-    // runtime placement (mount origin (10.52, -0.4), yaw PI/2, scale
-    // 1.436: world = origin + 1.436 * (local z, -local x)). They
-    // replace the retired procedural Boutique Tower's front bench & 6
-    // urn colliders, which have no counterparts in the model.
+    // Mapped through its runtime placement (mount origin (6.60, -0.40), yaw PI/2,
+    // character-balanced scale 1.40: world = origin + 1.40 * (local z, -local x)).
     {
       id: 'vintage_cafe_aframe_sign',
-      x: 16.91,
-      z: 5.99,
-      halfX: 0.53,
-      halfZ: 0.53,
+      x: 12.83,
+      z: 5.83,
+      halfX: 0.52,
+      halfZ: 0.52,
       rotY: 0,
-      heightY: 1.51,
+      heightY: 1.47,
       mat: 'wood',
     },
     {
       id: 'vintage_cafe_bench_s',
-      x: 16.91,
-      z: 2.83,
-      halfX: 0.45,
-      halfZ: 1.09,
+      x: 12.83,
+      z: 2.75,
+      halfX: 0.44,
+      halfZ: 1.06,
       rotY: 0,
-      heightY: 1.36,
+      heightY: 1.33,
       mat: 'wood',
     },
     {
       id: 'vintage_cafe_bench_n',
-      x: 16.91,
-      z: -3.63,
-      halfX: 0.45,
-      halfZ: 1.09,
+      x: 12.83,
+      z: -3.55,
+      halfX: 0.44,
+      halfZ: 1.06,
       rotY: 0,
-      heightY: 1.36,
+      heightY: 1.33,
       mat: 'wood',
     },
     {
       id: 'vintage_cafe_urn_s',
-      x: 16.91,
-      z: 4.55,
-      halfX: 0.49,
-      halfZ: 0.49,
+      x: 12.83,
+      z: 4.43,
+      halfX: 0.48,
+      halfZ: 0.48,
       rotY: 0,
-      heightY: 1.65,
+      heightY: 1.61,
       mat: 'concrete',
     },
     {
       id: 'vintage_cafe_urn_n',
-      x: 16.91,
-      z: -5.35,
-      halfX: 0.49,
-      halfZ: 0.49,
+      x: 12.83,
+      z: -5.23,
+      halfX: 0.48,
+      halfZ: 0.48,
       rotY: 0,
-      heightY: 1.65,
+      heightY: 1.61,
       mat: 'concrete',
     },
     // Bites & Sips pavilion (owner GLB) freestanding props. Positions & sizes
@@ -1773,7 +1768,7 @@ export function computeLocalPedestrianAvoidance2D(
     blocked: false,
   };
 
-  const baseLook = input.lookaheadM ?? 1.85;
+  const baseLook = input.lookaheadM ?? 1.95;
   const lookDist = input.isFinalGoal
     ? Math.min(baseLook, Math.max(0.55, input.distToFinal))
     : baseLook;
@@ -1783,9 +1778,10 @@ export function computeLocalPedestrianAvoidance2D(
   const tightGoalApproach = input.isFinalGoal && input.distToFinal <= 1.25;
   const zeroProbeR = tightGoalApproach
     ? input.radius
-    : input.radius + (prevAvoidTimer > 0 ? 0.12 : 0.04);
+    : input.radius + (prevAvoidTimer > 0 ? 0.14 : 0.06);
   const angleProbeR = input.radius;
-  const maxSweepR = Math.max(zeroProbeR, angleProbeR);
+  const charComfortPad = tightGoalApproach ? 0.03 : 0.09;
+  const maxSweepR = Math.max(zeroProbeR, angleProbeR) + charComfortPad;
   const moverAltitude = input.moverAltitude ?? 0;
   const selfGroundY = input.selfGroundY ?? getTerrainElevation(input.x, input.z);
   const moverFeetY = input.moverFeetY ?? selfGroundY + moverAltitude;
@@ -1851,18 +1847,31 @@ export function computeLocalPedestrianAvoidance2D(
   }
 
   let nearCharCount = 0;
+  let hasOncomingCharacterAhead = false;
   const chars = input.characterCapsules;
   if (chars) {
     for (let i = 0; i < chars.length; i++) {
       const ch = chars[i];
       if (ch.id === input.selfId) continue;
       if (ch.groundY !== undefined && Math.abs(ch.groundY - selfGroundY) > 2.2) continue;
-      const reach = ch.radius + maxSweepR + lookDist + 0.85;
+      const reach = ch.radius + maxSweepR + lookDist + 1.1;
       if (Math.abs(input.x - ch.x) > reach || Math.abs(input.z - ch.z) > reach) continue;
       if (nearCharCount >= nearCharIndices.length) {
         nearCharIndices = growInt32Buffer(nearCharIndices, nearCharCount + 1);
       }
       nearCharIndices[nearCharCount++] = i;
+      const cvx = ch.vx ?? 0;
+      const cvz = ch.vz ?? 0;
+      const cSpeedSq = cvx * cvx + cvz * cvz;
+      if (cSpeedSq > 0.09) {
+        const relX = ch.x - input.x;
+        const relZ = ch.z - input.z;
+        const fwdDot = relX * input.dirX + relZ * input.dirZ;
+        const velDot = (cvx * input.dirX + cvz * input.dirZ) / Math.sqrt(cSpeedSq);
+        if (fwdDot > 0 && fwdDot < lookDist + 1.2 && velDot < -0.25) {
+          hasOncomingCharacterAhead = true;
+        }
+      }
     }
   }
 
@@ -1963,6 +1972,7 @@ export function computeLocalPedestrianAvoidance2D(
     if (chars) {
       for (let k = 0; k < nearCharCount; k++) {
         const ch = chars[nearCharIndices[k]];
+        const effCharR = ch.radius + charComfortPad;
         const hNow = sweepRayAgainstCircle2D(
           input.x,
           input.z,
@@ -1973,14 +1983,14 @@ export function computeLocalPedestrianAvoidance2D(
           input.radius,
           ch.x,
           ch.z,
-          ch.radius,
+          effCharR,
         );
         if (hNow < bestHit) bestHit = hNow;
         if (bestHit <= 0) return 0;
         const cvx = ch.vx ?? 0;
         const cvz = ch.vz ?? 0;
-        if (cvx !== 0 || cvz !== 0) {
-          const hLead = sweepRayAgainstCircle2D(
+        if (cvx * cvx + cvz * cvz > 0.04) {
+          const hMid = sweepRayAgainstCircle2D(
             input.x,
             input.z,
             candX,
@@ -1988,11 +1998,26 @@ export function computeLocalPedestrianAvoidance2D(
             probeDist,
             probeR,
             input.radius,
-            ch.x + cvx * 0.22,
-            ch.z + cvz * 0.22,
-            ch.radius,
+            ch.x + cvx * 0.3,
+            ch.z + cvz * 0.3,
+            effCharR,
           );
-          if (hLead < bestHit) bestHit = hLead;
+          if (hMid < bestHit) bestHit = hMid;
+          if (bestHit <= 0) return 0;
+
+          const hFar = sweepRayAgainstCircle2D(
+            input.x,
+            input.z,
+            candX,
+            candZ,
+            probeDist,
+            probeR,
+            input.radius,
+            ch.x + cvx * 0.65,
+            ch.z + cvz * 0.65,
+            ch.radius + 0.05,
+          );
+          if (hFar < bestHit) bestHit = hFar;
           if (bestHit <= 0) return 0;
         }
       }
@@ -2053,12 +2078,16 @@ export function computeLocalPedestrianAvoidance2D(
     if (plusOpen || minusOpen) {
       let pickPlus: boolean;
       if (plusOpen && minusOpen) {
-        if (prevAvoidSide !== 0) {
+        if (hasOncomingCharacterAhead && prevAvoidTimer <= 0.05) {
+          // Reciprocal right-hand passing rule: both oncoming NPCs step cleanly to their own right
+          // so they pass shoulder-to-shoulder without mirror-oscillating.
+          pickPlus = true;
+        } else if (prevAvoidSide !== 0) {
           pickPlus = prevAvoidSide > 0;
         } else {
-          // Tie-break symmetrically open detours by extended clearance (+0.75m), else keep-right
-          const extPlus = probeCandidate(plusX, plusZ, lookDist + 0.75, angleProbeR);
-          const extMinus = probeCandidate(minusX, minusZ, lookDist + 0.75, angleProbeR);
+          // Tie-break symmetrically open detours by extended clearance (+0.95m), else keep-right
+          const extPlus = probeCandidate(plusX, plusZ, lookDist + 0.95, angleProbeR);
+          const extMinus = probeCandidate(minusX, minusZ, lookDist + 0.95, angleProbeR);
           if (
             extPlus !== extMinus &&
             (extPlus === Infinity || extMinus === Infinity || Math.abs(extPlus - extMinus) > 0.35)
@@ -2074,9 +2103,9 @@ export function computeLocalPedestrianAvoidance2D(
 
       result.dirX = pickPlus ? plusX : minusX;
       result.dirZ = pickPlus ? plusZ : minusZ;
-      result.speedScale = tier >= 3 ? 0.85 : 1.0;
+      result.speedScale = tier >= 3 ? 0.82 : hasOncomingCharacterAhead && tier >= 1 ? 0.92 : 1.0;
       result.avoidSide = pickPlus ? 1 : -1;
-      result.avoidTimer = 0.55;
+      result.avoidTimer = hasOncomingCharacterAhead ? 0.85 : 0.7;
       result.blocked = true;
       return result;
     }
@@ -2158,7 +2187,7 @@ export function computeLocalPedestrianAvoidance2D(
     result.speedScale = Math.max(0.32, Math.min(0.82, (bestFallbackClear - 0.18) / 0.85));
   }
   result.avoidSide = bestFallbackSide !== 0 ? bestFallbackSide : prevAvoidSide;
-  result.avoidTimer = bestFallbackTier >= 0 ? 0.55 : Math.max(0, prevAvoidTimer - dt);
+  result.avoidTimer = bestFallbackTier >= 0 ? 0.75 : Math.max(0, prevAvoidTimer - dt);
   result.blocked = true;
   return result;
 }

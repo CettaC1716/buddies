@@ -56,14 +56,21 @@ export const SALON_ORIGIN_Y = 355.0;
 export const SALON_INTERIOR_CHARACTER_RADIUS = 0.36;
 
 /**
- * Uniform scale applied to the owner Glow Studio GLB at both of its mounts
- * (the Central Plaza exterior and this interior scene). Derived by the
- * door-height method: the replaced procedural salon's authored front door
- * assembly was 3.48m tall; the GLB's entry door frame measures 2.70m
- * (y 0.16..2.86 in model units), so 3.48 / 2.70 = 1.289 brings the model's
- * door in line with the game's authored proportions (1.65m avatars).
+ * Uniform scale applied to the owner Glow Studio GLB inside the isolated
+ * interior scene (SALON_ORIGIN_Y), where the player avatar is scaled to 0.55x
+ * (~1.82m tall). Derived by the door-height method (3.48 / 2.70 = 1.289).
  */
 export const SALON_GLB_SCALE = 1.289;
+
+/**
+ * Uniform scale applied to the owner Glow Studio GLB on the outdoor Central
+ * Urban Plaza, where the player avatar stands ~3.31m tall (1.0x outdoor rig).
+ * Raising exterior scale from 1.289 to 1.40 brings the entry door frame to
+ * 3.78m, door leaf opening to 3.56m (+0.25m head clearance), and cream front
+ * awning underside to 3.33m — harmonizing with Vintage Cafe (1.40) and
+ * Cozy Bites & Sips (1.48) without clipping the player avatar's head.
+ */
+export const SALON_EXTERIOR_GLB_SCALE = 1.4;
 
 /**
  * Wall thickness of the owner Glow Studio GLB in model units: its ground
@@ -76,21 +83,21 @@ export const SALON_EXTERIOR_WALL_THICKNESS = 0.15;
 /**
  * World-space trigger on Central Urban Plaza North Promenade directly outside
  * the Glow Studio Salon's entrance doorway. The door anchor x (25.74) is
- * unchanged: the rescaled GLB mount shifts its origin so the model's door
- * frame centre lands on (25.74, 9.51) — the scaled front wall face sits at
- * z 9.35, so the trigger point and exit spawn moved north with the face,
- * keeping their old clearances (1.05m / 1.25m in front of the door plane).
+ * unchanged: the 1.40x exterior GLB mount shifts its origin to (29.87, 14.90)
+ * so the model's door frame centre lands on (25.74, 8.94) — the scaled front
+ * wall face sits at z 8.74 (OBB front z 8.54), keeping clean trigger & exit
+ * clearances north of the doorway while clearing the Central Fountain ring.
  */
 export const SALON_EXTERIOR_DOOR_TRIGGER = {
   x: 25.74,
-  z: 8.46,
+  z: 7.95,
   doorX: 25.74,
-  doorZ: 9.51,
-  deckY: 0.02,
+  doorZ: 8.94,
+  deckY: 0.042,
   markerOffsetY: 1.55,
   triggerRadius: 2.35,
   exitSpawnX: 25.74,
-  exitSpawnZ: 8.26,
+  exitSpawnZ: 7.75,
   exitSpawnYaw: Math.PI / 2, // faces North (-Z) out into Central Urban Plaza
 } as const;
 

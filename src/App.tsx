@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense, type ComponentProps, type ComponentType } from 'react';
 import { useSafePrivy, useSafePrivyLogin } from './lib/privyAuthBridge';
+import { CERRIA_CITY_NAME, CERRIA_OFFICIAL_TICKER } from './lib/cerriaBrand';
 import {
   ChevronLeft,
   ChevronRight,
@@ -77,9 +78,67 @@ import {
   preloadAllUiAndKioskImages,
   type PreloadProgressInput,
 } from './game/buddiesAssetPreloader';
-import { TacticalKioskModal } from './components/TacticalKioskModal';
-import { CityTransitKioskModal } from './components/CityTransitKioskModal';
-import { CitizenDialogueModal } from './components/CitizenDialogueModal';
+// ============================================================================
+// ON-DEMAND LAZY MODAL CODE-SPLITTING HELPERS
+// Splits ~1.35 MB of heavy UI/3D-preview/minigame modals out of the initial
+// synchronous boot bundle and isolates each modal in its own Suspense boundary
+// so the 3D arena canvas and HUD never suspend while a modal chunk loads.
+// ============================================================================
+function lazyNamedModal<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  TModule extends Record<string, any>,
+  TKey extends keyof TModule,
+>(loader: () => Promise<TModule>, exportName: TKey) {
+  const LazyComp = lazy(async () => {
+    const mod = await loader();
+    return { default: mod[exportName] as ComponentType<ComponentProps<TModule[TKey]>> };
+  });
+  return function SuspendedLazyModal(props: ComponentProps<TModule[TKey]>) {
+    return (
+      <Suspense fallback={null}>
+        <LazyComp {...props} />
+      </Suspense>
+    );
+  };
+}
+
+function lazyDeferredModal<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  TModule extends Record<string, any>,
+  TKey extends keyof TModule,
+>(
+  loader: () => Promise<TModule>,
+  exportName: TKey,
+  isActive: (props: ComponentProps<TModule[TKey]>) => boolean,
+) {
+  const LazyComp = lazy(async () => {
+    const mod = await loader();
+    return { default: mod[exportName] as ComponentType<ComponentProps<TModule[TKey]>> };
+  });
+  return function DeferredLazyModal(props: ComponentProps<TModule[TKey]>) {
+    if (!isActive(props)) return null;
+    return (
+      <Suspense fallback={null}>
+        <LazyComp {...props} />
+      </Suspense>
+    );
+  };
+}
+
+const TacticalKioskModal = lazyDeferredModal(
+  () => import('./components/TacticalKioskModal'),
+  'TacticalKioskModal',
+  (p) => Boolean(p.isOpen),
+);
+const CityTransitKioskModal = lazyDeferredModal(
+  () => import('./components/CityTransitKioskModal'),
+  'CityTransitKioskModal',
+  (p) => Boolean(p.isOpen),
+);
+const CitizenDialogueModal = lazyNamedModal(
+  () => import('./components/CitizenDialogueModal'),
+  'CitizenDialogueModal',
+);
 import {
   type CitizenFriendshipStore,
   type CitizenId,
@@ -160,24 +219,45 @@ import {
   type PlayerSocialGraph,
 } from './game/buddiesSocialGraph';
 import { MobileResponsiveControls } from './components/MobileResponsiveControls';
-import { QuickPoseStyleModal } from './components/QuickPoseStyleModal';
+const QuickPoseStyleModal = lazyDeferredModal(
+  () => import('./components/QuickPoseStyleModal'),
+  'QuickPoseStyleModal',
+  (p) => Boolean(p.isOpen),
+);
 import {
   PairedInteractionOverlay,
   type PairedInteractionStatusState,
 } from './components/PairedInteractionOverlay';
-import { NearWalletSelectorModal } from './components/NearWalletSelectorModal';
-import { PersonalWalletPanel } from './components/PersonalWalletPanel';
-import {
-  NpcMerchantAndHouseModal,
-  HouseInteriorPlacementState,
-} from './components/NpcMerchantAndHouseModal';
-import { DexMarketplaceModal } from './components/DexMarketplaceModal';
+const NearWalletSelectorModal = lazyDeferredModal(
+  () => import('./components/NearWalletSelectorModal'),
+  'NearWalletSelectorModal',
+  (p) => Boolean(p.isOpen),
+);
+const PersonalWalletPanel = lazyNamedModal(
+  () => import('./components/PersonalWalletPanel'),
+  'PersonalWalletPanel',
+);
+import type { HouseInteriorPlacementState } from './components/NpcMerchantAndHouseModal';
+const NpcMerchantAndHouseModal = lazyNamedModal(
+  () => import('./components/NpcMerchantAndHouseModal'),
+  'NpcMerchantAndHouseModal',
+);
+const DexMarketplaceModal = lazyDeferredModal(
+  () => import('./components/DexMarketplaceModal'),
+  'DexMarketplaceModal',
+  (p) => Boolean(p.isOpen),
+);
 import { ShorelineFishingHudAndShowcase } from './components/ShorelineCatchShowcaseModal';
-import {
-  Fish3dPreviewModal,
-  type Fish3dPreviewSpec,
-} from './components/Fish3dPreviewModal';
-import { MyThingsPanel } from './components/MyThingsPanel';
+import type { Fish3dPreviewSpec } from './components/Fish3dPreviewModal';
+const Fish3dPreviewModal = lazyDeferredModal(
+  () => import('./components/Fish3dPreviewModal'),
+  'Fish3dPreviewModal',
+  (p) => Boolean(p.fish),
+);
+const MyThingsPanel = lazyNamedModal(
+  () => import('./components/MyThingsPanel'),
+  'MyThingsPanel',
+);
 import type { MyThingsSectionId, PersonalWalletTabId } from './components/myThingsRules';
 import type { ShopBuildingFormId } from './game/buddiesCityRentalLotsRules';
 import { SHOP_BUILDING_FORMS } from './game/buddiesCityRentalLotsRules';
@@ -200,7 +280,11 @@ import {
   removeSimulatedBuildingFromLot,
   startSimulatedLotRental,
 } from './game/shopRentalSimulation';
-import { LotRentalModal } from './components/LotRentalModal';
+const LotRentalModal = lazyDeferredModal(
+  () => import('./components/LotRentalModal'),
+  'LotRentalModal',
+  (p) => Boolean(p.open),
+);
 import {
   createInitialMerchantMarketState,
   executeLulToCyonExchange,
@@ -229,6 +313,7 @@ import {
 } from './game/buddiesMerchantPricing';
 import {
   CAFE_ITEM_CONSUME_DURATION_MS,
+  CAFE_MENU_ITEMS,
   CAFE_SHIFT_MAX_ORDERS,
   advanceCafeConsumerState,
   applyPlayerXpGain,
@@ -265,9 +350,17 @@ import {
   PinAnchoredInteractionMenu,
   type PinAnchoredMenuItem,
 } from './components/PinAnchoredInteractionMenu';
-import { GlasshouseCafeSlotModal } from './components/GlasshouseCafeSlotModal';
+const GlasshouseCafeSlotModal = lazyDeferredModal(
+  () => import('./components/GlasshouseCafeSlotModal'),
+  'GlasshouseCafeSlotModal',
+  (p) => Boolean(p.isOpen),
+);
 import type { ArcadeSlotEvaluation } from './game/buddiesArcadeSlots';
-import { DailyMissionsModal } from './components/DailyMissionsModal';
+const DailyMissionsModal = lazyDeferredModal(
+  () => import('./components/DailyMissionsModal'),
+  'DailyMissionsModal',
+  (p) => Boolean(p.isOpen),
+);
 import {
   claimDailyAllClearBonus,
   claimDailyMissionReward,
@@ -336,6 +429,30 @@ import {
   evaluatePairedPoseRequest,
   evaluateTogethernessInvitation,
 } from './game/npcTogethernessSession';
+const QaDirectorDrawer = lazyNamedModal(
+  () => import('./components/QaDirectorDrawer'),
+  'QaDirectorDrawer',
+);
+import {
+  NPC_PROACTIVE_TOPIC_EVENT,
+  QA_DIRECTOR_TELEMETRY_EVENT,
+  applyQaClosenessPreset,
+  applyQaShopBillboardPreset,
+  applyQaShopLotStateMutation,
+  applyQaShopPlaceBuilding,
+  cloneLotRentalStore,
+  cloneNpcClosenessStore,
+  createInitialQaDirectorState,
+  dispatchNpcEmotionReaction,
+  dispatchQaArenaCommand,
+  isQaDirectorAvailable,
+  resolveQaEffectiveIds,
+  simulateQaAbsenceDecay,
+  type QaArenaTelemetrySnapshot,
+  type QaBillboardTestPreset,
+  type QaDirectorState,
+  type QaShopLeaseStatePreset,
+} from './game/qaDirectorMode';
 import {
   FAMILY_MEMBER_CONTRACT_PLANS,
   FAMILY_MEMBER_ORDER_SPECS,
@@ -444,8 +561,16 @@ import {
   UrbanScooterShowroomModal,
   getOrRenderScooterPortraitUrl,
 } from './components/UrbanScooterShowroomModal';
-import { FashionBoutiqueModal } from './components/FashionBoutiqueModal';
-import { WardrobeStudioModal } from './components/WardrobeStudioModal';
+const FashionBoutiqueModal = lazyDeferredModal(
+  () => import('./components/FashionBoutiqueModal'),
+  'FashionBoutiqueModal',
+  (p) => Boolean(p.isOpen),
+);
+const WardrobeStudioModal = lazyDeferredModal(
+  () => import('./components/WardrobeStudioModal'),
+  'WardrobeStudioModal',
+  (p) => Boolean(p.isOpen),
+);
 import {
   FASHION_APPAREL_CATALOG_ITEMS,
   type FashionApparelCatalogItem,
@@ -469,12 +594,19 @@ import {
   type WardrobeCatalogItem,
   type WardrobeOutfitDraft,
 } from './game/buddiesWardrobeStudioRules';
-import { GrandCasinoModal, type CasinoTab } from './components/GrandCasinoModal';
+import type { CasinoTab } from './components/GrandCasinoModal';
+const GrandCasinoModal = lazyDeferredModal(
+  () => import('./components/GrandCasinoModal'),
+  'GrandCasinoModal',
+  (p) => Boolean(p.isOpen),
+);
 import type { CasinoSlotGameVariant } from './game/buddiesGrandCasinoRules';
-import {
-  RealEstateCatalogModal,
-  type RealEstateCatalogTabId,
-} from './components/RealEstateCatalogModal';
+import type { RealEstateCatalogTabId } from './components/RealEstateCatalogModal';
+const RealEstateCatalogModal = lazyDeferredModal(
+  () => import('./components/RealEstateCatalogModal'),
+  'RealEstateCatalogModal',
+  (p) => Boolean(p.isOpen),
+);
 import {
   URBAN_SCOOTER_CATALOG_ITEMS,
   type UrbanScooterCatalogItem,
@@ -483,14 +615,22 @@ import {
 import { HudAudioVolumeControl } from './components/HudAudioVolumeControl';
 import { HudBottomAvatarDock } from './components/HudBottomAvatarDock';
 import { HudWeatherAndTimeControl } from './components/HudWeatherAndTimeControl';
-import { CitySelfieCameraOverlay } from './components/CitySelfieCameraOverlay';
+const CitySelfieCameraOverlay = lazyDeferredModal(
+  () => import('./components/CitySelfieCameraOverlay'),
+  'CitySelfieCameraOverlay',
+  (p) => Boolean(p.isOpen),
+);
 import { useAdaptiveViewport } from './lib/useAdaptiveViewport';
 import {
   HudSmartphoneIcon,
   SmartphoneOsModal,
   type SmartphoneAppId,
 } from './components/SmartphoneOsModal';
-import { CityFeedModal } from './components/CityFeedModal';
+const CityFeedModal = lazyDeferredModal(
+  () => import('./components/CityFeedModal'),
+  'CityFeedModal',
+  (p) => Boolean(p.isOpen),
+);
 import {
   evaluateWeatherAndTimeState,
   getWeatherControlConfig,
@@ -632,10 +772,9 @@ const EMPTY_NEP171_LEDGER: Nep171GamepassSubAccountLedger = {
   ownershipHistory: [],
 };
 
-// Temporary QA/testing toggle: unlocks all purchasable Wardrobe, Fashion Boutique,
-// Urban Scooter, and Merchant/Furniture catalog items locally for testing.
-// Set back to `false` before production release.
-const QA_UNLOCK_ALL_PURCHASABLE_ITEMS = true;
+// Legacy hardcoded unlock flag stays false so real persisted player saves are never polluted.
+// Dev QA preview unlocking is handled non-destructively in memory by QaDirectorMode.
+const QA_UNLOCK_ALL_PURCHASABLE_ITEMS = false;
 const QA_ALL_UNLOCKED_APPAREL_IDS: readonly string[] = Array.from(
   new Set([
     ...WARDROBE_STUDIO_ITEMS.map((item) => item.id),
@@ -648,6 +787,7 @@ const QA_ALL_UNLOCKED_SCOOTER_IDS: readonly string[] = URBAN_SCOOTER_CATALOG_ITE
 const QA_ALL_UNLOCKED_MERCHANT_IDS: readonly string[] = MERCHANT_CATALOG_ITEMS.map(
   (item) => item.id,
 );
+const QA_ALL_UNLOCKED_CAFE_FOOD_IDS: readonly string[] = CAFE_MENU_ITEMS.map((item) => item.id);
 
 /** localStorage key for the simulated shop-lot rental store (QC build). */
 const LOT_RENTALS_STORAGE_KEY = 'bb_lot_rentals_v1';
@@ -1154,12 +1294,24 @@ export default function App() {
   const dailyMissionsAccountRef = useRef<string>(dailyMissionsAccountKey);
   dailyMissionsAccountRef.current = dailyMissionsAccountKey;
 
+  const qaDirectorAvailable = isQaDirectorAvailable();
+  const [qaDirectorState, setQaDirectorState] = useState<QaDirectorState>(() =>
+    createInitialQaDirectorState(qaDirectorAvailable),
+  );
+  const qaDirectorStateRef = useRef<QaDirectorState>(qaDirectorState);
+  qaDirectorStateRef.current = qaDirectorState;
+  const [qaTelemetry, setQaTelemetry] = useState<QaArenaTelemetrySnapshot | null>(null);
+
   const [npcClosenessStore, setNpcClosenessStore] = useState<NpcClosenessStore>(() => {
     ensureAllNpcPersonasRegistered();
     return loadNpcClosenessStore(dailyMissionsAccountKey);
   });
   const npcClosenessStoreRef = useRef<NpcClosenessStore>(npcClosenessStore);
   npcClosenessStoreRef.current = npcClosenessStore;
+  const realNpcClosenessSnapshotRef = useRef<NpcClosenessStore>(
+    cloneNpcClosenessStore(npcClosenessStore),
+  );
+  const qaClosenessDirtyRef = useRef<boolean>(false);
 
   const [npcTreasuryStore, setNpcTreasuryStore] = useState<NpcTreasuryStore>(() =>
     loadNpcTreasuryStore(dailyMissionsAccountKey),
@@ -1177,6 +1329,8 @@ export default function App() {
     ensureAllNpcPersonasRegistered();
     const loaded = loadNpcClosenessStore(dailyMissionsAccountKey);
     npcClosenessStoreRef.current = loaded;
+    realNpcClosenessSnapshotRef.current = cloneNpcClosenessStore(loaded);
+    qaClosenessDirtyRef.current = false;
     setNpcClosenessStore(loaded);
     const loadedTreasury = loadNpcTreasuryStore(dailyMissionsAccountKey);
     npcTreasuryStoreRef.current = loadedTreasury;
@@ -1210,15 +1364,21 @@ export default function App() {
   }, []);
 
   const handleNpcConversationTurn = useCallback(
-    (npcId: NpcId, closenessDelta: number, _emotion: NpcEmotionTag) => {
+    (npcId: NpcId, closenessDelta: number, emotion: NpcEmotionTag) => {
+      dispatchNpcEmotionReaction(npcId, emotion);
       const result = recordNpcConversation(npcClosenessStoreRef.current, npcId, {
         closenessDelta,
       });
       npcClosenessStoreRef.current = result.store;
       setNpcClosenessStore(result.store);
-      saveNpcClosenessStore(dailyMissionsAccountRef.current, result.store);
+      if (qaDirectorAvailable && qaDirectorStateRef.current.enabled) {
+        qaClosenessDirtyRef.current = true;
+      } else {
+        realNpcClosenessSnapshotRef.current = cloneNpcClosenessStore(result.store);
+        saveNpcClosenessStore(dailyMissionsAccountRef.current, result.store);
+      }
     },
-    [],
+    [qaDirectorAvailable],
   );
 
   const handleGiveNpcOwnedGift = useCallback(
@@ -1228,6 +1388,8 @@ export default function App() {
         npcId,
         itemInput,
       });
+
+      dispatchNpcEmotionReaction(npcId, outcome.emotion);
 
       if (!outcome.accepted) {
         return {
@@ -1240,7 +1402,12 @@ export default function App() {
 
       npcClosenessStoreRef.current = outcome.store;
       setNpcClosenessStore(outcome.store);
-      saveNpcClosenessStore(dailyMissionsAccountRef.current, outcome.store);
+      if (qaDirectorAvailable && qaDirectorStateRef.current.enabled) {
+        qaClosenessDirtyRef.current = true;
+      } else {
+        realNpcClosenessSnapshotRef.current = cloneNpcClosenessStore(outcome.store);
+        saveNpcClosenessStore(dailyMissionsAccountRef.current, outcome.store);
+      }
       if (outcome.category) {
         const nextTreasury = recordNpcTreasuryGift(npcTreasuryStoreRef.current, npcId, {
           itemId: outcome.itemId,
@@ -1250,7 +1417,9 @@ export default function App() {
         });
         npcTreasuryStoreRef.current = nextTreasury;
         setNpcTreasuryStore(nextTreasury);
-        saveNpcTreasuryStore(dailyMissionsAccountRef.current, nextTreasury);
+        if (!(qaDirectorAvailable && qaDirectorStateRef.current.enabled)) {
+          saveNpcTreasuryStore(dailyMissionsAccountRef.current, nextTreasury);
+        }
       }
       if (fishInstanceId) {
         setCaughtFishBucket((prev) => prev.filter((item) => item.id !== fishInstanceId));
@@ -1262,7 +1431,7 @@ export default function App() {
         emotion: outcome.emotion,
       };
     },
-    [],
+    [qaDirectorAvailable],
   );
 
   const ownedCafeFoodIds = useMemo(() => {
@@ -1329,7 +1498,12 @@ export default function App() {
       }
       npcClosenessStoreRef.current = res.closenessResult.store;
       setNpcClosenessStore(res.closenessResult.store);
-      saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
+      if (qaDirectorAvailable && qaDirectorStateRef.current.enabled) {
+        qaClosenessDirtyRef.current = true;
+      } else {
+        realNpcClosenessSnapshotRef.current = cloneNpcClosenessStore(res.closenessResult.store);
+        saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
+      }
       setIsCitizenDialogueOpen(false);
       if (activeSpecialModal === 'npc_merchant') {
         setActiveSpecialModal('none');
@@ -1338,7 +1512,7 @@ export default function App() {
       dispatchNpcTogethernessCommand({ type: 'start_walk', npcId });
       return { accepted: true, replyLine: decision.replyLine };
     },
-    [activeSpecialModal],
+    [activeSpecialModal, qaDirectorAvailable],
   );
 
   const handleNpcPairPoseTrigger = useCallback(
@@ -1363,7 +1537,12 @@ export default function App() {
       }
       npcClosenessStoreRef.current = res.closenessResult.store;
       setNpcClosenessStore(res.closenessResult.store);
-      saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
+      if (qaDirectorAvailable && qaDirectorStateRef.current.enabled) {
+        qaClosenessDirtyRef.current = true;
+      } else {
+        realNpcClosenessSnapshotRef.current = cloneNpcClosenessStore(res.closenessResult.store);
+        saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
+      }
       dispatchNpcTogethernessCommand({
         type: 'start_pair_pose',
         npcId,
@@ -1376,7 +1555,7 @@ export default function App() {
       }
       return { accepted: true, replyLine: decision.replyLine };
     },
-    [activeSpecialModal],
+    [activeSpecialModal, qaDirectorAvailable],
   );
 
   const handleNpcRideTogetherToggle = useCallback(
@@ -1407,7 +1586,12 @@ export default function App() {
       }
       npcClosenessStoreRef.current = res.closenessResult.store;
       setNpcClosenessStore(res.closenessResult.store);
-      saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
+      if (qaDirectorAvailable && qaDirectorStateRef.current.enabled) {
+        qaClosenessDirtyRef.current = true;
+      } else {
+        realNpcClosenessSnapshotRef.current = cloneNpcClosenessStore(res.closenessResult.store);
+        saveNpcClosenessStore(dailyMissionsAccountRef.current, res.closenessResult.store);
+      }
       setIsCitizenDialogueOpen(false);
       if (activeSpecialModal === 'npc_merchant') {
         setActiveSpecialModal('none');
@@ -1416,7 +1600,7 @@ export default function App() {
       dispatchNpcTogethernessCommand({ type: 'start_ride', npcId });
       return { accepted: true, replyLine: decision.replyLine };
     },
-    [activeSpecialModal],
+    [activeSpecialModal, qaDirectorAvailable],
   );
 
   const loadDailyMissionsFromStorage = useCallback((acctKey: string): DailyMissionsState => {
@@ -1455,6 +1639,8 @@ export default function App() {
   const [lotRentalStore, setLotRentalStore] = useState<LotRentalStore>(() =>
     loadPersistedLotRentalStore(),
   );
+  const realLotRentalSnapshotRef = useRef<LotRentalStore>(cloneLotRentalStore(lotRentalStore));
+  const qaShopDirtyRef = useRef<boolean>(false);
   const [selectedRentalLotId, setSelectedRentalLotId] = useState<string | null>(null);
   const [isLotRentalModalOpen, setIsLotRentalModalOpen] = useState<boolean>(false);
   useEffect(() => {
@@ -1468,10 +1654,13 @@ export default function App() {
         ),
       }),
     );
-    try {
-      window.localStorage.setItem(LOT_RENTALS_STORAGE_KEY, JSON.stringify(lotRentalStore));
-    } catch {
-      // Storage unavailable (private mode / quota): simulation state stays in memory.
+    if (!qaShopDirtyRef.current) {
+      realLotRentalSnapshotRef.current = cloneLotRentalStore(lotRentalStore);
+      try {
+        window.localStorage.setItem(LOT_RENTALS_STORAGE_KEY, JSON.stringify(lotRentalStore));
+      } catch {
+        // Storage unavailable (private mode / quota): simulation state stays in memory.
+      }
     }
   }, [lotRentalStore, selectedRentalLotId]);
   useEffect(() => {
@@ -2009,6 +2198,295 @@ export default function App() {
   >([]);
   const [ownedMerchantItemIds, setOwnedMerchantItemIds] = useState<string[]>(() =>
     QA_UNLOCK_ALL_PURCHASABLE_ITEMS ? [...QA_ALL_UNLOCKED_MERCHANT_IDS] : [],
+  );
+
+  // Non-destructive QA Director effective ownership & virtual wallet overrides.
+  const effectiveOwnedApparelIds = useMemo(
+    () =>
+      resolveQaEffectiveIds(
+        ownedApparelIds,
+        QA_ALL_UNLOCKED_APPAREL_IDS,
+        qaDirectorAvailable && qaDirectorState.enabled && qaDirectorState.previewApparelAndPoses,
+      ),
+    [
+      ownedApparelIds,
+      qaDirectorAvailable,
+      qaDirectorState.enabled,
+      qaDirectorState.previewApparelAndPoses,
+    ],
+  );
+  const effectiveOwnedScooterIds = useMemo(
+    () =>
+      resolveQaEffectiveIds(
+        ownedScooterIds,
+        QA_ALL_UNLOCKED_SCOOTER_IDS,
+        qaDirectorAvailable && qaDirectorState.enabled && qaDirectorState.previewVehicles,
+      ),
+    [
+      ownedScooterIds,
+      qaDirectorAvailable,
+      qaDirectorState.enabled,
+      qaDirectorState.previewVehicles,
+    ],
+  );
+  const effectiveOwnedMerchantItemIds = useMemo(
+    () =>
+      resolveQaEffectiveIds(
+        ownedMerchantItemIds,
+        QA_ALL_UNLOCKED_MERCHANT_IDS,
+        qaDirectorAvailable && qaDirectorState.enabled && qaDirectorState.previewMerchantAndShops,
+      ),
+    [
+      ownedMerchantItemIds,
+      qaDirectorAvailable,
+      qaDirectorState.enabled,
+      qaDirectorState.previewMerchantAndShops,
+    ],
+  );
+  const effectiveOwnedCafeFoodIds = useMemo(
+    () =>
+      resolveQaEffectiveIds(
+        ownedCafeFoodIds,
+        QA_ALL_UNLOCKED_CAFE_FOOD_IDS,
+        qaDirectorAvailable && qaDirectorState.enabled && qaDirectorState.previewCafeGifts,
+      ),
+    [
+      ownedCafeFoodIds,
+      qaDirectorAvailable,
+      qaDirectorState.enabled,
+      qaDirectorState.previewCafeGifts,
+    ],
+  );
+  const effectiveGold =
+    hud.gold + (qaDirectorAvailable && qaDirectorState.enabled ? qaDirectorState.qaBonusLul : 0);
+
+  // Dev-only QA Director keyboard shortcut (Ctrl+Shift+Q) & live arena telemetry listener
+  useEffect(() => {
+    if (!qaDirectorAvailable) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'q') {
+        e.preventDefault();
+        setQaDirectorState((prev) => ({ ...prev, drawerOpen: !prev.drawerOpen }));
+      }
+    };
+    const onTelemetry = (ev: Event) => {
+      const detail = (ev as CustomEvent<QaArenaTelemetrySnapshot>).detail;
+      if (detail) setQaTelemetry(detail);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener(QA_DIRECTOR_TELEMETRY_EVENT, onTelemetry);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener(QA_DIRECTOR_TELEMETRY_EVENT, onTelemetry);
+    };
+  }, [qaDirectorAvailable]);
+
+  useEffect(() => {
+    if (!qaDirectorAvailable) return;
+    dispatchQaArenaCommand({
+      type: 'set_telemetry_active',
+      active: qaDirectorState.drawerOpen,
+    });
+  }, [qaDirectorAvailable, qaDirectorState.drawerOpen]);
+
+  useEffect(() => {
+    if (!qaDirectorAvailable) return;
+    dispatchQaArenaCommand({
+      type: 'set_debug_pathfinder',
+      enabled: qaDirectorState.enabled && qaDirectorState.debugPathfinder3D,
+    });
+  }, [qaDirectorAvailable, qaDirectorState.enabled, qaDirectorState.debugPathfinder3D]);
+
+  useEffect(() => {
+    if (!qaDirectorAvailable) return;
+    dispatchQaArenaCommand({
+      type: 'set_world_hour_override',
+      hour: qaDirectorState.enabled ? qaDirectorState.worldHourOverride : null,
+    });
+  }, [qaDirectorAvailable, qaDirectorState.enabled, qaDirectorState.worldHourOverride]);
+
+  useEffect(() => {
+    if (!qaDirectorAvailable) return;
+    dispatchQaArenaCommand({
+      type: 'set_shop_qa_visuals',
+      previewAllBuildings: qaDirectorState.enabled && qaDirectorState.previewAllShopBuildings,
+      debugBounds3D: qaDirectorState.enabled && qaDirectorState.debugShopBounds3D,
+    });
+  }, [
+    qaDirectorAvailable,
+    qaDirectorState.enabled,
+    qaDirectorState.previewAllShopBuildings,
+    qaDirectorState.debugShopBounds3D,
+  ]);
+
+  const handleQaUpdateState = useCallback((patch: Partial<QaDirectorState>) => {
+    setQaDirectorState((prev) => {
+      const next = { ...prev, ...patch };
+      if (prev.enabled && !next.enabled) {
+        if (qaClosenessDirtyRef.current) {
+          const restored = cloneNpcClosenessStore(realNpcClosenessSnapshotRef.current);
+          npcClosenessStoreRef.current = restored;
+          setNpcClosenessStore(restored);
+          qaClosenessDirtyRef.current = false;
+        }
+        if (qaShopDirtyRef.current) {
+          qaShopDirtyRef.current = false;
+          setLotRentalStore(cloneLotRentalStore(realLotRentalSnapshotRef.current));
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  const handleQaRestoreOriginalSnapshot = useCallback(() => {
+    const restored = cloneNpcClosenessStore(realNpcClosenessSnapshotRef.current);
+    npcClosenessStoreRef.current = restored;
+    setNpcClosenessStore(restored);
+    qaClosenessDirtyRef.current = false;
+    if (qaShopDirtyRef.current) {
+      qaShopDirtyRef.current = false;
+      setLotRentalStore(cloneLotRentalStore(realLotRentalSnapshotRef.current));
+    }
+    setQaDirectorState((prev) => ({
+      ...prev,
+      enabled: false,
+      previewApparelAndPoses: false,
+      previewVehicles: false,
+      previewMerchantAndShops: false,
+      previewCafeGifts: false,
+      qaBonusLul: 0,
+      debugPathfinder3D: false,
+      previewAllShopBuildings: false,
+      debugShopBounds3D: false,
+      worldHourOverride: null,
+    }));
+  }, []);
+
+  const handleQaPlaceShopBuilding = useCallback(
+    (lotId: string, formId: ShopBuildingFormId | null) => {
+      const acct = (hud.nearWalletId || playerUid || 'qa_tester').trim();
+      setQaDirectorState((prev) => (prev.enabled ? prev : { ...prev, enabled: true }));
+      qaShopDirtyRef.current = true;
+      setSelectedRentalLotId(lotId);
+      setLotRentalStore((prev) =>
+        applyQaShopPlaceBuilding({
+          store: prev,
+          lotId,
+          accountId: acct,
+          formId,
+        }),
+      );
+    },
+    [hud.nearWalletId, playerUid],
+  );
+
+  const handleQaSetShopLeasePreset = useCallback(
+    (lotId: string, preset: QaShopLeaseStatePreset) => {
+      const acct = (hud.nearWalletId || playerUid || 'qa_tester').trim();
+      setQaDirectorState((prev) => (prev.enabled ? prev : { ...prev, enabled: true }));
+      qaShopDirtyRef.current = true;
+      setSelectedRentalLotId(lotId);
+      setLotRentalStore((prev) =>
+        applyQaShopLotStateMutation({
+          store: prev,
+          lotId,
+          accountId: acct,
+          preset,
+        }),
+      );
+    },
+    [hud.nearWalletId, playerUid],
+  );
+
+  const handleQaSetShopBillboardPreset = useCallback(
+    (lotId: string, preset: QaBillboardTestPreset) => {
+      const acct = (hud.nearWalletId || playerUid || 'qa_tester').trim();
+      setQaDirectorState((prev) => (prev.enabled ? prev : { ...prev, enabled: true }));
+      qaShopDirtyRef.current = true;
+      setSelectedRentalLotId(lotId);
+      setLotRentalStore((prev) =>
+        applyQaShopBillboardPreset({
+          store: prev,
+          lotId,
+          accountId: acct,
+          preset,
+        }),
+      );
+    },
+    [hud.nearWalletId, playerUid],
+  );
+
+  const handleQaTeleportToLot = useCallback((lotId: string) => {
+    setSelectedRentalLotId(lotId);
+    dispatchQaArenaCommand({ type: 'teleport_to_lot', lotId });
+  }, []);
+
+  const handleQaOpenLotRentalModal = useCallback((lotId: string) => {
+    setSelectedRentalLotId(lotId);
+    setIsLotRentalModalOpen(true);
+  }, []);
+
+  const handleQaResetShopsOverride = useCallback(() => {
+    qaShopDirtyRef.current = false;
+    setLotRentalStore(cloneLotRentalStore(realLotRentalSnapshotRef.current));
+    setQaDirectorState((prev) => ({
+      ...prev,
+      previewAllShopBuildings: false,
+      debugShopBounds3D: false,
+    }));
+  }, []);
+
+  const handleQaSetNpcClosenessPreset = useCallback((target: NpcId | 'all', score: number) => {
+    setQaDirectorState((prev) => (prev.enabled ? prev : { ...prev, enabled: true }));
+    qaClosenessDirtyRef.current = true;
+    const nextStore = applyQaClosenessPreset(npcClosenessStoreRef.current, target, score, {
+      clearDailyLocks: true,
+    });
+    npcClosenessStoreRef.current = nextStore;
+    setNpcClosenessStore(nextStore);
+  }, []);
+
+  const handleQaSimulateNpcDecay = useCallback((target: NpcId | 'all', days: number) => {
+    setQaDirectorState((prev) => (prev.enabled ? prev : { ...prev, enabled: true }));
+    qaClosenessDirtyRef.current = true;
+    const nextStore = simulateQaAbsenceDecay(npcClosenessStoreRef.current, target, days);
+    npcClosenessStoreRef.current = nextStore;
+    setNpcClosenessStore(nextStore);
+  }, []);
+
+  const handleQaTriggerProactiveTopic = useCallback(
+    (npcId: NpcId) => {
+      if (npcId === 'hana' || npcId === 'kai') {
+        openMerchantInChatSession(npcId === 'hana' ? 'lobby_cafe' : 'beach_house');
+      } else {
+        openCitizenDialogueForId(npcIdToCitizenId(npcId), 'sesi_chat');
+      }
+      window.setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent<{ npcId: NpcId }>(NPC_PROACTIVE_TOPIC_EVENT, { detail: { npcId } }),
+        );
+      }, 150);
+    },
+    [openCitizenDialogueForId, openMerchantInChatSession],
+  );
+
+  const handleQaTriggerGiftTest = useCallback(
+    (npcId: NpcId) => {
+      const sampleId = CAFE_MENU_ITEMS[0]?.id ?? 'cafe_iced_latte';
+      const sampleName = CAFE_MENU_ITEMS[0]?.name ?? 'Iced Latte';
+      const outcome = handleGiveNpcOwnedGift(npcId, sampleId);
+      window.dispatchEvent(
+        new CustomEvent('npc-chat-gift-sent', {
+          detail: {
+            npcId,
+            itemName: outcome.itemName || sampleName,
+            accepted: outcome.accepted,
+            reactionLine: outcome.reactionLine,
+          },
+        }),
+      );
+    },
+    [handleGiveNpcOwnedGift],
   );
 
   // 3D house placements persist in bb_house_interiors.placed_furniture as
@@ -2875,12 +3353,12 @@ export default function App() {
     useState<WorldMultiplayerPairedPoseEvent | null>(null);
 
   const ownedQuickPoseItems = useMemo(
-    () => getOwnedQuickPoseActionItems(ownedApparelIds, characterGender),
-    [ownedApparelIds, characterGender, externalWardrobeCatalogsReady],
+    () => getOwnedQuickPoseActionItems(effectiveOwnedApparelIds, characterGender),
+    [effectiveOwnedApparelIds, characterGender, externalWardrobeCatalogsReady],
   );
   const ownedPairedItems = useMemo(
-    () => getOwnedPairedAnimationItems(ownedApparelIds, characterGender),
-    [ownedApparelIds, characterGender, externalWardrobeCatalogsReady],
+    () => getOwnedPairedAnimationItems(effectiveOwnedApparelIds, characterGender),
+    [effectiveOwnedApparelIds, characterGender, externalWardrobeCatalogsReady],
   );
 
   useEffect(() => {
@@ -3714,7 +4192,7 @@ export default function App() {
   useEffect(() => {
     const ownedDraft = sanitizeDraftToOwnedOnly(
       equippedWardrobeDraft,
-      ownedApparelIds,
+      effectiveOwnedApparelIds,
       characterGender,
     );
     const modularUrls = resolveWardrobeDraftToModularOutfitUrls(ownedDraft, characterGender);
@@ -3734,7 +4212,7 @@ export default function App() {
     dispatchBuddyAction(`setEquippedModularOutfit:${JSON.stringify(payload)}`);
   }, [
     equippedWardrobeDraft,
-    ownedApparelIds,
+    effectiveOwnedApparelIds,
     characterGender,
     gameState,
     externalWardrobeCatalogsReady,
@@ -3813,29 +4291,35 @@ export default function App() {
 
   const handleCompleteWardrobeStudio = useCallback(
     (committedOwnedDraft: WardrobeOutfitDraft) => {
-      const safeDraft = sanitizeDraftToOwnedOnly(committedOwnedDraft, ownedApparelIds);
+      const safeDraft = sanitizeDraftToOwnedOnly(committedOwnedDraft, effectiveOwnedApparelIds);
       setEquippedWardrobeDraft(safeDraft);
       const nextTopId = safeDraft.setId ? null : safeDraft.topId;
       setEquippedTorsoItemId(nextTopId);
-      try {
-        window.localStorage.setItem(
-          getWardrobeDraftStorageKey(dailyMissionsAccountKey),
-          JSON.stringify(safeDraft),
-        );
-        if (nextTopId) {
+      const isVirtualPreview =
+        qaDirectorAvailable &&
+        qaDirectorStateRef.current.enabled &&
+        qaDirectorStateRef.current.previewApparelAndPoses;
+      if (!isVirtualPreview) {
+        try {
           window.localStorage.setItem(
-            getEquippedTorsoStorageKey(dailyMissionsAccountKey),
-            nextTopId,
+            getWardrobeDraftStorageKey(dailyMissionsAccountKey),
+            JSON.stringify(safeDraft),
           );
-        } else {
-          window.localStorage.removeItem(getEquippedTorsoStorageKey(dailyMissionsAccountKey));
+          if (nextTopId) {
+            window.localStorage.setItem(
+              getEquippedTorsoStorageKey(dailyMissionsAccountKey),
+              nextTopId,
+            );
+          } else {
+            window.localStorage.removeItem(getEquippedTorsoStorageKey(dailyMissionsAccountKey));
+          }
+        } catch {
+          // ignore storage errors
         }
-      } catch {
-        // ignore storage errors
       }
       setIsWardrobeStudioOpen(false);
     },
-    [ownedApparelIds, dailyMissionsAccountKey],
+    [effectiveOwnedApparelIds, dailyMissionsAccountKey, qaDirectorAvailable],
   );
 
   const setAndPersistHouseArchitectureStyle = useCallback(
@@ -7174,7 +7658,7 @@ export default function App() {
         payload: {
           senderName,
           senderAccount,
-          body: `${senderName} would like to add you as a friend in Buddies City. Accept to become friends and unlock private messages and apartment visits.`,
+          body: `${senderName} would like to add you as a friend in ${CERRIA_CITY_NAME}. Accept to become friends and unlock private messages and apartment visits.`,
         },
       });
       if (!delivered) {
@@ -9485,7 +9969,7 @@ export default function App() {
       hideBalancesDefault={playerPrivacySettings.hideBalances}
       respiteBalance={respiteBalance}
       nearBalance={nearTestnetBalance}
-      lulBalance={hud.gold}
+      lulBalance={effectiveGold}
       cyonBalance={cyonBalance}
       onLogOut={() => handleLogOutAccount(embeddedInPhone)}
       onOpenWalletSelector={() => {
@@ -9664,17 +10148,17 @@ export default function App() {
             dispatchBuddyAction("qcEquipWeapon:fishing_rod");
           }
         }}
-        ownedMerchantItemIds={ownedMerchantItemIds}
-        ownedGiftItemIds={ownedCafeFoodIds}
+        ownedMerchantItemIds={effectiveOwnedMerchantItemIds}
+        ownedGiftItemIds={effectiveOwnedCafeFoodIds}
         placedFurnitureCounts={placedFurnitureCounts}
-        ownedApparelIds={ownedApparelIds}
+        ownedApparelIds={effectiveOwnedApparelIds}
         onOpenWardrobe={() => {
           setIsPersonalBagModalOpen(false);
           setIsGearModalOpen(false);
           if (embeddedInPhone) closeSmartphone();
           setIsWardrobeStudioOpen(true);
         }}
-        ownedScooterIds={ownedScooterIds}
+        ownedScooterIds={effectiveOwnedScooterIds}
         equippedScooterKind={equippedScooterKind}
         onToggleScooter={(kind) => {
           if (equippedScooterKind === kind) {
@@ -10510,7 +10994,7 @@ export default function App() {
             style={{ paddingBottom: 'max(0.75rem, var(--safe-bottom))' }}
           >
             <div className="px-3 sm:px-4 py-1 bg-[#14161d]/85 text-slate-300 border-2 border-black shadow-[3px_3px_0_#000] text-[9px] sm:text-[11px] font-black uppercase tracking-[0.12em] sm:tracking-[0.2em] text-center max-w-full">
-              EXPLORE THE CITY • MEET THE COMMUNITY • VISIT HOMES • OPEN A SHOP
+              {CERRIA_OFFICIAL_TICKER}
             </div>
           </footer>
         </section>
@@ -12844,7 +13328,7 @@ export default function App() {
                   }
                   isFishingRodEquipped={hud.equippedWeapon === 'Joran Fishing'}
                   equippedScooterKind={equippedScooterKind}
-                  ownedScooterIds={ownedScooterIds}
+                  ownedScooterIds={effectiveOwnedScooterIds}
                   canMountScooterOutdoors={
                     worldMode !== 'warzone' &&
                     !isInsidePrivateHouse &&
@@ -13207,7 +13691,7 @@ export default function App() {
         npcOpenSeq={npcOpenSeq}
         isSampleHouseView={isSampleHouseView}
         marketState={marketState}
-        lulBalance={hud.gold}
+        lulBalance={effectiveGold}
         cyonBalance={cyonBalance}
         respiteBalance={respiteBalance}
         nearTestnetBalance={nearTestnetBalance}
@@ -13342,7 +13826,7 @@ export default function App() {
             }
           }
         }}
-        ownedItemIds={ownedMerchantItemIds}
+        ownedItemIds={effectiveOwnedMerchantItemIds}
         activeHouseThemeId={activeHouseThemeId}
         interiorPlacement={interiorPlacement}
         playerBubbleBgColor={chatBubbleBgColor}
@@ -13668,8 +14152,8 @@ export default function App() {
         onBuyFishNftFromMarket={handleBuyFishNftFromMarket}
         accountKey={dailyMissionsAccountKey}
         npcClosenessStore={npcClosenessStore}
-        ownedApparelIds={ownedApparelIds}
-        ownedCafeFoodIds={ownedCafeFoodIds}
+        ownedApparelIds={effectiveOwnedApparelIds}
+        ownedCafeFoodIds={effectiveOwnedCafeFoodIds}
         onNpcConversationTurn={handleNpcConversationTurn}
         onGiveNpcOwnedGift={handleGiveNpcOwnedGift}
         npcTogethernessState={npcTogethernessState}
@@ -14987,7 +15471,7 @@ export default function App() {
       <GlasshouseCafeOrderModal
         isOpen={isInsideGlasshouseCafe && activeCafeModal === 'order'}
         onClose={() => setActiveCafeModal('none')}
-        lulBalance={hud.gold}
+        lulBalance={effectiveGold}
         levelProgress={levelProgress}
         consumerSummary={cafeConsumerSummary}
         onPurchaseItem={handlePurchaseCafeItem}
@@ -14996,7 +15480,7 @@ export default function App() {
       <GlasshouseCafeAtmModal
         isOpen={isInsideGlasshouseCafe && activeCafeModal === 'atm'}
         onClose={() => setActiveCafeModal('none')}
-        lulBalance={hud.gold}
+        lulBalance={effectiveGold}
         cyonBalance={cyonBalance}
         lulCostFor10Cyon={cafeExchangeQuote.lulCostFor10Cyon}
         treasuryCyon={marketState.treasuryCyon}
@@ -15005,7 +15489,7 @@ export default function App() {
       <GlasshouseCafeSlotModal
         isOpen={isInsideGlasshouseCafe && activeCafeModal === 'arcade_slot'}
         onClose={() => setActiveCafeModal('none')}
-        lulBalance={hud.gold}
+        lulBalance={effectiveGold}
         levelProgress={levelProgress}
         onDebitStake={handleArcadeSlotDebitStake}
         onSettleSpin={handleArcadeSlotSettleSpin}
@@ -15015,7 +15499,7 @@ export default function App() {
         onClose={() => setIsGrandCasinoModalOpen(false)}
         initialTab={grandCasinoInitialTab}
         slotVariant={grandCasinoSlotVariant}
-        lulBalance={hud.gold}
+        lulBalance={effectiveGold}
         respiteBalance={respiteBalance}
         levelProgress={levelProgress}
         onDebitStake={handleArcadeSlotDebitStake}
@@ -15049,7 +15533,7 @@ export default function App() {
         respiteBalance={respiteBalance}
         walletConnected={Boolean(hud.nearWalletConnected || hud.nearWalletId || playerUid)}
         walletAccountId={hud.nearWalletId || playerUid || null}
-        ownedScooterIds={ownedScooterIds}
+        ownedScooterIds={effectiveOwnedScooterIds}
         onConnectWallet={() => {
           setIsScooterShowroomModalOpen(false);
           setIsNearWalletSelectorOpen(true);
@@ -15165,9 +15649,9 @@ export default function App() {
       <FashionBoutiqueModal
         isOpen={isFashionBoutiqueModalOpen && hud.worldMode !== 'warzone'}
         onClose={() => setIsFashionBoutiqueModalOpen(false)}
-        lulBalance={hud.gold}
+        lulBalance={effectiveGold}
         characterGender={characterGender}
-        ownedApparelIds={ownedApparelIds}
+        ownedApparelIds={effectiveOwnedApparelIds}
         equippedTorsoItemId={equippedTorsoItemId}
         onPurchaseApparelToBag={handlePurchaseFashionApparelToBag}
         onOpenPersonalBag={() => {
@@ -15178,8 +15662,8 @@ export default function App() {
         isOpen={isWardrobeStudioOpen && hud.worldMode !== 'warzone'}
         accountKey={dailyMissionsAccountKey}
         characterGender={characterGender}
-        lulBalance={hud.gold}
-        ownedApparelIds={ownedApparelIds}
+        lulBalance={effectiveGold}
+        ownedApparelIds={effectiveOwnedApparelIds}
         initialDraft={equippedWardrobeDraft}
         onChangeGender={(nextGender) => {
           setCharacterGender(nextGender);
@@ -15200,7 +15684,7 @@ export default function App() {
         walletConnected={Boolean(hud.nearWalletConnected)}
         playerNearAccount={hud.nearWalletId || playerUid || ''}
         hasHouseOwnership={hasHouseOwnership || Boolean(hud.nearHasGamepassNft)}
-        ownedItemIds={ownedMerchantItemIds}
+        ownedItemIds={effectiveOwnedMerchantItemIds}
         houseArchitectureStyle={houseArchitectureStyle}
         ownedHouseStyle={ownedHouseStyle}
         onChainHouseStyleLocked={isOnChainHouseStyleLocked}
@@ -15245,7 +15729,7 @@ export default function App() {
           const formId = rec?.placedBuildingFormId;
           if (!formId) return false;
           const spec = SHOP_BUILDING_FORMS[formId];
-          return spec ? ownedMerchantItemIds.includes(spec.catalogItemId) : false;
+          return spec ? effectiveOwnedMerchantItemIds.includes(spec.catalogItemId) : false;
         })()}
       />
       <DexMarketplaceModal
@@ -15256,7 +15740,7 @@ export default function App() {
         nearTestnetBalance={nearTestnetBalance}
         respiteBalance={respiteBalance}
         marketState={marketState}
-        ownedItemIds={ownedMerchantItemIds}
+        ownedItemIds={effectiveOwnedMerchantItemIds}
         caughtFishBucket={caughtFishBucket}
         fishMarketListings={fishMarketListings}
         fishSalesStats={fishSalesStats}
@@ -15284,7 +15768,7 @@ export default function App() {
           const target = dockGiftPickerTarget;
           // Giftable item list amendment: show ONLY gift catalog items & cooked dishes from the single player bag.
           // Raw fish, wardrobe/fashion, furniture, and gear never appear in the gift picker.
-          const giftableItems = filterGiftPickerItems(ownedCafeFoodIds);
+          const giftableItems = filterGiftPickerItems(effectiveOwnedCafeFoodIds);
           const hasAnyItem = giftableItems.length > 0;
 
           const sendGiftFromDock = (
@@ -15414,9 +15898,9 @@ export default function App() {
         friendshipStore={citizenFriendshipStore}
         npcClosenessStore={npcClosenessStore}
         caughtFishBucket={caughtFishBucket}
-        ownedApparelIds={ownedApparelIds}
-        ownedMerchantItemIds={ownedMerchantItemIds}
-        ownedCafeFoodIds={ownedCafeFoodIds}
+        ownedApparelIds={effectiveOwnedApparelIds}
+        ownedMerchantItemIds={effectiveOwnedMerchantItemIds}
+        ownedCafeFoodIds={effectiveOwnedCafeFoodIds}
         playerName={playerDisplayName}
         onNpcConversationTurn={handleNpcConversationTurn}
         onGiveNpcOwnedGift={handleGiveNpcOwnedGift}
@@ -15735,6 +16219,56 @@ export default function App() {
               />
             </div>
           </div>
+        )}
+        {qaDirectorAvailable && (
+          <QaDirectorDrawer
+            qaState={qaDirectorState}
+            realGold={hud.gold}
+            effectiveGold={effectiveGold}
+            closenessStore={npcClosenessStore}
+            lotRentalStore={lotRentalStore}
+            telemetry={qaTelemetry}
+            onUpdateQaState={handleQaUpdateState}
+            onAddQaWalletLul={(amount) =>
+              setQaDirectorState((prev) => ({
+                ...prev,
+                enabled: true,
+                qaBonusLul: Math.max(0, prev.qaBonusLul + amount),
+              }))
+            }
+            onResetQaWalletBonus={() =>
+              setQaDirectorState((prev) => ({ ...prev, qaBonusLul: 0 }))
+            }
+            onRestoreOriginalSnapshot={handleQaRestoreOriginalSnapshot}
+            onSetNpcClosenessPreset={handleQaSetNpcClosenessPreset}
+            onSimulateNpcDecay={handleQaSimulateNpcDecay}
+            onTeleportToNpc={(npcId) =>
+              dispatchQaArenaCommand({ type: 'teleport_to_npc', npcId })
+            }
+            onSummonNpc={(npcId) =>
+              dispatchQaArenaCommand({ type: 'summon_npc', npcId })
+            }
+            onTriggerNpcEmotion={(npcId, emotion) =>
+              dispatchQaArenaCommand({ type: 'trigger_emotion', npcId, emotion })
+            }
+            onTriggerProactiveTopic={handleQaTriggerProactiveTopic}
+            onTriggerGiftTest={handleQaTriggerGiftTest}
+            onTriggerWalkTogether={(npcId) => {
+              handleNpcWalkTogetherToggle(npcId, 'start_only');
+            }}
+            onTriggerPairPose={(npcId) => {
+              handleNpcPairPoseTrigger(npcId);
+            }}
+            onTriggerRideTogether={(npcId) => {
+              handleNpcRideTogetherToggle(npcId);
+            }}
+            onQaPlaceShopBuilding={handleQaPlaceShopBuilding}
+            onQaSetShopLeasePreset={handleQaSetShopLeasePreset}
+            onQaSetShopBillboardPreset={handleQaSetShopBillboardPreset}
+            onQaTeleportToLot={handleQaTeleportToLot}
+            onQaOpenLotRentalModal={handleQaOpenLotRentalModal}
+            onQaResetShopsOverride={handleQaResetShopsOverride}
+          />
         )}
     </main>
   );

@@ -683,6 +683,138 @@ test('computeIndoorRoomOrbitCameraPose delivers elevated 3/4 room-overview persp
   assert.ok(Math.abs(cafeAzimuths[4] - -Math.PI / 2) < 0.02);
 });
 
+test('Private House spawns outside at the wooden garden gate with raised roof shell and strict playable-area anti-wall-clipping camera', async () => {
+  const {
+    HOUSE_VISIT_INDOOR_BOUNDS,
+    INDOOR_ORBIT_CAMERA_CONFIG,
+    DEFAULT_HOUSE_VISIT_CAMERA_OBSTRUCTION_BOXES,
+    computeIndoorRoomOrbitCameraPose,
+    getHouseVisitFloorY,
+    isPointInsideHouseFootprint,
+  } = await import('./buddiesCafeRules');
+  const {
+    HOUSE_SHELL_HEIGHT_SCALE,
+    isHouseShellHeightScaledNodeName,
+  } = await import('./buddiesHouseSceneBuilder');
+
+  // 1. Spawn and exit portal sit outside in front of the wooden garden gate (not inside the house)
+  assert.equal(
+    isPointInsideHouseFootprint(HOUSE_VISIT_INDOOR_BOUNDS.spawnX, HOUSE_VISIT_INDOOR_BOUNDS.spawnZ),
+    false,
+    'Player spawn must be outside the apartment building by the wooden garden gate',
+  );
+  assert.equal(
+    isPointInsideHouseFootprint(HOUSE_VISIT_INDOOR_BOUNDS.exitX, HOUSE_VISIT_INDOOR_BOUNDS.exitZ),
+    false,
+    'Exit portal must sit outside at the wooden garden gate',
+  );
+  assert.ok(
+    Math.hypot(
+      HOUSE_VISIT_INDOOR_BOUNDS.spawnX - HOUSE_VISIT_INDOOR_BOUNDS.exitX,
+      HOUSE_VISIT_INDOOR_BOUNDS.spawnZ - HOUSE_VISIT_INDOOR_BOUNDS.exitZ,
+    ) <= HOUSE_VISIT_INDOOR_BOUNDS.exitTriggerRadius,
+    'Spawn point should start right beside the wooden gate exit portal',
+  );
+
+  // 2. Floor surface heights match indoor floor, porch, north deck, stepping stones, and courtyard lawn
+  assert.equal(getHouseVisitFloorY(0, 0), 0);
+  assert.equal(getHouseVisitFloorY(-1.1, 4.05), -0.05);
+  assert.equal(getHouseVisitFloorY(0, -4.8), -0.02);
+  assert.equal(getHouseVisitFloorY(-7.0, 6.95), -0.13);
+  assert.equal(getHouseVisitFloorY(7.0, 1.0), -0.18);
+
+  // 3. Apartment roof & vertical architectural shell raise cleanly without distorting furniture or yard
+  assert.ok(
+    HOUSE_SHELL_HEIGHT_SCALE >= 1.15 && HOUSE_SHELL_HEIGHT_SCALE <= 1.35,
+    `Expected moderate raised roof scale ~1.15..1.35, got ${HOUSE_SHELL_HEIGHT_SCALE}`,
+  );
+  for (const scaledName of [
+    'Roof_Main_Slate',
+    'Roof_East_Ceiling',
+    'Ceiling_Main_OakSoffit',
+    'Wall_Ext_East',
+    'Part_Center_Mid',
+    'Glass_South_L',
+    'Mullion_W_Top',
+    'Beam_Oak_1',
+    'MainDoor_FrameL',
+  ]) {
+    assert.equal(isHouseShellHeightScaledNodeName(scaledName), true, `${scaledName} should scale with raised roof`);
+  }
+  for (const unscaledName of [
+    'Floor_MainRoom_Kitchen',
+    'Kit_Cab_North',
+    'Kit_Top_West',
+    'JP_Courtyard_Walls_And_Gate',
+    'JP_Trees_And_Bamboo_Trunks',
+    'Yard_Stepping_Stones',
+    'Col_Lotus_Pond',
+    'Col_Courtyard_S',
+  ]) {
+    assert.equal(isHouseShellHeightScaledNodeName(unscaledName), false, `${unscaledName} must remain unscaled`);
+  }
+
+  // 4. Anti-wall-clipping camera stays inside playable area and never crosses walls/partitions/ceiling
+  const HOUSE_ORIGIN_Y = 140;
+  const houseCfg = INDOOR_ORBIT_CAMERA_CONFIG.house_visit;
+  const testAnchors = [
+    { label: 'wooden_gate_spawn', x: HOUSE_VISIT_INDOOR_BOUNDS.spawnX, z: HOUSE_VISIT_INDOOR_BOUNDS.spawnZ },
+    { label: 'living_room', x: -1.5, z: 0.2 },
+    { label: 'bedroom', x: 3.0, z: -1.6 },
+    { label: 'bathroom', x: 2.8, z: 2.1 },
+    { label: 'south_yard_by_glass', x: -2.8, z: 4.6 },
+    { label: 'east_garden', x: 6.2, z: 0.0 },
+  ];
+  const sampleYaws = [0, 0.7, Math.PI * 0.5, 2.3, Math.PI, -2.2, -Math.PI * 0.5, -0.8];
+  for (const anchor of testAnchors) {
+    for (const yaw of sampleYaws) {
+      const pose = computeIndoorRoomOrbitCameraPose({
+        roomKind: 'house_visit',
+        originY: HOUSE_ORIGIN_Y,
+        anchorX: anchor.x,
+        anchorZ: anchor.z,
+        yaw,
+        pitch: houseCfg.maxPitch,
+        dist: houseCfg.maxDist,
+        obstructionBoxes: DEFAULT_HOUSE_VISIT_CAMERA_OBSTRUCTION_BOXES,
+      });
+      // Must stay strictly inside playable courtyard envelope
+      assert.ok(
+        pose.camX >= HOUSE_VISIT_INDOOR_BOUNDS.minX + houseCfg.wallMargin - 1e-6 &&
+          pose.camX <= HOUSE_VISIT_INDOOR_BOUNDS.maxX - houseCfg.wallMargin + 1e-6 &&
+          pose.camZ >= HOUSE_VISIT_INDOOR_BOUNDS.minZ + houseCfg.wallMargin - 1e-6 &&
+          pose.camZ <= HOUSE_VISIT_INDOOR_BOUNDS.maxZ - houseCfg.wallMargin + 1e-6,
+        `Camera escaped playable courtyard at ${anchor.label} yaw=${yaw}`,
+      );
+      // Camera inside bedroom/bathroom must NOT cross the center partition (x = 0.84..0.96) into living room
+      if (anchor.label === 'bedroom' || anchor.label === 'bathroom') {
+        assert.ok(
+          pose.camX >= 0.96,
+          `Camera in ${anchor.label} clipped through center partition at yaw=${yaw}: camX=${pose.camX.toFixed(2)}`,
+        );
+        assert.ok(
+          pose.camY <= HOUSE_ORIGIN_Y + houseCfg.indoorMaxCamHeightOffset + 1e-6,
+          `Camera in ${anchor.label} clipped through ceiling: camY=${(pose.camY - HOUSE_ORIGIN_Y).toFixed(2)}`,
+        );
+      }
+      // Camera in bedroom must NOT cross bath/bed partition (z = 0.64..0.76) into bathroom
+      if (anchor.label === 'bedroom') {
+        assert.ok(
+          pose.camZ <= 0.64,
+          `Camera in bedroom clipped through bathroom wall at yaw=${yaw}: camZ=${pose.camZ.toFixed(2)}`,
+        );
+      }
+      // Camera outside south glass wall must NOT clip inside apartment interior
+      if (anchor.label === 'south_yard_by_glass') {
+        assert.ok(
+          pose.camZ >= 3.7,
+          `Outdoor yard camera clipped through south glass wall into apartment at yaw=${yaw}: camZ=${pose.camZ.toFixed(2)}`,
+        );
+      }
+    }
+  }
+});
+
 test('Wall-Mounted Work Shift Board matches 180cm x 100cm industrial sheet and joined counter wing connects with zero side or rear gap', async () => {
   const cafeAssetsMod = await import('./buddiesLShapedCafeAssets');
   const clearGlassMat = new THREE.MeshBasicMaterial();

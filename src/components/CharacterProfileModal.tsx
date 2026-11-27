@@ -42,6 +42,7 @@ import {
   type ProfileAssetTileId,
 } from './myThingsRules';
 import { soundEngine } from '../game/audio';
+import { CERRIA_CITY_NAME } from '../lib/cerriaBrand';
 import {
   DEFAULT_PLAYER_ROLE_BADGE,
   PLAYER_ROLE_BADGES,
@@ -835,7 +836,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
         authorGender: characterGender,
         text: cleaned,
         mood: selectedMood || undefined,
-        location: 'Buddies City',
+        location: CERRIA_CITY_NAME,
         createdAtMs: now,
         likedByIds: [],
         comments: [],
@@ -876,7 +877,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
       authorGender: characterGender,
       text: cleaned,
       mood: selectedMood || undefined,
-      location: 'Buddies City',
+      location: CERRIA_CITY_NAME,
       photoUrl,
       createdAtMs: now,
       likedByIds: [],
@@ -1780,7 +1781,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
                     <p className="text-[12px] text-slate-800 leading-relaxed">
                       {isNpcProfile
                         ? 'Official Exchange & Supply Merchant in Central Plaza.'
-                        : targetUser?.status || 'Exploring Buddies City'}
+                        : targetUser?.status || `Exploring ${CERRIA_CITY_NAME}`}
                     </p>
                   </div>
                 );

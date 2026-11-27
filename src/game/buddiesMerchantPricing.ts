@@ -1591,11 +1591,11 @@ export function generateNpcMerchantReply(
 
   // 14. About the Game & What Players Can Do
   if (
-    /\b(what is this game|what game is this|what kind of game|about this game|about buddies blitz|game apa ini|ini game apa)\b/.test(
+    /\b(what is this game|what game is this|what kind of game|about this game|about cerria|about buddies blitz|game apa ini|ini game apa)\b/.test(
       q,
     )
   ) {
-    return `Cerria is a 3D open-city social economy and tactical arena game on NEAR. Explore Central Plaza and coastal districts, talk and haggle with AI merchants Hana and Kai, catch and mint Fish NFTs, own a customizable 3D Private House, or join 4v4 Warzone Arena matches.${guestNotice}`;
+    return `Cerria is a 3D social city on NEAR Protocol. Explore Central Plaza and the waterfront, chat with residents like Hana and Kai, go fishing at the shore, decorate your Private House, or rent a shop lot to open your own shop.${guestNotice}`;
   }
 
   // 15. General How to Play / Activities / Beginner Guide
@@ -1604,7 +1604,7 @@ export function generateNpcMerchantReply(
       q,
     )
   ) {
-    return `In Cerria, you can claim a starter pack (0.30 NEAR + 100 LUL + 20 CYON) from Hana, fish at Beachfront Harbor or NW Fishing Lake and haggle or mint Fish NFTs with Kai, work barista shifts at Glasshouse Cafe, buy and decorate a 3D Private House, or enter 4v4 Warzone Arena matches via any Transit Kiosk.${guestNotice}`;
+    return `In Cerria, you can claim a starter pack (0.30 NEAR + 100 LUL + 20 CYON) from Hana, fish at Beachfront Harbor or NW Fishing Lake and trade at Kai's Fish Market, work barista shifts at Glasshouse Cafe, decorate your Private House, or rent a lot and open your own shop.${guestNotice}`;
   }
 
   // 16. Where am I / Who are you / City Overview
@@ -1613,7 +1613,7 @@ export function generateNpcMerchantReply(
       q,
     )
   ) {
-    return `You are at ${locName} in Cerria, and I am ${npcName}. From here you can explore the peaceful city, fish at Beachfront Harbor or NW Fishing Lake, decorate a Private House, or ride the tram into the Warzone Arena.${guestNotice}`;
+    return `You are at ${locName} in Cerria, and I am ${npcName}. From here you can explore the city, fish at Beachfront Harbor or NW Fishing Lake, visit homes, or open your own shop.${guestNotice}`;
   }
 
   // 16b. Casual small-talk & open invitation when Gemini is offline

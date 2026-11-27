@@ -152,7 +152,10 @@ test('Central Urban Plaza masterplan geometry, buildings, fountain, pergola pond
   const waveBenches = CENTRAL_PARK_BENCHES.filter((b) => b.style === 'solid_wave');
   const teakBenches = CENTRAL_PARK_BENCHES.filter((b) => b.style === 'classic_teak');
   assert.equal(waveBenches.length, 6, 'Expected 6 sculpted solid_wave stone benches');
-  assert.equal(teakBenches.length, 4, 'Expected 4 classic_teak benches');
+  assert.equal(teakBenches.length, 1, 'Expected 1 classic_teak bench relocated north facing South');
+  assert.equal(teakBenches[0].id, 'urban_fountain_bench_nw');
+  assert.equal(teakBenches[0].rotY, 0, 'Relocated NW teak bench must face due South (+Z, rotY = 0)');
+  assert.ok(teakBenches[0].z <= -10.0, 'Relocated NW teak bench must sit north toward Wisteria Pond');
   for (const bench of CENTRAL_PARK_BENCHES) {
     checkInsideAndClear(bench.id, bench.x, bench.z, 1.8);
   }

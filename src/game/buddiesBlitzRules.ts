@@ -15742,6 +15742,8 @@ export interface CityAmbientNpcStepInput {
   ) => CityAmbientNpcLocalAvoidanceDecision;
   canReplan?: boolean;
   onReplan?: () => void;
+  /** Consecutive stuck replans without real progress; after 2, NPC gracefully advances to next patrol waypoint. */
+  consecutiveStuckReplans?: number;
 }
 
 export interface CityAmbientNpcStepResult {
@@ -15766,6 +15768,7 @@ export interface CityAmbientNpcStepResult {
   avoidSide: number;
   avoidTimer: number;
   seatOverride?: NpcSeatOverrideState | null;
+  consecutiveStuckReplans?: number;
 }
 
 function normalizeRadiansSigned(angle: number): number {
@@ -15823,6 +15826,7 @@ export function stepCityAmbientNpcSchedule(
   let lastProgressZ = input.lastProgressZ ?? input.z;
   let avoidSide = input.avoidSide ?? 0;
   let avoidTimer = Math.max(0, input.avoidTimer ?? 0);
+  let consecutiveStuckReplans = Math.max(0, Math.floor(input.consecutiveStuckReplans ?? 0));
 
   if (waypoints.length === 0) {
     return {
@@ -16063,15 +16067,16 @@ export function stepCityAmbientNpcSchedule(
   if (input.navGrid) {
     const goalKey = `${safeIdx}:${goalX.toFixed(1)},${goalZ.toFixed(1)}`;
     const movedSinceCheck = Math.hypot(input.x - lastProgressX, input.z - lastProgressZ);
-    if (movedSinceCheck > 0.35) {
+    if (movedSinceCheck > 0.38) {
       lastProgressX = input.x;
       lastProgressZ = input.z;
       stuckTimer = 0;
+      consecutiveStuckReplans = 0;
     } else {
       stuckTimer += dt;
     }
 
-    const stuckTriggered = stuckTimer > 0.6;
+    const stuckTriggered = stuckTimer > 0.65;
     const needPlan =
       navPath.length === 0 ||
       navPathGoalKey !== goalKey ||
@@ -16079,6 +16084,35 @@ export function stepCityAmbientNpcSchedule(
       stuckTriggered;
 
     if (needPlan) {
+      // Anti-stuck escalation: if 2+ consecutive stuck replans happened on the same blocked waypoint,
+      // gracefully pause briefly to look around and advance to the next waypoint instead of deadlocking forever.
+      if (stuckTriggered && consecutiveStuckReplans >= 2 && waypoints.length > 1) {
+        const nextIdx = (safeIdx + 1) % waypoints.length;
+        return {
+          x: input.x,
+          z: input.z,
+          yaw: input.yaw,
+          speedMps: 0,
+          isMoving: false,
+          isSitting: false,
+          activeActivity: travelActivity,
+          activeStatusLabel: waypoints[nextIdx]?.label ?? preset.activityLabel,
+          activeSeatLiftY: 0,
+          activeHoldingCafeItemId: resolveAmbientHoldingCafeItemId(prevWp, targetWp, false),
+          waypointIdx: nextIdx,
+          pauseTimer: 0.65,
+          navPath: [],
+          navWaypointIndex: 0,
+          navPathGoalKey: '',
+          stuckTimer: 0,
+          lastProgressX: input.x,
+          lastProgressZ: input.z,
+          avoidSide: avoidSide !== 0 ? -avoidSide : 1,
+          avoidTimer: 0.85,
+          seatOverride: null,
+          consecutiveStuckReplans: 0,
+        };
+      }
       if (input.canReplan === false && (navPath.length === 0 || navPathGoalKey !== goalKey)) {
         // Wait cleanly for this citizen's frame replan budget instead of blind straight-line jaywalking
         return {
@@ -16103,6 +16137,7 @@ export function stepCityAmbientNpcSchedule(
           avoidSide,
           avoidTimer,
           seatOverride: activeSeatOverride,
+          consecutiveStuckReplans,
         };
       }
       if (input.canReplan !== false) {
@@ -16119,11 +16154,10 @@ export function stepCityAmbientNpcSchedule(
         navWaypointIndex = 0;
         navPathGoalKey = goalKey;
         if (stuckTriggered) {
+          consecutiveStuckReplans += 1;
           // Flip avoidance side when pinned in a tight corridor so the NPC tries the opposite detour
-          if (avoidSide !== 0) {
-            avoidSide = -avoidSide;
-            avoidTimer = 0.65;
-          }
+          avoidSide = avoidSide !== 0 ? -avoidSide : 1;
+          avoidTimer = 0.85;
           stuckTimer = 0;
           lastProgressX = input.x;
           lastProgressZ = input.z;
@@ -16241,19 +16275,24 @@ export function stepCityAmbientNpcSchedule(
     }
   }
 
-  const stepDist = steppedMoving ? Math.min(dist, effectiveSpeed * dt) : 0;
-  const nextX = steppedMoving ? input.x + dirX * stepDist : input.x;
-  const nextZ = steppedMoving ? input.z + dirZ * stepDist : input.z;
+  // Subtle organic walking pace cadence + smooth exponential yaw damping & corner easing
+  const organicPaceMod = 1 + 0.05 * Math.sin(elapsedSec * 0.42);
   const targetYaw = Math.atan2(-dirZ, dirX);
   const dYaw = normalizeRadiansSigned(targetYaw - input.yaw);
-  const maxTurnStep = 7.5 * dt;
-  const nextYaw = input.yaw + Math.max(-maxTurnStep, Math.min(maxTurnStep, dYaw));
+  const yawDampAlpha = 1 - Math.exp(-6.8 * dt);
+  const nextYaw = input.yaw + dYaw * yawDampAlpha;
+  const cornerEase = 0.74 + 0.26 * Math.max(0, Math.cos(dYaw));
+  const tunedSpeed = steppedMoving ? effectiveSpeed * organicPaceMod * cornerEase : 0;
+
+  const stepDist = steppedMoving ? Math.min(dist, tunedSpeed * dt) : 0;
+  const nextX = steppedMoving ? input.x + dirX * stepDist : input.x;
+  const nextZ = steppedMoving ? input.z + dirZ * stepDist : input.z;
 
   return {
     x: nextX,
     z: nextZ,
     yaw: nextYaw,
-    speedMps: steppedMoving ? effectiveSpeed : 0,
+    speedMps: steppedMoving ? tunedSpeed : 0,
     isMoving: steppedMoving,
     isSitting: false,
     activeActivity: travelActivity,
@@ -16271,6 +16310,7 @@ export function stepCityAmbientNpcSchedule(
     avoidSide,
     avoidTimer,
     seatOverride: activeSeatOverride,
+    consecutiveStuckReplans,
   };
 }
 

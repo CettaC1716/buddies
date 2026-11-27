@@ -429,7 +429,7 @@ test('Hana and Kai live chat concierge answers Fish NFT sales records, locations
   );
   assert.match(whatDoReply, /starter pack/i);
   assert.match(whatDoReply, /Private House/i);
-  assert.match(whatDoReply, /Warzone/i);
+  assert.match(whatDoReply, /open your own shop/i);
 
   const currencyReply = generateNpcMerchantReply(
     'How do currencies work?',

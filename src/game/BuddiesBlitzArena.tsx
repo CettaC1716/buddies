@@ -18,6 +18,16 @@ import {
   resolveNpcId,
   type NpcId,
 } from './npcClosenessEngine';
+import type { NpcEmotionTag } from './npcPersonaRegistry';
+import {
+  NPC_EMOTION_REACT_EVENT,
+  QA_DIRECTOR_ARENA_CMD_EVENT,
+  QA_DIRECTOR_TELEMETRY_EVENT,
+  computeQaLotTeleportPose,
+  type QaArenaCommand,
+  type QaArenaTelemetrySnapshot,
+  type QaNpcLiveTelemetryEntry,
+} from './qaDirectorMode';
 import {
   NPC_TOGETHERNESS_COMMAND_EVENT,
   computeScooterPassengerTransform,
@@ -456,6 +466,13 @@ import {
   type CafeMenuItemId,
 } from './buddiesCafeRules';
 import {
+  HOUSE_VISIT_PLAYER_RADIUS,
+  createHouseVisitSystem,
+  gameEventBus,
+  isHouseVisitSolidCollider,
+  lazyModuleRegistry,
+} from '../engine';
+import {
   CAFE_INTERIOR_COLLIDERS,
   type CafeInteriorSceneHandle,
   type CompactInteractiveChevronMarker,
@@ -514,10 +531,7 @@ import {
   type CasinoSlotGameVariant,
   type CasinoStationInteractionKind,
 } from './buddiesGrandCasinoRules';
-import {
-  buildGrandCasinoInterior,
-  type CasinoInteriorSceneHandle,
-} from './buddiesGrandCasinoInteriorBuilder';
+import type { CasinoInteriorSceneHandle } from './buddiesGrandCasinoInteriorBuilder';
 import {
   SALON_EXTERIOR_DOOR_TRIGGER,
   SALON_INTERIOR_BOUNDS,
@@ -533,14 +547,8 @@ import {
   type SalonInteriorSeatSpot,
   type SalonStationInteractionKind,
 } from './buddiesBeautySalonRules';
-import {
-  buildBeautySalonInterior,
-  type SalonInteriorSceneHandle,
-} from './buddiesBeautySalonInteriorBuilder';
-import {
-  buildGlassModernHouseScene,
-  type HouseSceneColliderAabb,
-} from './buddiesHouseSceneBuilder';
+import type { SalonInteriorSceneHandle } from './buddiesBeautySalonInteriorBuilder';
+import { buildGlassModernHouseScene } from './buddiesHouseSceneBuilder';
 import {
   RadialInteractPinManager,
   type RadialInteractPinDescriptor,
@@ -690,6 +698,11 @@ import {
   type PedestrianAvoidanceCapsule2D,
 } from './buddiesCharacterCollisionRules';
 import { updateCityWindowNightLighting } from './buddiesNightLightingRules';
+import {
+  buildPlacedShopBuildingColliders,
+  computePlacedShopCollidersSignature,
+  resolveCityRentalLotsState,
+} from './buddiesCityRentalLotsRules';
 import {
   buildCityNavGrid,
   cancelClickToWalkState,
@@ -4929,6 +4942,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       nextFishCastSec: number;
       glbUpgraded: boolean;
       rodUpgraded: boolean;
+      consecutiveStuckReplans: number;
+      replanCount: number;
+      lastYieldForHazard: boolean;
+      activeEmotion: NpcEmotionTag;
+      emotionRemainingSec: number;
     }
 
     const applyAmbientNpcClipOverrides = (
@@ -5102,9 +5120,68 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           nextFishCastSec: 7.5 + (idx % 4) * 3.2,
           glbUpgraded: false,
           rodUpgraded: !hasFishingStop,
+          consecutiveStuckReplans: 0,
+          replanCount: 0,
+          lastYieldForHazard: false,
+          activeEmotion: 'neutral' as NpcEmotionTag,
+          emotionRemainingSec: 0,
         };
       },
     );
+
+    // Dev QA Director Arena runtime state (zero overhead when drawer closed / production)
+    let qaWorldHourOverride: number | null = null;
+    let qaDebugPathfinder3D = false;
+    let qaPreviewAllShopBuildings = false;
+    let qaDebugShopBounds3D = false;
+    let qaTelemetryActive = false;
+    let qaLastTelemetryEmitMs = 0;
+    const merchantNpcEmotions: Record<'hana' | 'kai', { emotion: NpcEmotionTag; remainingSec: number }> = {
+      hana: { emotion: 'neutral', remainingSec: 0 },
+      kai: { emotion: 'neutral', remainingSec: 0 },
+    };
+    const qaPathDebugGroup = new THREE.Group();
+    qaPathDebugGroup.name = 'QaPathfinderDebugOverlay';
+    qaPathDebugGroup.visible = false;
+    scene.add(qaPathDebugGroup);
+    const qaPathLineMatOk = new THREE.LineBasicMaterial({ color: 0x34d399 });
+    const qaPathLineMatAvoid = new THREE.LineBasicMaterial({ color: 0xfbbf24 });
+    const qaPathLineMatStuck = new THREE.LineBasicMaterial({ color: 0xf43f5e });
+    const qaPathRingGeo = new THREE.RingGeometry(
+      AMBIENT_NPC_CAPSULE_RADIUS * 0.92,
+      AMBIENT_NPC_CAPSULE_RADIUS * 1.16,
+      20,
+    );
+    qaPathRingGeo.rotateX(-Math.PI / 2);
+    const qaPathRingMatOk = new THREE.MeshBasicMaterial({
+      color: 0x34d399,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+    });
+    const qaPathRingMatWarn = new THREE.MeshBasicMaterial({
+      color: 0xf43f5e,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+    });
+    const qaDebugNpcEntries = cityAmbientNpcs.map(() => {
+      const maxPts = 24;
+      const positions = new Float32Array(maxPts * 3);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setDrawRange(0, 0);
+      const line = new THREE.Line(geo, qaPathLineMatOk);
+      line.frustumCulled = false;
+      const ring = new THREE.Mesh(qaPathRingGeo, qaPathRingMatOk);
+      ring.frustumCulled = false;
+      qaPathDebugGroup.add(line, ring);
+      return { line, geo, positions, maxPts, ring };
+    });
+    const npcBenchAvoidObbsScratch: DynamicObbObstacle2D[] = [];
+    const npcBenchAvoidCirclesScratch: DynamicCircleObstacle2D[] = [];
 
     const secondaryLodFrustum = new THREE.Frustum();
     const secondaryLodProjScreenMatrix = new THREE.Matrix4();
@@ -5572,6 +5649,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       interface NpcFrameStepState {
         npc: CityAmbientNpcController;
         isTalkingWithPlayer: boolean;
+        yieldForTram: boolean;
         prevX: number;
         prevZ: number;
         curX: number;
@@ -6142,9 +6220,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           // Deterministic multi-waypoint persona patrol loop (LLM never decides movement):
           // uses `getNpcPersona(npcId)?.schedule` anchors so NPCs actively patrol their
           // assigned territory instead of freezing on 1 bench or stacking on shared benches.
+          const effectiveWorldHour = qaWorldHourOverride ?? worldClockHour;
           const scheduledPatrolWaypoints = resolveNpcScheduledPatrolWaypoints(
             npc.preset.id,
-            worldClockHour,
+            effectiveWorldHour,
           );
           const effectiveSchedulePreset =
             scheduledPatrolWaypoints && scheduledPatrolWaypoints.length > 0
@@ -6153,6 +6232,37 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                   waypoints: scheduledPatrolWaypoints,
                 }
               : npc.preset;
+
+          // Build per-NPC dynamic obstacle list that INCLUDES non-exempt benches so NPCs
+          // smoothly steer around benches instead of walking into them and bouncing off!
+          npcBenchAvoidObbsScratch.length = 0;
+          for (let oi = 0; oi < sharedDynamicObbs.length; oi++) {
+            npcBenchAvoidObbsScratch.push(sharedDynamicObbs[oi]);
+          }
+          npcBenchAvoidCirclesScratch.length = 0;
+          for (let ci = 0; ci < sharedDynamicCircles.length; ci++) {
+            npcBenchAvoidCirclesScratch.push(sharedDynamicCircles[ci]);
+          }
+          for (let bi = 0; bi < solidBenchProps.length; bi++) {
+            const bp = solidBenchProps[bi];
+            if (
+              preSteerExemptSeat &&
+              Math.hypot(bp.x - preSteerExemptSeat.x, bp.z - preSteerExemptSeat.z) <= 1.45
+            ) {
+              continue;
+            }
+            if (bp.halfX !== undefined && bp.halfZ !== undefined) {
+              npcBenchAvoidObbsScratch.push({
+                x: bp.x,
+                z: bp.z,
+                halfX: bp.halfX,
+                halfZ: bp.halfZ,
+                rotY: bp.rotY,
+              });
+            } else {
+              npcBenchAvoidCirclesScratch.push({ x: bp.x, z: bp.z, radius: bp.radius });
+            }
+          }
 
           stepped = stepCityAmbientNpcSchedule({
             preset: effectiveSchedulePreset,
@@ -6168,6 +6278,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             navWaypointIndex: npc.navWaypointIndex,
             navPathGoalKey: npc.navPathGoalKey,
             stuckTimer: npc.stuckTimer,
+            consecutiveStuckReplans: npc.consecutiveStuckReplans,
             lastProgressX: npc.lastProgressX,
             lastProgressZ: npc.lastProgressZ,
             avoidSide: npc.avoidSide,
@@ -6184,8 +6295,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                 toZ,
                 radius: AMBIENT_NPC_CAPSULE_RADIUS,
                 audited: auditedWorld,
-                dynamicObbs: sharedDynamicObbs,
-                dynamicCircles: sharedDynamicCircles,
+                dynamicObbs: npcBenchAvoidObbsScratch,
+                dynamicCircles: npcBenchAvoidCirclesScratch,
                 exemptSeatPoint: isSitGoal ? { x: toX, z: toZ } : preSteerExemptSeat,
               }),
             localAvoidance: (sample) =>
@@ -6203,8 +6314,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                   isFinalGoal: sample.isFinalTarget,
                   dt,
                   audited: auditedWorld,
-                  dynamicObbs: sharedDynamicObbs,
-                  dynamicCircles: sharedDynamicCircles,
+                  dynamicObbs: npcBenchAvoidObbsScratch,
+                  dynamicCircles: npcBenchAvoidCirclesScratch,
                   characterCapsules: npcAvoidanceCapsulesScratch,
                   exemptSeatPoint: preSteerExemptSeat,
                   stayOffNonCrosswalkRoads: true,
@@ -6213,11 +6324,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                 },
                 npcAvoidanceResultScratch,
               ),
-            canReplan: aStarCitizenPlansThisFrame < 1,
+            canReplan: aStarCitizenPlansThisFrame < 2,
             onReplan: () => {
               aStarCitizenPlansThisFrame++;
+              npc.replanCount += 1;
             },
           });
+          npc.lastYieldForHazard = yieldForTram;
         }
 
         let curX = stepped.x;
@@ -6331,6 +6444,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         steppedStates.push({
           npc,
           isTalkingWithPlayer,
+          yieldForTram: npc.lastYieldForHazard,
           prevX,
           prevZ,
           curX,
@@ -6431,12 +6545,25 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         npc.navPath = stepped.navPath;
         npc.navWaypointIndex = stepped.navWaypointIndex;
         npc.navPathGoalKey = stepped.navPathGoalKey;
-        npc.stuckTimer = stepped.stuckTimer;
+        // Feed post-collision & post-cluster-separation blocked motion back into stuckTimer
+        // so NPCs pinned by crowds/benches cleanly trigger detour/replan instead of vibrating in place.
+        const blockedByPostCollision =
+          stepped.isMoving && !effectiveIsMoving && !st.yieldForTram && !isTalkingWithPlayer;
+        npc.stuckTimer = blockedByPostCollision
+          ? stepped.stuckTimer + dt * 1.4
+          : stepped.stuckTimer;
+        npc.consecutiveStuckReplans = stepped.consecutiveStuckReplans ?? 0;
         npc.lastProgressX = stepped.lastProgressX;
         npc.lastProgressZ = stepped.lastProgressZ;
         npc.avoidSide = stepped.avoidSide;
         npc.avoidTimer = stepped.avoidTimer;
         npc.seatOverride = stepped.seatOverride ?? null;
+        if (npc.emotionRemainingSec > 0) {
+          npc.emotionRemainingSec = Math.max(0, npc.emotionRemainingSec - dt);
+          if (npc.emotionRemainingSec === 0) {
+            npc.activeEmotion = 'neutral';
+          }
+        }
         if (effectiveIsMoving) {
           const cadenceScale = Math.max(0.32, Math.min(1.05, moveRatio));
           npc.walkCycle +=
@@ -6633,6 +6760,172 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         } else if (npc.rig.customGlbController) {
           npc.rig.customGlbController.lastStepTimeMs = nowMs;
         }
+      }
+
+      // Decay merchant NPC emotion timers
+      for (const mk of ['hana', 'kai'] as const) {
+        if (merchantNpcEmotions[mk].remainingSec > 0) {
+          merchantNpcEmotions[mk].remainingSec = Math.max(0, merchantNpcEmotions[mk].remainingSec - dt);
+          if (merchantNpcEmotions[mk].remainingSec === 0) {
+            merchantNpcEmotions[mk].emotion = 'neutral';
+          }
+        }
+      }
+
+      // Dev QA 3D Pathfinder Debug Overlay (zero cost when disabled)
+      qaPathDebugGroup.visible = qaDebugPathfinder3D && worldModeRef.current !== 'warzone';
+      if (qaPathDebugGroup.visible) {
+        for (let di = 0; di < cityAmbientNpcs.length; di++) {
+          const npc = cityAmbientNpcs[di];
+          const dbg = qaDebugNpcEntries[di];
+          if (!dbg) continue;
+          const visibleNpc = npc.root.visible;
+          dbg.ring.visible = visibleNpc;
+          dbg.line.visible = visibleNpc && npc.navPath.length > 0;
+          if (visibleNpc) {
+            const gY = getTerrainElevation(npc.x, npc.z) + 0.08;
+            applyPlanetCurvatureToObject(
+              dbg.ring,
+              npc.x,
+              gY,
+              npc.z,
+              planetPivotX,
+              planetPivotZ,
+              0,
+              kCurve,
+            );
+            const isWarn = npc.stuckTimer > 0.45 || npc.consecutiveStuckReplans > 0;
+            dbg.ring.material = isWarn ? qaPathRingMatWarn : qaPathRingMatOk;
+            if (dbg.line.visible) {
+              dbg.line.material = isWarn
+                ? qaPathLineMatStuck
+                : npc.avoidTimer > 0.05
+                  ? qaPathLineMatAvoid
+                  : qaPathLineMatOk;
+              let ptCount = 0;
+              const startIdx = Math.max(0, npc.navWaypointIndex);
+              dbg.positions[0] = npc.root.position.x;
+              dbg.positions[1] = npc.root.position.y + 0.25;
+              dbg.positions[2] = npc.root.position.z;
+              ptCount = 1;
+              for (
+                let wi = startIdx;
+                wi < npc.navPath.length && ptCount < dbg.maxPts;
+                wi++
+              ) {
+                const node = npc.navPath[wi];
+                const nodeY = getTerrainElevation(node.x, node.z) + 0.25;
+                dbg.positions[ptCount * 3] = node.x;
+                dbg.positions[ptCount * 3 + 1] = nodeY;
+                dbg.positions[ptCount * 3 + 2] = node.z;
+                ptCount++;
+              }
+              const posAttr = dbg.geo.getAttribute('position') as THREE.BufferAttribute;
+              posAttr.needsUpdate = true;
+              dbg.geo.setDrawRange(0, ptCount);
+            }
+          }
+        }
+      }
+
+      // Throttled 4Hz QA Director Sensor & Pathfinder Telemetry (only emitted when QA drawer is open)
+      if (qaTelemetryActive && nowMs - qaLastTelemetryEmitMs >= 250) {
+        qaLastTelemetryEmitMs = nowMs;
+        const pX = playerUnit?.x ?? 0;
+        const pZ = playerUnit?.z ?? 0;
+        const weatherEnv = scene.userData.weatherEnvState as
+          | { weatherLabel?: string; isRaining?: boolean; daytimePhase?: 'day' | 'evening' | 'night' }
+          | undefined;
+        const entries: QaNpcLiveTelemetryEntry[] = [];
+        for (const [mKey, mNpc, label] of [
+          ['hana', lobbyCafeNpc, 'Hana'],
+          ['kai', beachHouseNpc, 'Kai'],
+        ] as const) {
+          if (mNpc?.npcGrp) {
+            const mx = mNpc.npcGrp.position.x;
+            const mz = mNpc.npcGrp.position.z;
+            entries.push({
+              npcId: mKey,
+              citizenId: mKey === 'hana' ? 'npc_hana' : 'npc_kai',
+              displayName: label,
+              x: mx,
+              z: mz,
+              distanceToPlayerM: Math.hypot(mx - pX, mz - pZ),
+              visible: mNpc.npcGrp.visible,
+              activeActivity:
+                activeWalkTogether?.npcId === mKey
+                  ? 'walk_together'
+                  : activeRideTogether?.npcId === mKey
+                    ? 'ride_together'
+                    : 'merchant_host',
+              activeStatusLabel: mKey === 'hana' ? 'Central Plaza Kiosk' : 'Beachfront Harbor',
+              isMoving: activeWalkTogether?.npcId === mKey,
+              isSitting: false,
+              speedMps: 0,
+              stuckTimer: 0,
+              consecutiveStuckReplans: 0,
+              navPathLength: 0,
+              navWaypointIndex: 0,
+              avoidSide: 0,
+              avoidTimer: 0,
+              yieldForHazard: false,
+              replanCount: 0,
+              activeEmotion: merchantNpcEmotions[mKey].emotion,
+              emotionRemainingSec: merchantNpcEmotions[mKey].remainingSec,
+            });
+          }
+        }
+        for (let ti = 0; ti < cityAmbientNpcs.length; ti++) {
+          const npc = cityAmbientNpcs[ti];
+          entries.push({
+            npcId: resolveNpcId(npc.preset.id),
+            citizenId: npc.preset.id,
+            displayName: npc.preset.displayName,
+            x: npc.x,
+            z: npc.z,
+            distanceToPlayerM: Math.hypot(npc.x - pX, npc.z - pZ),
+            visible: npc.root.visible,
+            activeActivity: npc.activeActivity,
+            activeStatusLabel: npc.activeStatusLabel,
+            isMoving: npc.isMoving,
+            isSitting: npc.isSitting,
+            speedMps: npc.speedMps,
+            stuckTimer: npc.stuckTimer,
+            consecutiveStuckReplans: npc.consecutiveStuckReplans,
+            navPathLength: npc.navPath.length,
+            navWaypointIndex: npc.navWaypointIndex,
+            avoidSide: npc.avoidSide,
+            avoidTimer: npc.avoidTimer,
+            yieldForHazard: npc.lastYieldForHazard,
+            replanCount: npc.replanCount,
+            activeEmotion: npc.activeEmotion,
+            emotionRemainingSec: npc.emotionRemainingSec,
+          });
+        }
+        const effectiveHr = qaWorldHourOverride ?? worldClockHour;
+        const snapshot: QaArenaTelemetrySnapshot = {
+          timestampMs: nowMs,
+          worldClockHour: effectiveHr,
+          daytimePhase:
+            weatherEnv?.daytimePhase ??
+            (effectiveHr >= 20 || effectiveHr < 5
+              ? 'night'
+              : effectiveHr >= 17
+                ? 'evening'
+                : 'day'),
+          weatherLabel: weatherEnv?.weatherLabel ?? 'Clear',
+          isRaining: Boolean(weatherEnv?.isRaining),
+          playerX: pX,
+          playerZ: pZ,
+          debugPathfinder3D: qaDebugPathfinder3D,
+          npcs: entries,
+          shops: cityRentalLotsController.getQaTelemetrySummary(),
+        };
+        window.dispatchEvent(
+          new CustomEvent<QaArenaTelemetrySnapshot>(QA_DIRECTOR_TELEMETRY_EVENT, {
+            detail: snapshot,
+          }),
+        );
       }
 
       // WS12: Forced togetherness ends mirroring player riding rules (interior, warzone, fishing, dismount)
@@ -7188,9 +7481,23 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     let casinoInteriorShadersCompiled = false;
     let pendingCasinoActivationToken = 0;
 
-    const ensureCasinoInteriorLoaded = (): CasinoInteriorSceneHandle => {
+    // Register heavy 3D interior builders for on-demand dynamic code splitting
+    lazyModuleRegistry.register(
+      'interior:grand_casino',
+      () => import('./buddiesGrandCasinoInteriorBuilder'),
+    );
+    lazyModuleRegistry.register(
+      'interior:beauty_salon',
+      () => import('./buddiesBeautySalonInteriorBuilder'),
+    );
+
+    const ensureCasinoInteriorLoaded = async (): Promise<CasinoInteriorSceneHandle> => {
       if (casinoInterior) return casinoInterior;
-      const builtCasino = buildGrandCasinoInterior();
+      const casinoMod = await lazyModuleRegistry.load<
+        typeof import('./buddiesGrandCasinoInteriorBuilder')
+      >('interior:grand_casino');
+      if (casinoInterior) return casinoInterior;
+      const builtCasino = casinoMod.buildGrandCasinoInterior();
       builtCasino.root.visible = false;
       scene.add(builtCasino.root);
 
@@ -7251,9 +7558,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     let salonInteriorShadersCompiled = false;
     let pendingSalonActivationToken = 0;
 
-    const ensureSalonInteriorLoaded = (): SalonInteriorSceneHandle => {
+    const ensureSalonInteriorLoaded = async (): Promise<SalonInteriorSceneHandle> => {
       if (salonInterior) return salonInterior;
-      const builtSalon = buildBeautySalonInterior();
+      const salonMod = await lazyModuleRegistry.load<
+        typeof import('./buddiesBeautySalonInteriorBuilder')
+      >('interior:beauty_salon');
+      if (salonInterior) return salonInterior;
+      const builtSalon = salonMod.buildBeautySalonInterior();
       builtSalon.root.visible = false;
       scene.add(builtSalon.root);
       salonInterior = builtSalon;
@@ -7520,6 +7831,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
     // 1. Cutaway Studio Plinth + Main Room Floor (10.6m x 7.4m)
     const { minX: A, maxX: J, minZ: T, maxZ: N } = CUTAWAY_ROOM_BOUNDS;
+    const houseStudioPlinthGrp = new THREE.Group();
+    houseStudioPlinthGrp.name = 'HouseStudioPlinthGroup';
+    houseInteriorRoomGrp.add(houseStudioPlinthGrp);
 
     const plinthUpper = attachHouseToonStroke(
       new THREE.Mesh(new THREE.BoxGeometry(J - A + 1.35, 0.24, N - T + 1.35), basaltPlinthMat),
@@ -7527,7 +7841,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     );
     plinthUpper.position.set(0, -0.14, 0);
     plinthUpper.raycast = () => {};
-    houseInteriorRoomGrp.add(plinthUpper);
+    houseStudioPlinthGrp.add(plinthUpper);
 
     const plinthLower = attachHouseToonStroke(
       new THREE.Mesh(new THREE.BoxGeometry(J - A + 0.68, 0.42, N - T + 0.68), darkPlinthMat),
@@ -7535,7 +7849,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     );
     plinthLower.position.set(0, -0.46, 0);
     plinthLower.raycast = () => {};
-    houseInteriorRoomGrp.add(plinthLower);
+    houseStudioPlinthGrp.add(plinthLower);
 
     // Underglow LED Rim Strips around the studio plinth
     for (const [gx, gz, gw, gd] of [
@@ -7547,7 +7861,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       const strip = new THREE.Mesh(new THREE.BoxGeometry(gw, 0.028, gd), plinthGlowMat);
       strip.position.set(gx, -0.265, gz);
       strip.raycast = () => {};
-      houseInteriorRoomGrp.add(strip);
+      houseStudioPlinthGrp.add(strip);
     }
 
     // Main Room Floor (10.6m x 7.4m)
@@ -7586,11 +7900,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     };
     syncHouseArchitectureStyle('glass_modern');
 
-    // Walk-in visits see the full house (visit walls + roof/ceiling); the
+    // Walk-in visits see the full house + courtyard garden (hiding the cutaway
+    // studio plinth so it never pokes through the yard or entry porch); the
     // top-down decor studio hides the roof/ceiling for the cutaway view.
-    // The GLB's entrance doors are static, so no door-swing sync remains.
     const syncHouseSceneModeVisibility = (isVisitMode: boolean) => {
       houseVisitWallGrp.visible = isVisitMode;
+      houseStudioPlinthGrp.visible = !isVisitMode;
       glassModernHouseScene.setRoofCeilingVisible(isVisitMode);
     };
 
@@ -7837,7 +8152,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     let houseCamDist = 12.6;
     const houseCamTarget = new THREE.Vector3(-0.3, 1.05, -0.2);
 
-    // Elevated 3/4 Room-Overview Orbital Camera State when player is walking inside the room (`house_visit`)
+    // Elevated 3/4 Room-Overview Orbital Camera State when player is exploring the Private House & courtyard (`house_visit`)
+    const houseVisitSystem = createHouseVisitSystem();
     let houseVisitCamYaw: number = INDOOR_ORBIT_CAMERA_CONFIG.house_visit.defaultYaw;
     let houseVisitCamPitch: number = INDOOR_ORBIT_CAMERA_CONFIG.house_visit.defaultPitch;
     let houseVisitCamDist: number = INDOOR_ORBIT_CAMERA_CONFIG.house_visit.defaultDist;
@@ -7952,20 +8268,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       }
     };
 
-    // Indoor collision for `house_visit`: the Glass Modern GLB's wall /
-    // partition collider footprints, the background-zone furniture in the
-    // sample house, and any furniture placed in the player's own house.
-    // The avatar is a circle pushed out of each oriented footprint box.
-    const HOUSE_PLAYER_RADIUS = 0.34;
-    // Only the GLB colliders that form the house's walls, room partitions,
-    // and fixed joinery block walk-in movement; floors, glass door panels,
-    // and the yard dressing (bamboo, maples, pond, courtyard) stay passable
-    // or sit outside the clamped room bounds.
-    const HOUSE_GLB_WALL_COLLIDER_PREFIXES = ['Col_Wall_', 'Col_Part_', 'Col_Kitchen_'];
-    const isHouseGlbWallCollider = (c: HouseSceneColliderAabb): boolean =>
-      HOUSE_GLB_WALL_COLLIDER_PREFIXES.some((p) => c.name.startsWith(p)) ||
-      c.name === 'Col_Wardrobe' ||
-      c.name === 'Col_BathTub';
+    // Walk-in collision for `house_visit`: delegates radius & solid collider
+    // classification cleanly to the modular `HouseVisitSystem` in `src/engine/`.
+    const HOUSE_PLAYER_RADIUS = HOUSE_VISIT_PLAYER_RADIUS;
+    const isHouseGlbWallCollider = isHouseVisitSolidCollider;
     const pushPlayerOutOfHouseObb = (
       cx: number,
       cz: number,
@@ -8127,9 +8433,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       }
     };
 
-    // Glowing Floor Ring + 3D Triangle at Private House Interior Exit Door (`house_visit` mode only)
+    // Glowing Floor Ring + 3D Triangle at the Wooden Garden Gate Exit (`house_visit` mode only)
     const houseInteriorExitDoorPad = buildGlowingDoorFloorArrowPad();
-    houseInteriorExitDoorPad.group.position.set(0.0, 0.03, 3.25);
+    houseInteriorExitDoorPad.group.position.set(
+      HOUSE_VISIT_INDOOR_BOUNDS.exitX,
+      HOUSE_VISIT_INDOOR_BOUNDS.exitY,
+      HOUSE_VISIT_INDOOR_BOUNDS.exitZ,
+    );
     houseVisitWallGrp.add(houseInteriorExitDoorPad.group);
     let cafeVisitCamYaw: number = INDOOR_ORBIT_CAMERA_CONFIG.cafe_interior.defaultYaw;
     let cafeVisitCamPitch: number = INDOOR_ORBIT_CAMERA_CONFIG.cafe_interior.defaultPitch;
@@ -8662,7 +8972,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                   ) {
                     return;
                   }
-                  const loadedCasino = ensureCasinoInteriorLoaded();
+                  const loadedCasino = await ensureCasinoInteriorLoaded();
+                  if (
+                    isDisposed ||
+                    casinoActivationToken !== pendingCasinoActivationToken ||
+                    npcCameraMode !== 'casino_interior'
+                  ) {
+                    return;
+                  }
                   loadedCasino.root.visible = true;
                   syncCasinoStaffNpcsFrame(true);
                   syncIndoorOutdoorSceneVisibility(false);
@@ -8782,7 +9099,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                   ) {
                     return;
                   }
-                  const loadedSalon = ensureSalonInteriorLoaded();
+                  const loadedSalon = await ensureSalonInteriorLoaded();
+                  if (
+                    isDisposed ||
+                    salonActivationToken !== pendingSalonActivationToken ||
+                    npcCameraMode !== 'salon_interior'
+                  ) {
+                    return;
+                  }
                   loadedSalon.root.visible = true;
                   syncIndoorOutdoorSceneVisibility(false);
 
@@ -8858,7 +9182,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             playerUnit.vz = 0;
             playerUnit.yaw = HOUSE_VISIT_INDOOR_BOUNDS.spawnYaw;
             playerUnit.visualYaw = HOUSE_VISIT_INDOOR_BOUNDS.spawnYaw;
-            playerUnit.root.position.set(playerUnit.x, HOUSE_ORIGIN_Y, playerUnit.z);
+            houseVisitSystem.resetOnEnter(playerUnit.x, playerUnit.z);
+            playerUnit.root.position.set(
+              playerUnit.x,
+              HOUSE_ORIGIN_Y + houseVisitSystem.getCurrentFloorY(),
+              playerUnit.z,
+            );
+            gameEventBus.emit('scene:mode-changed', {
+              previousMode: prevMode,
+              nextMode: detail.mode,
+              isSampleHouse: detail.isSampleHouse,
+            });
             playerUnit.root.rotation.set(0, 0, 0);
             playerUnit.root.scale.setScalar(0.55);
             if (windUniforms.uCurvatureStrength) windUniforms.uCurvatureStrength.value = 0;
@@ -20024,6 +20358,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           ? `${rp.destroyed ? 1 : 0}:${rp.isClaimedOnlineSession ? 1 : 0}:${rp.buildingHp > 0 ? rp.buildingLevel : 0}:${rp.fenceHp > 0 ? rp.fenceLevel : 0}:${rp.hasParkingBay ? 1 : 0};`
           : '0;';
       }
+      const isSafezoneNow = cityArenaMode === 'safezone' || worldModeRef.current !== 'warzone';
+      const resolvedShopLots = isSafezoneNow
+        ? resolveCityRentalLotsState({
+            blueCommanderBases: [],
+            redCommanderBases: [],
+            rentedSlotIds: shopLotPlacementState.rentedSlotIds,
+            lotStatusBySlotId: shopLotPlacementState.lotStatusBySlotId,
+            placedBuildingBySlotId: shopLotPlacementState.placedBuildingBySlotId,
+            previewAllBuildingsFit: qaPreviewAllShopBuildings,
+          })
+        : [];
+      const shopCollidersSig = isSafezoneNow
+        ? computePlacedShopCollidersSignature(resolvedShopLots)
+        : 'off';
+      stateKey += `|shops:${shopCollidersSig}`;
+
       if (cachedStaticWorldStructures && cachedStaticWorldStructuresKey === stateKey) {
         return cachedStaticWorldStructures;
       }
@@ -20035,6 +20385,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         redCommanderBases,
         isSafezoneMode: cityArenaMode === 'safezone',
       });
+      if (isSafezoneNow) {
+        const shopColliders = buildPlacedShopBuildingColliders(resolvedShopLots);
+        for (let si = 0; si < shopColliders.length; si++) {
+          structures.push(shopColliders[si]);
+        }
+      }
+      if (cachedStaticWorldStructures !== null && cachedStaticWorldStructuresKey !== stateKey) {
+        navGridDirty = true;
+      }
       cachedStaticWorldStructures = structures;
       cachedStaticWorldStructuresKey = stateKey;
       return structures;
@@ -20502,27 +20861,24 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       }
 
       if (npcCameraMode === 'house_visit') {
-        collectRaycastableMeshes([houseInteriorRoomGrp], null, scratchClickRaycastMeshes);
-        const hits = raycaster.intersectObjects(scratchClickRaycastMeshes, false);
-        const validHit = hits.find((h) => {
-          const ly = h.point.y - HOUSE_ORIGIN_Y;
-          return (
-            ly >= -0.25 &&
-            ly <= 2.35 &&
-            h.point.x >= CUTAWAY_ROOM_BOUNDS.minX - 0.5 &&
-            h.point.x <= CUTAWAY_ROOM_BOUNDS.maxX + 0.5 &&
-            h.point.z >= CUTAWAY_ROOM_BOUNDS.minZ - 0.5 &&
-            h.point.z <= CUTAWAY_ROOM_BOUNDS.maxZ + 0.5
-          );
-        });
-        if (!validHit) return;
-
         if (houseFurnitureClicked) return;
+        // Intersect the shared horizontal house/courtyard ground plane so both
+        // the indoor rooms and the outdoor garden support click-to-walk.
+        const planeHit = raycaster.ray.intersectPlane(houseFloorPlane, scratchHouseHitPoint);
+        if (!planeHit) return;
+        if (
+          !houseVisitSystem.isClickPointInsidePlayableBounds(
+            scratchHouseHitPoint.x,
+            scratchHouseHitPoint.z,
+          )
+        ) {
+          return;
+        }
         soundEngine.playUiClick();
         navigateInteriorClickToWalk({
           room: 'house_visit',
-          goalX: validHit.point.x,
-          goalZ: validHit.point.z,
+          goalX: scratchHouseHitPoint.x,
+          goalZ: scratchHouseHitPoint.z,
         });
         return;
       }
@@ -21876,6 +22232,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         placedBuildingBySlotId: shopLotPlacementState.placedBuildingBySlotId,
         billboardLogoUrlBySlotId: shopLotPlacementState.billboardLogoUrlBySlotId,
         selectedSlotId: shopLotPlacementState.selectedSlotId ?? null,
+        previewAllBuildingsFit: qaPreviewAllShopBuildings,
+        debugShopBounds3D: qaDebugShopBounds3D,
         timeSec: performance.now() * 0.001,
       });
       if (!showOutdoor) {
@@ -25007,7 +25365,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                 playerUnit.x = shiftClamped.x;
                 playerUnit.z = shiftClamped.z;
               }
-            } else if (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior') {
+            } else if (npcCameraMode === 'house_visit') {
+              houseVisitSystem.clampPlayableXZ(playerUnit);
+              if (!playerUnit.isSleeping) {
+                resolveHouseVisitCollisions();
+                houseVisitSystem.clampPlayableXZ(playerUnit);
+              }
+            } else if (npcCameraMode === 'house_interior') {
               playerUnit.x = clamp(
                 playerUnit.x,
                 CUTAWAY_ROOM_BOUNDS.minX + 0.55,
@@ -25018,9 +25382,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                 CUTAWAY_ROOM_BOUNDS.minZ + 0.55,
                 CUTAWAY_ROOM_BOUNDS.maxZ - 0.55,
               );
-              if (npcCameraMode === 'house_visit' && !playerUnit.isSleeping) {
-                resolveHouseVisitCollisions();
-              }
             } else {
               if (!(playerUnit.isSitting && activeSeatedSpot) && !activePairedSession) {
                 resolveMoverWorldCollisions(
@@ -28923,15 +29284,22 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         //    - In 'house_interior' (Edit Room mode), use the cutaway studio camera
         if (npcCameraMode === 'house_visit' && playerUnit) {
           playerUnit.root.visible = true;
-          const visitPose = computeIndoorRoomOrbitCameraPose({
-            roomKind: 'house_visit',
+          const visitPose = houseVisitSystem.resolveDampedCameraPose({
             originY: HOUSE_ORIGIN_Y,
             anchorX: playerUnit.x,
             anchorZ: playerUnit.z,
             yaw: houseVisitCamYaw,
             pitch: houseVisitCamPitch,
             dist: houseVisitCamDist,
+            dtSec: rawDt,
+            obstructionBoxes:
+              glassModernHouseScene.cameraColliders.length > 0
+                ? glassModernHouseScene.cameraColliders
+                : undefined,
           });
+          const dampedVisitCamX = visitPose.camX;
+          const dampedVisitCamY = visitPose.camY;
+          const dampedVisitCamZ = visitPose.camZ;
           if (posePortraitState) {
             const portraitDampAlpha = 1 - Math.exp(-Math.min(rawDt, 0.05) * 14.0);
             npcPortraitSmoothedYaw +=
@@ -28942,7 +29310,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               (npcPortraitDistanceScale - npcPortraitSmoothedDistScale) * portraitDampAlpha;
             const targetPose = computeNpcDialoguePortraitPose({
               npcX: posePortraitState.curCenterX,
-              npcY: HOUSE_ORIGIN_Y,
+              npcY: HOUSE_ORIGIN_Y + houseVisitSystem.getCurrentFloorY(),
               npcZ: posePortraitState.curCenterZ,
               frontDirX: posePortraitState.frontDirX,
               frontDirZ: posePortraitState.frontDirZ,
@@ -28989,9 +29357,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               camera.fov = applyFov;
               camera.updateProjectionMatrix();
             }
-            const applyCamX = THREE.MathUtils.lerp(visitPose.camX, citizenReturnFromCamPos.x, retEase);
-            const applyCamY = THREE.MathUtils.lerp(visitPose.camY, citizenReturnFromCamPos.y, retEase);
-            const applyCamZ = THREE.MathUtils.lerp(visitPose.camZ, citizenReturnFromCamPos.z, retEase);
+            const applyCamX = THREE.MathUtils.lerp(dampedVisitCamX, citizenReturnFromCamPos.x, retEase);
+            const applyCamY = THREE.MathUtils.lerp(dampedVisitCamY, citizenReturnFromCamPos.y, retEase);
+            const applyCamZ = THREE.MathUtils.lerp(dampedVisitCamZ, citizenReturnFromCamPos.z, retEase);
             const applyLookX = THREE.MathUtils.lerp(visitPose.lookX, citizenReturnFromLookAt.x, retEase);
             const applyLookY = THREE.MathUtils.lerp(visitPose.lookY, citizenReturnFromLookAt.y, retEase);
             const applyLookZ = THREE.MathUtils.lerp(visitPose.lookZ, citizenReturnFromLookAt.z, retEase);
@@ -31206,6 +31574,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             ? Math.min(1, Math.max(liveCityIllum.windowGlow01, liveCityIllum.nightFactor01))
             : liveCityIllum.nightFactor01;
         updateCityWindowNightLighting(scene, effectiveWindowNight, timeSec);
+        cityRentalLotsController.updateNightLighting(effectiveWindowNight, timeSec);
       }
       if (ridingTramCarIdx !== null && playerUnit.alive) {
         const activeCar = ridingTramCarIdx === 0 ? liveTramState.car1 : liveTramState.car2;
@@ -32054,8 +32423,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         if (b.isPlayer && (npcCameraMode === 'house_visit' || npcCameraMode === 'house_interior')) {
           const sleepLiftY =
             b.isSleeping && activeSleepSpot ? activeSleepSpot.sleepLiftY : 0;
+          const floorY = houseVisitSystem.stepFloorY(
+            b.x,
+            b.z,
+            rawDt,
+            npcCameraMode === 'house_visit',
+          );
           b.bodyGroup.position.y = (floatY + b.jumpOffset + bHitPose.hopY) * 0.55 + sleepLiftY;
-          b.root.position.set(b.x, HOUSE_ORIGIN_Y, b.z);
+          b.root.position.set(b.x, HOUSE_ORIGIN_Y + floorY, b.z);
           b.root.rotation.set(0, 0, 0);
           b.root.scale.setScalar(0.55);
           continue;
@@ -34780,12 +35155,16 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         salonStationPromptBtn.style.display = 'none';
       }
 
-      // House Interior Exit Door Ring+Triangle & Bed Sleep Action Bar ('house_visit' / 'house_interior')
+      // House Wooden Garden Gate Exit Ring+Triangle & Bed Sleep Action Bar ('house_visit' / 'house_interior')
+      const houseExitProx =
+        npcCameraMode === 'house_visit'
+          ? houseVisitSystem.evaluateExitProximity(playerUnit.x, playerUnit.z)
+          : null;
       const isNearHouseInteriorExit =
         npcCameraMode === 'house_visit' &&
         !isKioskModalOpenCanvas &&
         !playerUnit.isSleeping &&
-        Math.hypot(playerUnit.x - 0.0, playerUnit.z - 3.35) <= 1.85;
+        Boolean(houseExitProx?.near);
       if (npcCameraMode === 'house_visit') {
         houseInteriorExitDoorPad.group.visible = true;
         houseInteriorExitDoorPad.pulseMat.opacity = 0.55 + Math.sin(markerPulseNow * 3.8) * 0.25;
@@ -36772,11 +37151,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           // =====================================================================
           // H. PRIVATE HOUSE VISIT PINS (Exit Door + Beds)
           // =====================================================================
-          const dHouseExit = Math.hypot(playerUnit.x - 0.0, playerUnit.z - 3.35);
+          const dHouseExit = houseExitProx?.distance ?? houseVisitSystem.evaluateExitProximity(playerUnit.x, playerUnit.z).distance;
           pushWorldPin(
-            0.0,
-            HOUSE_ORIGIN_Y + 1.85,
-            3.35,
+            HOUSE_VISIT_INDOOR_BOUNDS.exitX,
+            HOUSE_ORIGIN_Y + HOUSE_VISIT_INDOOR_BOUNDS.exitY + 1.85,
+            HOUSE_VISIT_INDOOR_BOUNDS.exitZ,
             {
               id: 'house_exit_door',
               inRange: isNearHouseInteriorExit,
@@ -38425,6 +38804,150 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     };
     window.addEventListener(NPC_TOGETHERNESS_COMMAND_EVENT, onNpcTogethernessCommand);
 
+    const onNpcEmotionReact = (ev: Event) => {
+      const detail = (
+        ev as CustomEvent<{ npcId?: NpcId; emotion?: NpcEmotionTag; durationSec?: number }>
+      ).detail;
+      if (!detail?.npcId || !detail.emotion) return;
+      const duration = Math.max(1.5, Math.min(12, detail.durationSec ?? 4.2));
+      if (detail.npcId === 'hana' || detail.npcId === 'kai') {
+        merchantNpcEmotions[detail.npcId] = { emotion: detail.emotion, remainingSec: duration };
+        return;
+      }
+      const cid = npcIdToCitizenId(detail.npcId);
+      const target = cityAmbientNpcs.find((n) => n.preset.id === cid);
+      if (target) {
+        target.activeEmotion = detail.emotion;
+        target.emotionRemainingSec = duration;
+      }
+    };
+
+    const onQaDirectorArenaCommand = (ev: Event) => {
+      const cmd = (ev as CustomEvent<QaArenaCommand>).detail;
+      if (!cmd) return;
+      if (cmd.type === 'set_debug_pathfinder') {
+        qaDebugPathfinder3D = Boolean(cmd.enabled);
+        qaPathDebugGroup.visible = qaDebugPathfinder3D;
+        return;
+      }
+      if (cmd.type === 'set_world_hour_override') {
+        qaWorldHourOverride =
+          typeof cmd.hour === 'number' && Number.isFinite(cmd.hour)
+            ? ((cmd.hour % 24) + 24) % 24
+            : null;
+        return;
+      }
+      if (cmd.type === 'set_telemetry_active') {
+        qaTelemetryActive = Boolean(cmd.active);
+        qaLastTelemetryEmitMs = 0;
+        return;
+      }
+      if (cmd.type === 'set_shop_qa_visuals') {
+        qaPreviewAllShopBuildings = Boolean(cmd.previewAllBuildings);
+        qaDebugShopBounds3D = Boolean(cmd.debugBounds3D);
+        qaLastTelemetryEmitMs = 0;
+        return;
+      }
+      if (cmd.type === 'teleport_to_lot' && playerUnit) {
+        const pose = computeQaLotTeleportPose(cmd.lotId);
+        if (pose) {
+          if (
+            npcCameraMode === 'cafe_interior' ||
+            npcCameraMode === 'casino_interior' ||
+            npcCameraMode === 'salon_interior' ||
+            npcCameraMode === 'house_interior' ||
+            npcCameraMode === 'house_visit'
+          ) {
+            npcCameraMode = 'none';
+          }
+          playerUnit.x = wrapPlanetCoord(pose.x);
+          playerUnit.z = wrapPlanetCoord(pose.z);
+          playerUnit.vx = 0;
+          playerUnit.vz = 0;
+          playerUnit.yaw = pose.yaw;
+          clickToWalkState.active = false;
+        }
+        return;
+      }
+      if (cmd.type === 'trigger_emotion') {
+        onNpcEmotionReact(
+          new CustomEvent(NPC_EMOTION_REACT_EVENT, {
+            detail: { npcId: cmd.npcId, emotion: cmd.emotion, durationSec: cmd.durationSec ?? 5.0 },
+          }),
+        );
+        return;
+      }
+      if (cmd.type === 'teleport_to_npc' && playerUnit) {
+        let tx = 0;
+        let tz = 0;
+        let tyaw = 0;
+        let found = false;
+        if (cmd.npcId === 'hana' && lobbyCafeNpc?.npcGrp) {
+          tx = lobbyCafeNpc.npcGrp.position.x;
+          tz = lobbyCafeNpc.npcGrp.position.z;
+          tyaw = lobbyCafeNpc.npcGrp.rotation.y - Math.PI / 2;
+          found = true;
+        } else if (cmd.npcId === 'kai' && beachHouseNpc?.npcGrp) {
+          tx = beachHouseNpc.npcGrp.position.x;
+          tz = beachHouseNpc.npcGrp.position.z;
+          tyaw = beachHouseNpc.npcGrp.rotation.y - Math.PI / 2;
+          found = true;
+        } else {
+          const cid = npcIdToCitizenId(cmd.npcId);
+          const target = cityAmbientNpcs.find((n) => n.preset.id === cid);
+          if (target) {
+            tx = target.x;
+            tz = target.z;
+            tyaw = target.yaw;
+            found = true;
+          }
+        }
+        if (found) {
+          playerUnit.x = wrapPlanetCoord(tx + Math.cos(tyaw) * 2.35);
+          playerUnit.z = wrapPlanetCoord(tz - Math.sin(tyaw) * 2.35);
+          playerUnit.vx = 0;
+          playerUnit.vz = 0;
+          playerUnit.yaw = Math.atan2(-(tz - playerUnit.z), tx - playerUnit.x);
+          clickToWalkState.active = false;
+        }
+        return;
+      }
+      if (cmd.type === 'summon_npc' && playerUnit) {
+        const frontX = wrapPlanetCoord(playerUnit.x + Math.cos(playerUnit.yaw) * 2.2);
+        const frontZ = wrapPlanetCoord(playerUnit.z - Math.sin(playerUnit.yaw) * 2.2);
+        const facePlayerYaw = Math.atan2(-(playerUnit.z - frontZ), playerUnit.x - frontX);
+        if (cmd.npcId === 'hana' || cmd.npcId === 'kai') {
+          const mNpc = cmd.npcId === 'hana' ? lobbyCafeNpc : beachHouseNpc;
+          if (mNpc?.npcGrp) {
+            mNpc.npcGrp.position.x = frontX;
+            mNpc.npcGrp.position.z = frontZ;
+            mNpc.npcGrp.position.y = getTerrainElevation(frontX, frontZ);
+            mNpc.npcGrp.rotation.y = facePlayerYaw + Math.PI / 2;
+          }
+          return;
+        }
+        const cid = npcIdToCitizenId(cmd.npcId);
+        const target = cityAmbientNpcs.find((n) => n.preset.id === cid);
+        if (target) {
+          target.x = frontX;
+          target.z = frontZ;
+          target.yaw = facePlayerYaw;
+          target.isSitting = false;
+          target.pauseTimer = 3.5;
+          target.navPath = [];
+          target.navWaypointIndex = 0;
+          target.navPathGoalKey = '';
+          target.stuckTimer = 0;
+          target.consecutiveStuckReplans = 0;
+          target.lastProgressX = frontX;
+          target.lastProgressZ = frontZ;
+          target.seatOverride = null;
+        }
+      }
+    };
+    window.addEventListener(NPC_EMOTION_REACT_EVENT, onNpcEmotionReact);
+    window.addEventListener(QA_DIRECTOR_ARENA_CMD_EVENT, onQaDirectorArenaCommand);
+
     emitHudImmediately();
     rafId = requestAnimationFrame(animate);
 
@@ -38434,6 +38957,18 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       window.removeEventListener(SHOP_LOT_PLACEMENT_SYNC_EVENT, onShopLotPlacementSync);
       cityRentalLotsController.dispose();
       window.removeEventListener(NPC_TOGETHERNESS_COMMAND_EVENT, onNpcTogethernessCommand);
+      window.removeEventListener(NPC_EMOTION_REACT_EVENT, onNpcEmotionReact);
+      window.removeEventListener(QA_DIRECTOR_ARENA_CMD_EVENT, onQaDirectorArenaCommand);
+      for (const dbg of qaDebugNpcEntries) {
+        dbg.geo.dispose();
+      }
+      qaPathRingGeo.dispose();
+      qaPathLineMatOk.dispose();
+      qaPathLineMatAvoid.dispose();
+      qaPathLineMatStuck.dispose();
+      qaPathRingMatOk.dispose();
+      qaPathRingMatWarn.dispose();
+      scene.remove(qaPathDebugGroup);
       cancelAnimationFrame(rafId);
       cancelAnimationFrame(staggeredUpgradeRafId);
       window.clearTimeout(softwareGlTimerId);

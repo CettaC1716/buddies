@@ -32,6 +32,7 @@ import {
   type UrbanPlazaBuildingsContext,
 } from './buddiesUrbanPlazaBuildingsBuilder';
 import { buildBeautySalonStudioGlb3D } from './buddiesBeautySalonBuilder';
+import { createPlazaBuildingGlowUniforms } from './buddiesCentralPlazaGlbOptimizer';
 
 export interface BuildCentralBotanicalParkOptions {
   windUniforms: BlitzWindUniforms;
@@ -2447,12 +2448,18 @@ export function buildCentralBotanicalPark3D(
     return out;
   })();
   const terrazzoSlabGeo = createHorizontalPolygonSlabGeometry(insetPlazaVerts, -0.04, 0.042, 2.1);
-  addPart(staticGroup, terrazzoSlabGeo, '#ffffff', [0, 0, 0], [0, 0, 0], {
+  const terrazzoSlabMesh = addPart(staticGroup, terrazzoSlabGeo, '#ffffff', [0, 0, 0], [0, 0, 0], {
     map: terrazzoCheckerTex,
     castShadow: false,
     receiveShadow: true,
     bounce: 0.14,
   });
+  // Push plaza terrazzo slightly back in depth buffer so inlays, curbs & building bases never Z-fight
+  if (!Array.isArray(terrazzoSlabMesh.material)) {
+    terrazzoSlabMesh.material.polygonOffset = true;
+    terrazzoSlabMesh.material.polygonOffsetFactor = 1;
+    terrazzoSlabMesh.material.polygonOffsetUnits = 1;
+  }
 
   // Walkable Beveled Granite/Limestone Perimeter Curbs around all 12 polygon vertices (ZERO barrier fences!)
   const perimeterCurbGeo = createMiteredPerimeterCurbGeometry(CENTRAL_PARK_PERIMETER_VERTICES, 0.36, -0.06, 0.088, 0.035);
@@ -2463,7 +2470,7 @@ export function buildCentralBotanicalPark3D(
     bounce: 0.16,
   });
 
-  // Sweeping Warm-Gold Ribbon Inlays (#d4ab62) — Staggered Y layers prevent coplanar Z-fighting at ribbon intersections
+  // Sweeping Warm-Gold Ribbon Inlays (#d4ab62) — polygonOffset + strictly unique Y layers eliminate Z-fighting at all altitudes
   const ftn = mp.fountainPlaza;
   const goldRibbonMat = registerMat(
     new THREE.MeshStandardMaterial({
@@ -2473,6 +2480,9 @@ export function buildCentralBotanicalPark3D(
       metalness: 0.26,
       emissive: '#4a3816',
       emissiveIntensity: 0.24,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -2,
     }),
   );
   const addGoldInlay = (geo: THREE.BufferGeometry) => {
@@ -2484,11 +2494,11 @@ export function buildCentralBotanicalPark3D(
     staticGroup.add(m);
   };
 
-  // Concentric fountain brass rings (`yTop = 0.049m`)
-  addGoldInlay(createGoldRingRibbonGeometry(ftn.x, ftn.z, 5.25, 5.45, 0.036, 0.049, 64));
-  addGoldInlay(createGoldRingRibbonGeometry(ftn.x, ftn.z, 8.25, 8.45, 0.036, 0.049, 72));
+  // Concentric fountain brass rings (`yTop = 0.050m`)
+  addGoldInlay(createGoldRingRibbonGeometry(ftn.x, ftn.z, 5.25, 5.45, 0.043, 0.050, 64));
+  addGoldInlay(createGoldRingRibbonGeometry(ftn.x, ftn.z, 8.25, 8.45, 0.043, 0.050, 72));
 
-  // Diagonal & cardinal radial connectors between Fountain steps and outer ring (`yTop = 0.052m`)
+  // Diagonal & cardinal radial connectors between Fountain steps and outer ring (`yTop = 0.055m`)
   for (let k = 0; k < 4; k++) {
     const angDiag = (k * Math.PI) / 2 + Math.PI / 4;
     addGoldInlay(
@@ -2498,8 +2508,8 @@ export function buildCentralBotanicalPark3D(
           [ftn.x + Math.cos(angDiag) * 8.38, ftn.z + Math.sin(angDiag) * 8.38],
         ],
         0.085,
-        0.036,
-        0.052,
+        0.043,
+        0.055,
       ),
     );
     const angCard = (k * Math.PI) / 2;
@@ -2510,13 +2520,13 @@ export function buildCentralBotanicalPark3D(
           [ftn.x + Math.cos(angCard) * 5.38, ftn.z + Math.sin(angCard) * 5.38],
         ],
         0.095,
-        0.036,
-        0.052,
+        0.043,
+        0.055,
       ),
     );
   }
 
-  // Sweeping outer promenade arcs weaving around the North Pergola, South Lawn Bed & East/West wings (`yTop = 0.055m`)
+  // Sweeping outer promenade arcs (distinct north `0.059m` & south `0.062m` layers)
   addGoldInlay(
     sampleGoldCurveRibbon(
       [
@@ -2533,8 +2543,8 @@ export function buildCentralBotanicalPark3D(
         [57.0, -3.2],
       ],
       0.09,
-      0.036,
-      0.055,
+      0.043,
+      0.059,
       56,
     ),
   );
@@ -2554,13 +2564,13 @@ export function buildCentralBotanicalPark3D(
         [57.0, 3.2],
       ],
       0.09,
-      0.036,
-      0.055,
+      0.043,
+      0.062,
       56,
     ),
   );
 
-  // Intersecting graceful promenade cross-arcs (distinct `yTop`: 0.059/0.062/0.065/0.068/0.071m -> zero Z-fighting!)
+  // Intersecting graceful promenade cross-arcs (strictly distinct `yTop`: 0.066/0.070/0.074/0.078/0.082/0.086m)
   addGoldInlay(
     sampleGoldCurveRibbon(
       [
@@ -2570,8 +2580,8 @@ export function buildCentralBotanicalPark3D(
         [7.6, 9.6],
       ],
       0.08,
-      0.036,
-      0.059,
+      0.043,
+      0.066,
       28,
     ),
   );
@@ -2584,8 +2594,8 @@ export function buildCentralBotanicalPark3D(
         [7.6, -9.6],
       ],
       0.08,
-      0.036,
-      0.062,
+      0.043,
+      0.070,
       28,
     ),
   );
@@ -2599,8 +2609,8 @@ export function buildCentralBotanicalPark3D(
         [18.5, 18.8],
       ],
       0.085,
-      0.036,
-      0.065,
+      0.043,
+      0.074,
       36,
     ),
   );
@@ -2614,8 +2624,8 @@ export function buildCentralBotanicalPark3D(
         [40.5, 18.8],
       ],
       0.085,
-      0.036,
-      0.065,
+      0.043,
+      0.078,
       36,
     ),
   );
@@ -2627,8 +2637,8 @@ export function buildCentralBotanicalPark3D(
         [56.8, 1.6],
       ],
       0.08,
-      0.036,
-      0.068,
+      0.043,
+      0.082,
       20,
     ),
   );
@@ -2640,8 +2650,8 @@ export function buildCentralBotanicalPark3D(
         [56.8, -1.6],
       ],
       0.08,
-      0.036,
-      0.071,
+      0.043,
+      0.086,
       20,
     ),
   );
@@ -2653,11 +2663,11 @@ export function buildCentralBotanicalPark3D(
   ftnGrp.position.set(ftn.x, 0, ftn.z);
   staticGroup.add(ftnGrp);
 
-  // 3 Circular Granite Step Risers (`r = 4.85m, 4.46m, 4.08m`, matching `evaluateCentralParkElevation` +0.32m!)
+  // 3 Circular Granite Step Risers seated cleanly above terrazzo (0.042m) with zero vertical overlap
   for (const [rStep, yBot, yTop] of [
-    [ftn.apronRadius, 0.03, 0.13],
-    [4.46, 0.12, 0.22],
-    [4.08, 0.21, 0.32],
+    [ftn.apronRadius, 0.043, 0.130],
+    [4.46, 0.132, 0.220],
+    [4.08, 0.222, 0.320],
   ] as const) {
     const h = yTop - yBot;
     addPart(
@@ -2682,8 +2692,8 @@ export function buildCentralBotanicalPark3D(
     new THREE.Vector2(3.56, 0.74),
     new THREE.Vector2(3.58, 0.44),
     new THREE.Vector2(3.68, 0.38),
-    new THREE.Vector2(3.68, 0.30),
-    new THREE.Vector2(3.05, 0.30),
+    new THREE.Vector2(3.68, 0.322),
+    new THREE.Vector2(3.05, 0.322),
   ];
   addPart(ftnGrp, scaleGeometryUvs(new THREE.LatheGeometry(copingPts, 48), 5.0, 1.0), '#ffffff', [0, 0, 0], [0, 0, 0], {
     map: stoneTex,
@@ -2691,14 +2701,14 @@ export function buildCentralBotanicalPark3D(
     receiveShadow: true,
   });
 
-  // Submerged basin floor & dark recirculation drain ring (`39693dad.jpg` Top Plan View)
-  addPart(ftnGrp, new THREE.CylinderGeometry(3.09, 3.09, 0.04, 40), '#5d8594', [0, 0.40, 0]);
-  addPart(ftnGrp, new THREE.TorusGeometry(1.18, 0.045, 6, 36), '#3e535c', [0, 0.43, 0], [Math.PI / 2, 0, 0]);
+  // Submerged basin floor (`y = 0.400..0.430m`, strictly above coping inner floor `0.38m` — zero Z-fighting!)
+  addPart(ftnGrp, new THREE.CylinderGeometry(3.08, 3.08, 0.03, 40), '#5d8594', [0, 0.415, 0]);
+  addPart(ftnGrp, new THREE.TorusGeometry(1.18, 0.045, 6, 36), '#3e535c', [0, 0.445, 0], [Math.PI / 2, 0, 0]);
 
-  // Carved Fluted Lower Pedestal + 8 Vertical Scroll Ribs (`y = 0.40..2.12m`)
+  // Carved Fluted Lower Pedestal + 8 Vertical Scroll Ribs (`y = 0.432..2.08m`, clears basin floor top `0.430m`)
   const lowerPedPts = [
-    new THREE.Vector2(0.0, 0.40),
-    new THREE.Vector2(1.06, 0.40),
+    new THREE.Vector2(0.0, 0.432),
+    new THREE.Vector2(1.06, 0.432),
     new THREE.Vector2(0.98, 0.56),
     new THREE.Vector2(0.76, 0.66),
     new THREE.Vector2(0.70, 0.92),
@@ -2865,6 +2875,9 @@ export function buildCentralBotanicalPark3D(
       opacity: 0.56,
       side: THREE.DoubleSide,
       depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
     }),
   );
 
@@ -2912,6 +2925,7 @@ export function buildCentralBotanicalPark3D(
   streamGeos.forEach((g) => g.dispose());
   const fountainStreamsMesh = new THREE.Mesh(mergedStreamsGeo, cascadeStreamMat);
   fountainStreamsMesh.position.set(ftn.x, 0, ftn.z);
+  fountainStreamsMesh.renderOrder = 3;
   fountainStreamsMesh.userData.isAnimatedWater = true;
   animatedGroup.add(fountainStreamsMesh);
 
@@ -2942,15 +2956,16 @@ export function buildCentralBotanicalPark3D(
   plumeInnerGeo.dispose();
   const centralPlumeMesh = new THREE.Mesh(mergedPlumeGeo, cascadeStreamMat);
   centralPlumeMesh.position.set(ftn.x, 4.30, ftn.z);
+  centralPlumeMesh.renderOrder = 3;
   centralPlumeMesh.userData.isAnimatedWater = true;
   animatedGroup.add(centralPlumeMesh);
 
-  // Frothy Splash & Ripple Rings at stream landing radii
+  // Frothy Splash & Ripple Rings cleanly above water surfaces (`+0.03m`, renderOrder 4 > water renderOrder 2)
   const rippleRingGeos: THREE.BufferGeometry[] = [];
   for (const [rIn, rOut, y] of [
-    [2.32, 2.86, 0.80],
-    [1.42, 1.78, 2.50],
-    [0.50, 0.84, 3.78],
+    [2.32, 2.86, 0.81],
+    [1.42, 1.78, 2.51],
+    [0.50, 0.84, 3.79],
   ] as const) {
     const rg = new THREE.RingGeometry(rIn, rOut, 40);
     rg.rotateX(-Math.PI / 2);
@@ -2961,6 +2976,7 @@ export function buildCentralBotanicalPark3D(
   rippleRingGeos.forEach((g) => g.dispose());
   const fountainRippleMesh = new THREE.Mesh(mergedRippleRingsGeo, frothRingMat);
   fountainRippleMesh.position.set(ftn.x, 0, ftn.z);
+  fountainRippleMesh.renderOrder = 4;
   animatedGroup.add(fountainRippleMesh);
 
   // =========================================================================
@@ -2969,6 +2985,7 @@ export function buildCentralBotanicalPark3D(
   const wisteriaCollectors = { matrices: [] as THREE.Matrix4[], colors: [] as THREE.Color[] };
   const pondReedCollectors = { matrices: [] as THREE.Matrix4[], colors: [] as THREE.Color[] };
   const shrubCollectors = { matrices: [] as THREE.Matrix4[], colors: [] as THREE.Color[] };
+  const plazaBuildingGlowUniforms = createPlazaBuildingGlowUniforms();
 
   const buildingsCtx: UrbanPlazaBuildingsContext = {
     staticGroup,
@@ -2993,6 +3010,7 @@ export function buildCentralBotanicalPark3D(
     wisteriaCollectors,
     pondReedCollectors,
     shrubCollectors,
+    plazaBuildingGlowUniforms,
   };
 
   // Vintage Cafe exterior is the owner-supplied GLB, replacing the Boutique
@@ -4097,6 +4115,10 @@ export function buildCentralBotanicalPark3D(
       for (const sh of animatedWaterShaders) {
         if (sh.uniforms.uTime) sh.uniforms.uTime.value = safeTime;
       }
+
+      // Zero-draw-call Central Plaza GLB glowing window glass & practical fixture modulation
+      plazaBuildingGlowUniforms.uNightFactor.value = clampedNight;
+      plazaBuildingGlowUniforms.uTime.value = safeTime;
 
       // Dusk / Night Warm Victorian Lantern Glass, Edison Filament Core & Billboard Glow modulation
       const coreState = evaluateLanternCoreAndSpriteState(clampedNight);

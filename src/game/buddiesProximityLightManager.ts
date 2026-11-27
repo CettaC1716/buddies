@@ -524,7 +524,6 @@ export function buildAuditedOutdoorLightManifest(): readonly AuditedProximityLig
   // 4. Urban Plaza Boutique Tower, Cozy Bites Cafe Pavilion, Beauty Salon, and Civic Cascade Fountain
   const bt = CENTRAL_PARK_MASTERPLAN.boutiqueTower;
   const cf = CENTRAL_PARK_MASTERPLAN.cozyCafePavilion;
-  const bs = CENTRAL_PARK_MASTERPLAN.beautySalon;
   const ftn = CENTRAL_PARK_MASTERPLAN.fountainPlaza;
   const plazaShopSpec = POINT_LIGHT_AUDIT_SPECS.outdoorCategories.urban_plaza_storefront;
   const ftnSpec = POINT_LIGHT_AUDIT_SPECS.outdoorCategories.urban_plaza_fountain;
@@ -546,8 +545,8 @@ export function buildAuditedOutdoorLightManifest(): readonly AuditedProximityLig
     {
       id: 'urban_plaza_boutique_front',
       category: 'urban_plaza_storefront',
-      x: bt.x + 4.85, // directly outside East storefront entrance below 3.92m awning
-      y: 3.45,
+      x: bt.x + 6.45, // directly outside East storefront entrance below 3.82m awning
+      y: 3.35,
       z: bt.z,
       groundY: 0.064,
       colorHex: plazaShopSpec.colorHex,
@@ -561,8 +560,8 @@ export function buildAuditedOutdoorLightManifest(): readonly AuditedProximityLig
       id: 'urban_plaza_boutique_south',
       category: 'urban_plaza_storefront',
       x: bt.x,
-      y: 3.45,
-      z: bt.z + 5.15,
+      y: 3.35,
+      z: bt.z + 6.25,
       groundY: 0.064,
       colorHex: plazaShopSpec.colorHex,
       baseIntensity: plazaShopSpec.baseIntensity * 0.9,
@@ -574,7 +573,7 @@ export function buildAuditedOutdoorLightManifest(): readonly AuditedProximityLig
     {
       id: 'urban_plaza_cozy_cafe_west',
       category: 'urban_plaza_storefront',
-      x: cf.x - 4.75, // -0.24m below wall sconce hats & below 4.18m front awning over bistro patio
+      x: cf.x - 4.75, // -0.24m below wall sconce hats & below front awning over bistro patio
       y: 2.68,
       z: cf.z,
       groundY: 0.064,
@@ -602,9 +601,9 @@ export function buildAuditedOutdoorLightManifest(): readonly AuditedProximityLig
     {
       id: 'urban_plaza_beauty_salon_front',
       category: 'urban_plaza_storefront',
-      x: bs.x - 2.53, // outside North front doorway beneath sleek cream awning
-      y: 3.18,
-      z: bs.z - 3.92,
+      x: 25.74, // directly outside North front doorway beneath 3.33m cream awning
+      y: 3.25,
+      z: 8.12,
       groundY: 0.064,
       colorHex: '#ffe4b4',
       baseIntensity: plazaShopSpec.baseIntensity,
@@ -616,9 +615,9 @@ export function buildAuditedOutdoorLightManifest(): readonly AuditedProximityLig
     {
       id: 'urban_plaza_beauty_salon_corner',
       category: 'urban_plaza_storefront',
-      x: bs.x + 4.62, // outside East curved storefront panoramic display
-      y: 3.18,
-      z: bs.z - 1.65,
+      x: 36.45, // outside East curved storefront panoramic display
+      y: 3.25,
+      z: 13.35,
       groundY: 0.064,
       colorHex: '#ffe4b4',
       baseIntensity: plazaShopSpec.baseIntensity * 0.92,

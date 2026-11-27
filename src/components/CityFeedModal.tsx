@@ -28,6 +28,7 @@ import {
   CITY_FEED_UPDATED_EVENT,
   type CityFeedPost,
 } from '../lib/cityFeedService';
+import { CERRIA_CITY_NAME } from '../lib/cerriaBrand';
 import { getPhotoCropClassName } from './CharacterProfileModal';
 import {
   filterRealHumanOnlinePlayers,
@@ -618,7 +619,7 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
                     void handlePublish();
                   }
                 }}
-                placeholder="Share a moment with players in Buddies City..."
+                placeholder={`Share a moment with players in ${CERRIA_CITY_NAME}...`}
                 data-city-feed-input="true"
                 className="w-full resize-none bg-transparent text-[12px] text-slate-900 placeholder:text-slate-400 focus:outline-none leading-snug"
               />

@@ -1,5 +1,6 @@
 import type { CityFeedPost } from './cityFeedService';
 import type { BuddiesLetter } from './supabaseClient';
+import { CERRIA_CITY_NAME } from './cerriaBrand';
 
 /**
  * Pure helpers for the Phone Home "City News" widget and canonical
@@ -109,7 +110,7 @@ export function buildCityNewsCardSummary(params: {
 
   const peers = Math.max(0, Math.floor(params.onlinePeersCount ?? 0));
   return {
-    headline: peers > 0 ? `${peers} neighbors out in Buddies City` : 'Buddies City Pulse',
+    headline: peers > 0 ? `${peers} neighbors out in ${CERRIA_CITY_NAME}` : `${CERRIA_CITY_NAME} City Pulse`,
     subtitle: 'Tap to open City Feed',
     badgeLabel: 'Live',
     targetApp: 'city_feed',

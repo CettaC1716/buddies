@@ -10,6 +10,10 @@ import {
   SALON_ORIGIN_Y,
   type SalonStationInteractionKind,
 } from './buddiesBeautySalonRules';
+import {
+  createPlazaBuildingGlowUniforms,
+  optimizeCentralPlazaBuildingGlb,
+} from './buddiesCentralPlazaGlbOptimizer';
 
 export interface SalonInteriorSceneHandle {
   root: THREE.Group;
@@ -61,10 +65,19 @@ export function buildBeautySalonInterior(): SalonInteriorSceneHandle {
   glbMount.scale.setScalar(SALON_GLB_SCALE);
   root.add(glbMount);
   if (typeof window !== 'undefined') {
+    const interiorGlowUniforms = createPlazaBuildingGlowUniforms();
+    interiorGlowUniforms.uNightFactor.value = 0.45;
     new GLTFLoader().load(
       GLOW_STUDIO_SALON_GLB_PATH,
       (gltf) => {
         if (!glbMount.parent) return; // scene was disposed meanwhile
+        optimizeCentralPlazaBuildingGlb(gltf.scene, {
+          buildingId: 'GlowStudioSalonInterior',
+          glowUniforms: interiorGlowUniforms,
+          castShadow: false,
+          receiveShadow: false,
+          glassWarmTintHex: '#ffe6bd',
+        });
         glbMount.add(gltf.scene);
       },
       undefined,

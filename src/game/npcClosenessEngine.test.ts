@@ -33,8 +33,7 @@ import {
   resolveNpcId,
   saveNpcClosenessStore,
 } from './npcClosenessEngine';
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
+import { MS_PER_DAY } from '../lib/cerriaBrand';
 
 function createMemoryStorage(): Pick<Storage, 'getItem' | 'setItem'> & {
   backing: Map<string, string>;

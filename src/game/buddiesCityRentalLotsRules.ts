@@ -58,6 +58,14 @@ export const SHOP_BILLBOARD_MESH_SPEC: ShopBillboardMeshSpec = {
   textureHeightPx: 320,
 } as const;
 
+export interface ShopWallColliderLocalSpec {
+  centerX: number;
+  centerZ: number;
+  halfX: number;
+  halfZ: number;
+  heightY: number;
+}
+
 export interface ShopBuildingFormSpec {
   id: ShopBuildingFormId;
   catalogItemId: string;
@@ -66,6 +74,12 @@ export interface ShopBuildingFormSpec {
   name: string;
   subtitle: string;
   stories: 2 | 3;
+  /** Scale multiplier applied to raw GLB so building + paving fills the 20m x 20m commercial lot. */
+  glbScale: number;
+  /** Vertical grounding offset (m) aligning GLB paving top cleanly onto the +0.105m lot terrace. */
+  glbGroundOffsetY: number;
+  /** Solid wall-only OBB collider in local scaled building space (outer paving remains walkable). */
+  wallColliderLocal: ShopWallColliderLocalSpec;
   footprintWidthM: number;
   footprintDepthM: number;
   heightM: number;
@@ -89,41 +103,43 @@ export interface ShopBuildingFormSpec {
 }
 
 export const CITY_RENTAL_LOT_SIZE_M = {
-  width: 15.0,
-  depth: 15.0,
-  halfWidth: 7.5,
-  halfDepth: 7.5,
-  areaSqM: 225.0,
+  width: 20.0,
+  depth: 20.0,
+  halfWidth: 10.0,
+  halfDepth: 10.0,
+  areaSqM: 400.0,
 } as const;
 
 export const STANDARD_SHOP_FOOTPRINT_SPEC = {
-  /** Package envelope cap under the 27 Nov 2026 package standard (was the 9.6m shell). */
-  width: 14.0,
-  depth: 14.0,
-  halfWidth: 7.0,
-  halfDepth: 7.0,
-  areaSqM: 196.0,
-  /** 196.0 / 225.0 = 0.8711 (87.11% maximum coverage at the package envelope cap) */
-  lotCoverageRatio: (14.0 * 14.0) / (15.0 * 15.0),
-  maxAllowedCoverageRatio: (14.0 * 14.0) / (15.0 * 15.0),
+  /** Full-lot architectural package envelope (building + distinct building paving inside 20m x 20m lot). */
+  width: 19.6,
+  depth: 19.6,
+  halfWidth: 9.8,
+  halfDepth: 9.8,
+  areaSqM: 384.16,
+  /** 384.16 / 400.0 = 0.9604 (96.04% maximum coverage inside the 20m x 20m lot) */
+  lotCoverageRatio: (19.6 * 19.6) / (20.0 * 20.0),
+  maxAllowedCoverageRatio: (19.6 * 19.6) / (20.0 * 20.0),
   /**
    * Local Z offset along the lot's road-facing forward axis (+localZ = front toward avenue).
-   * Package standard: buildings are placed CENTRED on the 15m lot, so the offset is 0.
-   * Per-form margins are (15 - footprint) / 2 on every side (0.5m minimum at the 14m cap).
-   * (The retired shell standard shifted the 9.6m shell -1.2m toward the rear.)
+   * Package standard: buildings are placed CENTRED on the 20m lot, so the offset is 0.
+   * Per-form margins are (20 - footprint) / 2 on every side (0.2m minimum reveal border).
    */
   localDepthOffsetTowardRearM: 0,
-  sideMarginM: 0.5,
-  rearMarginM: 0.5,
-  frontApronMarginM: 0.5,
+  sideMarginM: 0.2,
+  rearMarginM: 0.2,
+  frontApronMarginM: 0.2,
   /** Awning/canopy protrusions are part of the measured package bounds, never extra. */
   maxAwningProtrusionM: 0,
 } as const;
 
 /**
- * Commercial Block Avenue Geometry:
+ * Commercial Block Avenue & 4-Sided Curbed Block Sidewalk Geometry:
  * - Divider Roads 2 (x = -30) and 4 (x = +30) are CLOSED and become the block center lines.
  * - Avenues 1 (x = -60), 3 (x = 0), and 5 (x = +60) are WIDENED to 10.4m (half-width 5.2m).
+ * - Each of the 4 blocks spans 49.6m x 48.17m (asphalt-to-asphalt) with a continuous 4-sided
+ *   tram-style curbed city sidewalk framing an inner 40.0m x 40.0m pad completely filled by
+ *   four 20.0m x 20.0m commercial shop lots (zero leftover grass margin).
  */
 export const COMMERCIAL_AVENUE_SPEC = {
   widenedAvenueXs: [-60.0, 0.0, 60.0] as const,
@@ -131,19 +147,89 @@ export const COMMERCIAL_AVENUE_SPEC = {
   /** Roadway half-width = 5.2m (10.4m asphalt roadway) */
   widenedHalfWidthM: 5.2,
   widenedFullWidthM: 10.4,
-  /** Amendment 2: 2.0m sidewalks on both sides of each widened avenue (total cross-section = 14.4m) */
-  sidewalkWidthM: 2.0,
-  totalAvenueCrossSectionWidthM: 14.4,
+  /** Continuous curbed tram-style block sidewalk width along E/W avenues (4.80m each side) */
+  sidewalkWidthM: 4.8,
+  /** Tram-ring front block sidewalk width (matches 4.40m zebra crosswalks) */
+  tramSidewalkWidthM: 4.4,
+  /** Rear collector road block sidewalk width (|z| in [100.33 .. 104.10]) */
+  rearSidewalkWidthM: 3.77,
+  totalAvenueCrossSectionWidthM: 20.0,
   sidewalkInnerOffsetFromCenterM: 5.2,
-  sidewalkOuterOffsetFromCenterM: 7.2,
-  sidewalkCenterOffsetFromAvenueM: 6.2,
-  /** Sidewalks run the full length of each commercial block and connect to crosswalks at block ends */
-  sidewalkZRangeAbs: { minAbsZ: 56.0, maxAbsZ: 104.0 } as const,
+  sidewalkOuterOffsetFromCenterM: 10.0,
+  sidewalkCenterOffsetFromAvenueM: 7.6,
+  /** Sidewalks run the full length of each commercial block (|z| in [55.93 .. 104.10]) */
+  sidewalkZRangeAbs: { minAbsZ: 55.93, maxAbsZ: 104.1 } as const,
+  /** Inner 40.0m Z span of the 2x2 commercial lots inside each block */
+  blockInnerZRangeAbs: { minAbsZ: 60.33, maxAbsZ: 100.33 } as const,
   blockCenterXs: [-30.0, 30.0] as const,
-  northRowZs: [-71.0, -89.0] as const,
-  southRowZs: [71.0, 89.0] as const,
+  northRowZs: [-70.33, -90.33] as const,
+  southRowZs: [70.33, 90.33] as const,
   blockZSpan: { minAbsZ: 52.0, maxAbsZ: 108.0 } as const,
 } as const;
+
+export interface CommercialBlockPerimeterSpec {
+  blockId: CommercialBlockId;
+  side: CityRentalLotSide;
+  xOuterMin: number;
+  xOuterMax: number;
+  zOuterMin: number;
+  zOuterMax: number;
+  xInnerMin: number;
+  xInnerMax: number;
+  zInnerMin: number;
+  zInnerMax: number;
+}
+
+export const COMMERCIAL_BLOCK_PERIMETERS: readonly CommercialBlockPerimeterSpec[] = [
+  {
+    blockId: 'block-nw',
+    side: 'north',
+    xOuterMin: -54.8,
+    xOuterMax: -5.2,
+    zOuterMin: -104.1,
+    zOuterMax: -55.93,
+    xInnerMin: -50.0,
+    xInnerMax: -10.0,
+    zInnerMin: -100.33,
+    zInnerMax: -60.33,
+  },
+  {
+    blockId: 'block-ne',
+    side: 'north',
+    xOuterMin: 5.2,
+    xOuterMax: 54.8,
+    zOuterMin: -104.1,
+    zOuterMax: -55.93,
+    xInnerMin: 10.0,
+    xInnerMax: 50.0,
+    zInnerMin: -100.33,
+    zInnerMax: -60.33,
+  },
+  {
+    blockId: 'block-sw',
+    side: 'south',
+    xOuterMin: -54.8,
+    xOuterMax: -5.2,
+    zOuterMin: 55.93,
+    zOuterMax: 104.1,
+    xInnerMin: -50.0,
+    xInnerMax: -10.0,
+    zInnerMin: 60.33,
+    zInnerMax: 100.33,
+  },
+  {
+    blockId: 'block-se',
+    side: 'south',
+    xOuterMin: 5.2,
+    xOuterMax: 54.8,
+    zOuterMin: 55.93,
+    zOuterMax: 104.1,
+    xInnerMin: 10.0,
+    xInnerMax: 50.0,
+    zInnerMin: 60.33,
+    zInnerMax: 100.33,
+  },
+] as const;
 
 export interface CommercialSidewalkStripSpec {
   id: string;
@@ -163,7 +249,7 @@ export const COMMERCIAL_SIDEWALK_STRIPS: readonly CommercialSidewalkStripSpec[] 
   const strips: CommercialSidewalkStripSpec[] = [];
   const { widenedAvenueXs, sidewalkInnerOffsetFromCenterM, sidewalkOuterOffsetFromCenterM, sidewalkWidthM, sidewalkZRangeAbs } =
     COMMERCIAL_AVENUE_SPEC;
-  const len = sidewalkZRangeAbs.maxAbsZ - sidewalkZRangeAbs.minAbsZ;
+  const len = +(sidewalkZRangeAbs.maxAbsZ - sidewalkZRangeAbs.minAbsZ).toFixed(3);
   for (const districtSide of ['north', 'south'] as const) {
     const minZ = districtSide === 'north' ? -sidewalkZRangeAbs.maxAbsZ : sidewalkZRangeAbs.minAbsZ;
     const maxZ = districtSide === 'north' ? -sidewalkZRangeAbs.minAbsZ : sidewalkZRangeAbs.maxAbsZ;
@@ -216,19 +302,22 @@ export const SHOP_BUILDING_FORMS: Readonly<Record<ShopBuildingFormId, ShopBuildi
     name: 'Glass Corner 3-Story',
     subtitle: 'Three-story concrete and glass corner tower with rooftop solar panels and front sign band',
     stories: 3,
-    footprintWidthM: 13.4,
-    footprintDepthM: 13.4,
-    heightM: 13.07,
+    glbScale: 1.44,
+    glbGroundOffsetY: -0.105,
+    wallColliderLocal: { centerX: 0, centerZ: 0, halfX: 6.91, halfZ: 6.91, heightY: 16.5 },
+    footprintWidthM: 19.3,
+    footprintDepthM: 19.3,
+    heightM: 18.72,
     defaultPriceRespite: 250,
     glbPath: '/assets/buildings/shop_glass_corner_3story.glb',
     renderImagePath: '/assets/buildings/renders/shop_glass_corner_3story.png',
     materialNotes:
       'Light architectural concrete frame and core, full-height corner display glazing with bronze mullions, dark steel rooftop frame with solar panels and satellite dish, and a blank front sign band holding the neutral default billboard.',
     billboard: {
-      widthM: 6.4,
-      heightM: 2.0,
-      centerYM: 9.4,
-      offsetFrontZM: 4.88,
+      widthM: 9.22,
+      heightM: 2.88,
+      centerYM: 13.43,
+      offsetFrontZM: 7.03,
     },
     palette: {
       wallHex: '#e8e4dc',
@@ -244,21 +333,22 @@ export const SHOP_BUILDING_FORMS: Readonly<Record<ShopBuildingFormId, ShopBuildi
     name: 'Canopy Storefront 2-Story',
     subtitle: 'Two-story limestone facade with dark metal wrap-around canopy and rooftop billboard',
     stories: 2,
-    // Footprint is the centred enclosing square of the measured package
-    // (actual span 12.92m: rear paving reaches -6.64m, front canopy +6.28m).
-    footprintWidthM: 13.28,
-    footprintDepthM: 13.28,
-    heightM: 10.27,
+    glbScale: 1.46,
+    glbGroundOffsetY: 0.105,
+    wallColliderLocal: { centerX: 0, centerZ: 0, halfX: 6.79, halfZ: 6.79, heightY: 13.5 },
+    footprintWidthM: 19.39,
+    footprintDepthM: 19.39,
+    heightM: 15.1,
     defaultPriceRespite: 200,
     glbPath: '/assets/buildings/shop_canopy_storefront_2story.glb',
     renderImagePath: '/assets/buildings/renders/shop_canopy_storefront_2story.png',
     materialNotes:
       'Cream limestone stucco upper story with framed rectangular windows, dark charcoal steel & frosted-glass cantilevered storefront canopy, double glass entrance doors, and horizontal rooftop banner billboard.',
     billboard: {
-      widthM: 6.3,
-      heightM: 1.45,
-      centerYM: 9.57,
-      offsetFrontZM: 3.79,
+      widthM: 9.2,
+      heightM: 2.13,
+      centerYM: 13.86,
+      offsetFrontZM: 5.53,
     },
     palette: {
       wallHex: '#f2eadb',
@@ -274,19 +364,22 @@ export const SHOP_BUILDING_FORMS: Readonly<Record<ShopBuildingFormId, ShopBuildi
     name: 'Brick Block with Rooftop Deck',
     subtitle: 'Two-story brick and concrete shell with timber rooftop terrace and rooftop billboard',
     stories: 2,
-    footprintWidthM: 12.6,
-    footprintDepthM: 12.6,
-    heightM: 9.53,
+    glbScale: 1.52,
+    glbGroundOffsetY: -0.115,
+    wallColliderLocal: { centerX: 0, centerZ: 0, halfX: 6.54, halfZ: 6.54, heightY: 12.5 },
+    footprintWidthM: 19.15,
+    footprintDepthM: 19.15,
+    heightM: 14.37,
     defaultPriceRespite: 200,
     glbPath: '/assets/buildings/shop_brick_rooftop_deck.glb',
     renderImagePath: '/assets/buildings/renders/shop_brick_rooftop_deck.png',
     materialNotes:
       'Ground-floor concrete frame with clear glass storefront, terracotta brick upper story with multi-pane industrial windows, timber-planked rooftop terrace, blank fascia signboard, and panoramic rooftop billboard with spotlights.',
     billboard: {
-      widthM: 6.4,
-      heightM: 1.6,
-      centerYM: 8.26,
-      offsetFrontZM: 3.71,
+      widthM: 9.73,
+      heightM: 2.43,
+      centerYM: 12.44,
+      offsetFrontZM: 5.64,
     },
     palette: {
       wallHex: '#a85742',
@@ -394,7 +487,7 @@ const BLOCK_COLUMNS: ReadonlyArray<{
 }> = [
   {
     bayIndex: 0,
-    x: -37.5,
+    x: -40.0,
     facing: 'west',
     frontDirX: -1,
     facingYaw: -Math.PI / 2,
@@ -404,7 +497,7 @@ const BLOCK_COLUMNS: ReadonlyArray<{
   },
   {
     bayIndex: 1,
-    x: -22.5,
+    x: -20.0,
     facing: 'east',
     frontDirX: 1,
     facingYaw: Math.PI / 2,
@@ -414,7 +507,7 @@ const BLOCK_COLUMNS: ReadonlyArray<{
   },
   {
     bayIndex: 2,
-    x: 22.5,
+    x: 20.0,
     facing: 'west',
     frontDirX: -1,
     facingYaw: -Math.PI / 2,
@@ -424,7 +517,7 @@ const BLOCK_COLUMNS: ReadonlyArray<{
   },
   {
     bayIndex: 3,
-    x: 37.5,
+    x: 40.0,
     facing: 'east',
     frontDirX: 1,
     facingYaw: Math.PI / 2,
@@ -861,4 +954,77 @@ export function pickCityRentalLotAtWorldPoint(
 export function getCityRentalLotById(slotId: string | null | undefined): CityRentalLotSpec | null {
   if (!slotId) return null;
   return CITY_RENTAL_LOTS.find((l) => l.slotId === slotId) ?? null;
+}
+
+export interface PlacedShopBuildingCollider {
+  id: string;
+  slotId: string;
+  formId: ShopBuildingFormId;
+  x: number;
+  z: number;
+  halfX: number;
+  halfZ: number;
+  rotY: number;
+  heightY: number;
+  mat: 'concrete' | 'metal' | 'wood';
+}
+
+/**
+ * Builds solid world-space OBB wall colliders for every visible placed shop building
+ * (or all 16 lots when QA fit-preview is active). Outer paving remains unobstructed
+ * so players and NPCs can walk up to storefronts and beneath overhead canopies.
+ */
+export function buildPlacedShopBuildingColliders(
+  resolvedLots: ReadonlyArray<CityRentalLotResolvedState>,
+): PlacedShopBuildingCollider[] {
+  const out: PlacedShopBuildingCollider[] = [];
+  for (let i = 0; i < resolvedLots.length; i++) {
+    const entry = resolvedLots[i];
+    if (!entry.isVisibleInWorld || !entry.showShopBuilding || !entry.placedBuildingFormId) {
+      continue;
+    }
+    const form = SHOP_BUILDING_FORMS[entry.placedBuildingFormId];
+    if (!form) continue;
+    const w = form.wallColliderLocal;
+    const yaw = entry.spec.facingYaw;
+    const cosY = Math.cos(yaw);
+    const sinY = Math.sin(yaw);
+    // Match Three.js Object3D.rotation.y transform: x' = x*cos + z*sin, z' = -x*sin + z*cos
+    const worldX = +(entry.spec.x + w.centerX * cosY + w.centerZ * sinY).toFixed(3);
+    const worldZ = +(entry.spec.z - w.centerX * sinY + w.centerZ * cosY).toFixed(3);
+    const isQuarterTurn = Math.abs(cosY) < 1e-4;
+    const halfX = +(isQuarterTurn ? w.halfZ : w.halfX).toFixed(3);
+    const halfZ = +(isQuarterTurn ? w.halfX : w.halfZ).toFixed(3);
+    out.push({
+      id: `shop_building_${entry.spec.slotId}`,
+      slotId: entry.spec.slotId,
+      formId: entry.placedBuildingFormId,
+      x: worldX,
+      z: worldZ,
+      halfX,
+      halfZ,
+      rotY: isQuarterTurn ? 0 : yaw,
+      heightY: w.heightY,
+      mat: 'concrete',
+    });
+  }
+  return out;
+}
+
+/**
+ * Compact deterministic signature of active placed shop building colliders for O(1) cache invalidation.
+ */
+export function computePlacedShopCollidersSignature(
+  resolvedLots: ReadonlyArray<CityRentalLotResolvedState>,
+): string {
+  let sig = '';
+  for (let i = 0; i < resolvedLots.length; i++) {
+    const entry = resolvedLots[i];
+    if (!entry.isVisibleInWorld || !entry.showShopBuilding || !entry.placedBuildingFormId) {
+      continue;
+    }
+    if (sig.length > 0) sig += ',';
+    sig += `${entry.spec.slotId}:${entry.placedBuildingFormId}`;
+  }
+  return sig || 'none';
 }

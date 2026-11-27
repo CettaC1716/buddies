@@ -11,6 +11,7 @@ import { handleNpcChatRequest } from './api/npc-chat.ts';
 import { handleNpcTradeRequest } from './api/npc-trade.ts';
 import { createRemoteAssetsProxyMiddleware } from './api/remote-assets-proxy.ts';
 import { handleCityFeedActionRequest, handleCityFeedGetRequest } from './api/city-feed.ts';
+import { handleShopRentQuoteRequest } from './api/shop-rent-quote.ts';
 import { handleWardrobePurchaseRequest } from './api/wardrobe-purchase.ts';
 import { isValidPrivyAppId } from './src/lib/privyAuthConfig.ts';
 
@@ -145,6 +146,31 @@ function nearSubAccountRelayerDevPlugin(): Plugin {
       mountJsonPostRoute('/api/hana-claim-attest', handleHanaClaimAttestRequest, 'Hana claim attest');
       mountJsonPostRoute('/api/npc-trade', handleNpcTradeRequest, 'NPC trade');
       mountJsonPostRoute('/api/wardrobe-purchase', handleWardrobePurchaseRequest, 'Wardrobe purchase');
+      server.middlewares.use('/api/shop-rent-quote', (req, res, next) => {
+        if (req.method === 'GET') {
+          void handleShopRentQuoteRequest({ action: 'get_config' })
+            .then((out) => {
+              if (res.writableEnded) return;
+              res.statusCode = out.status;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify(out.payload));
+            })
+            .catch((err) => {
+              if (res.writableEnded) return;
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(
+                JSON.stringify({
+                  ok: false,
+                  error: err instanceof Error ? err.message : 'Shop rent quote middleware error',
+                }),
+              );
+            });
+          return;
+        }
+        next();
+      });
+      mountJsonPostRoute('/api/shop-rent-quote', handleShopRentQuoteRequest, 'Shop rent quote');
       server.middlewares.use('/api/city-feed', (req, res, next) => {
         if (req.method === 'GET') {
           void handleCityFeedGetRequest()
@@ -244,8 +270,43 @@ export default defineConfig(({ command, mode }) => {
         output: {
           chunkFileNames: 'assets/chunk-[hash].js',
           manualChunks(id) {
-            if (id.includes('node_modules/three')) return 'vendor-three';
-            if (id.includes('node_modules/@supabase')) return 'vendor-supabase';
+            if (id.includes('node_modules')) {
+              if (id.includes('/three/')) return 'vendor-three';
+              if (id.includes('/@supabase/')) return 'vendor-supabase';
+              if (
+                id.includes('/@privy-io/') ||
+                id.includes('/@hot-labs/') ||
+                id.includes('/viem/') ||
+                id.includes('/@noble/') ||
+                id.includes('/bs58/') ||
+                id.includes('/borsh/')
+              ) {
+                return 'vendor-web3';
+              }
+              if (
+                id.includes('/react/') ||
+                id.includes('/react-dom/') ||
+                id.includes('/scheduler/')
+              ) {
+                return 'vendor-react';
+              }
+              if (id.includes('/lucide-react/') || id.includes('/motion/')) {
+                return 'vendor-ui';
+              }
+              return undefined;
+            }
+            if (id.includes('buddiesBlitzShadersAndAssets')) {
+              return 'game-shaders-assets';
+            }
+            if (
+              id.includes('buddiesAmusementParkBuilder') ||
+              id.includes('buddiesBeachClubBuilder') ||
+              id.includes('buddiesCentralParkBuilder') ||
+              id.includes('buddiesUrbanScooterBuilder') ||
+              id.includes('buddiesLShapedCafeAssets')
+            ) {
+              return 'game-world-builders';
+            }
             return undefined;
           },
         },

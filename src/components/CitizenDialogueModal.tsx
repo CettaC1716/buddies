@@ -56,8 +56,11 @@ import type { NpcEmotionTag } from '../game/npcPersonaRegistry';
 import {
   buildNpcChatSituation,
   extractRecentNpcReplyOpenings,
+  requestNpcProactiveTopic,
   sendNpcChatMessage,
 } from '../game/npcTextChat';
+import { buildLocalProactiveTopic } from '../game/npcProactiveTopics';
+import { NPC_PROACTIVE_TOPIC_EVENT } from '../game/qaDirectorMode';
 import {
   appendNpcChatTurns,
   clearNpcChatTranscript,
@@ -240,6 +243,28 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
   );
 
   const buildOpeningGreeting = (targetProfile: CitizenProfile): string => {
+    const resolvedNamed = resolveNpcId(targetProfile.id);
+    if (resolvedNamed) {
+      const band = getNpcClosenessBand(effectiveClosenessStore, resolvedNamed);
+      const situation = buildNpcChatSituation({
+        npcId: resolvedNamed,
+        placeLabel: (currentPlaceLabel || '').trim() || targetProfile.districtLabel,
+        togethernessState: npcTogethernessState,
+        pacingStore: effectivePacingStore,
+        giftedToday,
+        timePhase: daytimePhase,
+        isRaining,
+        weatherLabel,
+      });
+      const proactive = buildLocalProactiveTopic({
+        npcId: resolvedNamed,
+        closenessBand: band,
+        situation,
+        playerName: playerName || undefined,
+        triggerReason: 'chat_opened',
+      });
+      return proactive.reply;
+    }
     const rec = getCitizenFriendshipRecord(friendshipStore, targetProfile.id);
     const prog = getCitizenHeartProgress(rec.points);
     const dialogue = pickCitizenContextualDialogue({
@@ -254,9 +279,74 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
       : `${dialogue.greeting} Ask me about ${targetProfile.districtLabel} anytime!`;
   };
 
+  const idleProactiveSentRef = useRef<boolean>(false);
+
+  const triggerProactiveTopicNow = (reason: 'idle_pause' | 'qa_manual') => {
+    if (!profile || !namedNpcId) return;
+    const reqId = activeRequestIdRef.current + 1;
+    activeRequestIdRef.current = reqId;
+    const prevNpcText = npcFullTextRef.current.trim();
+    const baseHistory: CitizenChatEntry[] = prevNpcText
+      ? [
+          ...chatHistory,
+          { id: `npc-prev-${Date.now()}`, role: 'npc', text: prevNpcText },
+        ]
+      : [...chatHistory];
+    if (prevNpcText) {
+      setChatHistory(baseHistory);
+    }
+    setActiveTab('sesi_chat');
+    setIsNpcThinking(true);
+    setNpcFullText('');
+    setNpcTypedText('');
+
+    const band = getNpcClosenessBand(effectiveClosenessStore, namedNpcId);
+    const allowLong = canLongConversation(effectiveClosenessStore, namedNpcId);
+    const historyTurns = baseHistory.slice(-8).map((h) => ({ role: h.role, text: h.text }));
+    const situation = buildNpcChatSituation({
+      npcId: namedNpcId,
+      placeLabel: (currentPlaceLabel || '').trim() || profile.districtLabel,
+      togethernessState: npcTogethernessState,
+      pacingStore: effectivePacingStore,
+      giftedToday,
+      timePhase: daytimePhase,
+      isRaining,
+      weatherLabel,
+    });
+    const recentOpenings = extractRecentNpcReplyOpenings(historyTurns, 3);
+
+    void (async () => {
+      const result = await requestNpcProactiveTopic({
+        npcId: namedNpcId,
+        history: historyTurns,
+        closenessBand: band,
+        canLongConversation: allowLong,
+        playerName: playerName || undefined,
+        situation,
+        recentOpenings,
+        triggerReason: reason,
+      });
+      if (activeRequestIdRef.current !== reqId) return;
+      setIsNpcThinking(false);
+      if (!result.ok || !result.reply.trim()) return;
+      const line = result.reply.trim();
+      onNpcConversationTurn?.(namedNpcId, 0, result.emotion);
+      appendNpcChatTurns(accountKey, profile.id, [{ role: 'npc', text: line }]);
+      setNpcFullText(line);
+      setNpcTypedText('');
+      window.setTimeout(() => {
+        chatScrollEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 40);
+    })();
+  };
+
+  const triggerProactiveTopicRef = useRef(triggerProactiveTopicNow);
+  triggerProactiveTopicRef.current = triggerProactiveTopicNow;
+
   useEffect(() => {
     if (!isOpen || !profile) return;
     activeRequestIdRef.current += 1;
+    idleProactiveSentRef.current = false;
     setIsNpcThinking(false);
     setActiveTab(initialTab);
     setGiftFeedback(null);
@@ -278,6 +368,32 @@ export const CitizenDialogueModal: React.FC<CitizenDialogueModalProps> = ({
     // Restore persisted transcript (or show opening greeting when empty) on open or citizen switch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, citizenId, accountKey, openSeq, initialTab]);
+
+  // Natural idle-pause proactive topic initiation (at most 1 gentle starter after 26s of quiet in-person chat)
+  useEffect(() => {
+    if (!isNpcOpen || !namedNpcId || isPhoneChat || isNpcThinking || activeTab !== 'sesi_chat') {
+      return;
+    }
+    if (idleProactiveSentRef.current) return;
+    const timer = window.setTimeout(() => {
+      if (idleProactiveSentRef.current) return;
+      idleProactiveSentRef.current = true;
+      triggerProactiveTopicRef.current('idle_pause');
+    }, 26_000);
+    return () => window.clearTimeout(timer);
+  }, [isNpcOpen, namedNpcId, isPhoneChat, isNpcThinking, activeTab, chatHistory.length, npcFullText]);
+
+  // QA Director / manual proactive topic event hook
+  useEffect(() => {
+    if (!isNpcOpen || !namedNpcId) return;
+    const onProactiveEvent = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ npcId?: NpcId }>).detail;
+      if (!detail?.npcId || detail.npcId !== namedNpcId) return;
+      triggerProactiveTopicRef.current('qa_manual');
+    };
+    window.addEventListener(NPC_PROACTIVE_TOPIC_EVENT, onProactiveEvent);
+    return () => window.removeEventListener(NPC_PROACTIVE_TOPIC_EVENT, onProactiveEvent);
+  }, [isNpcOpen, namedNpcId]);
 
   // Typewriter effect matching Hana/Kai chat drawer cadence
   useEffect(() => {

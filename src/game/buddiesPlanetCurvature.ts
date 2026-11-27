@@ -729,6 +729,31 @@ export function isPointOnInnerTramSidewalk(worldX: number, worldZ: number): bool
   return evaluateInnerTramSidewalkSdf(worldX, worldZ) <= 0.02;
 }
 
+/**
+ * Signed distance to the 4-sided curbed tram-style city sidewalks ("Trotoar Blok")
+ * framing all 4 commercial blocks (`block-nw`, `block-ne`, `block-sw`, `block-se`):
+ * - Outer road asphalt edges: `|x| in [5.20 .. 54.80]`, `|z| in [55.93 .. 104.10]`
+ * - Inner 2x2 commercial lot pad: `|x| in [10.00 .. 50.00]`, `|z| in [60.33 .. 100.33]`
+ * Leaves the inner 40m x 40m lot pad untouched for grass/building paving while cleanly
+ * suppressing grass along all 4 perimeter sidewalks around each block.
+ */
+export function evaluateCommercialBlockSidewalkSdf(px: number, pz: number): number {
+  const ax = Math.abs(px);
+  const az = Math.abs(pz);
+  const dOuter = sdRoundedBox2D(ax, az, 30.0, 80.015, 24.8, 24.085, 0.0);
+  const dInner = sdRoundedBox2D(ax, az, 30.0, 80.33, 20.0, 20.0, 0.0);
+  return Math.max(dOuter, -dInner);
+}
+
+/**
+ * Signed distance to the full raised commercial block plateau (4-sided city sidewalk + inner 4 lots).
+ */
+export function evaluateCommercialBlockPlateauSdf(px: number, pz: number): number {
+  const ax = Math.abs(px);
+  const az = Math.abs(pz);
+  return sdRoundedBox2D(ax, az, 30.0, 80.015, 24.8, 24.085, 0.0);
+}
+
 export function evaluateHaltePlatformSdf(px: number, pz: number): number {
   // Central Halte (shifted inward flush to |x| = 62.20 curb & slightly South to z = +4.6): center (-58.90, 4.6), halfExtents (3.6, 9.4)
   const dCentral = sdRoundedBox2D(px, pz, -58.9, 4.6, 3.6, 9.4, 0.4);
@@ -747,8 +772,10 @@ export function evaluateHaltePlatformSdf(px: number, pz: number): number {
   // 4.40m Outer & Inner Tram Ring Sidewalks around all un-built tram loop perimeters
   const dOuterTramSidewalk = evaluateOuterTramSidewalkSdf(px, pz);
   const dInnerTramSidewalk = evaluateInnerTramSidewalkSdf(px, pz);
+  // 4-sided Commercial Block City Sidewalks (4.80m E/W avenues, 4.40m tram front, 3.77m rear)
+  const dCommercialBlockSidewalk = evaluateCommercialBlockSidewalkSdf(px, pz);
   return Math.min(
-    Math.min(dOuterTramSidewalk, dInnerTramSidewalk),
+    Math.min(dOuterTramSidewalk, Math.min(dInnerTramSidewalk, dCommercialBlockSidewalk)),
     Math.min(
       dGrandCasino,
       Math.min(
@@ -978,6 +1005,15 @@ export function evaluateUrbanSidewalkElevation(worldX: number, worldZ: number): 
     elev = Math.max(
       elev,
       URBAN_SIDEWALK_TOP_Y * (1.0 - smoothstep(0.0, 0.06, dInnerTramSidewalk)),
+    );
+  }
+
+  // 6. Commercial Block Curbed Sidewalk & Full-Block Shop Terrace Plateau (+0.09m)
+  const dCommercialBlock = evaluateCommercialBlockPlateauSdf(worldX, worldZ);
+  if (dCommercialBlock < 0.06) {
+    elev = Math.max(
+      elev,
+      URBAN_SIDEWALK_TOP_Y * (1.0 - smoothstep(0.0, 0.06, dCommercialBlock)),
     );
   }
 

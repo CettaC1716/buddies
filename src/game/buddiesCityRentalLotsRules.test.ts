@@ -4,6 +4,7 @@ import {
   CITY_RENTAL_LOTS,
   CITY_RENTAL_LOT_SIZE_M,
   COMMERCIAL_AVENUE_SPEC,
+  COMMERCIAL_BLOCK_PERIMETERS,
   COMMERCIAL_SIDEWALK_PATROL_WAYPOINTS,
   COMMERCIAL_SIDEWALK_STRIPS,
   DEFAULT_COMMERCIAL_CONFIG,
@@ -11,13 +12,17 @@ import {
   SHOP_BUILDING_FORMS,
   SHOP_BUILDING_FORM_IDS,
   STANDARD_SHOP_FOOTPRINT_SPEC,
+  buildPlacedShopBuildingColliders,
+  computePlacedShopCollidersSignature,
   computeStandardShopPlacementForLot,
   evaluateCityRentalLotConflict,
   resolveCityRentalLotsState,
 } from './buddiesCityRentalLotsRules';
 
-test('Phase 0 block layout: 16 lots in 4 blocks of 4, back-to-back on block centerline, facing west/east avenues', () => {
+test('Phase 0 block layout: 16 lots (20x20m) fill 100% of all 4 commercial block interiors facing west/east avenues', () => {
   assert.equal(CITY_RENTAL_LOTS.length, 16);
+  assert.equal(CITY_RENTAL_LOT_SIZE_M.width, 20.0);
+  assert.equal(CITY_RENTAL_LOT_SIZE_M.depth, 20.0);
 
   const byBlock = new Map<string, typeof CITY_RENTAL_LOTS[number][]>();
   for (const lot of CITY_RENTAL_LOTS) {
@@ -36,16 +41,22 @@ test('Phase 0 block layout: 16 lots in 4 blocks of 4, back-to-back on block cent
   }
 
   assert.equal(byBlock.size, 4);
-  for (const [blockId, blockLots] of byBlock.entries()) {
-    assert.equal(blockLots.length, 4, `Block ${blockId} must have 4 lots`);
+  for (const perim of COMMERCIAL_BLOCK_PERIMETERS) {
+    const blockLots = byBlock.get(perim.blockId) ?? [];
+    assert.equal(blockLots.length, 4, `Block ${perim.blockId} must have 4 lots`);
     const westLots = blockLots.filter((l) => l.facing === 'west');
     const eastLots = blockLots.filter((l) => l.facing === 'east');
-    assert.equal(westLots.length, 2, `Block ${blockId} must have 2 west-facing lots`);
-    assert.equal(eastLots.length, 2, `Block ${blockId} must have 2 east-facing lots`);
+    assert.equal(westLots.length, 2, `Block ${perim.blockId} must have 2 west-facing lots`);
+    assert.equal(eastLots.length, 2, `Block ${perim.blockId} must have 2 east-facing lots`);
+
+    // 4 lots (20x20m = 400 m2 each) fill 100% of the 40m x 40m block interior framed by the 4-sided city sidewalk
+    const innerArea = (perim.xInnerMax - perim.xInnerMin) * (perim.zInnerMax - perim.zInnerMin);
+    const lotsArea = blockLots.reduce((acc, l) => acc + l.width * l.depth, 0);
+    assert.ok(Math.abs(innerArea - lotsArea) < 1e-4, `Lots in ${perim.blockId} must fill 100% of block interior`);
   }
 });
 
-test('Phase 0 building fit: all 3 forms fit strictly within the 14x14m package envelope, centred with per-form margins and never touch', () => {
+test('Phase 0 building fit: all 3 scaled shop forms fit strictly within 19.6x19.6m package cap on 20x20m lots and never overlap', () => {
   assert.equal(SHOP_BUILDING_FORM_IDS.length, 3);
   assert.equal(SHOP_BUILDING_FORMS.glass_corner_3story.name, 'Glass Corner 3-Story');
   assert.equal(SHOP_BUILDING_FORMS.canopy_storefront_2story.name, 'Canopy Storefront 2-Story');
@@ -56,9 +67,9 @@ test('Phase 0 building fit: all 3 forms fit strictly within the 14x14m package e
 
   for (const formId of SHOP_BUILDING_FORM_IDS) {
     const form = SHOP_BUILDING_FORMS[formId];
-    assert.ok(form.footprintWidthM <= STANDARD_SHOP_FOOTPRINT_SPEC.width);
-    assert.ok(form.footprintDepthM <= STANDARD_SHOP_FOOTPRINT_SPEC.depth);
-    // Package standard: centred placement, so every side margin is (15 - footprint) / 2.
+    assert.ok(form.glbScale > 1.3, `${formId} must be scaled up to fill 20x20m lot`);
+    assert.ok(form.footprintWidthM >= 18.5 && form.footprintWidthM <= STANDARD_SHOP_FOOTPRINT_SPEC.width);
+    assert.ok(form.footprintDepthM >= 18.5 && form.footprintDepthM <= STANDARD_SHOP_FOOTPRINT_SPEC.depth);
     const expectedMargin = +(((CITY_RENTAL_LOT_SIZE_M.width - form.footprintWidthM) / 2).toFixed(3));
     assert.ok(expectedMargin >= STANDARD_SHOP_FOOTPRINT_SPEC.sideMarginM);
     for (const lot of CITY_RENTAL_LOTS) {
@@ -86,7 +97,7 @@ test('Phase 0 building fit: all 3 forms fit strictly within the 14x14m package e
   }
 });
 
-test('Phase 0 overlap suppression preserves South-West Model Estate and commercial config defaults match locked values', () => {
+test('Phase 0 overlap suppression, 4.8m block sidewalks, and commercial config defaults match locked values', () => {
   const conflicts = CITY_RENTAL_LOTS.map((lot) => evaluateCityRentalLotConflict(lot));
   const suppressed = conflicts.filter((c) => c.hasConflict);
   assert.equal(suppressed.length, 2, 'SW block west-facing lots overlap Model Estate blue_0');
@@ -109,17 +120,49 @@ test('Phase 0 overlap suppression preserves South-West Model Estate and commerci
   assert.equal(DEFAULT_COMMERCIAL_CONFIG.buildingPricesRespite.canopy_storefront_2story, 200);
   assert.equal(DEFAULT_COMMERCIAL_CONFIG.buildingPricesRespite.brick_rooftop_deck, 200);
 
-  // Amendment 2: 2m sidewalks on widened avenues, never encroaching on lot depth
-  assert.equal(COMMERCIAL_AVENUE_SPEC.sidewalkWidthM, 2.0);
-  assert.equal(COMMERCIAL_AVENUE_SPEC.totalAvenueCrossSectionWidthM, 14.4);
+  // 4.80m curbed tram-style block sidewalks on widened avenues, never encroaching on lot area
+  assert.equal(COMMERCIAL_AVENUE_SPEC.sidewalkWidthM, 4.8);
+  assert.equal(COMMERCIAL_AVENUE_SPEC.totalAvenueCrossSectionWidthM, 20.0);
   assert.equal(COMMERCIAL_SIDEWALK_STRIPS.length, 8);
   assert.ok(COMMERCIAL_SIDEWALK_PATROL_WAYPOINTS.length >= 24);
   for (const strip of COMMERCIAL_SIDEWALK_STRIPS) {
-    assert.equal(strip.widthM, 2.0);
+    assert.equal(strip.widthM, 4.8);
     for (const lot of CITY_RENTAL_LOTS) {
       const overlapsLot =
         strip.maxX > lot.minX && strip.minX < lot.maxX && strip.maxZ > lot.minZ && strip.minZ < lot.maxZ;
-      assert.equal(overlapsLot, false, `Sidewalk ${strip.id} must not take from lot ${lot.slotId}`);
+      assert.equal(overlapsLot, false, `Sidewalk ${strip.id} must not overlap lot ${lot.slotId}`);
     }
   }
+});
+
+test('buildPlacedShopBuildingColliders generates solid wall-only OBB colliders strictly for placed or previewed shops', () => {
+  // Empty lots -> 0 colliders
+  const emptyResolved = resolveCityRentalLotsState({ blueCommanderBases: [], redCommanderBases: [] });
+  assert.equal(buildPlacedShopBuildingColliders(emptyResolved).length, 0);
+  assert.equal(computePlacedShopCollidersSignature(emptyResolved), 'none');
+
+  // Single placed building -> 1 wall collider leaving outer paving walkable
+  const singleResolved = resolveCityRentalLotsState({
+    blueCommanderBases: [],
+    redCommanderBases: [],
+    rentedSlotIds: ['lot-n-01'],
+    placedBuildingBySlotId: { 'lot-n-01': 'canopy_storefront_2story' },
+  });
+  const singleColliders = buildPlacedShopBuildingColliders(singleResolved);
+  assert.equal(singleColliders.length, 1);
+  const c = singleColliders[0];
+  assert.equal(c.slotId, 'lot-n-01');
+  assert.equal(c.x, -40.0);
+  assert.equal(c.z, -70.33);
+  assert.ok(c.halfX > 6.0 && c.halfX < 8.0, 'Wall collider must block building core while leaving paving walkable');
+  assert.ok(c.halfZ > 6.0 && c.halfZ < 8.0);
+  assert.equal(computePlacedShopCollidersSignature(singleResolved), 'lot-n-01:canopy_storefront_2story');
+
+  // QA previewAllBuildingsFit -> all 16 solid building colliders active
+  const previewResolved = resolveCityRentalLotsState({
+    blueCommanderBases: [],
+    redCommanderBases: [],
+    previewAllBuildingsFit: true,
+  });
+  assert.equal(buildPlacedShopBuildingColliders(previewResolved).length, 16);
 });

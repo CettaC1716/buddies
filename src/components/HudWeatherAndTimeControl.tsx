@@ -11,6 +11,7 @@ import {
 import { clampAudioVolumePct } from '../game/buddiesRealEstateKioskRules';
 import { formatClock24h } from '../game/buddiesWeatherSystem';
 import { soundEngine } from '../game/audio';
+import { CERRIA_CITY_NAME } from '../lib/cerriaBrand';
 
 export interface HudWeatherAudioControls {
   isMusicMuted: boolean;
@@ -271,7 +272,7 @@ export function HudWeatherAndTimeControl({
               <div className="flex items-center gap-2 text-right">
                 <div>
                   <div className="text-xs font-semibold text-white/95">{weatherMeta.label}</div>
-                  <div className="text-[10px] text-white/65">Buddies City</div>
+                  <div className="text-[10px] text-white/65">{CERRIA_CITY_NAME}</div>
                 </div>
                 <span aria-hidden="true" className="text-2xl leading-none drop-shadow">
                   {weatherMeta.icon}

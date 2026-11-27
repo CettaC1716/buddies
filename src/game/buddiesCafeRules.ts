@@ -1393,15 +1393,123 @@ export function computeCafeExteriorMistFactor(localX: number, localZ: number): n
 
 export type IndoorOrbitRoomKind = 'cafe_interior' | 'house_visit' | 'casino_interior';
 
+export interface HouseCameraObstructionBox {
+  name?: string;
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  minZ: number;
+  maxZ: number;
+}
+
+/**
+ * Playable envelope for Private House walk-in exploration (`house_visit`).
+ * Spans the full walled courtyard garden (`Col_Courtyard_W/E/N/S`) surrounding
+ * the glass apartment (`houseMinX..houseMaxX, houseMinZ..houseMaxZ`).
+ * The player spawns outside on the stepping stones right in front of the wooden
+ * garden gate (`pintu kayu`) facing inward toward the yard & apartment, and the
+ * glowing exit portal sits at that wooden gate threshold.
+ */
 export const HOUSE_VISIT_INDOOR_BOUNDS = {
-  minX: -5.3,
-  maxX: 5.3,
-  minZ: -3.7,
-  maxZ: 3.7,
-  spawnX: 0.0,
-  spawnZ: 0.65,
-  spawnYaw: Math.PI / 2,
+  minX: -8.67,
+  maxX: 8.67,
+  minZ: -6.87,
+  maxZ: 7.47,
+  houseMinX: -5.3,
+  houseMaxX: 5.3,
+  houseMinZ: -3.7,
+  houseMaxZ: 3.7,
+  spawnX: -6.2,
+  spawnZ: 6.15,
+  spawnYaw: 2.08,
+  exitX: -6.95,
+  exitZ: 6.92,
+  exitY: -0.125,
+  exitTriggerRadius: 1.75,
 } as const;
+
+/**
+ * Vertical scale factor applied to the apartment's walls/ceilings/roof in
+ * `buddiesHouseSceneBuilder.ts` (kept in sync here for fallback camera AABBs).
+ */
+const HOUSE_CAMERA_SHELL_HEIGHT_SCALE = 1.24;
+
+/**
+ * Default room-local 3D AABBs of the Glass Modern apartment's solid walls,
+ * interior partitions, glass facades, courtyard perimeter walls, and raised
+ * roof/ceiling slabs. Used from frame 1 (before async GLB load completes) and
+ * in deterministic unit tests so the camera never penetrates any wall or roof.
+ */
+export const DEFAULT_HOUSE_VISIT_CAMERA_OBSTRUCTION_BOXES: readonly HouseCameraObstructionBox[] = [
+  // Courtyard perimeter walls
+  { name: 'Col_Courtyard_W', minX: -9.13, maxX: -8.67, minY: -0.3, maxY: 3.0, minZ: -7.4, maxZ: 8.0 },
+  { name: 'Col_Courtyard_E', minX: 8.67, maxX: 9.13, minY: -0.3, maxY: 3.0, minZ: -7.4, maxZ: 8.0 },
+  { name: 'Col_Courtyard_N', minX: -9.2, maxX: 9.2, minY: -0.3, maxY: 3.0, minZ: -7.33, maxZ: -6.87 },
+  { name: 'Col_Courtyard_S', minX: -9.2, maxX: 9.2, minY: -0.3, maxY: 3.0, minZ: 7.47, maxZ: 7.93 },
+  // Exterior apartment walls (leaving the south front doorway x in [-1.55, -0.65] open!)
+  { name: 'Col_Wall_West', minX: -5.3, maxX: -5.14, minY: 0, maxY: 3.2 * HOUSE_CAMERA_SHELL_HEIGHT_SCALE, minZ: -3.7, maxZ: 3.7 },
+  { name: 'Col_Wall_East', minX: 5.14, maxX: 5.3, minY: 0, maxY: 2.85 * HOUSE_CAMERA_SHELL_HEIGHT_SCALE, minZ: -3.7, maxZ: 3.7 },
+  { name: 'Col_Wall_South_L', minX: -5.3, maxX: -1.55, minY: 0, maxY: 3.2 * HOUSE_CAMERA_SHELL_HEIGHT_SCALE, minZ: 3.54, maxZ: 3.7 },
+  { name: 'Col_Wall_South_R', minX: -0.65, maxX: 5.3, minY: 0, maxY: 2.85 * HOUSE_CAMERA_SHELL_HEIGHT_SCALE, minZ: 3.54, maxZ: 3.7 },
+  { name: 'Col_Wall_North_Kitchen', minX: -5.3, maxX: -2.2, minY: 0, maxY: 3.2 * HOUSE_CAMERA_SHELL_HEIGHT_SCALE, minZ: -3.7, maxZ: -3.54 },
+  { name: 'Col_Wall_North_Mid', minX: 0.5, maxX: 2.2, minY: 0, maxY: 2.85 * HOUSE_CAMERA_SHELL_HEIGHT_SCALE, minZ: -3.7, maxZ: -3.54 },
+  { name: 'Col_Wall_North_East', minX: 4.0, maxX: 5.3, minY: 0, maxY: 2.85 * HOUSE_CAMERA_SHELL_HEIGHT_SCALE, minZ: -3.7, maxZ: -3.54 },
+  { name: 'Col_MainSlide_Glass', minX: -2.25, maxX: 0.55, minY: 0, maxY: 3.0 * HOUSE_CAMERA_SHELL_HEIGHT_SCALE, minZ: -3.72, maxZ: -3.52 },
+  { name: 'Col_BedSlide_Glass', minX: 2.15, maxX: 4.05, minY: 0, maxY: 2.84 * HOUSE_CAMERA_SHELL_HEIGHT_SCALE, minZ: -3.72, maxZ: -3.52 },
+  // Interior partitions (leaving bedroom door z in [-0.8, 0.1] and bath door z in [1.3, 2.2] open!)
+  { name: 'Col_Part_Center_N', minX: 0.84, maxX: 0.96, minY: 0, maxY: 3.0 * HOUSE_CAMERA_SHELL_HEIGHT_SCALE, minZ: -3.54, maxZ: -0.8 },
+  { name: 'Col_Part_Center_M', minX: 0.84, maxX: 0.96, minY: 0, maxY: 3.0 * HOUSE_CAMERA_SHELL_HEIGHT_SCALE, minZ: 0.1, maxZ: 1.3 },
+  { name: 'Col_Part_Center_S', minX: 0.84, maxX: 0.96, minY: 0, maxY: 3.0 * HOUSE_CAMERA_SHELL_HEIGHT_SCALE, minZ: 2.2, maxZ: 3.54 },
+  { name: 'Col_Part_BathBed', minX: 0.96, maxX: 5.14, minY: 0, maxY: 2.85 * HOUSE_CAMERA_SHELL_HEIGHT_SCALE, minZ: 0.64, maxZ: 0.76 },
+  // Raised ceiling & roof slabs
+  { name: 'Ceiling_Main_OakSoffit', minX: -5.66, maxX: 1.06, minY: 2.82 * HOUSE_CAMERA_SHELL_HEIGHT_SCALE, maxY: 3.53 * HOUSE_CAMERA_SHELL_HEIGHT_SCALE, minZ: -4.06, maxZ: 4.06 },
+  { name: 'Roof_East_Ceiling', minX: 0.9, maxX: 5.54, minY: 2.85 * HOUSE_CAMERA_SHELL_HEIGHT_SCALE, maxY: 3.25 * HOUSE_CAMERA_SHELL_HEIGHT_SCALE, minZ: -3.92, maxZ: 3.92 },
+];
+
+/** Returns true when `(x, z)` lies inside the apartment building footprint. */
+export function isPointInsideHouseFootprint(x: number, z: number, pad = 0): boolean {
+  return (
+    x >= HOUSE_VISIT_INDOOR_BOUNDS.houseMinX - pad &&
+    x <= HOUSE_VISIT_INDOOR_BOUNDS.houseMaxX + pad &&
+    z >= HOUSE_VISIT_INDOOR_BOUNDS.houseMinZ - pad &&
+    z <= HOUSE_VISIT_INDOOR_BOUNDS.houseMaxZ + pad
+  );
+}
+
+/**
+ * Room-local ground surface Y in `house_visit` so the character's feet sit
+ * flush on the apartment interior floor (`0.00`), front entry porch (`-0.05`),
+ * north wooden deck (`-0.02`), stepping stones (`-0.13`), and courtyard lawn
+ * (`-0.18`).
+ */
+export function getHouseVisitFloorY(x: number, z: number): number {
+  if (isPointInsideHouseFootprint(x, z)) {
+    return 0;
+  }
+  // Entry porch directly outside the south glass door
+  if (x >= -2.18 && x <= -0.02 && z >= 3.7 && z <= 4.42) {
+    return -0.05;
+  }
+  // North wooden deck behind the apartment
+  if (x >= -5.32 && x <= 5.32 && z >= -6.06 && z <= -3.7) {
+    return -0.02;
+  }
+  // Stepping-stone corridor from the wooden garden gate to the entry porch
+  if (x >= -7.7 && x <= -1.3 && z >= 4.2 && z <= 7.4) {
+    // Line from (-7.03, 6.97) to (-1.51, 4.46)
+    const lx = -1.51 - -7.03;
+    const lz = 4.46 - 6.97;
+    const lenSq = lx * lx + lz * lz;
+    const t = clampNum(((x - -7.03) * lx + (z - 6.97) * lz) / lenSq, 0, 1);
+    const px = -7.03 + t * lx;
+    const pz = 6.97 + t * lz;
+    if (Math.hypot(x - px, z - pz) <= 0.62) {
+      return -0.13;
+    }
+  }
+  return -0.18;
+}
 
 export const CASINO_INDOOR_CAMERA_BOUNDS = {
   minX: -9.85,
@@ -1433,17 +1541,19 @@ export const INDOOR_ORBIT_CAMERA_CONFIG = {
   },
   house_visit: {
     fovDeg: 56,
-    defaultYaw: 0.0,
-    defaultPitch: 0.50,
-    defaultDist: 4.55,
+    defaultYaw: -1.16,
+    defaultPitch: 0.46,
+    defaultDist: 3.75,
     minPitch: 0.14,
-    maxPitch: 0.84,
-    minDist: 2.1,
-    maxDist: 5.8,
+    maxPitch: 0.82,
+    minDist: 1.85,
+    maxDist: 5.4,
     lookHeightOffset: 0.96,
-    minCamHeightOffset: 0.50,
-    maxCamHeightOffset: 3.55,
+    minCamHeightOffset: 0.44,
+    maxCamHeightOffset: 3.50,
+    indoorMaxCamHeightOffset: 3.22,
     wallMargin: 0.42,
+    cameraCollisionPadding: 0.24,
     wallLookShiftFactor: 0.32,
     maxWallLookShift: 0.55,
   },
@@ -1473,6 +1583,8 @@ export interface IndoorRoomOrbitCameraPoseInput {
   yaw: number;
   pitch: number;
   dist: number;
+  /** Optional live 3D wall/partition/roof AABBs (room-local) for `house_visit`. */
+  obstructionBoxes?: readonly HouseCameraObstructionBox[];
 }
 
 export interface IndoorRoomOrbitCameraPose {
@@ -1483,10 +1595,218 @@ export interface IndoorRoomOrbitCameraPose {
   lookX: number;
   lookY: number;
   lookZ: number;
+  /** Ratio `[0..1]` of unobstructed ray length remaining after wall pull-in. */
+  obstructionRatio?: number;
 }
 
 function clampNum(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
+}
+
+/**
+ * Exact slab intersection of segment `P(t) = A + t * (B - A)` (`t ∈ [0, 1]`)
+ * against an axis-aligned box padded by `pad`. Returns the entry `t` if the
+ * segment enters the padded box, or `1` if unobstructed. If `A` already lies
+ * strictly inside the box, skips that box so the camera never collapses to 0.
+ */
+function intersectSegmentPaddedAabb(
+  ax: number,
+  ay: number,
+  az: number,
+  dx: number,
+  dy: number,
+  dz: number,
+  box: HouseCameraObstructionBox,
+  pad: number,
+): number {
+  const minX = box.minX - pad;
+  const maxX = box.maxX + pad;
+  const minY = box.minY - pad;
+  const maxY = box.maxY + pad;
+  const minZ = box.minZ - pad;
+  const maxZ = box.maxZ + pad;
+
+  // If the ray origin itself is inside the padded box, ignore it to avoid
+  // locking the camera to zero distance when brushing beside a wall.
+  if (
+    ax > minX &&
+    ax < maxX &&
+    ay > minY &&
+    ay < maxY &&
+    az > minZ &&
+    az < maxZ
+  ) {
+    return 1;
+  }
+
+  let tmin = 0;
+  let tmax = 1;
+
+  // X slab
+  if (Math.abs(dx) < 1e-8) {
+    if (ax < minX || ax > maxX) return 1;
+  } else {
+    const inv = 1 / dx;
+    let t1 = (minX - ax) * inv;
+    let t2 = (maxX - ax) * inv;
+    if (t1 > t2) {
+      const tmp = t1;
+      t1 = t2;
+      t2 = tmp;
+    }
+    if (t1 > tmin) tmin = t1;
+    if (t2 < tmax) tmax = t2;
+    if (tmin > tmax) return 1;
+  }
+
+  // Y slab
+  if (Math.abs(dy) < 1e-8) {
+    if (ay < minY || ay > maxY) return 1;
+  } else {
+    const inv = 1 / dy;
+    let t1 = (minY - ay) * inv;
+    let t2 = (maxY - ay) * inv;
+    if (t1 > t2) {
+      const tmp = t1;
+      t1 = t2;
+      t2 = tmp;
+    }
+    if (t1 > tmin) tmin = t1;
+    if (t2 < tmax) tmax = t2;
+    if (tmin > tmax) return 1;
+  }
+
+  // Z slab
+  if (Math.abs(dz) < 1e-8) {
+    if (az < minZ || az > maxZ) return 1;
+  } else {
+    const inv = 1 / dz;
+    let t1 = (minZ - az) * inv;
+    let t2 = (maxZ - az) * inv;
+    if (t1 > t2) {
+      const tmp = t1;
+      t1 = t2;
+      t2 = tmp;
+    }
+    if (t1 > tmin) tmin = t1;
+    if (t2 < tmax) tmax = t2;
+    if (tmin > tmax) return 1;
+  }
+
+  return tmin >= 0 && tmin <= 1 ? tmin : 1;
+}
+
+/**
+ * Resolves 3D wall/partition/courtyard/roof obstructions along the segment from
+ * `look` to `desiredCam` in room-local coordinates so the `house_visit` camera
+ * stays strictly inside the playable space and never clips through any wall.
+ */
+export function resolveHouseVisitCameraObstruction(
+  anchorX: number,
+  anchorZ: number,
+  lookX: number,
+  lookLocalY: number,
+  lookZ: number,
+  desiredCamX: number,
+  desiredCamLocalY: number,
+  desiredCamZ: number,
+  obstructionBoxes: readonly HouseCameraObstructionBox[],
+  padding = INDOOR_ORBIT_CAMERA_CONFIG.house_visit.cameraCollisionPadding,
+): {
+  lookX: number;
+  lookLocalY: number;
+  lookZ: number;
+  camX: number;
+  camLocalY: number;
+  camZ: number;
+  obstructionRatio: number;
+} {
+  // 1. Ensure the look target itself never shifts behind a wall from the avatar.
+  let safeLookX = lookX;
+  let safeLookZ = lookZ;
+  const shiftDx = lookX - anchorX;
+  const shiftDz = lookZ - anchorZ;
+  if (shiftDx * shiftDx + shiftDz * shiftDz > 1e-6) {
+    let minShiftT = 1;
+    for (let i = 0; i < obstructionBoxes.length; i++) {
+      const t = intersectSegmentPaddedAabb(
+        anchorX,
+        lookLocalY,
+        anchorZ,
+        shiftDx,
+        0,
+        shiftDz,
+        obstructionBoxes[i],
+        padding * 0.75,
+      );
+      if (t < minShiftT) minShiftT = t;
+    }
+    if (minShiftT < 1) {
+      const safeT = Math.max(0, minShiftT - 0.02);
+      safeLookX = anchorX + shiftDx * safeT;
+      safeLookZ = anchorZ + shiftDz * safeT;
+    }
+  }
+
+  // 2. Raycast from `safeLook` to `desiredCam` against every solid wall/partition/roof box.
+  const rayDx = desiredCamX - safeLookX;
+  const rayDy = desiredCamLocalY - lookLocalY;
+  const rayDz = desiredCamZ - safeLookZ;
+  const rayLen = Math.hypot(rayDx, rayDy, rayDz);
+
+  let hitT = 1;
+  if (rayLen > 1e-5) {
+    for (let i = 0; i < obstructionBoxes.length; i++) {
+      const t = intersectSegmentPaddedAabb(
+        safeLookX,
+        lookLocalY,
+        safeLookZ,
+        rayDx,
+        rayDy,
+        rayDz,
+        obstructionBoxes[i],
+        padding,
+      );
+      if (t < hitT) hitT = t;
+    }
+  }
+
+  // Keep a small minimum pullback distance so the camera doesn't clip inside the avatar head.
+  const minDistFromLook = 0.55;
+  const minT = rayLen > minDistFromLook ? minDistFromLook / rayLen : 1;
+  const clampedT = hitT < 1 ? Math.max(minT, hitT) : 1;
+
+  const wallMargin = INDOOR_ORBIT_CAMERA_CONFIG.house_visit.wallMargin;
+  const camX = clampNum(
+    safeLookX + rayDx * clampedT,
+    HOUSE_VISIT_INDOOR_BOUNDS.minX + wallMargin,
+    HOUSE_VISIT_INDOOR_BOUNDS.maxX - wallMargin,
+  );
+  const camZ = clampNum(
+    safeLookZ + rayDz * clampedT,
+    HOUSE_VISIT_INDOOR_BOUNDS.minZ + wallMargin,
+    HOUSE_VISIT_INDOOR_BOUNDS.maxZ - wallMargin,
+  );
+  const camFloorY = getHouseVisitFloorY(camX, camZ);
+  const camMaxY =
+    isPointInsideHouseFootprint(anchorX, anchorZ) || isPointInsideHouseFootprint(camX, camZ, 0.25)
+      ? INDOOR_ORBIT_CAMERA_CONFIG.house_visit.indoorMaxCamHeightOffset
+      : INDOOR_ORBIT_CAMERA_CONFIG.house_visit.maxCamHeightOffset;
+  const camLocalY = clampNum(
+    lookLocalY + rayDy * clampedT,
+    camFloorY + INDOOR_ORBIT_CAMERA_CONFIG.house_visit.minCamHeightOffset,
+    camMaxY,
+  );
+
+  return {
+    lookX: safeLookX,
+    lookLocalY,
+    lookZ: safeLookZ,
+    camX,
+    camLocalY,
+    camZ,
+    obstructionRatio: clampedT,
+  };
 }
 
 function clampCafeCameraLineOfSightXZ(
@@ -1528,10 +1848,11 @@ function clampCafeCameraLineOfSightXZ(
 }
 
 /**
- * Computes the elevated 3/4 room-overview orbital camera pose for both `cafe_interior` and
- * `house_visit`. Preserves full 360-degree user yaw/pitch rotation & wheel zoom while strictly
- * containing the camera inside room walls/ceilings and smoothly sliding the look target inward
- * when backing against a wall so the room overview never collapses onto the top of the avatar's head.
+ * Computes the elevated 3/4 room-overview orbital camera pose for `cafe_interior`,
+ * `casino_interior`, and `house_visit`. Preserves full 360-degree user yaw/pitch
+ * rotation & wheel zoom while strictly containing the camera inside playable
+ * bounds/walls/ceilings and smoothly sliding the look target inward when backing
+ * against a wall.
  */
 export function computeIndoorRoomOrbitCameraPose(
   input: IndoorRoomOrbitCameraPoseInput,
@@ -1633,6 +1954,44 @@ export function computeIndoorRoomOrbitCameraPose(
   const horizRatio = clampNum(actualHoriz / desiredHoriz, 0.4, 1.0);
   const adjustedVert = desiredVert * (0.80 + 0.20 * horizRatio);
 
+  if (input.roomKind === 'house_visit') {
+    const anchorFloorY = getHouseVisitFloorY(input.anchorX, input.anchorZ);
+    const lookLocalY = anchorFloorY + cfg.lookHeightOffset;
+    const camMaxLocalY = isPointInsideHouseFootprint(input.anchorX, input.anchorZ)
+      ? INDOOR_ORBIT_CAMERA_CONFIG.house_visit.indoorMaxCamHeightOffset
+      : cfg.maxCamHeightOffset;
+    const desiredCamLocalY = clampNum(
+      lookLocalY + adjustedVert,
+      anchorFloorY + cfg.minCamHeightOffset,
+      camMaxLocalY,
+    );
+    const boxes =
+      input.obstructionBoxes && input.obstructionBoxes.length > 0
+        ? input.obstructionBoxes
+        : DEFAULT_HOUSE_VISIT_CAMERA_OBSTRUCTION_BOXES;
+    const resolved = resolveHouseVisitCameraObstruction(
+      input.anchorX,
+      input.anchorZ,
+      clampedLookXZ.x,
+      lookLocalY,
+      clampedLookXZ.z,
+      clampedCamXZ.x,
+      desiredCamLocalY,
+      clampedCamXZ.z,
+      boxes,
+    );
+    return {
+      fovDeg: cfg.fovDeg,
+      camX: resolved.camX,
+      camY: input.originY + resolved.camLocalY,
+      camZ: resolved.camZ,
+      lookX: resolved.lookX,
+      lookY: input.originY + resolved.lookLocalY,
+      lookZ: resolved.lookZ,
+      obstructionRatio: resolved.obstructionRatio,
+    };
+  }
+
   const lookY = input.originY + cfg.lookHeightOffset;
   const camY = clampNum(
     lookY + adjustedVert,
@@ -1650,5 +2009,6 @@ export function computeIndoorRoomOrbitCameraPose(
     lookZ: clampedLookXZ.z,
   };
 }
+
 
 

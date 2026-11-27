@@ -159,10 +159,10 @@ export const CENTRAL_PARK_MASTERPLAN = {
     totalHeight: 5.55,
   },
   boutiqueTower: {
-    x: 12.2,
+    x: 6.6,
     z: -0.4,
     yaw: Math.PI / 2, // Front storefront faces East (+X) onto the Central Cascade Fountain
-    halfX: 4.4, // World X span [7.8 .. 16.6]
+    halfX: 4.4, // World X span [2.2 .. 11.0] (10.16m clear of West curb -9.50)
     halfZ: 4.8, // World Z span [-5.2 .. +4.4]
     groundFloorHeight: 5.2,
     terraceWingHeight: 8.3,
@@ -208,9 +208,9 @@ export const CENTRAL_PARK_MASTERPLAN = {
 export const CENTRAL_PARK_FENCE_RUNS: readonly CentralParkFenceSegmentSpec[] = [];
 
 /**
- * 10 Urban Plaza Benches: 6 Sculpted Cast-Stone Solid Wave Benches (`solid_wave`,
- * matching `media_1795017982455_f313bc74.jpg`) + 4 Classic Slatted Teak & Iron Benches
- * framing the South Lawn Bed and Fountain Promenade (`media_1795017967481_ada46a69.jpg`).
+ * 7 Urban Plaza Benches: 6 Sculpted Cast-Stone Solid Wave Benches (`solid_wave`)
+ * + 1 Classic Slatted Teak & Iron Bench (`urban_fountain_bench_nw`) positioned
+ * south-west of the Wisteria Pond facing due South (`rotY = 0`) toward the Central Fountain.
  */
 export const CENTRAL_PARK_BENCHES: readonly CentralParkBenchSpec[] = [
   { id: 'urban_wave_bench_west_n', style: 'solid_wave', x: 0.5, z: -8.8, rotY: 0, planterSide: 'none' },
@@ -220,35 +220,11 @@ export const CENTRAL_PARK_BENCHES: readonly CentralParkBenchSpec[] = [
   { id: 'urban_wave_bench_ne', style: 'solid_wave', x: 43.2, z: -14.2, rotY: -Math.PI * 0.25, planterSide: 'none' },
   { id: 'urban_wave_bench_se', style: 'solid_wave', x: 43.2, z: 13.6, rotY: -Math.PI * 0.75, planterSide: 'none' },
   {
-    id: 'urban_lawn_bench_n',
-    style: 'classic_teak',
-    x: 22.8,
-    z: 6.2,
-    rotY: Math.atan2(6.7, -6.2),
-    planterSide: 'both',
-  },
-  {
-    id: 'urban_lawn_bench_s',
-    style: 'classic_teak',
-    x: 36.2,
-    z: -6.2,
-    rotY: Math.atan2(-6.7, 6.2),
-    planterSide: 'both',
-  },
-  {
     id: 'urban_fountain_bench_nw',
     style: 'classic_teak',
-    x: 22.8,
-    z: -6.2,
-    rotY: Math.atan2(6.7, 6.2),
-    planterSide: 'both',
-  },
-  {
-    id: 'urban_fountain_bench_se',
-    style: 'classic_teak',
-    x: 36.2,
-    z: 6.2,
-    rotY: Math.atan2(-6.7, -6.2),
+    x: 23.6,
+    z: -10.8,
+    rotY: 0, // Faces due South (+Z) toward the Civic Cascade Fountain
     planterSide: 'both',
   },
 ];
@@ -325,13 +301,11 @@ export const CENTRAL_PARK_BOTANICAL_BEDS: readonly CentralParkBotanicalClusterSp
   }
 
   // Boutique Tower (now Vintage Cafe) & Cafe Pavilion Side Borders.
-  // Polish pass relocations: the west pair moved from x 7.2 to x 1.0 (the
-  // rescaled Vintage Cafe body now covers x 7.2) and the east pair from
-  // x 49.6 to x 52.6 (the rescaled Bites & Sips body now covers x 49.6);
-  // both pairs keep flanking their buildings on the plaza floor.
+  // The west pair flanks the westward-shifted Vintage Cafe body (west wall x = 0.94)
+  // cleanly at x = -0.8; the east pair flanks Cozy Bites & Sips at x = 52.6.
   for (const [bx, bz, sp, cv] of [
-    [1.0, -4.6, 'hydrangea', 1],
-    [1.0, 3.8, 'english_rose', 0],
+    [-0.8, -4.6, 'hydrangea', 1],
+    [-0.8, 3.8, 'english_rose', 0],
     [52.6, -4.2, 'english_lavender', 1],
     [52.6, 3.0, 'hydrangea', 2],
   ] as const) {
@@ -497,48 +471,32 @@ export function getCentralParkObstacles(): StaticWorldStructureObb[] {
   });
 
   // 2. Vintage Cafe (West Wing) — owner GLB body box.
-  // The Boutique & Rooftop Garden Tower visual is now the owner-supplied
-  // Vintage Cafe GLB (cafe_vintage.glb, yaw PI/2). Its body (the source
-  // model's COL_WALL_Building) spans local x/z [-4.04..4.04]. The mount
-  // scales the model by 1.436 (door-height proportion pass, see
-  // buddiesUrbanPlazaBuildingsBuilder) and shifts the origin west to
-  // (10.52, -0.4) so the scaled door stays on its anchor, so the body
-  // maps to world x [4.72..16.32], z [-6.20..5.00] — centre (10.52, -0.4),
-  // half extents 5.80. The collider tracks the model's real walls (+0.2m
-  // margin, as before) instead of the retired procedural shell (8.8 x
-  // 9.6m), so no invisible wall crosses the model's plaza frontage, and
-  // the tower above stays inside the same footprint.
+  // Mounted at (6.6, -0.4), yaw PI/2, character-balanced scale 1.40:
+  // body walls (local +/-4.04) span world x [0.94..12.26], z [-6.06..+5.26]
+  // (+0.2m collider margin -> halfX/halfZ = 5.86m, heightY = 15.76m),
+  // leaving >10m margin to outer West curb (-9.50) and wide east promenade to the Fountain.
   obs.push({
     id: 'urban_plaza_boutique_tower',
-    x: 10.52,
+    x: 6.6,
     z: -0.4,
-    halfX: 6.0,
-    halfZ: 6.0,
+    halfX: 5.86,
+    halfZ: 5.86,
     rotY: 0,
-    heightY: 16.17,
+    heightY: 15.76,
     mat: 'concrete',
   });
 
   // 3. Cozy Bites & Sips Cafe Pavilion (East Wing) — owner GLB body box.
-  // The pavilion visual is now the owner-supplied GLB (bites_sips_pavilion.glb,
-  // placed at the masterplan anchor, yaw -PI/2, scaled by 1.489 in the
-  // door-height proportion pass — see buddiesUrbanPlazaBuildingsBuilder).
-  // Its cafe body (the source model's COL_WALL_CafeBody) spans local
-  // x [-3.14..4.14], z [-4.14..3.14], which scaled and under that yaw maps
-  // to world x [40.32..51.56], z [-5.48..5.76] — centre (45.94, 0.14),
-  // half extents 5.42. The collider tracks the model's real walls (+0.2m
-  // margin, as before) instead of the retired procedural shell (7.2 x
-  // 8.2m centred on the anchor), so no invisible wall crosses the model's
-  // plaza frontage or door, and the body no longer pokes out past its
-  // collider on the east side.
+  // Mounted at (45.2, -0.6), yaw -PI/2, character-balanced scale 1.48:
+  // body walls (local x [-3.14..4.14], z [-4.14..3.14]) -> half extents 5.39 + 0.20 = 5.59m.
   obs.push({
     id: 'urban_plaza_cozy_cafe',
     x: 45.94,
     z: 0.14,
-    halfX: 5.62,
-    halfZ: 5.62,
+    halfX: 5.59,
+    halfZ: 5.59,
     rotY: 0,
-    heightY: 6.94,
+    heightY: 6.92,
     mat: 'concrete',
   });
 
@@ -569,23 +527,21 @@ export function getCentralParkObstacles(): StaticWorldStructureObb[] {
   });
 
   // 6. Central Urban Plaza Beauty Salon ("BEAUTY & GLOW / GLOW STUDIO", South)
-  // Owner GLB body box: the model's walls span local +/-4.40m, mounted at
-  // SALON_GLB_SCALE (1.289) around origin (29.54, 15.0) — see
-  // buddiesBeautySalonBuilder / buddiesBeautySalonRules. The collider
-  // tracks the scaled real walls (+0.2m margin, as before) instead of the
-  // retired procedural shell (12.6 x 8.8m).
+  // Owner GLB body box: walls span local +/-4.40m, mounted at SALON_EXTERIOR_GLB_SCALE
+  // (1.40, calibrated for the 3.31m outdoor avatar) around origin (29.87, 14.90) so its
+  // north doorway aligns exactly with SALON_EXTERIOR_DOOR_TRIGGER.doorX (25.74).
   obs.push({
     id: 'urban_plaza_beauty_salon',
-    x: 29.54,
-    z: 15.0,
-    halfX: 5.87,
-    halfZ: 5.87,
+    x: 29.87,
+    z: 14.9,
+    halfX: 6.36,
+    halfZ: 6.36,
     rotY: 0,
-    heightY: 12.61,
+    heightY: 13.69,
     mat: 'concrete',
   });
 
-  // 7. 10 Urban Plaza Benches (6 Sculpted Wave + 4 Classic Teak)
+  // 7. 7 Urban Plaza Benches (6 Sculpted Wave + 1 Classic Teak south-west of Wisteria Pond)
   for (const bench of CENTRAL_PARK_BENCHES) {
     obs.push({
       id: bench.id,

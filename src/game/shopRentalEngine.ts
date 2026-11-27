@@ -5,6 +5,9 @@ import {
   type CommercialSystemConfig,
   type ShopBuildingFormId,
 } from './buddiesCityRentalLotsRules';
+import { MS_PER_DAY } from '../lib/cerriaBrand';
+
+export { MS_PER_DAY };
 
 /**
  * ============================================================================
@@ -18,8 +21,6 @@ import {
  * - Extension is always counted from current expiry (never truncating remaining days).
  * - Expiry past grace frees the lot and returns any placed building to the owner's My Things.
  */
-
-export const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export interface SignedRentPriceQuote {
   lotId: string;

@@ -36,13 +36,13 @@ describe('phoneHomeCityNews & balance ordering', () => {
         createdAtMs: 1_700_000_000_000,
       },
       latestUnreadLetter: {
-        title: 'Welcome gift from Buddies City Hall',
+        title: 'Welcome gift from Cerria City Hall',
         createdAt: new Date(1_700_000_050_000).toISOString(),
         isRead: false,
       },
     });
     assert.equal(summary.targetApp, 'letters');
-    assert.equal(summary.headline, 'Welcome gift from Buddies City Hall');
+    assert.equal(summary.headline, 'Welcome gift from Cerria City Hall');
   });
 
   it('shows latest City Feed post and routes to city_feed when newer', () => {
@@ -67,6 +67,9 @@ describe('phoneHomeCityNews & balance ordering', () => {
   it('provides a city pulse fallback when no posts or letters exist yet', () => {
     const summary = buildCityNewsCardSummary({ onlinePeersCount: 4 });
     assert.equal(summary.targetApp, 'city_feed');
-    assert.match(summary.headline, /4 neighbors/);
+    assert.equal(summary.headline, '4 neighbors out in Cerria');
+
+    const emptySummary = buildCityNewsCardSummary({ onlinePeersCount: 0 });
+    assert.equal(emptySummary.headline, 'Cerria City Pulse');
   });
 });
