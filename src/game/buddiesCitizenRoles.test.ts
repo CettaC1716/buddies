@@ -33,7 +33,7 @@ test('Citizen roster covers all 8 Coral Island-inspired villagers and resolves m
 
   const mira = getCitizenProfile('citizen_mira');
   assert.ok(mira);
-  assert.equal(mira.roleBadge, 'ARTIST');
+  assert.equal(mira.roleBadge, 'DANCER');
   assert.equal(mira.appearance.baseGlbVariant, 'player');
   assert.equal(mira.appearance.idleOverrideClip, 'mira_idle.001');
   assert.equal(mira.appearance.walkOverrideClip, 'mira_walk.001');
@@ -45,7 +45,7 @@ test('Citizen roster covers all 8 Coral Island-inspired villagers and resolves m
   assert.equal(mira.appearance.equippedFeetUrl, undefined);
   const bima = getCitizenProfile('citizen_bima');
   assert.ok(bima);
-  assert.equal(bima.roleBadge, 'RIDER');
+  assert.equal(bima.roleBadge, 'CITIZEN');
   assert.equal(bima.appearance.idleOverrideClip, 'bima_idle.001');
   assert.equal(bima.appearance.walkOverrideClip, 'bima_walk.001');
   assert.equal(bima.appearance.runOverrideClip, 'bima_run.001');
@@ -56,6 +56,7 @@ test('Citizen roster covers all 8 Coral Island-inspired villagers and resolves m
   assert.ok(bima.appearance.equippedFeetUrl);
   const raka = getCitizenProfile('city_plaza_raka');
   assert.ok(raka);
+  assert.equal(raka.roleBadge, 'SECURITY');
   assert.equal(raka.appearance.baseGlbVariant, 'player');
   assert.equal(raka.appearance.idleOverrideClip, 'raka_idle.001');
   assert.equal(raka.appearance.walkOverrideClip, 'raka_walk.001');
@@ -73,12 +74,14 @@ test('Citizen roster covers all 8 Coral Island-inspired villagers and resolves m
   assert.equal(nadia.appearance.sitOverrideClip, 'nadia_sit.001');
   const tari = getCitizenProfile('citizen_tari');
   assert.ok(tari);
+  assert.equal(tari.roleBadge, 'CAFE STAFF');
   assert.equal(tari.appearance.idleOverrideClip, 'tari_idle.001');
   assert.equal(tari.appearance.walkOverrideClip, 'tari_walk.001');
   assert.equal(tari.appearance.runOverrideClip, 'tari_run.001');
   assert.equal(tari.appearance.sitOverrideClip, 'tari_sit.001');
   const kenji = getCitizenProfile('citizen_kenji');
   assert.ok(kenji);
+  assert.equal(kenji.roleBadge, 'CITIZEN');
   assert.equal(kenji.appearance.idleOverrideClip, 'kenji_idle.001');
   assert.equal(kenji.appearance.walkOverrideClip, 'kenji_walk.001');
   assert.equal(kenji.appearance.runOverrideClip, 'kenji_run.001');
@@ -238,7 +241,7 @@ test('Citizen chat replies and quick prompts respond coherently in character', (
     userText: 'What gifts do you like?',
     hearts: 0,
   });
-  assert.match(giftReply.reply, /Iced Matcha|Tidal Shells|DropScience/i);
+  assert.match(giftReply.reply, /Iced Latte|Beach Club Beats|Dance Choreography/i);
   assert.equal(giftReply.suggestRoleAction, false);
 
   const openReply = generateCitizenChatReply({
@@ -260,5 +263,5 @@ test('Citizen chat replies and quick prompts respond coherently in character', (
     userText: 'tell me a secret story',
     hearts: 2,
   });
-  assert.match(secretUnlocked.reply, /Kai|Hana/);
+  assert.match(secretUnlocked.reply, /Glasshouse Cafe|West Plaza/i);
 });

@@ -8,6 +8,7 @@ import {
   CLOSENESS_UNLOCK_THRESHOLDS,
   CONVERSATION_DELTA_MAX,
   CONVERSATION_DELTA_MIN,
+  MERCHANT_PAIR_POSE_THRESHOLD,
   NAMED_NPC_IDS,
   SHARED_ACTIVITY_CLOSENESS_DELTAS,
   applyClosenessDecay,
@@ -24,11 +25,13 @@ import {
   getNpcClosenessStorageKey,
   getNpcUnlockedFeatures,
   hasNpcUnlock,
+  isHighTierMerchantNpc,
   loadNpcClosenessStore,
   mergeNpcClosenessStores,
   npcIdToCitizenId,
   parseNpcClosenessFromSkinsTags,
   recordNpcConversation,
+  recordNpcMerchantPurchase,
   recordNpcSharedActivity,
   resolveNpcId,
   saveNpcClosenessStore,
@@ -51,7 +54,7 @@ function createMemoryStorage(): Pick<Storage, 'getItem' | 'setItem'> & {
 }
 
 describe('npcClosenessEngine', () => {
-  it('resolves all 7 named NPC IDs and their canonical CitizenId aliases', () => {
+  it('resolves all 8 named NPC IDs (including Raka) and their canonical CitizenId aliases', () => {
     assert.deepEqual([...NAMED_NPC_IDS], [
       'hana',
       'kai',
@@ -60,6 +63,7 @@ describe('npcClosenessEngine', () => {
       'tari',
       'bima',
       'kenji',
+      'raka',
     ]);
 
     assert.equal(resolveNpcId('hana'), 'hana');
@@ -71,11 +75,14 @@ describe('npcClosenessEngine', () => {
     assert.equal(resolveNpcId('citizen_tari'), 'tari');
     assert.equal(resolveNpcId('citizen_bima'), 'bima');
     assert.equal(resolveNpcId('citizen_kenji'), 'kenji');
+    assert.equal(resolveNpcId('city_plaza_raka'), 'raka');
+    assert.equal(resolveNpcId('raka'), 'raka');
     assert.equal(resolveNpcId('random_human_player'), null);
     assert.equal(resolveNpcId(''), null);
 
     assert.equal(npcIdToCitizenId('hana'), 'npc_hana');
     assert.equal(npcIdToCitizenId('nadia'), 'city_plaza_nadia');
+    assert.equal(npcIdToCitizenId('raka'), 'city_plaza_raka');
   });
 
   it('enforces strictly ordered unlock thresholds: long_conversation < pair_pose < walk_together < ride_together', () => {
@@ -104,41 +111,94 @@ describe('npcClosenessEngine', () => {
     assert.equal(getClosenessBand(100), 'trusted');
   });
 
-  it('tracks F2 conversation gains, clamps deltas, and reports newly unlocked features', () => {
+  it('tracks F2 conversation gains, clamps deltas, and reports newly unlocked features for regular NPCs', () => {
     const t0 = Date.UTC(2026, 10, 1, 12, 0, 0);
     let store = createEmptyNpcClosenessStore();
 
-    // Clamped to CONVERSATION_DELTA_MAX (12)
-    const first = recordNpcConversation(store, 'hana', {
+    // Clamped to CONVERSATION_DELTA_MAX (12) for regular NPCs (Mira, Tari, Raka, Bima, Kenji, Kai)
+    const first = recordNpcConversation(store, 'mira', {
       closenessDelta: 99,
       nowMs: t0,
       dateKey: '2026-11-01',
     });
     assert.equal(first.appliedDelta, CONVERSATION_DELTA_MAX);
     assert.deepEqual(first.unlockedNow, []);
-    assert.equal(canLongConversation(first.store, 'hana', t0), false);
+    assert.equal(canLongConversation(first.store, 'mira', t0), false);
     store = first.store;
 
     // Second conversation crosses long_conversation threshold (20)
-    const second = recordNpcConversation(store, 'npc_hana', {
+    const second = recordNpcConversation(store, 'citizen_mira', {
       closenessDelta: 10,
       nowMs: t0 + 60_000,
       dateKey: '2026-11-01',
     });
     assert.equal(second.appliedDelta, 10);
     assert.deepEqual(second.unlockedNow, ['long_conversation']);
-    assert.equal(canLongConversation(second.store, 'hana', t0 + 60_000), true);
-    assert.equal(canPairPose(second.store, 'hana', t0 + 60_000), false);
-    assert.equal(getNpcClosenessBand(second.store, 'hana', t0 + 60_000), 'acquaintance');
-    assert.equal(getNpcClosenessRecord(second.store, 'hana').totalConversations, 2);
+    assert.equal(canLongConversation(second.store, 'mira', t0 + 60_000), true);
+    assert.equal(canPairPose(second.store, 'mira', t0 + 60_000), false);
+    assert.equal(getNpcClosenessBand(second.store, 'mira', t0 + 60_000), 'acquaintance');
+    assert.equal(getNpcClosenessRecord(second.store, 'mira').totalConversations, 2);
 
     // Negative delta is clamped safely
-    const negative = recordNpcConversation(second.store, 'hana', {
+    const negative = recordNpcConversation(second.store, 'mira', {
       closenessDelta: -50,
       nowMs: t0 + 120_000,
       dateKey: '2026-11-01',
     });
     assert.equal(negative.appliedDelta, CONVERSATION_DELTA_MIN);
+  });
+
+  it('enforces higher-tier Merchant rules for Hana & Nadia: slower chat gain, purchase closeness, high pair-pose unlock (>=70), no walk/ride', () => {
+    const t0 = Date.UTC(2026, 10, 4, 12, 0, 0);
+    assert.equal(isHighTierMerchantNpc('hana'), true);
+    assert.equal(isHighTierMerchantNpc('nadia'), true);
+    assert.equal(isHighTierMerchantNpc('mira'), false);
+    assert.equal(isHighTierMerchantNpc('tari'), false);
+    assert.equal(isHighTierMerchantNpc('raka'), false);
+
+    let store = createEmptyNpcClosenessStore();
+    // Conversation gain for merchants is slower than regular NPCs (0.5x)
+    const chatGain = recordNpcConversation(store, 'hana', {
+      closenessDelta: 10,
+      nowMs: t0,
+      dateKey: '2026-11-04',
+    });
+    assert.equal(chatGain.appliedDelta, 5);
+    store = chatGain.store;
+
+    // High-value store purchases build meaningful merchant closeness
+    const bigPurchase = recordNpcMerchantPurchase(store, 'hana', {
+      amountPaid: 500,
+      currency: 'CYON',
+      nowMs: t0 + 10_000,
+    });
+    assert.equal(bigPurchase.appliedDelta, 9);
+    store = bigPurchase.store;
+
+    // Raise Hana to score 56 -> still below MERCHANT_PAIR_POSE_THRESHOLD (70)
+    for (let i = 0; i < 7; i += 1) {
+      store = recordNpcConversation(store, 'hana', {
+        closenessDelta: 12,
+        nowMs: t0 + (i + 2) * 10_000,
+        dateKey: '2026-11-04',
+      }).store;
+    }
+    assert.ok(getNpcClosenessRecord(store, 'hana').score >= 50);
+    assert.ok(getNpcClosenessRecord(store, 'hana').score < MERCHANT_PAIR_POSE_THRESHOLD);
+    assert.equal(canPairPose(store, 'hana', t0 + 100_000), false);
+
+    // Push past MERCHANT_PAIR_POSE_THRESHOLD (70) -> pair_pose unlocks, walk/ride stay blocked
+    for (let i = 0; i < 4; i += 1) {
+      store = recordNpcMerchantPurchase(store, 'hana', {
+        amountPaid: 300,
+        currency: 'CYON',
+        nowMs: t0 + 200_000 + i * 1000,
+      }).store;
+    }
+    assert.ok(getNpcClosenessRecord(store, 'hana').score >= MERCHANT_PAIR_POSE_THRESHOLD);
+    assert.equal(canPairPose(store, 'hana', t0 + 300_000), true);
+    assert.equal(canWalkTogether(store, 'hana', t0 + 300_000), false);
+    assert.equal(canRideTogether(store, 'hana', t0 + 300_000), false);
   });
 
   it('tracks F3 shared activities with once-per-activity-per-day anti-grind', () => {
@@ -209,10 +269,10 @@ describe('npcClosenessEngine', () => {
   it('applies very slow decay after grace period and never drops below the safe floor', () => {
     const t0 = Date.UTC(2026, 10, 1, 12, 0, 0);
     let store = createEmptyNpcClosenessStore();
-    store = recordNpcConversation(store, 'nadia', { closenessDelta: 12, nowMs: t0 }).store;
-    store = recordNpcConversation(store, 'nadia', { closenessDelta: 12, nowMs: t0 }).store;
+    store = recordNpcConversation(store, 'raka', { closenessDelta: 12, nowMs: t0 }).store;
+    store = recordNpcConversation(store, 'raka', { closenessDelta: 12, nowMs: t0 }).store;
     // score = 24, peakScore = 24
-    const rec = getNpcClosenessRecord(store, 'nadia');
+    const rec = getNpcClosenessRecord(store, 'raka');
     assert.equal(rec.score, 24);
 
     // Within grace period (3 days) -> zero decay

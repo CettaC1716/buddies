@@ -216,7 +216,7 @@ export function purchaseFashionApparelToBag(
       nextOwnedIds: [...currentOwnedIds],
       nextLulBalance: currentLulBalance,
       priceChargedLul: 0,
-      errorMessage: `Insufficient LUL (${currentLulBalance.toLocaleString()} / ${item.priceLul} LUL). Collect Plaza bench coins, work a Cafe shift, or claim Hana's starter pack.`,
+      errorMessage: `Insufficient CerBucks (${currentLulBalance.toLocaleString()} / ${item.priceLul} CerBucks). Collect Plaza bench coins, work a Cafe shift, or claim Hana's starter pack.`,
     };
   }
   return {

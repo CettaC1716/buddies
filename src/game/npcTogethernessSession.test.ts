@@ -22,28 +22,29 @@ import {
 } from './npcTogethernessSession';
 
 function buildStoreWithScore(
-  npcId: 'hana' | 'kai' | 'mira' | 'nadia' | 'tari' | 'bima' | 'kenji',
+  npcId: 'hana' | 'kai' | 'mira' | 'nadia' | 'tari' | 'bima' | 'kenji' | 'raka',
   targetScore: number,
 ): NpcClosenessStore {
   let store = createEmptyNpcClosenessStore();
-  let remaining = targetScore;
   const nowMs = Date.UTC(2026, 10, 26, 12, 0, 0);
-  while (remaining > 0) {
-    const step = Math.min(12, remaining);
+  let guard = 0;
+  while (store.records[npcId].score < targetScore && guard < 40) {
+    const gap = targetScore - store.records[npcId].score;
+    const step = Math.min(12, Math.max(2, gap));
     const res = recordNpcConversation(store, npcId, {
       closenessDelta: step,
       nowMs,
       dateKey: '2026-11-26',
     });
     store = res.store;
-    remaining -= step;
+    guard += 1;
   }
   return store;
 }
 
-test('WS12 contextual options: scooter bike offers ride, on foot offers walk, kick scooter never offers ride', () => {
+test('WS12 contextual options: scooter bike offers ride, on foot offers walk, kick scooter never offers ride, and merchants block walk/ride', () => {
   const onBike = resolveChatTogethernessOptions({
-    npcId: 'nadia',
+    npcId: 'mira',
     playerScooterKind: 'electric_scooter_bike',
     togethernessState: EMPTY_NPC_TOGETHERNESS_STATE,
   });
@@ -52,7 +53,7 @@ test('WS12 contextual options: scooter bike offers ride, on foot offers walk, ki
   assert.equal(onBike.showGetOffOption, false);
 
   const onFoot = resolveChatTogethernessOptions({
-    npcId: 'nadia',
+    npcId: 'raka',
     playerScooterKind: null,
     togethernessState: EMPTY_NPC_TOGETHERNESS_STATE,
   });
@@ -61,19 +62,36 @@ test('WS12 contextual options: scooter bike offers ride, on foot offers walk, ki
   assert.equal(onFoot.showGetOffOption, false);
 
   const onKickScooter = resolveChatTogethernessOptions({
-    npcId: 'nadia',
+    npcId: 'mira',
     playerScooterKind: 'push_kick_scooter',
     togethernessState: EMPTY_NPC_TOGETHERNESS_STATE,
   });
   assert.equal(onKickScooter.canInviteRide, false);
   assert.equal(onKickScooter.canInviteWalk, false);
 
-  const whileRiding = resolveChatTogethernessOptions({
+  // High-tier merchants (Hana & Nadia) never offer walk/ride invitations
+  const merchantOnFoot = resolveChatTogethernessOptions({
     npcId: 'nadia',
+    playerScooterKind: null,
+    togethernessState: EMPTY_NPC_TOGETHERNESS_STATE,
+  });
+  assert.equal(merchantOnFoot.canInviteWalk, false);
+  assert.equal(merchantOnFoot.canInviteRide, false);
+
+  const merchantOnBike = resolveChatTogethernessOptions({
+    npcId: 'hana',
+    playerScooterKind: 'electric_scooter_bike',
+    togethernessState: EMPTY_NPC_TOGETHERNESS_STATE,
+  });
+  assert.equal(merchantOnBike.canInviteWalk, false);
+  assert.equal(merchantOnBike.canInviteRide, false);
+
+  const whileRiding = resolveChatTogethernessOptions({
+    npcId: 'mira',
     playerScooterKind: 'electric_scooter_bike',
     togethernessState: {
       ...EMPTY_NPC_TOGETHERNESS_STATE,
-      ridingNpcId: 'nadia',
+      ridingNpcId: 'mira',
     },
   });
   assert.equal(whileRiding.canInviteRide, false);
@@ -272,8 +290,11 @@ test('WS13 paired pose request enforces closeness band and blocks direct named-N
     true,
   );
 
-  // At/above pair_pose unlock (score 50 >= 45)
-  const unlockedStore = buildStoreWithScore('nadia', 50);
+  // At/above pair_pose unlock for high-tier merchant Nadia (score >= 70)
+  const midStore = buildStoreWithScore('nadia', 54);
+  assert.equal(evaluatePairedPoseRequest({ store: midStore, npcId: 'nadia', nowMs }).accepted, false);
+
+  const unlockedStore = buildStoreWithScore('nadia', 74);
   const accepted = evaluatePairedPoseRequest({
     store: unlockedStore,
     npcId: 'nadia',
@@ -345,7 +366,7 @@ test('natural typed chat intent detects Indonesian & English walk/ride/end phras
 
 test('WS21 acceptance: mounted scooter bike free-chat invite -> verdict accept -> walk to pillion -> mount -> dismount ends ride', () => {
   const nowMs = Date.UTC(2026, 10, 27, 2, 0, 0);
-  const store = buildStoreWithScore('hana', 90);
+  const store = buildStoreWithScore('tari', 90);
 
   // 1. Free-chat invitation while mounted on electric_scooter_bike beside NPC
   assert.equal(detectChatTogethernessIntent('bonceng yuk keliling kota'), 'ride');
@@ -354,10 +375,21 @@ test('WS21 acceptance: mounted scooter bike free-chat invite -> verdict accept -
   assert.equal(normalizeNpcChatAction('end_togetherness'), 'end_togetherness');
   assert.equal(normalizeNpcChatAction('unknown'), null);
 
-  // 2. Upstream verdict accepts on scooter bike (never kick scooter)
+  // 2. Upstream verdict accepts on scooter bike (never kick scooter) for regular NPCs, while merchants decline
+  const merchantStore = buildStoreWithScore('hana', 90);
+  const merchantRideDecline = evaluateTogethernessInvitation({
+    store: merchantStore,
+    npcId: 'hana',
+    kind: 'ride',
+    playerScooterKind: 'electric_scooter_bike',
+    nowMs,
+  });
+  assert.equal(merchantRideDecline.accepted, false);
+  assert.equal(merchantRideDecline.reason, 'merchant_role_restricted');
+
   const kickDenied = evaluateTogethernessInvitation({
     store,
-    npcId: 'hana',
+    npcId: 'tari',
     kind: 'ride',
     playerScooterKind: 'push_kick_scooter',
     nowMs,
@@ -366,7 +398,7 @@ test('WS21 acceptance: mounted scooter bike free-chat invite -> verdict accept -
 
   const accepted = evaluateTogethernessInvitation({
     store,
-    npcId: 'hana',
+    npcId: 'tari',
     kind: 'ride',
     playerScooterKind: 'electric_scooter_bike',
     nowMs,

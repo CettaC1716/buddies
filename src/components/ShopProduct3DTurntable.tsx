@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import {
   SHOP_BILLBOARD_MESH_SPEC,
   type ShopBuildingFormId,
@@ -23,6 +24,15 @@ import {
   BITES_SIPS_PAVILION_GLB_PATH,
   VINTAGE_CAFE_GLB_PATH,
 } from '../game/buddiesUrbanPlazaBuildingsBuilder';
+import {
+  loadModularApparelGltf,
+  parseModularAssetSlotFragment,
+} from '../game/buddiesBlitzShadersAndAssets';
+import { classifyDefaultAvatarSlotFromMeshName } from '../game/buddiesWardrobeStudioRules';
+import {
+  createLiveMotionSilhouettePreview,
+  type LiveMotionSilhouetteHandle,
+} from '../game/shopMotionSilhouetteRenderer';
 
 export interface ShopProduct3DTurntableProps {
   archetype: StoreProduct3DArchetype;
@@ -40,6 +50,8 @@ export interface ShopProduct3DTurntableProps {
   previewCafeFoodId?: CafeMenuItemId;
   /** Optional 3D floral / confection gift prop kind for Cerria Bites & Sips. */
   previewGiftKind?: CentralPlazaGiftPreviewKind;
+  /** Optional Red Studio Wardrobe motion item id rendered as a live animated 3D human silhouette. */
+  previewMotionItemId?: string;
   /** Optional real photo or beauty thumbnail render. */
   previewImageUrl?: string;
   /** True when a UV-exported beauty thumbnail should be vertically flipped upright. */
@@ -897,75 +909,52 @@ function populateArchetypeMesh(
   }
 
   if (archetype === 'motion_pose') {
-    // Circular studio stage plinth + brass motion arc + expressive posed artist mannequin
-    const stageBase = new THREE.Mesh(
-      regGeo(new THREE.CylinderGeometry(0.62, 0.68, 0.08, 32)),
-      mats.secondaryMat,
-    );
-    stageBase.position.y = -0.78;
-    root.add(stageBase);
-
-    const stageRim = new THREE.Mesh(
-      regGeo(new THREE.TorusGeometry(0.62, 0.022, 10, 36)),
-      mats.accentMat,
-    );
-    stageRim.rotation.x = Math.PI / 2;
-    stageRim.position.y = -0.73;
-    root.add(stageRim);
-
-    const motionRing = new THREE.Mesh(
-      regGeo(new THREE.TorusGeometry(0.54, 0.018, 10, 36)),
-      mats.accentMat,
-    );
-    motionRing.position.set(0, 0.04, 0);
-    motionRing.rotation.set(0.45, 0.32, 0.24);
-    root.add(motionRing);
-
+    // Minimal sleek black editorial silhouette stand-in if GLB avatar is unavailable
     const head = new THREE.Mesh(
-      regGeo(new THREE.SphereGeometry(0.15, 18, 16)),
-      mats.primaryMat,
+      regGeo(new THREE.SphereGeometry(0.13, 18, 16)),
+      mats.darkMetalMat,
     );
-    head.position.set(0.04, 0.58, 0);
+    head.position.set(0.02, 0.56, 0);
     root.add(head);
 
     const torso = new THREE.Mesh(
-      regGeo(new THREE.CapsuleGeometry(0.14, 0.34, 8, 16)),
-      mats.primaryMat,
+      regGeo(new THREE.CapsuleGeometry(0.115, 0.34, 8, 16)),
+      mats.darkMetalMat,
     );
-    torso.position.set(0, 0.18, 0);
-    torso.rotation.z = -0.14;
+    torso.position.set(0, 0.16, 0);
+    torso.rotation.z = -0.06;
     root.add(torso);
 
     const leftArm = new THREE.Mesh(
-      regGeo(new THREE.CapsuleGeometry(0.055, 0.38, 6, 12)),
-      mats.accentMat,
+      regGeo(new THREE.CapsuleGeometry(0.042, 0.38, 6, 12)),
+      mats.darkMetalMat,
     );
-    leftArm.position.set(-0.28, 0.42, 0.06);
-    leftArm.rotation.z = 0.85;
+    leftArm.position.set(-0.2, 0.36, 0.03);
+    leftArm.rotation.z = 0.72;
     root.add(leftArm);
 
     const rightArm = new THREE.Mesh(
-      regGeo(new THREE.CapsuleGeometry(0.055, 0.38, 6, 12)),
-      mats.accentMat,
+      regGeo(new THREE.CapsuleGeometry(0.042, 0.4, 6, 12)),
+      mats.darkMetalMat,
     );
-    rightArm.position.set(0.3, 0.22, -0.05);
-    rightArm.rotation.z = -1.1;
+    rightArm.position.set(0.19, 0.06, -0.02);
+    rightArm.rotation.z = -0.14;
     root.add(rightArm);
 
     const leftLeg = new THREE.Mesh(
-      regGeo(new THREE.CapsuleGeometry(0.068, 0.48, 6, 12)),
-      mats.secondaryMat,
+      regGeo(new THREE.CapsuleGeometry(0.052, 0.54, 6, 12)),
+      mats.darkMetalMat,
     );
-    leftLeg.position.set(-0.14, -0.36, 0.05);
-    leftLeg.rotation.z = 0.16;
+    leftLeg.position.set(-0.08, -0.42, 0.02);
+    leftLeg.rotation.z = 0.06;
     root.add(leftLeg);
 
     const rightLeg = new THREE.Mesh(
-      regGeo(new THREE.CapsuleGeometry(0.068, 0.48, 6, 12)),
-      mats.secondaryMat,
+      regGeo(new THREE.CapsuleGeometry(0.052, 0.54, 6, 12)),
+      mats.darkMetalMat,
     );
-    rightLeg.position.set(0.18, -0.35, -0.06);
-    rightLeg.rotation.z = -0.34;
+    rightLeg.position.set(0.1, -0.42, -0.03);
+    rightLeg.rotation.z = -0.1;
     root.add(rightLeg);
     return;
   }
@@ -1015,6 +1004,111 @@ function fitObjectIntoTurntableStage(obj: THREE.Object3D, maxExtent = 1.62): THR
   return wrapper;
 }
 
+function buildNormalizedOutfitTurntableGroup(
+  gltfScene: THREE.Group,
+  glbPath: string,
+): { group: THREE.Group; disposables: Array<{ dispose: () => void }> } | null {
+  const slotFilter = parseModularAssetSlotFragment(glbPath);
+  const cloned = SkeletonUtils.clone(gltfScene) as THREE.Group;
+  const visibleMeshes: THREE.Mesh[] = [];
+  const disposables: Array<{ dispose: () => void }> = [];
+
+  cloned.traverse((node) => {
+    if ((node as THREE.Mesh).isMesh) {
+      const m = node as THREE.Mesh;
+      const lower = (m.name || '').toLowerCase();
+      if (
+        lower.includes('outline') ||
+        lower.includes('_skin') ||
+        lower.includes('basedoll') ||
+        lower.startsWith('head_') ||
+        lower.startsWith('ears_')
+      ) {
+        m.visible = false;
+        return;
+      }
+      if (slotFilter) {
+        const meshSlot = classifyDefaultAvatarSlotFromMeshName(m.name);
+        const keep =
+          slotFilter === 'costume'
+            ? meshSlot === 'torso' ||
+              meshSlot === 'legs' ||
+              meshSlot === 'feet' ||
+              meshSlot === 'hands' ||
+              meshSlot === 'neck'
+            : meshSlot === slotFilter;
+        if (!keep) {
+          m.visible = false;
+          return;
+        }
+      }
+      if (Array.isArray(m.material)) {
+        m.material = m.material.map((mat) => {
+          const matClone = mat.clone();
+          matClone.side = THREE.DoubleSide;
+          disposables.push(matClone);
+          return matClone;
+        });
+      } else if (m.material) {
+        const matClone = m.material.clone();
+        matClone.side = THREE.DoubleSide;
+        disposables.push(matClone);
+        m.material = matClone;
+      }
+      m.visible = true;
+      m.frustumCulled = false;
+      visibleMeshes.push(m);
+    }
+  });
+
+  if (visibleMeshes.length === 0) {
+    return null;
+  }
+
+  cloned.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  const meshBox = new THREE.Box3();
+  for (const vm of visibleMeshes) {
+    const skinned = vm as THREE.SkinnedMesh;
+    if (skinned.isSkinnedMesh && skinned.skeleton) {
+      skinned.skeleton.update();
+    }
+    if (!vm.geometry.boundingBox) {
+      vm.geometry.computeBoundingBox();
+    }
+    if (vm.geometry.boundingBox) {
+      meshBox.copy(vm.geometry.boundingBox).applyMatrix4(vm.matrixWorld);
+      box.union(meshBox);
+    } else {
+      box.expandByObject(vm);
+    }
+  }
+
+  if (box.isEmpty()) {
+    for (const d of disposables) d.dispose();
+    return null;
+  }
+
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+
+  const maxDim = Math.max(size.x * 1.02, size.y, size.z, 0.08);
+  const scale = 1.52 / maxDim;
+  const scaledHeight = size.y * scale;
+  const offsetY =
+    scaledHeight >= 1.18
+      ? -box.min.y * scale - 0.78
+      : -center.y * scale - 0.05;
+
+  const wrapper = new THREE.Group();
+  cloned.scale.multiplyScalar(scale);
+  cloned.position.set(-center.x * scale, offsetY, -center.z * scale);
+  wrapper.add(cloned);
+  return { group: wrapper, disposables };
+}
+
 export const ShopProduct3DTurntable: React.FC<ShopProduct3DTurntableProps> = ({
   archetype,
   primaryHex,
@@ -1026,6 +1120,7 @@ export const ShopProduct3DTurntable: React.FC<ShopProduct3DTurntableProps> = ({
   previewScooterKind,
   previewCafeFoodId,
   previewGiftKind,
+  previewMotionItemId,
   previewImageUrl,
   previewThumbFlipY,
   previewImageAlt,
@@ -1036,7 +1131,8 @@ export const ShopProduct3DTurntable: React.FC<ShopProduct3DTurntableProps> = ({
       !previewFurnitureId &&
       !previewScooterKind &&
       !previewCafeFoodId &&
-      !previewGiftKind,
+      !previewGiftKind &&
+      !previewMotionItemId,
   );
   const mountRef = useRef<HTMLDivElement | null>(null);
   const matsRef = useRef<DynamicTurntableMaterials | null>(null);
@@ -1048,6 +1144,7 @@ export const ShopProduct3DTurntable: React.FC<ShopProduct3DTurntableProps> = ({
         scooterKind?: 'electric_scooter_bike' | 'push_kick_scooter';
         cafeFoodId?: CafeMenuItemId;
         giftKind?: CentralPlazaGiftPreviewKind;
+        motionItemId?: string;
       }) => void)
     | null
   >(null);
@@ -1171,8 +1268,13 @@ export const ShopProduct3DTurntable: React.FC<ShopProduct3DTurntableProps> = ({
     scene.add(turntableGroup);
 
     const meshDisposables: Array<{ dispose: () => void }> = [];
+    let activeMotionHandle: LiveMotionSilhouetteHandle | null = null;
     let loadSeq = 0;
     const clearMeshes = () => {
+      if (activeMotionHandle) {
+        activeMotionHandle.dispose();
+        activeMotionHandle = null;
+      }
       turntableGroup.clear();
       for (const d of meshDisposables) d.dispose();
       meshDisposables.length = 0;
@@ -1185,8 +1287,30 @@ export const ShopProduct3DTurntable: React.FC<ShopProduct3DTurntableProps> = ({
       scooterKind?: 'electric_scooter_bike' | 'push_kick_scooter';
       cafeFoodId?: CafeMenuItemId;
       giftKind?: CentralPlazaGiftPreviewKind;
+      motionItemId?: string;
     }) => {
       const seq = ++loadSeq;
+      if (opts.motionItemId) {
+        void createLiveMotionSilhouettePreview(opts.motionItemId, isSoftwareGl).then((handle) => {
+          if (seq !== loadSeq) {
+            handle?.dispose();
+            return;
+          }
+          clearMeshes();
+          if (!handle) {
+            populateArchetypeMesh(turntableGroup, opts.archetype, mats, meshDisposables);
+            return;
+          }
+          activeMotionHandle = handle;
+          turntableGroup.add(handle.group);
+          if (!isDragging) {
+            targetYaw = -0.22;
+            currentYaw = -0.22;
+          }
+        });
+        return;
+      }
+
       clearMeshes();
 
       if (opts.cafeFoodId) {
@@ -1240,6 +1364,24 @@ export const ShopProduct3DTurntable: React.FC<ShopProduct3DTurntableProps> = ({
       }
 
       if (opts.glbPath) {
+        const isOutfitGlb = opts.glbPath.includes('/assets/outfit/');
+        if (isOutfitGlb) {
+          void loadModularApparelGltf(opts.glbPath).then((gltf) => {
+            if (seq !== loadSeq) return;
+            const built = gltf?.scene
+              ? buildNormalizedOutfitTurntableGroup(gltf.scene, opts.glbPath!)
+              : null;
+            clearMeshes();
+            if (!built) {
+              populateArchetypeMesh(turntableGroup, opts.archetype, mats, meshDisposables);
+              return;
+            }
+            for (const d of built.disposables) meshDisposables.push(d);
+            turntableGroup.add(built.group);
+          });
+          return;
+        }
+
         void loadCachedDioramaBuildingGlb(opts.glbPath).then((template) => {
           if (seq !== loadSeq) return;
           if (!template) {
@@ -1248,7 +1390,7 @@ export const ShopProduct3DTurntable: React.FC<ShopProduct3DTurntableProps> = ({
             return;
           }
           clearMeshes();
-          const clone = template.clone(true);
+          const clone = SkeletonUtils.clone(template) as THREE.Group;
           turntableGroup.add(fitObjectIntoTurntableStage(clone, 1.7));
         });
         return;
@@ -1262,6 +1404,12 @@ export const ShopProduct3DTurntable: React.FC<ShopProduct3DTurntableProps> = ({
       populateArchetypeMesh(turntableGroup, resolvedArchetype, mats, meshDisposables);
     };
 
+    let isDragging = false;
+    let lastClientX = 0;
+    let targetYaw = previewMotionItemId ? -0.22 : -0.32;
+    let currentYaw = previewMotionItemId ? -0.22 : -0.32;
+    let lastInteractMs = 0;
+
     buildModel({
       archetype,
       glbPath: previewGlbPath,
@@ -1269,14 +1417,9 @@ export const ShopProduct3DTurntable: React.FC<ShopProduct3DTurntableProps> = ({
       scooterKind: previewScooterKind,
       cafeFoodId: previewCafeFoodId,
       giftKind: previewGiftKind,
+      motionItemId: previewMotionItemId,
     });
     rebuildModelRef.current = buildModel;
-
-    let isDragging = false;
-    let lastClientX = 0;
-    let targetYaw = -0.32;
-    let currentYaw = -0.32;
-    let lastInteractMs = 0;
 
     const onPointerDown = (e: PointerEvent) => {
       isDragging = true;
@@ -1314,12 +1457,22 @@ export const ShopProduct3DTurntable: React.FC<ShopProduct3DTurntableProps> = ({
       const dt = Math.min(0.08, Math.max(0.001, (now - prevTime) * 0.001));
       prevTime = now;
 
-      if (!isDragging && now - lastInteractMs > 1200) {
-        targetYaw += dt * 0.42;
+      if (activeMotionHandle) {
+        activeMotionHandle.update(dt);
+        if (!isDragging && now - lastInteractMs > 1600) {
+          targetYaw += dt * 0.24;
+        }
+        currentYaw = THREE.MathUtils.damp(currentYaw, targetYaw, 10, dt);
+        turntableGroup.rotation.y = currentYaw;
+        turntableGroup.position.y = 0;
+      } else {
+        if (!isDragging && now - lastInteractMs > 1200) {
+          targetYaw += dt * 0.42;
+        }
+        currentYaw = THREE.MathUtils.damp(currentYaw, targetYaw, 10, dt);
+        turntableGroup.rotation.y = currentYaw;
+        turntableGroup.position.y = Math.sin(now * 0.0022) * 0.025;
       }
-      currentYaw = THREE.MathUtils.damp(currentYaw, targetYaw, 10, dt);
-      turntableGroup.rotation.y = currentYaw;
-      turntableGroup.position.y = Math.sin(now * 0.0022) * 0.025;
 
       renderer.render(scene, camera);
       if (isSoftwareGl) {
@@ -1331,6 +1484,7 @@ export const ShopProduct3DTurntable: React.FC<ShopProduct3DTurntableProps> = ({
     tick();
 
     return () => {
+      loadSeq++;
       window.cancelAnimationFrame(frameId);
       window.clearTimeout(frameId);
       resizeObs?.disconnect();
@@ -1363,6 +1517,7 @@ export const ShopProduct3DTurntable: React.FC<ShopProduct3DTurntableProps> = ({
       scooterKind: previewScooterKind,
       cafeFoodId: previewCafeFoodId,
       giftKind: previewGiftKind,
+      motionItemId: previewMotionItemId,
     });
   }, [
     isImageOnlyMode,
@@ -1372,6 +1527,7 @@ export const ShopProduct3DTurntable: React.FC<ShopProduct3DTurntableProps> = ({
     previewScooterKind,
     previewCafeFoodId,
     previewGiftKind,
+    previewMotionItemId,
   ]);
 
   // Real-time material swap when color variant pill changes

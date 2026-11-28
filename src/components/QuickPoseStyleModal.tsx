@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Check,
-  Flame,
   Hand,
   Music,
   PersonStanding,
@@ -13,6 +12,10 @@ import {
 import { soundEngine } from '../game/audio';
 import { SOCIAL_EMOTE_QUICK_LIST } from '../game/buddiesRemotePresenceSync';
 import type { WardrobeCatalogItem } from '../game/buddiesWardrobeStudioRules';
+import {
+  MOTION_SILHOUETTE_ORB_BG,
+  MotionSilhouetteThumb,
+} from './MotionSilhouetteThumb';
 
 export type QuickPoseModalCategory =
   | 'style_pose'
@@ -51,11 +54,22 @@ const VISIBLE_SOCIAL_EMOTES = SOCIAL_EMOTE_QUICK_LIST.filter(
 
 const EMOTE_ORB_STYLES: Record<
   string,
-  { gradient: readonly [string, string]; tag: string; subtitle: string }
+  { motionItemId: string; subtitle: string }
 > = {
   salute: {
-    gradient: ['#fbbf24', '#d97706'],
-    tag: 'SALUTE',
+    motionItemId: 'style_dance_salute',
+    subtitle: 'Quick Emote',
+  },
+  wave: {
+    motionItemId: 'style_dance_wave',
+    subtitle: 'Quick Emote',
+  },
+  cheer: {
+    motionItemId: 'style_dance_cheer',
+    subtitle: 'Quick Emote',
+  },
+  dance: {
+    motionItemId: 'style_dance_groove',
     subtitle: 'Quick Emote',
   },
 };
@@ -273,8 +287,7 @@ export const QuickPoseStyleModal: React.FC<QuickPoseStyleModalProps> = ({
               <div className="grid grid-cols-3 gap-x-2 gap-y-3.5 pb-2">
                 {VISIBLE_SOCIAL_EMOTES.map((emote) => {
                   const styleSpec = EMOTE_ORB_STYLES[emote.id] ?? {
-                    gradient: ['#60a5fa', '#2563eb'] as const,
-                    tag: emote.label.toUpperCase(),
+                    motionItemId: 'style_dance_salute',
                     subtitle: 'Emote',
                   };
                   const isSelected = activeEmoteId === emote.id;
@@ -300,25 +313,17 @@ export const QuickPoseStyleModal: React.FC<QuickPoseStyleModalProps> = ({
                       <div
                         className={`relative w-[68px] h-[68px] sm:w-[70px] sm:h-[70px] rounded-full overflow-hidden flex items-center justify-center transition-transform duration-150 group-hover:scale-[1.04] group-active:scale-95 ${
                           isSelected
-                            ? 'border-2 border-white shadow-[0_4px_16px_rgba(138,216,255,0.5)]'
-                            : 'border border-white/20 group-hover:border-white/45'
+                            ? 'border-2 border-[#8ad8ff] shadow-[0_4px_16px_rgba(138,216,255,0.55)]'
+                            : 'border border-white/25 group-hover:border-white/55'
                         }`}
                         style={{
-                          background: `radial-gradient(circle at 32% 28%, ${styleSpec.gradient[0]}, ${styleSpec.gradient[1]})`,
+                          background: MOTION_SILHOUETTE_ORB_BG,
                         }}
                       >
-                        <div className="flex flex-col items-center justify-center gap-0.5 text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">
-                          {emote.id === 'wave' || emote.id === 'salute' ? (
-                            <Hand className="w-4 h-4 stroke-[2]" />
-                          ) : emote.id === 'cheer' ? (
-                            <Flame className="w-4 h-4 stroke-[2]" />
-                          ) : (
-                            <Music className="w-4 h-4 stroke-[2]" />
-                          )}
-                          <span className="text-[8px] font-bold tracking-wide uppercase text-white/95">
-                            {styleSpec.tag}
-                          </span>
-                        </div>
+                        <MotionSilhouetteThumb
+                          wardrobeItemId={styleSpec.motionItemId}
+                          alt={emote.label}
+                        />
 
                         {isSelected && (
                           <span className="absolute bottom-0.5 right-0.5 w-4.5 h-4.5 rounded-full bg-[#8ad8ff] text-slate-950 flex items-center justify-center shadow">
@@ -347,13 +352,6 @@ export const QuickPoseStyleModal: React.FC<QuickPoseStyleModalProps> = ({
               <div className="grid grid-cols-3 gap-x-2 gap-y-3.5 pb-2">
                 {filteredItems.map((item) => {
                   const isPlaying = activeQuickPoseId === item.id;
-                  const vibeTag =
-                    item.dancePose?.vibeTag ??
-                    (item.slot === 'style_dance'
-                      ? 'DANCE'
-                      : item.slot === 'style_action'
-                        ? 'ACTION'
-                        : 'POSE');
                   const statusText = item.isStarterDefault
                     ? 'Starter'
                     : item.priceLul === 0
@@ -379,30 +377,17 @@ export const QuickPoseStyleModal: React.FC<QuickPoseStyleModalProps> = ({
                       <div
                         className={`relative w-[68px] h-[68px] sm:w-[70px] sm:h-[70px] rounded-full overflow-hidden flex items-center justify-center transition-transform duration-150 group-hover:scale-[1.04] group-active:scale-95 ${
                           isPlaying
-                            ? 'border-2 border-white shadow-[0_4px_16px_rgba(138,216,255,0.5)]'
-                            : 'border border-white/20 group-hover:border-white/45'
+                            ? 'border-2 border-[#8ad8ff] shadow-[0_4px_16px_rgba(138,216,255,0.55)]'
+                            : 'border border-white/25 group-hover:border-white/55'
                         }`}
                         style={{
-                          background: `radial-gradient(circle at 32% 28%, ${item.swatchGradient[0]}, ${item.swatchGradient[1]})`,
+                          background: MOTION_SILHOUETTE_ORB_BG,
                         }}
                       >
-                        <div className="flex flex-col items-center justify-center gap-0.5 text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">
-                          {item.slot === 'style_action' ||
-                          item.dancePose?.danceKind === 'wave' ||
-                          item.dancePose?.danceKind === 'salute' ? (
-                            <Hand className="w-4 h-4 stroke-[2]" />
-                          ) : item.dancePose?.danceKind === 'cheer' ||
-                            item.dancePose?.danceKind === 'hiphop' ? (
-                            <Flame className="w-4 h-4 stroke-[2]" />
-                          ) : item.slot === 'style_pose' ? (
-                            <PersonStanding className="w-4 h-4 stroke-[2]" />
-                          ) : (
-                            <Music className="w-4 h-4 stroke-[2]" />
-                          )}
-                          <span className="text-[8px] font-bold tracking-wide uppercase text-white/95 max-w-[54px] truncate">
-                            {vibeTag}
-                          </span>
-                        </div>
+                        <MotionSilhouetteThumb
+                          wardrobeItemId={item.id}
+                          alt={item.name}
+                        />
 
                         {isPlaying && (
                           <span className="absolute bottom-0.5 right-0.5 w-4.5 h-4.5 rounded-full bg-[#8ad8ff] text-slate-950 flex items-center justify-center shadow">

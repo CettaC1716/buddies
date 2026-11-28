@@ -28,6 +28,7 @@ export const NAMED_NPC_IDS = [
   'tari',
   'bima',
   'kenji',
+  'raka',
 ] as const;
 
 export type NpcId = (typeof NAMED_NPC_IDS)[number];
@@ -40,6 +41,7 @@ export const NPC_ID_TO_CITIZEN_ID: Readonly<Record<NpcId, CitizenId>> = {
   tari: 'citizen_tari',
   bima: 'citizen_bima',
   kenji: 'citizen_kenji',
+  raka: 'city_plaza_raka',
 };
 
 const CITIZEN_ID_TO_NPC_ID: Readonly<Partial<Record<CitizenId, NpcId>>> = {
@@ -50,6 +52,7 @@ const CITIZEN_ID_TO_NPC_ID: Readonly<Partial<Record<CitizenId, NpcId>>> = {
   citizen_tari: 'tari',
   citizen_bima: 'bima',
   citizen_kenji: 'kenji',
+  city_plaza_raka: 'raka',
 };
 
 const EXTRA_NPC_ALIAS_MAP: Readonly<Record<string, NpcId>> = {
@@ -79,10 +82,15 @@ const EXTRA_NPC_ALIAS_MAP: Readonly<Record<string, NpcId>> = {
   kenji: 'kenji',
   citizen_kenji: 'kenji',
   npc_citizen_kenji: 'kenji',
+  raka: 'raka',
+  city_plaza_raka: 'raka',
+  citizen_raka: 'raka',
+  npc_raka: 'raka',
+  npc_citizen_raka: 'raka',
 };
 
 /**
- * Resolves any short NPC name, canonical CitizenId, or runtime alias to one of the 7 NpcIds.
+ * Resolves any short NPC name, canonical CitizenId, or runtime alias to one of the 8 NpcIds.
  * Returns null for non-supported IDs (e.g., human players or unknown IDs).
  */
 export function resolveNpcId(rawId: string | null | undefined): NpcId | null {
@@ -121,6 +129,29 @@ export const CLOSENESS_UNLOCK_THRESHOLDS: Readonly<Record<ClosenessUnlockId, num
   walk_together: 68,
   ride_together: 85,
 };
+
+/**
+ * High-tier Plaza Merchant NPCs (Hana & Nadia):
+ * - Hold prestigious district merchant roles, so closeness builds more slowly from casual chat/gifts
+ *   and is meaningfully strengthened through thoughtful gifts and high-value store purchases.
+ * - Cannot be invited to walk together or ride together on a scooter.
+ * - Can do Pair Pose once closeness reaches a high level (`MERCHANT_PAIR_POSE_THRESHOLD`).
+ */
+export const HIGH_TIER_MERCHANT_NPC_IDS: ReadonlySet<NpcId> = new Set<NpcId>([
+  'hana',
+  'nadia',
+]);
+
+export const MERCHANT_PAIR_POSE_THRESHOLD = 70;
+export const MERCHANT_CONVERSATION_GAIN_SCALE = 0.5;
+export const MERCHANT_GIFT_GAIN_SCALE = 0.6;
+
+export type MerchantPurchaseCurrency = 'RESPITE' | 'CYON' | 'LUL';
+
+export function isHighTierMerchantNpc(rawNpcId: string | null | undefined): boolean {
+  const npcId = resolveNpcId(rawNpcId);
+  return npcId !== null && HIGH_TIER_MERCHANT_NPC_IDS.has(npcId);
+}
 
 /**
  * Internal closeness band for F2 prompt/warmth/flirt scaling ONLY.
@@ -392,14 +423,33 @@ export function getUnlockedFeaturesForScore(score: number): ClosenessUnlockId[] 
   );
 }
 
+export function getUnlockedFeaturesForNpcScore(
+  npcId: NpcId | null,
+  score: number,
+): ClosenessUnlockId[] {
+  const clean = clampScore(score);
+  if (npcId && HIGH_TIER_MERCHANT_NPC_IDS.has(npcId)) {
+    const unlocked: ClosenessUnlockId[] = [];
+    if (clean >= CLOSENESS_UNLOCK_THRESHOLDS.long_conversation) {
+      unlocked.push('long_conversation');
+    }
+    if (clean >= MERCHANT_PAIR_POSE_THRESHOLD) {
+      unlocked.push('pair_pose');
+    }
+    return unlocked;
+  }
+  return getUnlockedFeaturesForScore(clean);
+}
+
 export function getNpcUnlockedFeatures(
   store: NpcClosenessStore,
   rawNpcId: string,
   nowMs: number = Date.now(),
 ): ClosenessUnlockId[] {
+  const npcId = resolveNpcId(rawNpcId);
   const record = getNpcClosenessRecord(store, rawNpcId);
   const effective = getEffectiveClosenessScore(record, nowMs);
-  return getUnlockedFeaturesForScore(effective);
+  return getUnlockedFeaturesForNpcScore(npcId, effective);
 }
 
 export function hasNpcUnlock(
@@ -408,6 +458,18 @@ export function hasNpcUnlock(
   unlockId: ClosenessUnlockId,
   nowMs: number = Date.now(),
 ): boolean {
+  const npcId = resolveNpcId(rawNpcId);
+  if (npcId && HIGH_TIER_MERCHANT_NPC_IDS.has(npcId)) {
+    if (unlockId === 'walk_together' || unlockId === 'ride_together') {
+      return false;
+    }
+    const record = getNpcClosenessRecord(store, npcId);
+    const effective = getEffectiveClosenessScore(record, nowMs);
+    if (unlockId === 'pair_pose') {
+      return effective >= MERCHANT_PAIR_POSE_THRESHOLD;
+    }
+    return isClosenessUnlockReached(effective, unlockId);
+  }
   const record = getNpcClosenessRecord(store, rawNpcId);
   const effective = getEffectiveClosenessScore(record, nowMs);
   return isClosenessUnlockReached(effective, unlockId);
@@ -468,12 +530,13 @@ export function getNpcClosenessBand(
   return getClosenessBand(effective);
 }
 
-function computeNewlyUnlocked(
+function computeNewlyUnlockedForNpc(
+  npcId: NpcId | null,
   beforeScore: number,
   afterScore: number,
 ): ClosenessUnlockId[] {
-  const beforeSet = new Set(getUnlockedFeaturesForScore(beforeScore));
-  return getUnlockedFeaturesForScore(afterScore).filter((id) => !beforeSet.has(id));
+  const beforeSet = new Set(getUnlockedFeaturesForNpcScore(npcId, beforeScore));
+  return getUnlockedFeaturesForNpcScore(npcId, afterScore).filter((id) => !beforeSet.has(id));
 }
 
 function updateNpcRecord(
@@ -520,9 +583,13 @@ export function recordNpcConversation(
   const prev = getNpcClosenessRecord(store, npcId);
   const effectiveBefore = getEffectiveClosenessScore(prev, nowMs);
 
-  const safeDelta = Number.isFinite(options.closenessDelta)
+  const rawSafeDelta = Number.isFinite(options.closenessDelta)
     ? Math.max(CONVERSATION_DELTA_MIN, Math.min(CONVERSATION_DELTA_MAX, options.closenessDelta))
     : 0;
+  const safeDelta =
+    rawSafeDelta > 0 && HIGH_TIER_MERCHANT_NPC_IDS.has(npcId)
+      ? Math.round(rawSafeDelta * MERCHANT_CONVERSATION_GAIN_SCALE * 100) / 100
+      : rawSafeDelta;
 
   const nextScore = clampScore(effectiveBefore + safeDelta);
   const appliedDelta = Math.round((nextScore - effectiveBefore) * 100) / 100;
@@ -540,8 +607,8 @@ export function recordNpcConversation(
     npcId,
     appliedDelta,
     band: getClosenessBand(nextScore),
-    unlockedNow: computeNewlyUnlocked(effectiveBefore, nextScore),
-    unlockedAll: getUnlockedFeaturesForScore(nextScore),
+    unlockedNow: computeNewlyUnlockedForNpc(npcId, effectiveBefore, nextScore),
+    unlockedAll: getUnlockedFeaturesForNpcScore(npcId, nextScore),
   };
 }
 
@@ -603,8 +670,8 @@ export function recordNpcSharedActivity(
     npcId,
     appliedDelta,
     band: getClosenessBand(nextScore),
-    unlockedNow: computeNewlyUnlocked(effectiveBefore, nextScore),
-    unlockedAll: getUnlockedFeaturesForScore(nextScore),
+    unlockedNow: computeNewlyUnlockedForNpc(npcId, effectiveBefore, nextScore),
+    unlockedAll: getUnlockedFeaturesForNpcScore(npcId, nextScore),
   };
 }
 
@@ -624,9 +691,13 @@ export function applyNpcGiftCloseness(
   const nowMs = params.nowMs ?? Date.now();
   const prev = getNpcClosenessRecord(store, npcId);
   const effectiveBefore = getEffectiveClosenessScore(prev, nowMs);
-  const safeDelta = Number.isFinite(params.delta)
+  const rawSafeDelta = Number.isFinite(params.delta)
     ? Math.max(-10, Math.min(20, params.delta))
     : 0;
+  const safeDelta =
+    rawSafeDelta > 0 && HIGH_TIER_MERCHANT_NPC_IDS.has(npcId)
+      ? Math.round(rawSafeDelta * MERCHANT_GIFT_GAIN_SCALE * 100) / 100
+      : rawSafeDelta;
   const nextScore = clampScore(effectiveBefore + safeDelta);
   const appliedDelta = Math.round((nextScore - effectiveBefore) * 100) / 100;
 
@@ -645,8 +716,84 @@ export function applyNpcGiftCloseness(
     npcId,
     appliedDelta,
     band: getClosenessBand(nextScore),
-    unlockedNow: computeNewlyUnlocked(effectiveBefore, nextScore),
-    unlockedAll: getUnlockedFeaturesForScore(nextScore),
+    unlockedNow: computeNewlyUnlockedForNpc(npcId, effectiveBefore, nextScore),
+    unlockedAll: getUnlockedFeaturesForNpcScore(npcId, nextScore),
+  };
+}
+
+/**
+ * Computes closeness gained from purchasing products from a Merchant NPC (Hana or Nadia).
+ * High-value purchases build meaningful closeness with high-tier merchants.
+ */
+export function computeMerchantPurchaseClosenessDelta(
+  amountPaid: number,
+  currency: MerchantPurchaseCurrency = 'RESPITE',
+): number {
+  if (!Number.isFinite(amountPaid) || amountPaid <= 0) return 0;
+  if (currency === 'RESPITE') {
+    if (amountPaid >= 150) return 14;
+    if (amountPaid >= 80) return 10;
+    if (amountPaid >= 35) return 7;
+    if (amountPaid >= 15) return 5;
+    if (amountPaid >= 5) return 3;
+    return 2;
+  }
+  // CYON or LUL
+  if (amountPaid >= 500) return 9;
+  if (amountPaid >= 250) return 6;
+  if (amountPaid >= 100) return 4;
+  if (amountPaid >= 40) return 2;
+  return 1;
+}
+
+/**
+ * Records a product purchase from a Merchant NPC (Hana or Nadia) to build closeness.
+ */
+export function recordNpcMerchantPurchase(
+  store: NpcClosenessStore,
+  rawNpcId: string,
+  options: {
+    amountPaid: number;
+    currency?: MerchantPurchaseCurrency;
+    nowMs?: number;
+  },
+): ClosenessMutationResult {
+  const npcId = resolveNpcId(rawNpcId);
+  if (!npcId) {
+    return {
+      store,
+      npcId: null,
+      appliedDelta: 0,
+      band: 'stranger',
+      unlockedNow: [],
+      unlockedAll: [],
+    };
+  }
+  const nowMs = options.nowMs ?? Date.now();
+  const prev = getNpcClosenessRecord(store, npcId);
+  const effectiveBefore = getEffectiveClosenessScore(prev, nowMs);
+  const gain = computeMerchantPurchaseClosenessDelta(
+    options.amountPaid,
+    options.currency ?? 'RESPITE',
+  );
+  const nextScore = clampScore(effectiveBefore + gain);
+  const appliedDelta = Math.round((nextScore - effectiveBefore) * 100) / 100;
+
+  const nextRecord: NpcClosenessRecord = {
+    ...prev,
+    score: nextScore,
+    peakScore: Math.max(prev.peakScore, nextScore),
+    lastInteractionAtMs: nowMs,
+    totalActivities: prev.totalActivities + 1,
+  };
+
+  return {
+    store: updateNpcRecord(store, npcId, nextRecord),
+    npcId,
+    appliedDelta,
+    band: getClosenessBand(nextScore),
+    unlockedNow: computeNewlyUnlockedForNpc(npcId, effectiveBefore, nextScore),
+    unlockedAll: getUnlockedFeaturesForNpcScore(npcId, nextScore),
   };
 }
 

@@ -3,6 +3,7 @@ import {
   canRideTogether,
   canWalkTogether,
   getNpcClosenessBand,
+  isHighTierMerchantNpc,
   resolveNpcId,
   type ClosenessBand,
   type NpcClosenessStore,
@@ -43,7 +44,8 @@ export interface ChatTogethernessOptions {
 export type TogethernessRefusalReason =
   | 'unknown_npc'
   | 'closeness_too_low'
-  | 'requires_electric_scooter_bike';
+  | 'requires_electric_scooter_bike'
+  | 'merchant_role_restricted';
 
 export interface TogethernessInvitationDecision {
   accepted: boolean;
@@ -99,7 +101,8 @@ export function resolveChatTogethernessOptions(params: {
 
   ensureAllNpcPersonasRegistered();
   const persona = getNpcPersona(npcId);
-  const rideReachable = persona?.activityPreferences?.enjoysScooterRide !== false;
+  const merchantRestricted = isHighTierMerchantNpc(npcId);
+  const rideReachable = !merchantRestricted && persona?.activityPreferences?.enjoysScooterRide !== false;
 
   const isRidingWithThisNpc = params.togethernessState.ridingNpcId === npcId;
   const isWalkingWithThisNpc = params.togethernessState.walkingNpcId === npcId;
@@ -111,6 +114,7 @@ export function resolveChatTogethernessOptions(params: {
     params.playerScooterKind === 'electric_scooter_bike';
 
   const canInviteWalk =
+    !merchantRestricted &&
     !isWalkingWithThisNpc &&
     !isRidingWithThisNpc &&
     params.playerScooterKind === null;
@@ -198,6 +202,24 @@ export function evaluateTogethernessInvitation(params: {
 
   const nowMs = params.nowMs ?? Date.now();
   const band = getNpcClosenessBand(params.store, npcId, nowMs);
+
+  if (isHighTierMerchantNpc(npcId)) {
+    const merchantReply =
+      npcId === 'hana'
+        ? params.kind === 'ride'
+          ? 'That sounds fun, though my duties running the West Plaza agency keep me grounded here—I cannot hop on a scooter! Stay and chat with me for a bit instead.'
+          : 'I wish I could wander off with you, though I have to look after my West Plaza storefront and guests. Drop by anytime for a talk—or a photo together once we know each other well!'
+        : params.kind === 'ride'
+          ? 'Flattering offer, really—but wind on a scooter plus Central Plaza boutique duties? Not happening. Hang out with me here at the plaza instead.'
+          : 'I have to stay around Central Plaza to curate the boutique and greet regulars, so I cannot walk away on a stroll. Keep visiting though—I always make time to talk.';
+    return {
+      accepted: false,
+      reason: 'merchant_role_restricted',
+      band,
+      requiredBand,
+      replyLine: merchantReply,
+    };
+  }
 
   if (params.kind === 'ride') {
     if (params.playerScooterKind !== 'electric_scooter_bike') {
@@ -364,6 +386,7 @@ export function evaluatePairedPoseRequest(params: {
   }
   const nowMs = params.nowMs ?? Date.now();
   const band = getNpcClosenessBand(params.store, npcId, nowMs);
+  const requiredBand: ClosenessBand = isHighTierMerchantNpc(npcId) ? 'close' : 'friendly';
   ensureAllNpcPersonasRegistered();
   const persona = getNpcPersona(npcId);
   const district = persona?.homeDistrict || 'around town';
@@ -372,14 +395,18 @@ export function evaluatePairedPoseRequest(params: {
     const fallbackBank = persona?.fallbackReplies?.[band];
     const baseTone =
       fallbackBank && fallbackBank.length > 0 ? fallbackBank[0].trim() : '';
-    const replyLine = baseTone
-      ? `A pair photo already? Let's get to know each other a bit better first! ${baseTone}`
-      : `A pair photo already? Let's chat a bit more around ${district} first!`;
+    const replyLine = isHighTierMerchantNpc(npcId)
+      ? npcId === 'nadia'
+        ? 'Not so fast—I only do paired shoots with close patrons and people I really trust. Keep visiting the plaza and we will get there.'
+        : 'That is really sweet of you to ask! I usually save paired photos for people I have grown truly close with around the plaza—let us spend more time together first.'
+      : baseTone
+        ? `A pair photo already? Let's get to know each other a bit better first! ${baseTone}`
+        : `A pair photo already? Let's chat a bit more around ${district} first!`;
     return {
       accepted: false,
       reason: 'closeness_too_low',
       band,
-      requiredBand: 'friendly',
+      requiredBand,
       replyLine,
     };
   }
@@ -388,7 +415,7 @@ export function evaluatePairedPoseRequest(params: {
     accepted: true,
     reason: null,
     band,
-    requiredBand: 'friendly',
+    requiredBand,
     replyLine: `Sure, I'd love to take a photo together! Pick a pose.`,
   };
 }

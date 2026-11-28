@@ -66,6 +66,8 @@ export interface NpcScheduleSlot {
   endHour?: number;
   /** Plain-English activity hint (e.g. 'brewing coffee at the counter'). */
   activityLabel: string;
+  /** Optional cafe drink/pastry prop held during this scheduled stop (e.g. 'latte', 'croissant'). */
+  holdingCafeItemId?: string;
 }
 
 export interface NpcVoiceProfile {

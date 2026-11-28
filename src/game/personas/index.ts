@@ -11,11 +11,12 @@ import { NADIA_PERSONA } from './nadia';
 import { TARI_PERSONA } from './tari';
 import { BIMA_PERSONA } from './bima';
 import { KENJI_PERSONA } from './kenji';
+import { RAKA_PERSONA } from './raka';
 
 /**
- * Aggregates all 7 named NPC persona packs.
+ * Aggregates all 8 named NPC persona packs.
  * Each individual file (`src/game/personas/<npc>.ts`) is owned by its respective
- * persona agent so all 7 can be authored in parallel with zero merge conflicts.
+ * persona agent so all 8 can be authored in parallel with zero merge conflicts.
  */
 export const ALL_NPC_PERSONAS: Readonly<Record<NpcId, NpcPersonaPack>> = {
   hana: HANA_PERSONA,
@@ -25,10 +26,11 @@ export const ALL_NPC_PERSONAS: Readonly<Record<NpcId, NpcPersonaPack>> = {
   tari: TARI_PERSONA,
   bima: BIMA_PERSONA,
   kenji: KENJI_PERSONA,
+  raka: RAKA_PERSONA,
 };
 
 /**
- * Ensures all 7 named NPC persona packs (and their gift preferences) are registered
+ * Ensures all 8 named NPC persona packs (and their gift preferences) are registered
  * in `npcPersonaRegistry` and `npcGiftEngine`. Safe to call multiple times (e.g. after
  * test resets).
  */
@@ -48,4 +50,5 @@ export {
   TARI_PERSONA,
   BIMA_PERSONA,
   KENJI_PERSONA,
+  RAKA_PERSONA,
 };

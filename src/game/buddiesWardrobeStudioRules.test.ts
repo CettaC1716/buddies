@@ -3,16 +3,22 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  DEFAULT_MALE_UNDERWEAR_ITEM_ID,
+  DEFAULT_MALE_UNDERWEAR_OVERLAY,
   DEFAULT_NEUTRAL_BODY_SHAPE,
+  DEFAULT_WARDROBE_ANIM_SET_ID,
   EMPTY_WARDROBE_DRAFT,
   WARDROBE_STUDIO_ITEMS,
   applyItemSelectionToDraft,
   classifyDefaultAvatarSlotFromMeshName,
   collectUnownedItemsInDraft,
+  convertWardrobeLulPriceToCyon,
   createSavedPresetFromDraft,
   createWardrobeHistory,
+  enforcePublicModestyOnDraft,
   getVisibleBuiltInWardrobePresets,
   getWardrobeCatalogItemById,
+  getWardrobeDraftStorageKey,
   partitionWardrobeCategoryItems,
   purchaseWardrobeCatalogItem,
   pushWardrobeDraft,
@@ -139,26 +145,27 @@ test('Try-on locked items and opposite-gender items are sanitized cleanly to own
   assert.equal(urlsMale.legsUrl, null);
 });
 
-test('purchaseWardrobeCatalogItem validates $LUL balance and unlocks item idempotently', () => {
+test('purchaseWardrobeCatalogItem validates CYON balance and unlocks item idempotently', () => {
   const fail = purchaseWardrobeCatalogItem([], 5, 'apparel_body_athletic_sculpt');
   assert.equal(fail.ok, false);
-  assert.ok(fail.errorMessage?.includes('$LUL'));
+  assert.ok(fail.errorMessage?.includes('CerCoins'));
 
+  // apparel_body_athletic_sculpt lists at 25 LUL -> converted CYON price is 50
   const ok = purchaseWardrobeCatalogItem([], 50, 'apparel_body_athletic_sculpt');
   assert.equal(ok.ok, true);
   assert.equal(ok.alreadyOwned, false);
-  assert.equal(ok.priceChargedLul, 25);
-  assert.equal(ok.nextLulBalance, 25);
+  assert.equal(ok.priceChargedCyon, 50);
+  assert.equal(ok.nextCyonBalance, 0);
   assert.ok(ok.nextOwnedIds.includes('apparel_body_athletic_sculpt'));
 
   const already = purchaseWardrobeCatalogItem(
     ok.nextOwnedIds,
-    ok.nextLulBalance,
+    ok.nextCyonBalance,
     'apparel_body_athletic_sculpt',
   );
   assert.equal(already.ok, true);
   assert.equal(already.alreadyOwned, true);
-  assert.equal(already.priceChargedLul, 0);
+  assert.equal(already.priceChargedCyon, 0);
 });
 
 test('resolveWardrobeGlassSurfaceMode defaults to 0% FPS smoked pseudo-glass on software/slow GPUs and frosted on fast hardware', () => {
@@ -300,7 +307,11 @@ test('Server-authoritative wardrobe purchase catalog matches every paid client i
     if (!item.isStarterDefault && item.priceLul > 0) {
       const serverEntry = WARDROBE_SERVER_CATALOG[item.id];
       assert.ok(serverEntry, `Paid item ${item.id} must exist in WARDROBE_SERVER_CATALOG`);
-      assert.equal(serverEntry.priceLul, item.priceLul, `Server price must match catalog for ${item.id}`);
+      assert.equal(
+        serverEntry.priceCyon,
+        convertWardrobeLulPriceToCyon(item.priceLul),
+        `Server CYON price must match converted catalog price for ${item.id}`,
+      );
       assert.equal(serverEntry.slot, item.slot);
     }
   }
@@ -314,13 +325,13 @@ test('Server-authoritative wardrobe purchase catalog matches every paid client i
   const sig1 = signWardrobeEntitlementReceipt({
     accountId: 'player.testnet',
     itemId: 'apparel_body_athletic_sculpt',
-    priceLul: 25,
+    priceCyon: 50,
     issuedAtIso: '2026-11-20T00:00:00.000Z',
   });
   const sig2 = signWardrobeEntitlementReceipt({
     accountId: 'player.testnet',
     itemId: 'apparel_body_athletic_sculpt',
-    priceLul: 0,
+    priceCyon: 0,
     issuedAtIso: '2026-11-20T00:00:00.000Z',
   });
   assert.equal(sig1.length, 64);
@@ -496,7 +507,26 @@ test('Style Animation Sets, Dance Poses & Saved Character gender partition Owned
   assert.equal(sanitizedFree.animSetId, freeRunwayAnim.id);
   assert.equal(sanitizedFree.dancePoseId, freeGrooveDance.id);
 
-  // Paid unowned Style items show up in Try-On Preview and strip back to null on sanitize
+  assert.equal(EMPTY_WARDROBE_DRAFT.animSetId, DEFAULT_WARDROBE_ANIM_SET_ID);
+  const defaultAnimResolved = resolveWardrobeDraftAnimStyle(EMPTY_WARDROBE_DRAFT);
+  assert.equal(
+    defaultAnimResolved.externalAnimGlbUrl,
+    '/assets/animations/sets/985C99B7__idle_01.glb',
+  );
+  assert.equal(
+    defaultAnimResolved.walkGlbUrl,
+    '/assets/animations/sets/985C99B7__walk_01.glb',
+  );
+  assert.equal(
+    defaultAnimResolved.runGlbUrl,
+    '/assets/animations/sets/985C99B7__run_01.glb',
+  );
+  assert.equal(
+    defaultAnimResolved.sitGlbUrl,
+    '/assets/animations/sets/985C99B7__sit_01_m.glb',
+  );
+
+  // Paid unowned Style items show up in Try-On Preview and strip back to Classic Core default on sanitize
   let paidDraft = applyItemSelectionToDraft(draft, paidIdolAnim);
   paidDraft = applyItemSelectionToDraft(paidDraft, paidHipHopDance);
   const unownedIds = collectUnownedItemsInDraft(paidDraft, [], 'male').map((i) => i.id);
@@ -504,7 +534,7 @@ test('Style Animation Sets, Dance Poses & Saved Character gender partition Owned
   assert.ok(unownedIds.includes(paidHipHopDance.id));
 
   const sanitizedPaid = sanitizeDraftToOwnedOnly(paidDraft, [], 'male');
-  assert.equal(sanitizedPaid.animSetId, null);
+  assert.equal(sanitizedPaid.animSetId, DEFAULT_WARDROBE_ANIM_SET_ID);
   assert.equal(sanitizedPaid.dancePoseId, null);
 
   // Saved Character preserves active gender along with complete draft
@@ -739,4 +769,128 @@ test('shouldFlipWardrobeThumbY flips glTF UV beauty thumbnails upright without f
   );
 });
 
+test('hideBaseBra ("No Bra") & hideBaseUnderwear remain allowed when clothed in public, and enforcePublicModestyOnDraft prevents nudity for female and male', () => {
+  const anyFemaleTop = WARDROBE_STUDIO_ITEMS.find(
+    (i) => i.slot === 'top' && i.gender === 'female' && !i.isStarterDefault,
+  )!;
+  assert.ok(anyFemaleTop, 'female top item must exist');
 
+  // 1. Toggling No Bra persists across equipping an outer top/outfit
+  let draft: WardrobeOutfitDraft = { ...EMPTY_WARDROBE_DRAFT, hideBaseBra: true };
+  draft = applyItemSelectionToDraft(draft, anyFemaleTop);
+  assert.equal(draft.hideBaseBra, true);
+  assert.equal(draft.hideOuterForUnderwear, false);
+
+  // 2. When clothed in public (hideOuterForUnderwear: false), both hideBaseBra & hideBaseUnderwear survive sanitization
+  const clothedFemaleSanitized = sanitizeDraftToOwnedOnly(
+    { ...draft, hideBaseUnderwear: true, hideBaseBra: true },
+    [anyFemaleTop.id],
+    'female',
+  );
+  assert.equal(clothedFemaleSanitized.hideBaseBra, true);
+  assert.equal(clothedFemaleSanitized.hideBaseUnderwear, true);
+  const clothedFaceProfile = resolveWardrobeDraftFaceCustomization(
+    clothedFemaleSanitized,
+    'female',
+    { enforcePublicModesty: true },
+  );
+  assert.equal(clothedFaceProfile.hideBaseBra, true);
+  assert.equal(clothedFaceProfile.hideBaseUnderwear, true);
+
+  // 3. When outer clothes are hidden in public (hideOuterForUnderwear: true) without covering underwear/corewear,
+  //    female must NOT be bare/topless or bottomless in public
+  const bareFemalePublic = enforcePublicModestyOnDraft(
+    {
+      ...EMPTY_WARDROBE_DRAFT,
+      hideOuterForUnderwear: true,
+      hideBaseUnderwear: true,
+      hideBaseBra: true,
+    },
+    'female',
+  );
+  assert.equal(bareFemalePublic.hideBaseUnderwear, false);
+  assert.equal(bareFemalePublic.hideBaseBra, false);
+
+  // 4. Even if an unowned/stripped underwearId was previewed with hideOuterForUnderwear: true,
+  //    sanitizeDraftToOwnedOnly restores base underwear & bra so female avatar isn't naked in public
+  const strippedPreviewPublic = sanitizeDraftToOwnedOnly(
+    {
+      ...EMPTY_WARDROBE_DRAFT,
+      underwearId: 'unowned_bikini_999',
+      hideOuterForUnderwear: true,
+      hideBaseUnderwear: true,
+      hideBaseBra: true,
+    },
+    [],
+    'female',
+  );
+  assert.equal(strippedPreviewPublic.underwearId, null);
+  assert.equal(strippedPreviewPublic.hideBaseUnderwear, false);
+  assert.equal(strippedPreviewPublic.hideBaseBra, false);
+
+  // 5. Male must never be naked in public when hideOuterForUnderwear: true without owned underwear,
+  //    and hideBaseBra always normalizes to false for male avatars
+  const bareMalePublic = enforcePublicModestyOnDraft(
+    {
+      ...EMPTY_WARDROBE_DRAFT,
+      hideOuterForUnderwear: true,
+      hideBaseUnderwear: true,
+      hideBaseBra: true,
+    },
+    'male',
+  );
+  assert.equal(bareMalePublic.hideBaseUnderwear, false);
+  assert.equal(bareMalePublic.hideBaseBra, false);
+
+  // Male wearing outer clothes may hide base underwear so tight outfits/shorts don't show base briefs
+  const clothedMaleSanitized = sanitizeDraftToOwnedOnly(
+    {
+      ...EMPTY_WARDROBE_DRAFT,
+      hideOuterForUnderwear: false,
+      hideBaseUnderwear: true,
+      hideBaseBra: true,
+    },
+    [],
+    'male',
+  );
+  assert.equal(clothedMaleSanitized.hideBaseUnderwear, true);
+  assert.equal(clothedMaleSanitized.hideBaseBra, false);
+
+  // 6. New player & default male avatar uses Blitz Silver Branded Boxers (uw_underwear_m_6d78c756)
+  const newPlayerMaleProfile = resolveWardrobeDraftFaceCustomization(
+    EMPTY_WARDROBE_DRAFT,
+    'male',
+    { enforcePublicModesty: true },
+  );
+  assert.equal(DEFAULT_MALE_UNDERWEAR_ITEM_ID, 'uw_underwear_m_6d78c756');
+  assert.deepEqual(newPlayerMaleProfile.underwearOverlay, DEFAULT_MALE_UNDERWEAR_OVERLAY);
+
+  // When male hides base underwear while clothed, no underwear overlay is applied
+  const clothedMaleNoUnderwearProfile = resolveWardrobeDraftFaceCustomization(
+    clothedMaleSanitized,
+    'male',
+    { enforcePublicModesty: true },
+  );
+  assert.equal(clothedMaleNoUnderwearProfile.underwearOverlay, null);
+  assert.equal(clothedMaleNoUnderwearProfile.hideBaseUnderwear, true);
+
+  // When male hides outer clothes in public without custom underwear, default Blitz Silver Branded Boxers is restored
+  const bareMalePublicProfile = resolveWardrobeDraftFaceCustomization(
+    {
+      ...EMPTY_WARDROBE_DRAFT,
+      hideOuterForUnderwear: true,
+      hideBaseUnderwear: true,
+    },
+    'male',
+    { enforcePublicModesty: true },
+  );
+  assert.deepEqual(bareMalePublicProfile.underwearOverlay, DEFAULT_MALE_UNDERWEAR_OVERLAY);
+  assert.equal(bareMalePublicProfile.hideBaseUnderwear, false);
+
+  // 7. Male and Female characters use distinct per-gender storage keys so customizing one never pollutes the other
+  const maleKey = getWardrobeDraftStorageKey('player1', 'male');
+  const femaleKey = getWardrobeDraftStorageKey('player1', 'female');
+  assert.notEqual(maleKey, femaleKey);
+  assert.equal(maleKey, 'bb_wardrobe_outfit_draft_v2:player1:male');
+  assert.equal(femaleKey, 'bb_wardrobe_outfit_draft_v2:player1:female');
+});

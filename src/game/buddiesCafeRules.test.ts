@@ -11,6 +11,10 @@ import {
   CAFE_SHIFT_COMPLETION_BONUS_BUCKS,
   CAFE_SHIFT_COMPLETION_BONUS_XP,
   CAFE_SHIFT_MAX_ORDERS,
+  CAFE_TARI_COUNTER_SIDE_BACK,
+  CAFE_TARI_COUNTER_SIDE_FLOOR,
+  CAFE_TARI_EXTERIOR_DOOR_STOP,
+  CAFE_TARI_INTERIOR_DOOR_EXIT,
   advanceCafeConsumerState,
   applyPlayerXpGain,
   clampCafeInteriorPosition,
@@ -20,6 +24,7 @@ import {
   computeLevelProgress,
   createInitialCafeConsumerState,
   createInitialCafeWorkShiftState,
+  createInitialTariCafeServeState,
   detectNearestCafeStation,
   exchangeCafeBucksToLul,
   getCafeConsumerRemainingSummary,
@@ -27,7 +32,11 @@ import {
   purchaseCafeOrderBatch,
   resolveNearestCafePromptOrSeat,
   serveActiveCafeOrder,
+  shouldIndoorTariExitCafe,
+  shouldOutdoorTariEnterCafe,
   startCafeWorkShift,
+  startTariCafeServeOrder,
+  stepTariCafeServeOrder,
   xpRequiredForLevelStep,
 } from './buddiesCafeRules';
 import {
@@ -109,7 +118,7 @@ test('Barista Work Shift (Pelayan) lifecycle spawns AI orders, rewards XP + Shif
   assert.equal(r3.nextShiftState.totalOrdersServedEver, CAFE_SHIFT_MAX_ORDERS);
 });
 
-test('Cafe ATM exchanges Shift Bucks to LUL and Food Purchase deducts LUL while granting XP', () => {
+test('Cafe ATM exchanges Shift Bucks to LUL and Food Purchase deducts CYON while granting XP', () => {
   const noCash = exchangeCafeBucksToLul(10, 0, 5);
   assert.equal(noCash.exchanged, false);
   assert.equal(noCash.nextLul, 5);
@@ -123,11 +132,11 @@ test('Cafe ATM exchanges Shift Bucks to LUL and Food Purchase deducts LUL while 
 
   const failBuy = purchaseCafeMenuItem('latte', 5);
   assert.equal(failBuy.purchased, false);
-  assert.equal(failBuy.reason, 'insufficient_lul');
+  assert.equal(failBuy.reason, 'insufficient_cyon');
 
   const okBuy = purchaseCafeMenuItem('latte', cashOut.nextLul);
   assert.equal(okBuy.purchased, true);
-  assert.equal(okBuy.nextLul, 32);
+  assert.equal(okBuy.nextCyon, 32);
   assert.equal(okBuy.xpGained, 35);
 });
 
@@ -1473,19 +1482,19 @@ test('Cafe purchase holds item in hand, locks re-ordering until finished, and su
   const idle0 = createInitialCafeConsumerState();
   const buySingle = purchaseCafeMenuItem('latte', 50, idle0, 1000);
   assert.equal(buySingle.purchased, true);
-  assert.equal(buySingle.nextLul, 40);
+  assert.equal(buySingle.nextCyon, 40);
   assert.equal(buySingle.nextConsumerState?.activeItem?.id, 'latte');
 
   // Cannot buy again until held food is finished
   const blockedReorder = purchaseCafeMenuItem(
     'croissant',
-    buySingle.nextLul,
+    buySingle.nextCyon,
     buySingle.nextConsumerState,
     1000 + Math.floor(CAFE_ITEM_CONSUME_DURATION_MS / 2),
   );
   assert.equal(blockedReorder.purchased, false);
   assert.equal(blockedReorder.reason, 'still_consuming');
-  assert.equal(blockedReorder.nextLul, 40);
+  assert.equal(blockedReorder.nextCyon, 40);
 
   // After finish time, consumer state unlocks cleanly for next order / batch order
   const doneSingle = advanceCafeConsumerState(
@@ -1505,7 +1514,7 @@ test('Cafe purchase holds item in hand, locks re-ordering until finished, and su
   assert.equal(overCap.purchased, false);
   assert.equal(overCap.reason, 'exceeds_max_batch');
 
-  // Multi-item batch order: 1x Caramel Latte (10 LUL, 35 XP) + 2x Butter Croissant (6 LUL, 24 XP)
+  // Multi-item batch order: 1x Caramel Latte (10 CYON, 35 XP) + 2x Butter Croissant (6 CYON, 24 XP)
   const batchOrder = purchaseCafeOrderBatch(
     [
       { itemId: 'latte', quantity: 1 },
@@ -1517,8 +1526,8 @@ test('Cafe purchase holds item in hand, locks re-ordering until finished, and su
   );
   assert.equal(batchOrder.purchased, true);
   assert.equal(batchOrder.items.length, 3);
-  assert.equal(batchOrder.totalPriceLul, 16);
-  assert.equal(batchOrder.nextLul, 24);
+  assert.equal(batchOrder.totalPriceCyon, 16);
+  assert.equal(batchOrder.nextCyon, 24);
   assert.equal(batchOrder.xpGained, 59);
   assert.equal(batchOrder.nextConsumerState.activeItem?.id, 'latte');
   assert.equal(batchOrder.nextConsumerState.queuedItems.length, 2);
@@ -1635,3 +1644,182 @@ test('non-upright Mixamo retarget filter and scale-invariant seated floor helper
     }
   }
 });
+
+test('Unified Tari doorway predicates enforce single instance and guard against interrupting player interactions or work shifts', () => {
+  // Outdoor -> Indoor trigger at West Plaza Glasshouse entrance
+  assert.equal(
+    shouldOutdoorTariEnterCafe({
+      tariInsideCafe: false,
+      npcX: CAFE_TARI_EXTERIOR_DOOR_STOP.x,
+      npcZ: CAFE_TARI_EXTERIOR_DOOR_STOP.z,
+      targetWpX: CAFE_TARI_EXTERIOR_DOOR_STOP.x,
+      targetWpZ: CAFE_TARI_EXTERIOR_DOOR_STOP.z,
+      pauseTimer: 0,
+      isInteractingWithPlayer: false,
+    }),
+    true,
+  );
+  // Guarded when already inside or interacting with player
+  assert.equal(
+    shouldOutdoorTariEnterCafe({
+      tariInsideCafe: true,
+      npcX: CAFE_TARI_EXTERIOR_DOOR_STOP.x,
+      npcZ: CAFE_TARI_EXTERIOR_DOOR_STOP.z,
+      targetWpX: CAFE_TARI_EXTERIOR_DOOR_STOP.x,
+      targetWpZ: CAFE_TARI_EXTERIOR_DOOR_STOP.z,
+      pauseTimer: 0,
+      isInteractingWithPlayer: false,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldOutdoorTariEnterCafe({
+      tariInsideCafe: false,
+      npcX: CAFE_TARI_EXTERIOR_DOOR_STOP.x,
+      npcZ: CAFE_TARI_EXTERIOR_DOOR_STOP.z,
+      targetWpX: CAFE_TARI_EXTERIOR_DOOR_STOP.x,
+      targetWpZ: CAFE_TARI_EXTERIOR_DOOR_STOP.z,
+      pauseTimer: 1.5,
+      isInteractingWithPlayer: true,
+    }),
+    false,
+  );
+
+  // Indoor -> Outdoor trigger at cafe interior exit pad
+  assert.equal(
+    shouldIndoorTariExitCafe({
+      tariInsideCafe: true,
+      npcX: CAFE_TARI_INTERIOR_DOOR_EXIT.x,
+      npcZ: CAFE_TARI_INTERIOR_DOOR_EXIT.z,
+      targetWpX: CAFE_TARI_INTERIOR_DOOR_EXIT.x,
+      targetWpZ: CAFE_TARI_INTERIOR_DOOR_EXIT.z,
+      pauseTimer: 0,
+      isInteractingWithPlayer: false,
+      isServingOrder: false,
+      cafeWorkShiftActive: false,
+    }),
+    true,
+  );
+  // Guarded when serving an order, in player shift, talking/paired, or already outside
+  for (const overrides of [
+    { tariInsideCafe: false },
+    { isInteractingWithPlayer: true },
+    { isServingOrder: true },
+    { cafeWorkShiftActive: true },
+  ]) {
+    assert.equal(
+      shouldIndoorTariExitCafe({
+        tariInsideCafe: true,
+        npcX: CAFE_TARI_INTERIOR_DOOR_EXIT.x,
+        npcZ: CAFE_TARI_INTERIOR_DOOR_EXIT.z,
+        targetWpX: CAFE_TARI_INTERIOR_DOOR_EXIT.x,
+        targetWpZ: CAFE_TARI_INTERIOR_DOOR_EXIT.z,
+        pauseTimer: 0.5,
+        isInteractingWithPlayer: false,
+        isServingOrder: false,
+        cafeWorkShiftActive: false,
+        ...overrides,
+      }),
+      false,
+    );
+  }
+});
+
+test('Tari barista serve choreography routes cleanly around east counter end, prepares drink or pastry, holds item at counter, and returns to idle', async () => {
+  const { CAFE_INTERIOR_COLLIDERS } = await import('./buddiesCafeInteriorBuilder');
+  const { CAFE_TARI_INTERIOR_PRESET } = await import('./buddiesBlitzRules');
+
+  const counterCol = CAFE_INTERIOR_COLLIDERS.find((c) => c.id === 'cafe_barista_counter')!;
+  const counterMinX = counterCol.x - counterCol.hw;
+  const counterMaxX = counterCol.x + counterCol.hw;
+  const counterMinZ = counterCol.z - counterCol.hd;
+  const counterMaxZ = counterCol.z + counterCol.hd;
+
+  // Verify every interior patrol waypoint clears the solid barista counter collider
+  for (const wp of CAFE_TARI_INTERIOR_PRESET.waypoints) {
+    const insideCounter =
+      wp.x >= counterMinX - 0.1 &&
+      wp.x <= counterMaxX + 0.1 &&
+      wp.z >= counterMinZ - 0.1 &&
+      wp.z <= counterMaxZ + 0.1;
+    assert.equal(insideCounter, false, `Waypoint "${wp.label}" (${wp.x}, ${wp.z}) clips barista counter`);
+  }
+
+  // 1. Drink order when Tari starts on the main cafe floor -> routes via east counter side without clipping counter
+  let state = startTariCafeServeOrder({
+    npcX: 0.0,
+    npcZ: 4.1,
+    itemId: 'latte',
+    itemName: 'Caramel Latte',
+    category: 'drink',
+  });
+  assert.equal(state.phase, 'walk_side_floor');
+
+  let x = 0.0;
+  let z = 4.1;
+  let yaw = Math.PI / 2;
+  const visitedPhases = new Set<string>([state.phase]);
+  let sawServedCounterHold = false;
+  let completed = false;
+
+  for (let i = 0; i < 400; i++) {
+    const step = stepTariCafeServeOrder({ state, x, z, yaw, dt: 0.05 });
+    state = step.nextState;
+    x = step.x;
+    z = step.z;
+    yaw = step.yaw;
+    visitedPhases.add(state.phase);
+
+    const insideCounter =
+      x >= counterMinX + 0.05 &&
+      x <= counterMaxX - 0.05 &&
+      z >= counterMinZ + 0.05 &&
+      z <= counterMaxZ - 0.05;
+    assert.equal(insideCounter, false, `Tari clipped barista counter at step ${i}: (${x.toFixed(2)}, ${z.toFixed(2)})`);
+
+    if (step.holdingCafeItemId === 'latte' && Math.hypot(x - CAFE_INTERIOR_BOUNDS.baristaCounterStandX, z - -3.22) < 0.2) {
+      sawServedCounterHold = true;
+    }
+    if (step.completedThisFrame) {
+      completed = true;
+      break;
+    }
+  }
+
+  assert.equal(completed, true);
+  assert.equal(sawServedCounterHold, true);
+  assert.equal(state.phase, 'idle');
+  for (const expectedPhase of ['walk_side_floor', 'walk_side_back', 'walk_to_prep', 'preparing', 'walk_to_counter', 'serving']) {
+    assert.ok(visitedPhases.has(expectedPhase), `Missing drink serve phase ${expectedPhase}`);
+  }
+
+  // 2. Pastry order when Tari is already behind the counter -> goes straight to pastry display case
+  let pastryState = startTariCafeServeOrder({
+    npcX: CAFE_TARI_COUNTER_SIDE_BACK.x - 1.5,
+    npcZ: CAFE_TARI_COUNTER_SIDE_BACK.z,
+    itemId: 'croissant',
+    itemName: 'Butter Croissant',
+    category: 'pastry',
+  });
+  assert.equal(pastryState.phase, 'walk_to_prep');
+
+  let px = CAFE_TARI_COUNTER_SIDE_BACK.x - 1.5;
+  let pz: number = CAFE_TARI_COUNTER_SIDE_BACK.z;
+  let pyaw = 0;
+  let pastryCompleted = false;
+  for (let i = 0; i < 300; i++) {
+    const step = stepTariCafeServeOrder({ state: pastryState, x: px, z: pz, yaw: pyaw, dt: 0.05 });
+    pastryState = step.nextState;
+    px = step.x;
+    pz = step.z;
+    pyaw = step.yaw;
+    if (step.completedThisFrame) {
+      pastryCompleted = true;
+      break;
+    }
+  }
+  assert.equal(pastryCompleted, true);
+  assert.equal(createInitialTariCafeServeState().phase, 'idle');
+  assert.ok(CAFE_TARI_COUNTER_SIDE_FLOOR.x > counterMaxX + 0.4);
+});
+

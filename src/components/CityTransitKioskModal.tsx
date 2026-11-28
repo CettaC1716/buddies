@@ -596,7 +596,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 className="group relative h-[156px] sm:h-[168px] rounded-2xl bg-slate-900/70 border border-white/15 shadow-md hover:border-emerald-400/60 hover:shadow-[0_12px_30px_rgba(0,0,0,0.45)] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
               >
                 <img
-                  src={kioskThumbnails.my_house || '/docs/hero-3-house-interior.jpg'}
+                  src={kioskThumbnails.my_house || '/assets/kiosk/glass_modern_interior.jpg'}
                   alt="Public Apartments"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
@@ -734,7 +734,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                     BARISTA SHIFT
                   </span>
                   <span className="px-2.5 py-1 rounded-full bg-slate-900/75 text-white border border-white/20 text-[10px] font-bold uppercase">
-                    LUL / XP
+                    CerBucks / XP
                   </span>
                 </div>
 
@@ -762,7 +762,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 CHOOSE YOUR TEAM FACTION
               </h3>
               <p className="mt-1.5 text-xs sm:text-sm font-medium text-slate-300 max-w-lg mx-auto">
-                Select your squad to board the City Transit Tram and spawn randomly at the combat Cratepad. Compete to collect LUL drops and battle the opposition!
+                Select your squad to board the City Transit Tram and spawn randomly at the combat Cratepad. Compete to collect CerBucks drops and battle the opposition!
               </p>
             </div>
 
@@ -881,7 +881,11 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                       }`}
                     >
                       <img
-                        src={apt.imageUrl}
+                        src={
+                          apt.id === 'public_hana_west_penthouse' && kioskThumbnails.my_house
+                            ? kioskThumbnails.my_house
+                            : apt.imageUrl
+                        }
                         alt={apt.shortTitle}
                         className="w-11 h-11 rounded-xl object-cover shrink-0 bg-slate-900 border border-white/10"
                       />
@@ -914,7 +918,12 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
             {selectedPublicApartment ? (
               <div className="w-full md:w-[70%] h-[280px] md:h-[430px] relative bg-slate-900 overflow-hidden flex flex-col justify-between">
                 <img
-                  src={selectedPublicApartment.imageUrl}
+                  src={
+                    selectedPublicApartment.id === 'public_hana_west_penthouse' &&
+                    kioskThumbnails.my_house
+                      ? kioskThumbnails.my_house
+                      : selectedPublicApartment.imageUrl
+                  }
                   alt={selectedPublicApartment.title}
                   className="absolute inset-0 w-full h-full object-cover"
                 />

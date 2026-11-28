@@ -19,6 +19,10 @@ import {
   type PairedPoseCategory,
 } from '../game/npcTogethernessRegistry';
 import type { WorldMultiplayerPairedPoseEvent } from '../lib/supabaseClient';
+import {
+  MOTION_SILHOUETTE_ORB_BG,
+  MotionSilhouetteThumb,
+} from './MotionSilhouetteThumb';
 
 export interface PairedInteractionStatusState {
   active: boolean;
@@ -305,8 +309,6 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
                       const isActive =
                         Boolean(pairedStatus?.active) && pairedStatus?.animId === item.id;
                       const isDance = item.pairedAnim?.subKind === 'dance';
-                      const vibeTag =
-                        item.pairedAnim?.vibeTag ?? (isDance ? 'DANCE' : 'DUO');
                       return (
                         <button
                           key={item.id}
@@ -326,23 +328,18 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
                           <div
                             className={`relative w-[68px] h-[68px] sm:w-[70px] sm:h-[70px] rounded-full overflow-hidden flex items-center justify-center transition-transform duration-150 group-hover:scale-[1.04] group-active:scale-95 ${
                               isActive
-                                ? 'border-2 border-white shadow-[0_4px_16px_rgba(138,216,255,0.5)]'
-                                : 'border border-white/20 group-hover:border-white/45'
+                                ? 'border-2 border-[#8ad8ff] shadow-[0_4px_16px_rgba(138,216,255,0.55)]'
+                                : 'border border-white/25 group-hover:border-white/55'
                             }`}
                             style={{
-                              background: `radial-gradient(circle at 32% 28%, ${item.swatchGradient[0]}, ${item.swatchGradient[1]})`,
+                              background: MOTION_SILHOUETTE_ORB_BG,
                             }}
                           >
-                            <div className="flex flex-col items-center justify-center gap-0.5 text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">
-                              {isDance ? (
-                                <Music className="w-4 h-4 stroke-[2]" />
-                              ) : (
-                                <Users className="w-4 h-4 stroke-[2]" />
-                              )}
-                              <span className="text-[8px] font-bold tracking-wide uppercase text-white/95 max-w-[54px] truncate">
-                                {vibeTag}
-                              </span>
-                            </div>
+                            <MotionSilhouetteThumb
+                              wardrobeItemId={item.id}
+                              alt={item.name}
+                              isPaired
+                            />
 
                             {isActive && (
                               <span className="absolute bottom-0.5 right-0.5 w-4.5 h-4.5 rounded-full bg-[#8ad8ff] text-slate-950 flex items-center justify-center shadow">
@@ -375,7 +372,7 @@ export const PairedInteractionOverlay: React.FC<PairedInteractionOverlayProps> =
         <div
           data-paired-active-banner="true"
           onPointerDown={(e) => e.stopPropagation()}
-          className="fixed top-20 left-1/2 -translate-x-1/2 z-[47] flex items-center gap-2.5 px-3.5 py-2 rounded-full bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_12px_32px_rgba(0,0,0,0.52)] text-white text-xs select-none"
+          className="fixed bottom-[calc(142px+var(--safe-bottom))] left-1/2 -translate-x-1/2 z-[47] flex items-center gap-2.5 px-3.5 py-2 rounded-full bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_12px_32px_rgba(0,0,0,0.52)] text-white text-xs select-none"
         >
           <Users className="w-3.5 h-3.5 text-[#8ad8ff] shrink-0" />
           <span className="font-semibold max-w-[260px] truncate">

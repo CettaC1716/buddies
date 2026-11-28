@@ -144,8 +144,8 @@ export function evaluateArcadeSlotCombination(
       netDeltaLul: payoutLul - safeBet,
       xpGained: isJackpot ? 25 : 10,
       headline: isJackpot
-        ? `JACKPOT 7-7-7 · +${payoutLul} LUL`
-        : `TRIPLE ${spec.label} · +${payoutLul} LUL`,
+        ? `JACKPOT 7-7-7 · +${payoutLul} CerBucks`
+        : `TRIPLE ${spec.label} · +${payoutLul} CerBucks`,
     };
   }
 
@@ -169,8 +169,8 @@ export function evaluateArcadeSlotCombination(
       netDeltaLul: payoutLul - safeBet,
       xpGained: isPush ? 3 : 5,
       headline: isPush
-        ? `PAIR ${spec.label} · MONEY BACK (${payoutLul} LUL)`
-        : `PAIR ${spec.label} · +${payoutLul} LUL`,
+        ? `PAIR ${spec.label} · MONEY BACK (${payoutLul} CerBucks)`
+        : `PAIR ${spec.label} · +${payoutLul} CerBucks`,
     };
   }
 
@@ -182,7 +182,7 @@ export function evaluateArcadeSlotCombination(
     payoutLul: 0,
     netDeltaLul: -safeBet,
     xpGained: 2,
-    headline: `NO MATCH · -${safeBet} LUL`,
+    headline: `NO MATCH · -${safeBet} CerBucks`,
   };
 }
 
@@ -202,7 +202,7 @@ export function spinArcadeSlotReels(
     return {
       ok: false,
       reason: 'invalid_bet',
-      message: `Minimum stake is ${ARCADE_SLOT_MIN_BET_LUL} LUL.`,
+      message: `Minimum stake is ${ARCADE_SLOT_MIN_BET_LUL} CerBucks.`,
       betLul: safeBet,
       updatedLulBalance: safeBalance,
       evaluation: null,
@@ -213,7 +213,7 @@ export function spinArcadeSlotReels(
     return {
       ok: false,
       reason: 'insufficient_lul',
-      message: `Need ${safeBet} LUL to spin (you have ${safeBalance} LUL).`,
+      message: `Need ${safeBet} CerBucks to spin (you have ${safeBalance} CerBucks).`,
       betLul: safeBet,
       updatedLulBalance: safeBalance,
       evaluation: null,

@@ -42,13 +42,14 @@ import {
 type QaTabId = 'items' | 'director' | 'shops' | 'sensors';
 
 const NPC_DISPLAY_LABELS: Record<NpcId, { name: string; role: string }> = {
-  hana: { name: 'Hana', role: 'Plaza Guide' },
+  hana: { name: 'Hana', role: 'West Merchant' },
   kai: { name: 'Kai', role: 'Harbor Host' },
-  mira: { name: 'Mira', role: 'Cafe Barista' },
-  nadia: { name: 'Nadia', role: 'Stylist' },
-  tari: { name: 'Tari', role: 'Beach Host' },
-  bima: { name: 'Bima', role: 'Scooter Tech' },
-  kenji: { name: 'Kenji', role: 'Transit Officer' },
+  mira: { name: 'Mira', role: 'Beach Dancer' },
+  nadia: { name: 'Nadia', role: 'Central Merchant' },
+  tari: { name: 'Tari', role: 'Cafe Staff' },
+  bima: { name: 'Bima', role: 'City Citizen' },
+  kenji: { name: 'Kenji', role: 'City Citizen' },
+  raka: { name: 'Raka', role: 'Beach Security' },
 };
 
 const WORLD_HOUR_PRESETS: Array<{ label: string; hour: number | null }> = [
@@ -357,33 +358,33 @@ export const QaDirectorDrawer: React.FC<QaDirectorDrawerProps> = ({
                   <span>QA Test Wallet</span>
                 </div>
                 <span className="font-mono text-[11px] text-amber-300">
-                  {effectiveGold.toLocaleString()} LUL
+                  {effectiveGold.toLocaleString()} CerBucks
                 </span>
               </div>
               <div className="text-[10px] text-slate-400">
-                Real saved: {realGold.toLocaleString()} LUL · Virtual QA bonus: +
-                {(qaState.enabled ? qaState.qaBonusLul : 0).toLocaleString()} LUL
+                Real saved: {realGold.toLocaleString()} CerBucks · Virtual QA bonus: +
+                {(qaState.enabled ? qaState.qaBonusLul : 0).toLocaleString()} CerBucks
               </div>
               <div className="flex flex-wrap gap-1.5">
                 <button
                   type="button"
                   onClick={() => {
                     onAddQaWalletLul(50_000);
-                    note('Added +50,000 virtual QA LUL.');
+                    note('Added +50,000 virtual QA CerBucks.');
                   }}
                   className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/40 text-[11px] font-semibold cursor-pointer"
                 >
-                  +50,000 LUL
+                  +50,000 CerBucks
                 </button>
                 <button
                   type="button"
                   onClick={() => {
                     onAddQaWalletLul(250_000);
-                    note('Added +250,000 virtual QA LUL.');
+                    note('Added +250,000 virtual QA CerBucks.');
                   }}
                   className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/40 text-[11px] font-semibold cursor-pointer"
                 >
-                  +250,000 LUL
+                  +250,000 CerBucks
                 </button>
                 <button
                   type="button"

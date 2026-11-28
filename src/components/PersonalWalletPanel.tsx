@@ -982,13 +982,13 @@ export const PersonalWalletPanel: React.FC<PersonalWalletPanelProps> = ({
                 </span>
               </div>
               <div className="px-2.5 py-1.5 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-between">
-                <span className="text-[10px] font-semibold text-amber-300">LUL</span>
+                <span className="text-[10px] font-semibold text-amber-300">CerBucks</span>
                 <span className="text-xs font-bold font-mono tabular-nums text-white">
                   {lulBalance.toLocaleString()}
                 </span>
               </div>
               <div className="px-2.5 py-1.5 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-between">
-                <span className="text-[10px] font-semibold text-sky-300">CYON</span>
+                <span className="text-[10px] font-semibold text-sky-300">CerCoins</span>
                 <span className="text-xs font-bold font-mono tabular-nums text-white">
                   {cyonBalance.toLocaleString()}
                 </span>
@@ -1034,7 +1034,7 @@ export const PersonalWalletPanel: React.FC<PersonalWalletPanelProps> = ({
                 </div>
                 <p className="text-[11px] text-white/75 leading-snug">
                   Claim your one-time starter balance: <strong>+0.30 NEAR</strong>,{' '}
-                  <strong>+100 LUL</strong>, and <strong>+20 CYON</strong>.
+                  <strong>+100 CerBucks</strong>, and <strong>+20 CYON</strong>.
                 </p>
                 <button
                   type="button"
@@ -1048,7 +1048,7 @@ export const PersonalWalletPanel: React.FC<PersonalWalletPanelProps> = ({
                       if (res.ok) {
                         setExchangeFeedback({
                           type: 'success',
-                          text: 'Claimed Citizen Starter Grant (+0.30 NEAR, +100 LUL, +20 CYON)!',
+                          text: 'Claimed Citizen Starter Grant (+0.30 NEAR, +100 CerBucks, +20 CerCoins)!',
                           txHash: res.txHash,
                         });
                       } else {
@@ -1202,10 +1202,10 @@ export const PersonalWalletPanel: React.FC<PersonalWalletPanelProps> = ({
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-white">
                   <Coins className="w-3.5 h-3.5 text-amber-300" aria-hidden="true" />
-                  <span>Exchange LUL → CYON</span>
+                  <span>Exchange CerBucks → CerCoins</span>
                 </div>
                 <span className="text-[10.5px] font-mono text-amber-200">
-                  {lulCostFor10Cyon} LUL = +10 CYON
+                  {lulCostFor10Cyon} CerBucks = +10 CerCoins
                 </span>
               </div>
 
@@ -1242,14 +1242,14 @@ export const PersonalWalletPanel: React.FC<PersonalWalletPanelProps> = ({
                   onExchangeLulToCyon(lulCost, cyonOut);
                   setExchangeFeedback({
                     type: 'success',
-                    text: `Exchanged ${lulCost} LUL for +${cyonOut} CYON.`,
+                    text: `Exchanged ${lulCost} CerBucks for +${cyonOut} CerCoins.`,
                   });
                 }}
                 className="w-full py-2 px-4 rounded-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-bold text-xs transition-colors cursor-pointer"
               >
                 {lulBalance < cyonPackets * Math.max(1, lulCostFor10Cyon)
-                  ? `Need ${cyonPackets * Math.max(1, lulCostFor10Cyon)} LUL (Have ${lulBalance})`
-                  : `Exchange ${cyonPackets * Math.max(1, lulCostFor10Cyon)} LUL → +${cyonPackets * 10} CYON`}
+                  ? `Need ${cyonPackets * Math.max(1, lulCostFor10Cyon)} CerBucks (Have ${lulBalance})`
+                  : `Exchange ${cyonPackets * Math.max(1, lulCostFor10Cyon)} CerBucks → +${cyonPackets * 10} CerCoins`}
               </button>
             </div>
           </div>

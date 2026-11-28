@@ -7,8 +7,12 @@ import {
 import { computeAdaptiveWorldCameraFov } from './buddiesAdaptiveViewportRules';
 import {
   NPC_PORTRAIT_REQUEST_EVENT,
+  PLAYER_PORTRAIT_REQUEST_EVENT,
+  hasDefaultPlayerPortraitPair,
   hasNpcPortraitPair,
+  setDefaultPlayerPortraitPair,
   setNpcPortraitPair,
+  type PlayerPortraitGender,
 } from './npcPortraitRegistry';
 import { createNpcPortraitStudio } from './npcPortraitStudio';
 import type { CitizenId } from './buddiesCitizenRoles';
@@ -455,15 +459,23 @@ import {
   CAFE_INTERIOR_SEAT_SPOTS,
   CAFE_MENU_ITEMS,
   CAFE_ORIGIN_Y,
+  CAFE_TARI_EXTERIOR_DOOR_STOP,
+  CAFE_TARI_INTERIOR_DOOR_ENTRY,
   HOUSE_VISIT_INDOOR_BOUNDS,
   INDOOR_ORBIT_CAMERA_CONFIG,
   clampCafeBaristaWorkShiftPosition,
   clampCafeInteriorPosition,
   computeCafeSeatStandUpPosition,
   computeIndoorRoomOrbitCameraPose,
+  createInitialTariCafeServeState,
   resolveNearestCafePromptOrSeat,
+  shouldIndoorTariExitCafe,
+  shouldOutdoorTariEnterCafe,
+  startTariCafeServeOrder,
+  stepTariCafeServeOrder,
   type CafeInteriorSeatSpot,
   type CafeMenuItemId,
+  type TariCafeServeState,
 } from './buddiesCafeRules';
 import {
   HOUSE_VISIT_PLAYER_RADIUS,
@@ -508,6 +520,8 @@ import {
   type PushKickScooter3DHandle,
 } from './buddiesUrbanScooterBuilder';
 import {
+  HANA_SHOP_FRONT_PATROL_SPEED_MPS,
+  HANA_SHOP_FRONT_PATROL_WAYPOINTS,
   PLAZA_MODEL_HOUSE_DOOR_TRIGGER,
   REAL_ESTATE_CATALOG_TRIGGER,
   REAL_ESTATE_FURNITURE_KIOSK_LAYOUT,
@@ -2520,14 +2534,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             isSelf: false,
           };
         }
-      } else if (targetId === 'citizen_mira' && cafeMiraNpcRoot?.visible) {
+      } else if (targetId === 'citizen_tari' && cafeMiraNpcRoot?.visible) {
         found = {
-          id: 'citizen_mira',
-          name: 'Mira',
+          id: 'citizen_tari',
+          name: 'Tari',
           isNpc: true,
           isMerchant: false,
           gender: 'female',
-          team: 'red',
+          team: 'blue',
           status: cafeMiraStatusLabel,
           root: cafeMiraNpcRoot,
           nameplate: cafeMiraNameplate ?? undefined,
@@ -2855,6 +2869,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     } | null = null;
     let poseModalInspectOpen = false;
     let pairedModalInspectTargetId: string | null = null;
+    let leftSideOverlayPanelOpen = false;
     let citySelfieCameraOpen = false;
     let citySelfieDesiredDistScale = 0.88;
     let posePortraitState: {
@@ -2890,6 +2905,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     let npcPortraitSmoothedYaw = 0;
     let npcPortraitSmoothedPitch = 0;
     let npcPortraitSmoothedDistScale: number = NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale;
+    let npcPortraitSmoothedHorizOffset = 0.44;
     let isOrbitingNpcPortrait = false;
     let npcPortraitOrbitDragStart = {
       x: 0,
@@ -2897,14 +2913,32 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       yaw: 0,
       pitch: 0,
     };
+    const isPosePortraitCenteredFreeOrbit = () =>
+      citySelfieCameraOpen ||
+      (Boolean(posePortraitState || activePairedSession || activeQuickPoseState) &&
+        !activeCitizenDialogueId &&
+        npcCameraMode !== 'npc_merchant' &&
+        !poseModalInspectOpen &&
+        !pairedModalInspectTargetId &&
+        !leftSideOverlayPanelOpen);
+    const getPosePortraitOrbitConstraints = () => {
+      const freeOrbit = isPosePortraitCenteredFreeOrbit();
+      return {
+        freeOrbit,
+        minYawOffsetRad: freeOrbit ? -Infinity : undefined,
+        maxYawOffsetRad: freeOrbit ? Infinity : undefined,
+        minDistanceScale: freeOrbit ? 0.56 : undefined,
+      };
+    };
     const resetNpcPortraitInspectCamera = (
       defaultDistanceScale: number = NPC_DIALOGUE_ORBIT_BOUNDS.defaultDistanceScale,
     ) => {
+      const orbitConstraints = getPosePortraitOrbitConstraints();
       const clampedScale = clampNpcDialoguePortraitOrbit({
         portraitDistanceScale: defaultDistanceScale,
-        minDistanceScale: citySelfieCameraOpen ? 0.56 : undefined,
-        minYawOffsetRad: citySelfieCameraOpen ? -Math.PI : undefined,
-        maxYawOffsetRad: citySelfieCameraOpen ? Math.PI : undefined,
+        minDistanceScale: orbitConstraints.minDistanceScale,
+        minYawOffsetRad: orbitConstraints.minYawOffsetRad,
+        maxYawOffsetRad: orbitConstraints.maxYawOffsetRad,
       }).portraitDistanceScale;
       npcPortraitOrbitYaw = 0;
       npcPortraitOrbitPitch = 0;
@@ -2912,12 +2946,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       npcPortraitSmoothedYaw = 0;
       npcPortraitSmoothedPitch = 0;
       npcPortraitSmoothedDistScale = clampedScale;
+      npcPortraitSmoothedHorizOffset = orbitConstraints.freeOrbit ? 0 : 0.44;
       isOrbitingNpcPortrait = false;
     };
     const isNpcPortraitInspectActive = () =>
       npcCameraMode === 'npc_merchant' ||
       (npcCameraMode === 'none' && Boolean(citizenPortraitState)) ||
-      (npcCameraMode === 'cafe_interior' && activeCitizenDialogueId === 'citizen_mira') ||
+      (npcCameraMode === 'cafe_interior' && activeCitizenDialogueId === 'citizen_tari') ||
       Boolean(posePortraitState);
     const onCitizenDialogueOpenState = (ev: Event) => {
       const customEv = ev as CustomEvent<{ isOpen?: boolean; citizenId?: string | null }>;
@@ -2928,20 +2963,41 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       if (nextId) {
         emitTogethernessStateSnapshot();
       }
-      if (nextId !== activeCitizenDialogueId) {
+      const changed = nextId !== activeCitizenDialogueId;
+      activeCitizenDialogueId = nextId;
+      if (changed) {
         resetNpcPortraitInspectCamera();
       }
-      activeCitizenDialogueId = nextId;
     };
     const onPoseInspectOpenState = (ev: Event) => {
       const customEv = ev as CustomEvent<{
         isQuickPoseOpen?: boolean;
         pairedTargetId?: string | null;
+        isLeftPanelOpen?: boolean;
       }>;
+      const wasFreeOrbit = isPosePortraitCenteredFreeOrbit();
       poseModalInspectOpen = Boolean(customEv.detail?.isQuickPoseOpen);
       pairedModalInspectTargetId = customEv.detail?.pairedTargetId
         ? String(customEv.detail.pairedTargetId)
         : null;
+      leftSideOverlayPanelOpen = Boolean(customEv.detail?.isLeftPanelOpen);
+      const isNowFreeOrbit = isPosePortraitCenteredFreeOrbit();
+      if (wasFreeOrbit && !isNowFreeOrbit) {
+        const twoPi = Math.PI * 2;
+        const wrappedYaw =
+          ((((npcPortraitOrbitYaw + Math.PI) % twoPi) + twoPi) % twoPi) - Math.PI;
+        const wrappedSmoothed =
+          ((((npcPortraitSmoothedYaw + Math.PI) % twoPi) + twoPi) % twoPi) - Math.PI;
+        const clamped = clampNpcDialoguePortraitOrbit({
+          orbitYawOffsetRad: wrappedYaw,
+          orbitPitchOffsetRad: npcPortraitOrbitPitch,
+          portraitDistanceScale: npcPortraitDistanceScale,
+        });
+        npcPortraitOrbitYaw = clamped.orbitYawOffsetRad;
+        npcPortraitSmoothedYaw = wrappedSmoothed;
+        npcPortraitOrbitPitch = clamped.orbitPitchOffsetRad;
+        npcPortraitDistanceScale = clamped.portraitDistanceScale;
+      }
     };
     window.addEventListener('citizen-dialogue-open-state', onCitizenDialogueOpenState);
     window.addEventListener('pose-inspect-open-state', onPoseInspectOpenState);
@@ -4149,6 +4205,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     let cachedFootNavGrid: AStarNavGrid | null = null;
     let cachedVehicleNavGrid: AStarNavGrid | null = null;
     let cachedPedestrianNavGrid: AStarNavGrid | null = null;
+    let cachedPedestrianFollowNavGrid: AStarNavGrid | null = null;
     const collisionCooldownMap = new Map<string, number>();
     let nextEntityId = 500;
     let editorRotY = 0;
@@ -4888,6 +4945,55 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       'female',
     );
     lobbyCafeNpc.npcRig.idleClipOverrideName = 'hana_idle.001';
+    lobbyCafeNpc.npcRig.walkClipOverrideName = 'hana_walk.001';
+    lobbyCafeNpc.npcRig.runClipOverrideName = 'hana_run.001';
+    lobbyCafeNpc.npcRig.sitClipOverrideName = 'hana_sit.001';
+    const hanaShopFrontPreset: CityAmbientNpcPreset = {
+      id: 'npc_hana',
+      displayName: 'Hana',
+      activityLabel: 'WEST PLAZA MANAGER',
+      roleTitle: 'West Plaza Manager & Broker',
+      gender: 'female',
+      teamTint: 'blue',
+      clothingTintHex: '#0ea5e9',
+      activity: 'walk_patrol',
+      speedMps: HANA_SHOP_FRONT_PATROL_SPEED_MPS,
+      pauseSecAtWaypoint: 5.5,
+      idleOverrideClip: 'hana_idle.001',
+      walkOverrideClip: 'hana_walk.001',
+      runOverrideClip: 'hana_run.001',
+      sitOverrideClip: 'hana_sit.001',
+      waypoints: HANA_SHOP_FRONT_PATROL_WAYPOINTS.map((wp) => ({
+        x: wp.x,
+        z: wp.z,
+        yaw: wp.yaw,
+        moveMode: 'walk' as const,
+        activity: 'walk_patrol' as const,
+        label: wp.label,
+        durationSec: (wp.pauseMinSec + wp.pauseMaxSec) * 0.5,
+      })),
+    };
+    const hanaPatrolState = {
+      x: Number(REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x),
+      z: Number(REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.z),
+      yaw: REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.rotY - Math.PI / 2,
+      waypointIdx: 1,
+      pauseTimer: 2.2,
+      walkCycle: 0,
+      speedMps: 0,
+      isMoving: false,
+      navPath: [] as Array<{ x: number; z: number }>,
+      navWaypointIndex: 0,
+      navPathGoalKey: '',
+      stuckTimer: 0,
+      lastProgressX: Number(REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x),
+      lastProgressZ: Number(REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.z),
+      avoidSide: 0,
+      avoidTimer: 0,
+      consecutiveStuckReplans: 0,
+      replanCount: 0,
+      activeStatusLabel: 'Real Estate Studio Front',
+    };
     const beachHouseNpc = buildStandingNpcMerchant3D(
       85.8,
       getTerrainElevation(85.8, 60.0),
@@ -5011,15 +5117,26 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     // WS10: Per-client post-interaction linger state (25s after dialogue closes, 15m early-end)
     const npcLingerStates = new Map<string, NpcPostInteractionLingerState>();
     const npcWasTalkingMap = new Map<string, boolean>();
+    // Unified single-Tari location state: strictly one Tari exists at a time (either inside Glasshouse Cafe or outdoors on West Plaza)
+    let tariInsideCafe = false;
+    let latestCafeClockHour = 12;
+    let tariCafeServeState: TariCafeServeState = createInitialTariCafeServeState();
+    let onOutdoorTariEnterCafeDoorway: ((outdoorTariNpc: CityAmbientNpcController) => void) | null =
+      null;
 
     const cityAmbientNpcs: CityAmbientNpcController[] = CITY_AMBIENT_NPC_PRESETS.map(
       (preset, idx) => {
         const initPatrolWaypoints = resolveNpcScheduledPatrolWaypoints(preset.id, 12);
-        const startStopIdx =
-          preset.waypoints.length > 0 ? idx % preset.waypoints.length : 0;
+        const hasScheduledPatrol = Boolean(initPatrolWaypoints && initPatrolWaypoints.length > 0);
+        const effectiveInitWaypoints =
+          hasScheduledPatrol && initPatrolWaypoints ? initPatrolWaypoints : preset.waypoints;
+        const startStopIdx = hasScheduledPatrol
+          ? 0
+          : effectiveInitWaypoints.length > 0
+            ? idx % effectiveInitWaypoints.length
+            : 0;
         const wp0 =
-          (initPatrolWaypoints && initPatrolWaypoints[0]) ||
-          preset.waypoints[startStopIdx] ||
+          effectiveInitWaypoints[startStopIdx] ||
           { x: 0, z: 0, yaw: 0 };
         const initYaw = wp0.yaw ?? 0;
         const initActivity = wp0.activity ?? preset.activity;
@@ -5079,8 +5196,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
         const seedPhase = idx * 1.73;
         const nextIdx =
-          preset.waypoints.length > 1
-            ? (startStopIdx + 1) % preset.waypoints.length
+          effectiveInitWaypoints.length > 1
+            ? (startStopIdx + 1) % effectiveInitWaypoints.length
             : 0;
         return {
           preset,
@@ -5391,6 +5508,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       'citizen_kenji',
     ];
     let lastNpcPortraitCaptureMs = 0;
+    let lastCapturedPlayerPortraitSig = '';
+    let forcePlayerPortraitCapture = false;
 
     const handleNpcPortraitRequestEvent = (ev: Event) => {
       const detail = (ev as CustomEvent<{ citizenId?: CitizenId }>).detail;
@@ -5399,7 +5518,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         prioritizedNpcPortraitIds.add(cid);
       }
     };
+    const handlePlayerPortraitRequestEvent = () => {
+      forcePlayerPortraitCapture = true;
+    };
     window.addEventListener(NPC_PORTRAIT_REQUEST_EVENT, handleNpcPortraitRequestEvent);
+    window.addEventListener(PLAYER_PORTRAIT_REQUEST_EVENT, handlePlayerPortraitRequestEvent);
 
     const isNpcRigReadyForStudioCapture = (
       rig: ReturnType<typeof buildProceduralBuddyAvatar>,
@@ -5416,6 +5539,46 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
     const stepNpcPortraitCaptureQueue = (nowMs: number) => {
       if (worldModeRef.current === 'warzone') return;
+
+      // Capture the local player's live 3D avatar selfie & full-body status cover first
+      // (and automatically refresh whenever gender, outfit, or face customization changes).
+      if (
+        playerUnit &&
+        !scooterRideState &&
+        isNpcRigReadyForStudioCapture(playerUnit.rig, playerUnit.bodyGroup)
+      ) {
+        const activePlayerGender: PlayerPortraitGender =
+          (playerUnit.avatarGender ?? mpLocalGender) === 'female' ? 'female' : 'male';
+        const playerOutfitSeq = String(
+          playerUnit.bodyGroup.userData?.modularOutfitCompletedSeq ?? 0,
+        );
+        const playerGlbUuid = playerUnit.rig.customGlbController?.glbRoot?.uuid ?? '';
+        const playerSig = `${activePlayerGender}:${playerOutfitSeq}:${playerGlbUuid}`;
+        if (
+          forcePlayerPortraitCapture ||
+          playerSig !== lastCapturedPlayerPortraitSig ||
+          !hasDefaultPlayerPortraitPair(activePlayerGender)
+        ) {
+          const vpW = container.clientWidth || window.innerWidth;
+          const vpH = container.clientHeight || window.innerHeight;
+          const capturedPlayer = npcPortraitStudio.capturePlayerPhotos(
+            renderer,
+            activePlayerGender,
+            playerUnit.rig,
+            playerUnit.bodyGroup,
+            vpW,
+            vpH,
+          );
+          if (capturedPlayer) {
+            setDefaultPlayerPortraitPair(activePlayerGender, capturedPlayer);
+            lastCapturedPlayerPortraitSig = playerSig;
+            forcePlayerPortraitCapture = false;
+            lastNpcPortraitCaptureMs = nowMs;
+            return;
+          }
+        }
+      }
+
       const hasPriority = prioritizedNpcPortraitIds.size > 0;
       if (!hasPriority && nowMs - lastNpcPortraitCaptureMs < 220) return;
 
@@ -5489,10 +5652,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       worldClockHour = 12,
     ) => {
       npcAnimLodTick++;
+      latestCafeClockHour = qaWorldHourOverride ?? worldClockHour;
       if (!shouldShowAmbientNpcs) {
         let prewarmedHiddenThisFrame = false;
+        let outdoorTariNpc: CityAmbientNpcController | null = null;
         for (let i = 0; i < cityAmbientNpcs.length; i++) {
           const npc = cityAmbientNpcs[i];
+          if (npc.preset.id === 'citizen_tari') {
+            outdoorTariNpc = npc;
+          }
           npc.root.visible = false;
           npc.nameplate.sprite.visible = false;
           if (!prewarmedHiddenThisFrame && (!npc.glbUpgraded || !npc.rodUpgraded)) {
@@ -5502,6 +5670,73 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           }
           if (npc.rig.customGlbController) {
             npc.rig.customGlbController.lastStepTimeMs = nowMs;
+          }
+        }
+        // If player is inside Glasshouse Cafe while Tari is outdoors, advance her outdoor patrol silently
+        // so she naturally walks up to the Glasshouse door pad and teleports inside through the door.
+        if (
+          outdoorTariNpc &&
+          !tariInsideCafe &&
+          npcCameraMode === 'cafe_interior' &&
+          !cafeWorkShiftActive &&
+          dt > 0
+        ) {
+          const scheduledPatrol =
+            resolveNpcScheduledPatrolWaypoints('citizen_tari', worldClockHour) ??
+            outdoorTariNpc.preset.waypoints;
+          const presetForStep =
+            scheduledPatrol.length > 0
+              ? { ...outdoorTariNpc.preset, waypoints: scheduledPatrol }
+              : outdoorTariNpc.preset;
+          const wpLen = presetForStep.waypoints.length;
+          const activeWp =
+            wpLen > 0
+              ? presetForStep.waypoints[((outdoorTariNpc.waypointIdx % wpLen) + wpLen) % wpLen]
+              : undefined;
+          const bgStepped = stepCityAmbientNpcSchedule({
+            preset: presetForStep,
+            x: outdoorTariNpc.x,
+            z: outdoorTariNpc.z,
+            yaw: outdoorTariNpc.yaw,
+            waypointIdx: outdoorTariNpc.waypointIdx,
+            pauseTimer: outdoorTariNpc.pauseTimer,
+            elapsedSec: timeSec + outdoorTariNpc.seedPhase,
+            dt,
+            navGrid: getPedestrianNavGrid(),
+            navPath: outdoorTariNpc.navPath,
+            navWaypointIndex: outdoorTariNpc.navWaypointIndex,
+            navPathGoalKey: outdoorTariNpc.navPathGoalKey,
+            stuckTimer: outdoorTariNpc.stuckTimer,
+            consecutiveStuckReplans: outdoorTariNpc.consecutiveStuckReplans,
+            lastProgressX: outdoorTariNpc.lastProgressX,
+            lastProgressZ: outdoorTariNpc.lastProgressZ,
+            avoidSide: outdoorTariNpc.avoidSide,
+            avoidTimer: outdoorTariNpc.avoidTimer,
+          });
+          outdoorTariNpc.x = bgStepped.x;
+          outdoorTariNpc.z = bgStepped.z;
+          outdoorTariNpc.yaw = bgStepped.yaw;
+          outdoorTariNpc.waypointIdx = bgStepped.waypointIdx;
+          outdoorTariNpc.pauseTimer = bgStepped.pauseTimer;
+          outdoorTariNpc.navPath = bgStepped.navPath;
+          outdoorTariNpc.navWaypointIndex = bgStepped.navWaypointIndex;
+          outdoorTariNpc.navPathGoalKey = bgStepped.navPathGoalKey;
+          outdoorTariNpc.stuckTimer = bgStepped.stuckTimer;
+          outdoorTariNpc.consecutiveStuckReplans = bgStepped.consecutiveStuckReplans ?? 0;
+          outdoorTariNpc.lastProgressX = bgStepped.lastProgressX;
+          outdoorTariNpc.lastProgressZ = bgStepped.lastProgressZ;
+          if (
+            shouldOutdoorTariEnterCafe({
+              tariInsideCafe,
+              npcX: bgStepped.x,
+              npcZ: bgStepped.z,
+              targetWpX: activeWp?.x ?? 0,
+              targetWpZ: activeWp?.z ?? 0,
+              pauseTimer: bgStepped.pauseTimer,
+              isInteractingWithPlayer: false,
+            })
+          ) {
+            onOutdoorTariEnterCafeDoorway?.(outdoorTariNpc);
           }
         }
         return;
@@ -5644,6 +5879,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       interface NpcFrameStepState {
         npc: CityAmbientNpcController;
         isTalkingWithPlayer: boolean;
+        isWalkingWithPlayer: boolean;
         yieldForTram: boolean;
         prevX: number;
         prevZ: number;
@@ -5666,6 +5902,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       npcAvoidanceCapsulesScratch.length = 0;
       for (let j = 0; j < cityAmbientNpcs.length; j++) {
         const other = cityAmbientNpcs[j];
+        if (other.preset.id === 'citizen_tari' && tariInsideCafe) continue;
         npcAvoidanceCapsulesScratch.push({
           id: other.preset.id,
           x: other.x,
@@ -5688,9 +5925,37 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           groundY: getTerrainElevation(playerUnit.x, playerUnit.z),
         });
       }
+      if (lobbyCafeNpc?.npcGrp?.visible) {
+        npcAvoidanceCapsulesScratch.push({
+          id: 'npc_hana',
+          x: lobbyCafeNpc.npcGrp.position.x,
+          z: lobbyCafeNpc.npcGrp.position.z,
+          vx: hanaPatrolState.isMoving
+            ? Math.cos(hanaPatrolState.yaw) * hanaPatrolState.speedMps
+            : 0,
+          vz: hanaPatrolState.isMoving
+            ? -Math.sin(hanaPatrolState.yaw) * hanaPatrolState.speedMps
+            : 0,
+          radius: AMBIENT_NPC_CAPSULE_RADIUS,
+          groundY: getTerrainElevation(
+            lobbyCafeNpc.npcGrp.position.x,
+            lobbyCafeNpc.npcGrp.position.z,
+          ),
+        });
+      }
 
       for (let i = 0; i < cityAmbientNpcs.length; i++) {
         const npc = cityAmbientNpcs[i];
+        if (npc.preset.id === 'citizen_tari' && tariInsideCafe) {
+          npc.root.visible = false;
+          npc.nameplate.sprite.visible = false;
+          npc.isMoving = false;
+          npc.isSitting = false;
+          if (npc.rig.customGlbController) {
+            npc.rig.customGlbController.lastStepTimeMs = nowMs;
+          }
+          continue;
+        }
         const prevX = npc.x;
         const prevZ = npc.z;
         const isTalkingWithPlayer =
@@ -5900,7 +6165,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               playerYaw: playerUnit.yaw,
               playerSpeedMps: Math.hypot(playerUnit.vx, playerUnit.vz),
               dt,
-              navGrid: pedestrianNavGrid,
+              navGrid: getPedestrianFollowNavGrid(),
               navPath: activeWalkTogether.navPath,
               navWaypointIndex: activeWalkTogether.navWaypointIndex,
               replanTimerSec: activeWalkTogether.replanTimerSec,
@@ -6108,10 +6373,26 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             avoidTimer: 0,
           };
         } else {
+          // Deterministic multi-waypoint persona patrol loop (LLM never decides movement):
+          // uses `getNpcPersona(npcId)?.schedule` anchors so NPCs actively patrol their
+          // assigned territory instead of freezing on 1 bench or stacking on shared benches.
+          const effectiveWorldHour = qaWorldHourOverride ?? worldClockHour;
+          const scheduledPatrolWaypoints = resolveNpcScheduledPatrolWaypoints(
+            npc.preset.id,
+            effectiveWorldHour,
+          );
+          const effectiveSchedulePreset =
+            scheduledPatrolWaypoints && scheduledPatrolWaypoints.length > 0
+              ? {
+                  ...npc.preset,
+                  waypoints: scheduledPatrolWaypoints,
+                }
+              : npc.preset;
+
           const fwdX = Math.cos(npc.yaw);
           const fwdZ = -Math.sin(npc.yaw);
           const preSteerExemptSeat = resolveAmbientNpcExemptSeatPoint(
-            npc.preset,
+            effectiveSchedulePreset,
             npc.waypointIdx,
             npc.x,
             npc.z,
@@ -6122,11 +6403,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
           // Check whether the NPC's approached `sit_relax` bench/chair is already occupied;
           // if so, divert to an unoccupied nearby bench OR skip this stop and keep roaming.
-          const wpLen = npc.preset.waypoints.length;
+          const wpLen = effectiveSchedulePreset.waypoints.length;
           const activeWpIdx = wpLen > 0 ? ((npc.waypointIdx % wpLen) + wpLen) % wpLen : 0;
-          const activeTargetWp = wpLen > 0 ? npc.preset.waypoints[activeWpIdx] : undefined;
+          const activeTargetWp = wpLen > 0 ? effectiveSchedulePreset.waypoints[activeWpIdx] : undefined;
           const activeGoalIsSit =
-            (activeTargetWp?.activity ?? npc.preset.activity) === 'sit_relax';
+            (activeTargetWp?.activity ?? effectiveSchedulePreset.activity) === 'sit_relax';
           const effectiveGoal =
             npc.seatOverride && npc.seatOverride.wpIdx === activeWpIdx
               ? npc.seatOverride
@@ -6215,22 +6496,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               signalState: plazaTrafficSignalState,
               eastSignalState: eastTrafficSignalState,
             });
-
-          // Deterministic multi-waypoint persona patrol loop (LLM never decides movement):
-          // uses `getNpcPersona(npcId)?.schedule` anchors so NPCs actively patrol their
-          // assigned territory instead of freezing on 1 bench or stacking on shared benches.
-          const effectiveWorldHour = qaWorldHourOverride ?? worldClockHour;
-          const scheduledPatrolWaypoints = resolveNpcScheduledPatrolWaypoints(
-            npc.preset.id,
-            effectiveWorldHour,
-          );
-          const effectiveSchedulePreset =
-            scheduledPatrolWaypoints && scheduledPatrolWaypoints.length > 0
-              ? {
-                  ...npc.preset,
-                  waypoints: scheduledPatrolWaypoints,
-                }
-              : npc.preset;
 
           // Build per-NPC dynamic obstacle list that INCLUDES non-exempt benches so NPCs
           // smoothly steer around benches instead of walking into them and bouncing off!
@@ -6330,14 +6595,41 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             },
           });
           npc.lastYieldForHazard = yieldForTram;
+          if (
+            npc.preset.id === 'citizen_tari' &&
+            shouldOutdoorTariEnterCafe({
+              tariInsideCafe,
+              npcX: stepped.x,
+              npcZ: stepped.z,
+              targetWpX: activeTargetWp?.x ?? 0,
+              targetWpZ: activeTargetWp?.z ?? 0,
+              pauseTimer: stepped.pauseTimer,
+              isInteractingWithPlayer:
+                isTalkingWithPlayer ||
+                isPairedWithPlayer ||
+                isRidingWithPlayer ||
+                isWalkingWithPlayer ||
+                isSittingInSession,
+            })
+          ) {
+            onOutdoorTariEnterCafeDoorway?.(npc);
+            continue;
+          }
         }
 
         let curX = stepped.x;
         let curZ = stepped.z;
         let vx = stepped.isMoving ? (stepped.x - prevX) * invDt : 0;
         let vz = stepped.isMoving ? (stepped.z - prevZ) * invDt : 0;
+        const activeExemptPreset = (() => {
+          const wps = resolveNpcScheduledPatrolWaypoints(
+            npc.preset.id,
+            qaWorldHourOverride ?? worldClockHour,
+          );
+          return wps && wps.length > 0 ? { ...npc.preset, waypoints: wps } : npc.preset;
+        })();
         const exemptSeat = resolveAmbientNpcExemptSeatPoint(
-          npc.preset,
+          activeExemptPreset,
           stepped.waypointIdx,
           curX,
           curZ,
@@ -6359,7 +6651,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             waterMarginM: 0.22,
             restitution: 0.0,
             iterations: 2,
-            stayOffNonCrosswalkRoads: true,
+            stayOffNonCrosswalkRoads: !isWalkingWithPlayer,
             exemptSeatPoint: exemptSeat,
           });
           curX = staticRes.x;
@@ -6443,6 +6735,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         steppedStates.push({
           npc,
           isTalkingWithPlayer,
+          isWalkingWithPlayer,
           yieldForTram: npc.lastYieldForHazard,
           prevX,
           prevZ,
@@ -6510,7 +6803,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             waterMarginM: 0.22,
             restitution: 0.0,
             iterations: 1,
-            stayOffNonCrosswalkRoads: true,
+            stayOffNonCrosswalkRoads: !st.isWalkingWithPlayer,
             exemptSeatPoint: st.exemptSeat,
           });
           finalX = postStatic.x;
@@ -6567,11 +6860,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           const cadenceScale = Math.max(0.32, Math.min(1.05, moveRatio));
           npc.walkCycle +=
             dt *
-            (stepped.activeActivity === 'jog_exercise' || stepped.speedMps >= 4.5
+            (!st.isWalkingWithPlayer &&
+            (stepped.activeActivity === 'jog_exercise' || stepped.speedMps >= 4.5)
               ? 9.4
               : 6.4) *
             cadenceScale;
         }
+        npc.rig.forceLocomotionGait = st.isWalkingWithPlayer ? 'walk' : null;
 
         const seatConflict =
           npc.isSitting &&
@@ -6856,19 +7151,29 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                   ? 'walk_together'
                   : activeRideTogether?.npcId === mKey
                     ? 'ride_together'
-                    : 'merchant_host',
-              activeStatusLabel: mKey === 'hana' ? 'Central Plaza Kiosk' : 'Beachfront Harbor',
-              isMoving: activeWalkTogether?.npcId === mKey,
+                    : mKey === 'hana' && hanaPatrolState.isMoving
+                      ? 'walk_patrol'
+                      : 'merchant_host',
+              activeStatusLabel:
+                mKey === 'hana' ? hanaPatrolState.activeStatusLabel : 'Beachfront Harbor',
+              isMoving:
+                activeWalkTogether?.npcId === mKey ||
+                (mKey === 'hana' && hanaPatrolState.isMoving),
               isSitting: false,
-              speedMps: 0,
-              stuckTimer: 0,
-              consecutiveStuckReplans: 0,
-              navPathLength: 0,
-              navWaypointIndex: 0,
-              avoidSide: 0,
-              avoidTimer: 0,
+              speedMps:
+                activeWalkTogether?.npcId === mKey
+                  ? 1.5
+                  : mKey === 'hana'
+                    ? hanaPatrolState.speedMps
+                    : 0,
+              stuckTimer: mKey === 'hana' ? hanaPatrolState.stuckTimer : 0,
+              consecutiveStuckReplans: mKey === 'hana' ? hanaPatrolState.consecutiveStuckReplans : 0,
+              navPathLength: mKey === 'hana' ? hanaPatrolState.navPath.length : 0,
+              navWaypointIndex: mKey === 'hana' ? hanaPatrolState.navWaypointIndex : 0,
+              avoidSide: mKey === 'hana' ? hanaPatrolState.avoidSide : 0,
+              avoidTimer: mKey === 'hana' ? hanaPatrolState.avoidTimer : 0,
               yieldForHazard: false,
-              replanCount: 0,
+              replanCount: mKey === 'hana' ? hanaPatrolState.replanCount : 0,
               activeEmotion: merchantNpcEmotions[mKey].emotion,
               emotionRemainingSec: merchantNpcEmotions[mKey].remainingSec,
             });
@@ -7103,7 +7408,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             playerYaw: playerUnit.yaw,
             playerSpeedMps: Math.hypot(playerUnit.vx, playerUnit.vz),
             dt,
-            navGrid: pedestrianNavGrid,
+            navGrid: getPedestrianFollowNavGrid(),
             navPath: activeWalkTogether.navPath,
             navWaypointIndex: activeWalkTogether.navWaypointIndex,
             replanTimerSec: activeWalkTogether.replanTimerSec,
@@ -7116,6 +7421,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             activeWalkTogether.walkCycle += dt * Math.max(1.2, walkRes.speedMps) * 3.1;
           }
           if (walkRes.shouldEndWalk) {
+            mNpc.npcRig.forceLocomotionGait = null;
             if (activeWalkTogether.savedMerchantAnchor) {
               const a = activeWalkTogether.savedMerchantAnchor;
               mNpc.npcGrp.position.set(a.x, a.y, a.z);
@@ -7124,6 +7430,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             activeWalkTogether = null;
             emitTogethernessStateSnapshot();
           } else {
+            mNpc.npcRig.forceLocomotionGait = 'walk';
             const groundY = getTerrainElevation(walkRes.x, walkRes.z);
             mNpc.npcGrp.position.set(walkRes.x, groundY, walkRes.z);
             mNpc.npcGrp.rotation.set(0, walkRes.yaw + Math.PI / 2, 0);
@@ -7154,6 +7461,245 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               'chair',
               null,
             );
+          }
+        }
+      } else {
+        // Standalone patrol in front of Hana's 3-Bay West Plaza shops (mirrors Nadia's plaza roaming)
+        const isHanaPairedNow = Boolean(
+          activePairedSession &&
+            activePairedSession.partnerKind === 'merchant_npc' &&
+            (activePairedSession.targetId === 'npc_hana' ||
+              activePairedSession.targetId === 'npc_cafe'),
+        );
+        const isHanaDialogueNow =
+          npcCameraMode === 'npc_merchant' && npcCameraLocation !== 'central_plaza' && npcCameraLocation !== 'beach_house';
+        if (lobbyCafeNpc?.npcGrp && lobbyCafeNpc?.npcRig && !isHanaDialogueNow) {
+          if (isHanaPairedNow && activePairedSession) {
+            const pairY = getTerrainElevation(
+              activePairedSession.anchorX,
+              activePairedSession.anchorZ,
+            );
+            lobbyCafeNpc.npcGrp.position.set(
+              activePairedSession.anchorX,
+              pairY,
+              activePairedSession.anchorZ,
+            );
+            lobbyCafeNpc.npcGrp.rotation.set(0, activePairedSession.anchorYaw + Math.PI / 2, 0);
+            lobbyCafeNpc.npcRig.rightArmPivot.rotation.x = 0;
+            updateCharacterWeaponStance(lobbyCafeNpc.npcRig, 'unarmed', 0, false, false, 0, 0);
+          } else if (
+            lobbyCafeNpc.npcGrp.visible &&
+            worldModeRef.current !== 'warzone' &&
+            shouldShowAmbientNpcs
+          ) {
+            const prevHanaX = hanaPatrolState.x;
+            const prevHanaZ = hanaPatrolState.z;
+            npcBenchAvoidObbsScratch.length = sharedDynamicObbs.length;
+            for (let oi = 0; oi < sharedDynamicObbs.length; oi++) {
+              npcBenchAvoidObbsScratch[oi] = sharedDynamicObbs[oi];
+            }
+            for (let bi = 0; bi < solidBenchProps.length; bi++) {
+              const bp = solidBenchProps[bi];
+              if (bp.halfX !== undefined && bp.halfZ !== undefined) {
+                npcBenchAvoidObbsScratch.push({
+                  x: bp.x,
+                  z: bp.z,
+                  halfX: bp.halfX,
+                  halfZ: bp.halfZ,
+                  rotY: bp.rotY,
+                });
+              }
+            }
+            npcBenchAvoidCirclesScratch.length = 0;
+            for (let ci = 0; ci < sharedDynamicCircles.length; ci++) {
+              const c = sharedDynamicCircles[ci];
+              if (
+                Math.hypot(
+                  c.x - lobbyCafeNpc.npcGrp.position.x,
+                  c.z - lobbyCafeNpc.npcGrp.position.z,
+                ) < 0.05
+              ) {
+                continue;
+              }
+              npcBenchAvoidCirclesScratch.push(c);
+            }
+            for (let bi = 0; bi < solidBenchProps.length; bi++) {
+              const bp = solidBenchProps[bi];
+              if (bp.halfX === undefined || bp.halfZ === undefined) {
+                npcBenchAvoidCirclesScratch.push({ x: bp.x, z: bp.z, radius: bp.radius });
+              }
+            }
+            const hanaGroundY = getTerrainElevation(prevHanaX, prevHanaZ);
+            const steppedHana = stepCityAmbientNpcSchedule({
+              preset: hanaShopFrontPreset,
+              x: prevHanaX,
+              z: prevHanaZ,
+              yaw: hanaPatrolState.yaw,
+              waypointIdx: hanaPatrolState.waypointIdx,
+              pauseTimer: hanaPatrolState.pauseTimer,
+              elapsedSec: timeSec + 1.37,
+              dt,
+              navGrid: pedestrianNavGrid,
+              navPath: hanaPatrolState.navPath,
+              navWaypointIndex: hanaPatrolState.navWaypointIndex,
+              navPathGoalKey: hanaPatrolState.navPathGoalKey,
+              stuckTimer: hanaPatrolState.stuckTimer,
+              consecutiveStuckReplans: hanaPatrolState.consecutiveStuckReplans,
+              lastProgressX: hanaPatrolState.lastProgressX,
+              lastProgressZ: hanaPatrolState.lastProgressZ,
+              avoidSide: hanaPatrolState.avoidSide,
+              avoidTimer: hanaPatrolState.avoidTimer,
+              isDirectTargetClear: (fromX, fromZ, toX, toZ) =>
+                isSegmentClearOfAuditedStaticObstacles2D({
+                  fromX,
+                  fromZ,
+                  toX,
+                  toZ,
+                  radius: AMBIENT_NPC_CAPSULE_RADIUS,
+                  audited: auditedWorld,
+                  dynamicObbs: npcBenchAvoidObbsScratch,
+                  dynamicCircles: npcBenchAvoidCirclesScratch,
+                }),
+              localAvoidance: (sample) =>
+                computeLocalPedestrianAvoidance2D(
+                  {
+                    selfId: 'npc_hana',
+                    x: sample.x,
+                    z: sample.z,
+                    dirX: sample.dirX,
+                    dirZ: sample.dirZ,
+                    radius: AMBIENT_NPC_CAPSULE_RADIUS,
+                    selfGroundY: hanaGroundY,
+                    distToSteerTarget: sample.distToSteer,
+                    distToFinal: sample.distToFinal,
+                    isFinalGoal: sample.isFinalTarget,
+                    dt,
+                    audited: auditedWorld,
+                    dynamicObbs: npcBenchAvoidObbsScratch,
+                    dynamicCircles: npcBenchAvoidCirclesScratch,
+                    characterCapsules: npcAvoidanceCapsulesScratch,
+                    stayOffNonCrosswalkRoads: true,
+                    avoidSide: sample.avoidSide,
+                    avoidTimer: sample.avoidTimer,
+                  },
+                  npcAvoidanceResultScratch,
+                ),
+              canReplan: aStarCitizenPlansThisFrame < 2,
+              onReplan: () => {
+                aStarCitizenPlansThisFrame++;
+                hanaPatrolState.replanCount += 1;
+              },
+            });
+            const invDtHana = dt > 1e-4 ? 1 / dt : 0;
+            let curHanaX = steppedHana.x;
+            let curHanaZ = steppedHana.z;
+            let hanaVx = steppedHana.isMoving ? (steppedHana.x - prevHanaX) * invDtHana : 0;
+            let hanaVz = steppedHana.isMoving ? (steppedHana.z - prevHanaZ) * invDtHana : 0;
+            const hanaStaticRes = resolveGroundMoverAuditedCollisions2D({
+              x: curHanaX,
+              z: curHanaZ,
+              vx: hanaVx,
+              vz: hanaVz,
+              radius: AMBIENT_NPC_CAPSULE_RADIUS,
+              audited: auditedWorld,
+              prevX: prevHanaX,
+              prevZ: prevHanaZ,
+              waterMarginM: 0.22,
+              restitution: 0.0,
+              iterations: 2,
+              stayOffNonCrosswalkRoads: true,
+            });
+            curHanaX = hanaStaticRes.x;
+            curHanaZ = hanaStaticRes.z;
+            hanaVx = hanaStaticRes.vx;
+            hanaVz = hanaStaticRes.vz;
+            const hanaDynRes = resolveCharacterAgainstDynamicObstacles2D({
+              x: curHanaX,
+              z: curHanaZ,
+              vx: hanaVx,
+              vz: hanaVz,
+              radius: AMBIENT_NPC_CAPSULE_RADIUS,
+              obbs: npcBenchAvoidObbsScratch,
+              circles: npcBenchAvoidCirclesScratch,
+              restitution: 0.0,
+            });
+            curHanaX = hanaDynRes.x;
+            curHanaZ = hanaDynRes.z;
+            const actualHanaDisp = getPlanetShortestDistance(
+              prevHanaX,
+              prevHanaZ,
+              curHanaX,
+              curHanaZ,
+            );
+            const actualHanaSpeed = dt > 1e-4 ? actualHanaDisp / dt : 0;
+            const expectedHanaDist = steppedHana.speedMps * dt;
+            const hanaMoveRatio =
+              steppedHana.isMoving && expectedHanaDist > 1e-4
+                ? Math.min(1.15, actualHanaDisp / expectedHanaDist)
+                : 0;
+            const hanaEffectiveMoving =
+              steppedHana.isMoving && actualHanaSpeed >= 0.22 && hanaMoveRatio >= 0.18;
+            const hanaEffectiveSpeed = hanaEffectiveMoving ? actualHanaSpeed : 0;
+
+            hanaPatrolState.x = curHanaX;
+            hanaPatrolState.z = curHanaZ;
+            hanaPatrolState.yaw = steppedHana.yaw;
+            hanaPatrolState.waypointIdx = steppedHana.waypointIdx;
+            hanaPatrolState.pauseTimer = steppedHana.pauseTimer;
+            hanaPatrolState.isMoving = hanaEffectiveMoving;
+            hanaPatrolState.speedMps = hanaEffectiveSpeed;
+            hanaPatrolState.activeStatusLabel = steppedHana.activeStatusLabel;
+            hanaPatrolState.navPath = steppedHana.navPath;
+            hanaPatrolState.navWaypointIndex = steppedHana.navWaypointIndex;
+            hanaPatrolState.navPathGoalKey = steppedHana.navPathGoalKey;
+            hanaPatrolState.stuckTimer =
+              steppedHana.isMoving && !hanaEffectiveMoving
+                ? steppedHana.stuckTimer + dt * 1.4
+                : steppedHana.stuckTimer;
+            hanaPatrolState.consecutiveStuckReplans =
+              steppedHana.consecutiveStuckReplans ?? 0;
+            hanaPatrolState.lastProgressX = steppedHana.lastProgressX;
+            hanaPatrolState.lastProgressZ = steppedHana.lastProgressZ;
+            hanaPatrolState.avoidSide = steppedHana.avoidSide;
+            hanaPatrolState.avoidTimer = steppedHana.avoidTimer;
+            if (hanaEffectiveMoving) {
+              const cadenceScale = Math.max(0.32, Math.min(1.05, hanaMoveRatio));
+              hanaPatrolState.walkCycle += dt * 6.4 * cadenceScale;
+            }
+            lobbyCafeNpc.npcRig.forceLocomotionGait = null;
+            lobbyCafeNpc.npcGrp.position.set(
+              curHanaX,
+              getTerrainElevation(curHanaX, curHanaZ),
+              curHanaZ,
+            );
+            lobbyCafeNpc.npcGrp.rotation.set(0, hanaPatrolState.yaw + Math.PI / 2, 0);
+            if (Math.hypot(curHanaX - focusX, curHanaZ - focusZ) <= 56) {
+              lobbyCafeNpc.npcRig.rightArmPivot.rotation.x = hanaEffectiveMoving
+                ? 0
+                : Math.sin(timeSec * 1.8) * 0.08;
+              updateCharacterWeaponStance(
+                lobbyCafeNpc.npcRig,
+                'unarmed',
+                hanaPatrolState.walkCycle,
+                hanaEffectiveMoving,
+                false,
+                0,
+                0,
+                0,
+                'right',
+                0,
+                0,
+                0.76,
+                0,
+                true,
+                'front',
+                1.0,
+                hanaPatrolState.yaw,
+                hanaEffectiveSpeed,
+              );
+            } else if (lobbyCafeNpc.npcRig.customGlbController) {
+              lobbyCafeNpc.npcRig.customGlbController.lastStepTimeMs = nowMs;
+            }
           }
         }
       }
@@ -7269,9 +7815,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     centralPark.setCanopyShadowsEnabled(activeFoliageShadowsEnabled);
     scene.add(centralPark.group);
 
-    const CAFE_MIRA_INTERIOR_X = -3.15;
-    const CAFE_MIRA_INTERIOR_Z = 0.55;
-    const CAFE_MIRA_INTERIOR_DEFAULT_YAW = 0.85;
+    const CAFE_MIRA_INTERIOR_X = -0.20;
+    const CAFE_MIRA_INTERIOR_Z = -3.22;
+    const CAFE_MIRA_INTERIOR_DEFAULT_YAW = 0;
     const cafeMiraPreset = CAFE_MIRA_INTERIOR_PRESET;
 
     // Lazy-loaded Glasshouse Cafe Interior: defer procedural mesh/texture construction
@@ -7291,17 +7837,89 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     let cafeMiraCurrentYaw = CAFE_MIRA_INTERIOR_DEFAULT_YAW;
     let cafeMiraX = CAFE_MIRA_INTERIOR_X;
     let cafeMiraZ = CAFE_MIRA_INTERIOR_Z;
-    let cafeMiraWaypointIdx = 1;
-    let cafeMiraPauseTimer = 14.0;
+    let cafeMiraWaypointIdx = 3;
+    let cafeMiraPauseTimer = 8.0;
     let cafeMiraWalkCycle = 0;
     let cafeMiraIsSitting = false;
     let cafeMiraSeatLiftY = 0;
-    let cafeMiraHoldingItemId: CafeMenuItemId | null = null;
-    let cafeMiraStatusLabel = 'BROWSING GLASSHOUSE CAFE';
+    let cafeMiraHoldingItemId: CafeMenuItemId | null = 'latte';
+    let cafeMiraStatusLabel = 'AT BARISTA COUNTER';
     let cafeMiraSeatOverride: NpcSeatOverrideState | null = null;
     let cafeInteriorShadersCompiled = false;
     let pendingCafeActivationToken = 0;
     let syncIndoorOutdoorSceneVisibility: (showOutdoor: boolean) => void = () => {};
+
+    onOutdoorTariEnterCafeDoorway = (outdoorTariNpc: CityAmbientNpcController) => {
+      tariInsideCafe = true;
+      tariCafeServeState = createInitialTariCafeServeState();
+      outdoorTariNpc.root.visible = false;
+      outdoorTariNpc.nameplate.sprite.visible = false;
+      outdoorTariNpc.isMoving = false;
+      outdoorTariNpc.isSitting = false;
+      outdoorTariNpc.pauseTimer = 0;
+      outdoorTariNpc.navPath = [];
+      outdoorTariNpc.navWaypointIndex = 0;
+      outdoorTariNpc.navPathGoalKey = '';
+      outdoorTariNpc.seatOverride = null;
+      npcWasTalkingMap.set('citizen_tari', false);
+
+      cafeMiraX = CAFE_TARI_INTERIOR_DOOR_ENTRY.x;
+      cafeMiraZ = CAFE_TARI_INTERIOR_DOOR_ENTRY.z;
+      cafeMiraCurrentYaw = CAFE_TARI_INTERIOR_DOOR_ENTRY.yaw + Math.PI / 2;
+      cafeMiraWaypointIdx = 0;
+      cafeMiraPauseTimer = 0;
+      cafeMiraIsSitting = false;
+      cafeMiraSeatLiftY = 0;
+      cafeMiraHoldingItemId = null;
+      cafeMiraStatusLabel = 'STEPPING INTO GLASSHOUSE CAFE';
+      cafeMiraSeatOverride = null;
+      if (cafeMiraNpcRoot) {
+        cafeMiraNpcRoot.visible = !cafeWorkShiftActive;
+        cafeMiraNpcRoot.position.set(cafeMiraX, 0, cafeMiraZ);
+      }
+    };
+
+    const teleportTariOutToWestPlazaFromDoor = () => {
+      tariInsideCafe = false;
+      tariCafeServeState = createInitialTariCafeServeState();
+      cafeMiraIsSitting = false;
+      cafeMiraSeatLiftY = 0;
+      cafeMiraHoldingItemId = null;
+      cafeMiraSeatOverride = null;
+      if (cafeMiraNpcRoot) {
+        cafeMiraNpcRoot.visible = false;
+      }
+      const outdoorTariNpc = cityAmbientNpcs.find((n) => n.preset.id === 'citizen_tari');
+      if (outdoorTariNpc) {
+        const scheduledPatrol =
+          resolveNpcScheduledPatrolWaypoints('citizen_tari', latestCafeClockHour) ??
+          outdoorTariNpc.preset.waypoints;
+        const terraceIdx = scheduledPatrol.findIndex(
+          (wp) =>
+            Math.hypot(
+              wp.x - CAFE_TARI_EXTERIOR_DOOR_STOP.x,
+              wp.z - CAFE_TARI_EXTERIOR_DOOR_STOP.z,
+            ) > 1.2,
+        );
+        outdoorTariNpc.x = CAFE_EXTERIOR_DOOR_TRIGGER.exitSpawnX;
+        outdoorTariNpc.z = CAFE_EXTERIOR_DOOR_TRIGGER.exitSpawnZ;
+        outdoorTariNpc.yaw = Math.PI / 2;
+        outdoorTariNpc.waypointIdx = terraceIdx >= 0 ? terraceIdx : 1 % scheduledPatrol.length;
+        outdoorTariNpc.pauseTimer = 0.5;
+        outdoorTariNpc.isMoving = false;
+        outdoorTariNpc.isSitting = false;
+        outdoorTariNpc.activeActivity = 'cafe_hangout';
+        outdoorTariNpc.activeStatusLabel = 'STEPPING OUT OF GLASSHOUSE CAFE';
+        outdoorTariNpc.activeHoldingCafeItemId = null;
+        outdoorTariNpc.navPath = [];
+        outdoorTariNpc.navWaypointIndex = 0;
+        outdoorTariNpc.navPathGoalKey = '';
+        outdoorTariNpc.seatOverride = null;
+        outdoorTariNpc.lastProgressX = outdoorTariNpc.x;
+        outdoorTariNpc.lastProgressZ = outdoorTariNpc.z;
+        outdoorTariNpc.bodyGroup.rotation.set(0, outdoorTariNpc.yaw + Math.PI / 2, 0);
+      }
+    };
 
     const syncCafeCustomerWorkShiftVisuals = () => {
       if (!cafeInterior || !cafeCustomerNpcRoot) return;
@@ -7354,11 +7972,11 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       }
       builtCafe.root.add(custRoot);
 
-      // WS7/WS8: Cafe keeps no named resident — Mira patrols Beach Club outdoors
+      // Tari works inside Glasshouse Cafe as well as stepping in & out around West Plaza (single unified NPC)
       const miraRoot = new THREE.Group();
-      miraRoot.name = 'CafeInteriorMiraNpc';
-      miraRoot.visible = false;
-      miraRoot.position.set(CAFE_MIRA_INTERIOR_X, 0, CAFE_MIRA_INTERIOR_Z);
+      miraRoot.name = 'CafeInteriorTariNpc';
+      miraRoot.visible = tariInsideCafe && !cafeWorkShiftActive;
+      miraRoot.position.set(cafeMiraX, 0, cafeMiraZ);
       miraRoot.scale.setScalar(0.55);
 
       const miraShadow = new THREE.Mesh(shadowDiscGeo, avatarContactShadowMat);
@@ -7369,7 +7987,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
       const miraBodyGroup = new THREE.Group();
       miraBodyGroup.rotation.order = 'YXZ';
-      miraBodyGroup.rotation.y = CAFE_MIRA_INTERIOR_DEFAULT_YAW;
+      miraBodyGroup.rotation.y = cafeMiraCurrentYaw;
       miraBodyGroup.scale.setScalar(0.98);
       if (cafeMiraPreset) {
         miraBodyGroup.userData.desiredModularOutfit = {
@@ -7386,7 +8004,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
       const miraRig = buildProceduralBuddyAvatar(
         miraBodyGroup,
-        'red',
+        'blue',
         windUniforms,
         isSoftwareGl,
         false,
@@ -7398,17 +8016,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       miraRig.bazookaGroup.visible = false;
       if (miraRig.laserGroup) miraRig.laserGroup.visible = false;
       if (miraRig.gatlingGroup) miraRig.gatlingGroup.visible = false;
-      applyAmbientNpcClipOverrides(miraRig, cafeMiraPreset, 'mira_idle.001');
+      applyAmbientNpcClipOverrides(miraRig, cafeMiraPreset, 'tari_idle.001');
 
       const cafeMiraGltf =
-        loadedBlitzAssets?.miraCustomGlb ?? getCachedLoadedCitizenGlbs().miraCustomGlb ?? null;
+        loadedBlitzAssets?.tariCustomGlb ?? getCachedLoadedCitizenGlbs().tariCustomGlb ?? null;
       if (cafeMiraGltf) {
         upgradeBuddyRigWithCharBuddiesGlb(
           miraRig,
           cafeMiraGltf,
           loadedBlitzAssets?.ar99AssaultGltf,
         );
-        applyAmbientNpcClipOverrides(miraRig, cafeMiraPreset, 'mira_idle.001');
+        applyAmbientNpcClipOverrides(miraRig, cafeMiraPreset, 'tari_idle.001');
         cafeMiraGlbUpgraded = true;
       } else {
         cafeMiraGlbUpgraded = false;
@@ -7417,7 +8035,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       const miraPlate = createGlassmorphicNameplate(
         2.6,
         0.66,
-        'MIRA',
+        'TARI',
         'GLASSHOUSE CAFE',
         false,
       );
@@ -7441,17 +8059,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       cafeMiraNameplate = miraPlate;
       cafeMiraChevron = miraChevron;
       cafeMiraPortraitBlend01 = 0;
-      cafeMiraCurrentYaw = CAFE_MIRA_INTERIOR_DEFAULT_YAW;
-      cafeMiraX = CAFE_MIRA_INTERIOR_X;
-      cafeMiraZ = CAFE_MIRA_INTERIOR_Z;
-      cafeMiraWaypointIdx = 1;
-      cafeMiraPauseTimer = 14.0;
-      cafeMiraWalkCycle = 0;
-      cafeMiraIsSitting = false;
-      cafeMiraSeatLiftY = 0;
-      cafeMiraHoldingItemId = null;
-      cafeMiraStatusLabel = 'BROWSING GLASSHOUSE CAFE';
-      cafeMiraSeatOverride = null;
       cafeInteriorShadersCompiled = false;
       syncCafeCustomerWorkShiftVisuals();
       return builtCafe;
@@ -8852,6 +9459,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           }
         } else if (wasCafeMode && !isCafeMode && playerUnit) {
           pendingCafeActivationToken++;
+          if (
+            activePairedSession &&
+            activePairedSession.partnerKind === 'ambient_npc' &&
+            activePairedSession.targetId === 'citizen_tari'
+          ) {
+            stopActivePairedInteraction(true);
+          }
           if (cafeInterior) cafeInterior.root.visible = false;
           syncIndoorOutdoorSceneVisibility(!isHouseMode && !isCasinoMode);
           activeCafeSeatedSpot = null;
@@ -11414,14 +12028,38 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       session: ActivePairedInteractionSession,
     ): BuddyCharacterRig | null => {
       if (session.partnerKind === 'ambient_npc') {
-        const npc = cityAmbientNpcs.find((c) => c.preset.id === session.targetId);
+        const resolvedNpc = resolveNpcId(session.targetId);
+        const canonicalId = resolvedNpc ? npcIdToCitizenId(resolvedNpc) : session.targetId;
+        if (
+          (session.targetId === 'citizen_tari' || canonicalId === 'citizen_tari') &&
+          tariInsideCafe &&
+          npcCameraMode === 'cafe_interior' &&
+          cafeMiraRig
+        ) {
+          return cafeMiraRig;
+        }
+        const npc = cityAmbientNpcs.find(
+          (c) => c.preset.id === session.targetId || c.preset.id === canonicalId,
+        );
+        if (npc && !npc.glbUpgraded) {
+          upgradeAmbientNpcRigIfNeeded(npc);
+        }
         return npc?.rig ?? null;
       }
       if (session.partnerKind === 'merchant_npc') {
-        if (session.targetId === 'npc_hana' || session.targetId === 'npc_cafe') {
+        const resolvedNpc = resolveNpcId(session.targetId);
+        if (
+          resolvedNpc === 'hana' ||
+          session.targetId === 'npc_hana' ||
+          session.targetId === 'npc_cafe'
+        ) {
           return lobbyCafeNpc?.npcRig ?? null;
         }
-        if (session.targetId === 'npc_kai' || session.targetId === 'npc_beach') {
+        if (
+          resolvedNpc === 'kai' ||
+          session.targetId === 'npc_kai' ||
+          session.targetId === 'npc_beach'
+        ) {
           return beachHouseNpc?.npcRig ?? null;
         }
         return null;
@@ -11500,6 +12138,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         clickToWalkState = cancelClickToWalkState(clickToWalkState);
         clickToWalkIndicator3D.root.visible = false;
       }
+      activeSitSession = null;
+      endWalkTogetherNow();
+      endRideTogetherNow();
       stopActivePairedInteraction(true);
 
       const seq = ++pairedSessionSeq;
@@ -15497,7 +16138,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       if (weaponId === 'fishing_rod') {
         playerUnit.weaponId = 'fishing_rod';
         playerUnit.weaponName = 'Joran Fishing';
-        playerUnit.weaponRecoil = 0.85;
+        playerUnit.weaponRecoil = 0;
+        if (
+          playerUnit.rig.customGlbController &&
+          shorelineFishingSync.phase !== 'casting'
+        ) {
+          playerUnit.rig.customGlbController.fishingCastTimer = 0;
+        }
       } else if (weaponId === 'unarmed') {
         playerUnit.tacticalLoadout = selectHandheldWeaponInLoadout(
           playerUnit.tacticalLoadout,
@@ -16767,7 +17414,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           ) {
             soundEngine.playUiClick();
             window.dispatchEvent(
-              new CustomEvent('open-citizen-dialogue-ui', { detail: { citizenId: 'citizen_mira' } }),
+              new CustomEvent('open-citizen-dialogue-ui', { detail: { citizenId: 'citizen_tari' } }),
             );
             return;
           }
@@ -16981,31 +17628,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           }
         }
 
-        // 0B-4. Central Plaza Classic Plaza Manor Model House Entrance Triangle
-        if (
-          worldModeRef.current !== 'warzone' &&
-          npcCameraMode === 'none' &&
-          getPlanetShortestDistance(
-            actorX,
-            actorZ,
-            PLAZA_MODEL_HOUSE_DOOR_TRIGGER.x,
-            PLAZA_MODEL_HOUSE_DOOR_TRIGGER.z,
-          ) <= PLAZA_MODEL_HOUSE_DOOR_TRIGGER.triggerRadius
-        ) {
-          soundEngine.playUiClick();
-          clearCharacterSelection();
-          window.dispatchEvent(
-            new CustomEvent('open-house-interior-ui', {
-              detail: {
-                team: null,
-                commanderIdx: null,
-                houseStyle: PLAZA_MODEL_HOUSE_DOOR_TRIGGER.houseStyle,
-                isSampleEntry: true,
-              },
-            }),
-          );
-          return;
-        }
+        // 0B-4. Legacy West Plaza Model House door entrance trigger removed (no longer relevant)
 
         // 0B-5. Grand Casino Valet Entrance Triangle ("segitiga interaksi untuk masuk ke bangunan casino")
         if (
@@ -17379,13 +18002,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       if (isOrbitingNpcPortrait) {
         const dx = e.clientX - npcPortraitOrbitDragStart.x;
         const dy = e.clientY - npcPortraitOrbitDragStart.y;
+        const orbitConstraints = getPosePortraitOrbitConstraints();
         const clamped = clampNpcDialoguePortraitOrbit({
           orbitYawOffsetRad: npcPortraitOrbitDragStart.yaw - dx * 0.0075,
           orbitPitchOffsetRad: npcPortraitOrbitDragStart.pitch + dy * 0.0058,
           portraitDistanceScale: npcPortraitDistanceScale,
-          minYawOffsetRad: citySelfieCameraOpen ? -Math.PI : undefined,
-          maxYawOffsetRad: citySelfieCameraOpen ? Math.PI : undefined,
-          minDistanceScale: citySelfieCameraOpen ? 0.56 : undefined,
+          minYawOffsetRad: orbitConstraints.minYawOffsetRad,
+          maxYawOffsetRad: orbitConstraints.maxYawOffsetRad,
+          minDistanceScale: orbitConstraints.minDistanceScale,
         });
         npcPortraitOrbitYaw = clamped.orbitYawOffsetRad;
         npcPortraitOrbitPitch = clamped.orbitPitchOffsetRad;
@@ -18047,13 +18671,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         const wheelStep =
           Math.sign(e.deltaY) *
           Math.min(0.14, Math.max(0.025, Math.abs(e.deltaY) * 0.0018));
+        const orbitConstraints = getPosePortraitOrbitConstraints();
         npcPortraitDistanceScale = clampNpcDialoguePortraitOrbit({
           orbitYawOffsetRad: npcPortraitOrbitYaw,
           orbitPitchOffsetRad: npcPortraitOrbitPitch,
           portraitDistanceScale: npcPortraitDistanceScale + wheelStep,
-          minYawOffsetRad: citySelfieCameraOpen ? -Math.PI : undefined,
-          maxYawOffsetRad: citySelfieCameraOpen ? Math.PI : undefined,
-          minDistanceScale: citySelfieCameraOpen ? 0.56 : undefined,
+          minYawOffsetRad: orbitConstraints.minYawOffsetRad,
+          maxYawOffsetRad: orbitConstraints.maxYawOffsetRad,
+          minDistanceScale: orbitConstraints.minDistanceScale,
         }).portraitDistanceScale;
         return;
       }
@@ -18289,6 +18914,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                 applyCitizenClothingTint(rig, '#ffffff', 0.0);
               }
               if (isPrimaryPlayerRig) {
+                forcePlayerPortraitCapture = true;
                 await applyBuddyRigStyleAnimation(rig, parsed.animStyle ?? null);
               }
             });
@@ -18845,6 +19471,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             animLabel?: string;
             initiateGlbUrl?: string;
             receiveGlbUrl?: string;
+            closenessApproved?: boolean;
           };
           if (
             !playerUnit ||
@@ -18856,17 +19483,26 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             return;
           }
           const targetIdStr = String(payload.targetId ?? '');
+          const resolvedNamedNpc = resolveNpcId(targetIdStr);
+          const canonicalCitizenId = resolvedNamedNpc
+            ? npcIdToCitizenId(resolvedNamedNpc)
+            : targetIdStr;
+          const closenessAcct =
+            (nearSessionState.accountId || nearSessionState.walletId || 'guest')
+              .trim()
+              .toLowerCase() || 'guest';
           const animId = payload.animId;
           const animLabel = payload.animLabel || 'Paired Pose';
           const initUrl = payload.initiateGlbUrl;
           const recvUrl = payload.receiveGlbUrl;
 
           // 1. City Ambient NPC (Nadia, Mira, Tari, Raka, Bima, Kenji) -> enforce WS13 closeness gate for named NPCs
-          const ambientNpc = cityAmbientNpcs.find((c) => c.preset.id === targetIdStr);
+          const ambientNpc = cityAmbientNpcs.find(
+            (c) => c.preset.id === targetIdStr || c.preset.id === canonicalCitizenId,
+          );
           if (ambientNpc) {
-            const closenessAcct =
-              nearSessionState.accountId ?? nearSessionState.walletId ?? 'guest';
             if (
+              !payload.closenessApproved &&
               !canStartDirectPairedPoseForTarget({
                 store: loadNpcClosenessStore(closenessAcct),
                 targetId: ambientNpc.preset.id,
@@ -18874,7 +19510,15 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             ) {
               return;
             }
-            const anchorYaw = Math.atan2(-(ambientNpc.z - playerUnit.z), ambientNpc.x - playerUnit.x);
+            if (!ambientNpc.glbUpgraded) {
+              upgradeAmbientNpcRigIfNeeded(ambientNpc);
+            }
+            const dx = ambientNpc.x - playerUnit.x;
+            const dz = ambientNpc.z - playerUnit.z;
+            const anchorYaw =
+              Math.hypot(dx, dz) > 0.05
+                ? Math.atan2(-dz, dx)
+                : activePairedSession?.anchorYaw ?? playerUnit.yaw;
             void beginSynchronizedPairedPose({
               partnerKind: 'ambient_npc',
               targetId: ambientNpc.preset.id,
@@ -18893,26 +19537,31 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
           // 2. Merchant NPC (Hana / Kai) -> enforce WS13 closeness gate before posing
           if (
+            resolvedNamedNpc === 'hana' ||
+            resolvedNamedNpc === 'kai' ||
             targetIdStr === 'npc_hana' ||
             targetIdStr === 'npc_cafe' ||
             targetIdStr === 'npc_kai' ||
             targetIdStr === 'npc_beach'
           ) {
-            const closenessAcct =
-              nearSessionState.accountId ?? nearSessionState.walletId ?? 'guest';
+            const merchantTargetId =
+              resolvedNamedNpc === 'kai' || targetIdStr === 'npc_kai' || targetIdStr === 'npc_beach'
+                ? 'npc_kai'
+                : 'npc_hana';
             if (
+              !payload.closenessApproved &&
               !canStartDirectPairedPoseForTarget({
                 store: loadNpcClosenessStore(closenessAcct),
-                targetId: targetIdStr,
+                targetId: merchantTargetId,
               })
             ) {
               return;
             }
-            const anchorYaw = playerUnit.yaw;
+            const anchorYaw = activePairedSession?.anchorYaw ?? playerUnit.yaw;
             void beginSynchronizedPairedPose({
               partnerKind: 'merchant_npc',
-              targetId: targetIdStr,
-              targetName: payload.targetName || (targetIdStr.includes('kai') ? 'KAI' : 'HANA'),
+              targetId: merchantTargetId,
+              targetName: payload.targetName || (merchantTargetId === 'npc_kai' ? 'KAI' : 'HANA'),
               animId,
               animLabel,
               initiateGlbUrl: initUrl,
@@ -19309,12 +19958,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         const dNadia = nadiaNpc
           ? getPlanetShortestDistance(playerUnit.x, playerUnit.z, nadiaNpc.x, nadiaNpc.z)
           : Infinity;
-        const dHana = getPlanetShortestDistance(
-          playerUnit.x,
-          playerUnit.z,
-          REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x,
-          REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.z,
-        );
+        const hanaX = lobbyCafeNpc?.npcGrp
+          ? lobbyCafeNpc.npcGrp.position.x
+          : REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x;
+        const hanaZ = lobbyCafeNpc?.npcGrp
+          ? lobbyCafeNpc.npcGrp.position.z
+          : REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.z;
+        const dHana = getPlanetShortestDistance(playerUnit.x, playerUnit.z, hanaX, hanaZ);
         const loc =
           dBeach <= 18.0 && worldModeRef.current !== 'lobby'
             ? 'beach_house'
@@ -19663,17 +20313,6 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         shorelineFishingSync.speciesColorHex,
       );
 
-      if (shorelineFishingSync.phase === 'casting' && prevPhase !== 'casting') {
-        shorelineFishingSync.castStartWallMs = performance.now();
-        shorelineFishingSync.hasSplashedDown = false;
-        if (playerUnit) {
-          playerUnit.weaponRecoil = 1.0;
-          if (playerUnit.rig.customGlbController) {
-            playerUnit.rig.customGlbController.fishingCastTimer = 1.45;
-          }
-        }
-      }
-
       if (
         shorelineFishingSync.phase !== 'idle' &&
         (prevPhase === 'idle' || prevPhase === 'charging') &&
@@ -19694,6 +20333,17 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         shorelineFishingSync.hasLockedCastYaw = true;
       } else if (shorelineFishingSync.phase === 'idle') {
         shorelineFishingSync.hasLockedCastYaw = false;
+      }
+
+      if (shorelineFishingSync.phase === 'casting' && prevPhase !== 'casting') {
+        shorelineFishingSync.castStartWallMs = performance.now();
+        shorelineFishingSync.hasSplashedDown = false;
+        if (playerUnit) {
+          playerUnit.weaponRecoil = 1.0;
+          if (playerUnit.rig.customGlbController) {
+            playerUnit.rig.customGlbController.fishingCastTimer = 1.45;
+          }
+        }
       }
     };
 
@@ -19781,12 +20431,54 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       cafeWorkAnimSync.elapsedSec = 0;
     };
 
+    const onCafeTariServePurchase = (event: Event) => {
+      if (cafeWorkShiftActive) return;
+      const detail = (
+        event as CustomEvent<{
+          itemId?: CafeMenuItemId;
+          itemName?: string;
+          category?: 'drink' | 'pastry';
+        }>
+      ).detail;
+      const itemId =
+        detail?.itemId && CAFE_MENU_ITEM_ID_SET.has(detail.itemId) ? detail.itemId : 'latte';
+      const itemName = detail?.itemName?.trim() || 'Order';
+      const category: 'drink' | 'pastry' = detail?.category === 'pastry' ? 'pastry' : 'drink';
+      if (!tariInsideCafe) {
+        const outdoorTari = cityAmbientNpcs.find((n) => n.preset.id === 'citizen_tari');
+        if (outdoorTari) {
+          onOutdoorTariEnterCafeDoorway?.(outdoorTari);
+        } else {
+          tariInsideCafe = true;
+          cafeMiraX = CAFE_TARI_INTERIOR_DOOR_ENTRY.x;
+          cafeMiraZ = CAFE_TARI_INTERIOR_DOOR_ENTRY.z;
+          cafeMiraCurrentYaw = CAFE_TARI_INTERIOR_DOOR_ENTRY.yaw + Math.PI / 2;
+        }
+      }
+      cafeMiraIsSitting = false;
+      cafeMiraSeatLiftY = 0;
+      cafeMiraSeatOverride = null;
+      cafeMiraPauseTimer = 0;
+      if (cafeMiraNpcRoot) {
+        cafeMiraNpcRoot.visible = !cafeWorkShiftActive;
+        cafeMiraNpcRoot.position.set(cafeMiraX, 0, cafeMiraZ);
+      }
+      tariCafeServeState = startTariCafeServeOrder({
+        npcX: cafeMiraX,
+        npcZ: cafeMiraZ,
+        itemId,
+        itemName,
+        category,
+      });
+    };
+
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('buddy-action', onBuddyActionEvent);
     window.addEventListener('shoreline-fishing-sync', onShorelineFishingSync);
     window.addEventListener('shoreline-fishing-landed', onShorelineFishingLanded);
     window.addEventListener('cafe-consume-state', onCafeConsumeState);
+    window.addEventListener('cafe-tari-serve-purchase', onCafeTariServePurchase);
     window.addEventListener('start-cafe-work-anim', onStartCafeWorkAnim);
     window.addEventListener('cancel-cafe-work-anim', onCancelCafeWorkAnim);
     window.addEventListener('stop-cafe-work-shift', onCancelCafeWorkAnim);
@@ -20131,7 +20823,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       const shopCollidersSig = isSafezoneNow
         ? computePlacedShopCollidersSignature(resolvedShopLots)
         : 'off';
-      stateKey += `|shops:${shopCollidersSig}`;
+      stateKey += `|mode:${isSafezoneNow ? 'sz' : 'wz'}|shops:${shopCollidersSig}`;
 
       if (cachedStaticWorldStructures && cachedStaticWorldStructuresKey === stateKey) {
         return cachedStaticWorldStructures;
@@ -20142,7 +20834,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         redBase,
         blueCommanderBases,
         redCommanderBases,
-        isSafezoneMode: cityArenaMode === 'safezone',
+        isSafezoneMode: isSafezoneNow,
       });
       if (isSafezoneNow) {
         const shopColliders = buildPlacedShopBuildingColliders(resolvedShopLots);
@@ -20160,17 +20852,25 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
 
     // Build & cache 2D A* Navigation Grids for Foot Units, Tracked Vehicles, and Law-Abiding Citizens
     const ensureArenaNavGridsBuilt = (): void => {
-      if (navGridDirty || !cachedFootNavGrid || !cachedVehicleNavGrid || !cachedPedestrianNavGrid) {
+      if (
+        navGridDirty ||
+        !cachedFootNavGrid ||
+        !cachedVehicleNavGrid ||
+        !cachedPedestrianNavGrid ||
+        !cachedPedestrianFollowNavGrid
+      ) {
         const staticStructures = getStaticWorldStructures();
-        const { footGrid, vehicleGrid, pedestrianGrid } = buildArenaNavGrids({
-          staticStructures,
-          trees,
-          activeMapProps,
-          auditedWorld: getAuditedStaticWorldStructures(staticStructures),
-        });
+        const { footGrid, vehicleGrid, pedestrianGrid, pedestrianFollowGrid } =
+          buildArenaNavGrids({
+            staticStructures,
+            trees,
+            activeMapProps,
+            auditedWorld: getAuditedStaticWorldStructures(staticStructures),
+          });
         cachedFootNavGrid = footGrid;
         cachedVehicleNavGrid = vehicleGrid;
         cachedPedestrianNavGrid = pedestrianGrid;
+        cachedPedestrianFollowNavGrid = pedestrianFollowGrid;
         navGridDirty = false;
         cachedCityClickNavDirty = true;
       }
@@ -20714,6 +21414,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
     const getPedestrianNavGrid = (): AStarNavGrid => {
       ensureArenaNavGridsBuilt();
       return cachedPedestrianNavGrid!;
+    };
+
+    // Relaxed sibling grid for Walk-Together companions: same obstacles as the
+    // pedestrian grid, but asphalt costs the player's own 3.2 instead of 48.0 so a
+    // follower can cross mid-block to keep up (Zebra corridors stay cheapest).
+    const getPedestrianFollowNavGrid = (): AStarNavGrid => {
+      ensureArenaNavGridsBuilt();
+      return cachedPedestrianFollowNavGrid!;
     };
 
     let aStarRepathsThisFrame = 0;
@@ -22606,13 +23314,21 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           !mountedTank &&
           Boolean(playerUnit && playerUnit.alive) &&
           (npcCameraMode === 'none' ||
-            (npcCameraMode === 'cafe_interior' && activeCitizenDialogueId !== 'citizen_mira') ||
+            (npcCameraMode === 'cafe_interior' && activeCitizenDialogueId !== 'citizen_tari') ||
             npcCameraMode === 'casino_interior' ||
             npcCameraMode === 'house_visit');
 
         const resolvePairedPartnerWorldCoord = (
           targetId: string,
         ): { x: number; z: number } | null => {
+          if (
+            targetId === 'citizen_tari' &&
+            tariInsideCafe &&
+            npcCameraMode === 'cafe_interior' &&
+            cafeMiraNpcRoot?.visible
+          ) {
+            return { x: cafeMiraX, z: cafeMiraZ };
+          }
           const ambientNpc = cityAmbientNpcs.find((c) => c.preset.id === targetId && c.root.visible);
           if (ambientNpc) return { x: ambientNpc.x, z: ambientNpc.z };
           const remoteAv = Array.from(remotePlayerAvatars.values()).find(
@@ -22865,7 +23581,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           : npcCameraMode === 'npc_merchant' && npcCameraLocation !== 'central_plaza'
           ? npcCameraLocation === 'beach_house'
             ? 85.8
-            : REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x
+            : lobbyCafeNpc?.npcGrp
+              ? lobbyCafeNpc.npcGrp.position.x
+              : REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x
           : activeCitizenPortraitNpc
           ? activeCitizenPortraitNpc.x
           : nukePrePose
@@ -22885,7 +23603,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           : npcCameraMode === 'npc_merchant' && npcCameraLocation !== 'central_plaza'
           ? npcCameraLocation === 'beach_house'
             ? 60.0
-            : REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.z
+            : lobbyCafeNpc?.npcGrp
+              ? lobbyCafeNpc.npcGrp.position.z
+              : REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.z
           : activeCitizenPortraitNpc
           ? activeCitizenPortraitNpc.z
           : nukePrePose
@@ -24821,12 +25541,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               npcCameraMode === 'house_visit' ||
               npcCameraMode === 'cafe_interior' ||
               npcCameraMode === 'casino_interior' ;
+            const isWalkTogetherActive = Boolean(activeWalkTogether);
             const playerGait = resolvePlayerLocomotionGait({
               isClickToWalk: clickToWalkActiveThisFrame,
-              isShiftHeld: isBoosting,
+              isShiftHeld: isWalkTogetherActive ? false : isBoosting,
               isIndoor: isIndoorFootRoom,
               clickTotalDistanceM: clickToWalkState.totalDistanceM,
               clickRemainingDistanceM: clickToWalkState.remainingDistanceM,
+              forceWalk: isWalkTogetherActive,
             });
             playerUnit.rig.forceLocomotionGait = playerGait.gait;
             const runBaseSpeed = isIndoorFootRoom
@@ -24837,8 +25559,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                   isPlayer: true,
                   classSpeedMultiplier: spec.speedMultiplier,
                   carryingCrate: playerUnit.carryingCrate !== 'none',
-                  isBoosting: isBoosting || (clickToWalkActiveThisFrame && playerGait.gait === 'run'),
-                  onRoadOrZebra: playerRoadBoost.onRoadOrZebra,
+                  isBoosting:
+                    !isWalkTogetherActive &&
+                    (isBoosting || (clickToWalkActiveThisFrame && playerGait.gait === 'run')),
+                  onRoadOrZebra: isWalkTogetherActive ? false : playerRoadBoost.onRoadOrZebra,
                 });
             const moveSpeed = runBaseSpeed * playerGait.speedMultiplier;
 
@@ -28611,17 +29335,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           npcCameraLocation === 'beach_house' ? beachHouseNpc.npcGrp : lobbyCafeNpc.npcGrp;
         const activeMerchantRig =
           npcCameraLocation === 'beach_house' ? beachHouseNpc.npcRig : lobbyCafeNpc.npcRig;
-        const baseMerchantX = isPairedWithMerchant
-          ? activeMerchantGrp.position.x
-          : npcCameraLocation === 'beach_house'
-            ? 85.8
-            : REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x;
+        const baseMerchantX = activeMerchantGrp.position.x;
         const portraitNpcY = activeMerchantGrp.position.y;
-        const baseMerchantZ = isPairedWithMerchant
-          ? activeMerchantGrp.position.z
-          : npcCameraLocation === 'beach_house'
-            ? 60.0
-            : REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.z;
+        const baseMerchantZ = activeMerchantGrp.position.z;
         const merchantBone = resolveRigBonePortraitMetrics(
           activeMerchantRig,
           baseMerchantX,
@@ -29052,6 +29768,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               (npcPortraitOrbitPitch - npcPortraitSmoothedPitch) * portraitDampAlpha;
             npcPortraitSmoothedDistScale +=
               (npcPortraitDistanceScale - npcPortraitSmoothedDistScale) * portraitDampAlpha;
+            const orbitConstraints = getPosePortraitOrbitConstraints();
+            const targetHorizOffset = orbitConstraints.freeOrbit ? 0 : 0.44;
+            npcPortraitSmoothedHorizOffset +=
+              (targetHorizOffset - npcPortraitSmoothedHorizOffset) * portraitDampAlpha;
+            if (Math.abs(targetHorizOffset - npcPortraitSmoothedHorizOffset) < 0.001) {
+              npcPortraitSmoothedHorizOffset = targetHorizOffset;
+            }
             const targetPose = computeNpcDialoguePortraitPose({
               npcX: posePortraitState.curCenterX,
               npcY: HOUSE_ORIGIN_Y + houseVisitSystem.getCurrentFloorY(),
@@ -29066,10 +29789,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               orbitYawOffsetRad: npcPortraitSmoothedYaw,
               orbitPitchOffsetRad: npcPortraitSmoothedPitch,
               portraitDistanceScale: npcPortraitSmoothedDistScale,
-              horizontalOffsetFactor: citySelfieCameraOpen ? 0 : 0.44,
-              minYawOffsetRad: citySelfieCameraOpen ? -Math.PI : undefined,
-              maxYawOffsetRad: citySelfieCameraOpen ? Math.PI : undefined,
-              minDistanceScale: citySelfieCameraOpen ? 0.56 : undefined,
+              horizontalOffsetFactor: npcPortraitSmoothedHorizOffset,
+              minYawOffsetRad: orbitConstraints.minYawOffsetRad,
+              maxYawOffsetRad: orbitConstraints.maxYawOffsetRad,
+              minDistanceScale: orbitConstraints.minDistanceScale,
             });
             const t = 1 - Math.pow(1 - posePortraitState.blend01, 3);
             const curFov = THREE.MathUtils.lerp(posePortraitState.startFov, targetPose.fovDeg, t);
@@ -29182,10 +29905,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           cafeCustomerRig.rightArmPivot.rotation.x = -0.35 + Math.sin(timeSec * 2.8) * 0.12;
           updateCharacterWeaponStance(cafeCustomerRig, 'unarmed', 0, false, false, 0, 0);
         }
-        const isTalkingWithCafeMira = activeCitizenDialogueId === 'citizen_mira';
+        if (cafeMiraNpcRoot) {
+          cafeMiraNpcRoot.visible = tariInsideCafe && !cafeWorkShiftActive;
+        }
+        const isTalkingWithCafeMira = activeCitizenDialogueId === 'citizen_tari' && tariInsideCafe;
+        const isPairedWithCafeTari = Boolean(
+          activePairedSession &&
+            activePairedSession.partnerKind === 'ambient_npc' &&
+            activePairedSession.targetId === 'citizen_tari' &&
+            tariInsideCafe,
+        );
         if (cafeMiraNpcRoot?.visible && cafeMiraBodyGroup && cafeMiraRig) {
           const miraCharGltf =
-            loadedBlitzAssets?.miraCustomGlb ?? getCachedLoadedCitizenGlbs().miraCustomGlb ?? null;
+            loadedBlitzAssets?.tariCustomGlb ?? getCachedLoadedCitizenGlbs().tariCustomGlb ?? null;
           if (miraCharGltf && !cafeMiraGlbUpgraded) {
             upgradeBuddyRigWithCharBuddiesGlb(
               cafeMiraRig,
@@ -29194,154 +29926,223 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             );
             cafeMiraGlbUpgraded = true;
           }
-          applyAmbientNpcClipOverrides(cafeMiraRig, cafeMiraPreset, 'mira_idle.001');
-          const cafeWpLen = cafeMiraPreset.waypoints.length;
-          const activeMiraWpIdx =
-            cafeWpLen > 0
-              ? ((cafeMiraWaypointIdx % cafeWpLen) + cafeWpLen) % cafeWpLen
-              : 0;
-          const nextInteriorWp =
-            cafeWpLen > 0 ? cafeMiraPreset.waypoints[activeMiraWpIdx] : undefined;
-          const miraGoal =
-            cafeMiraSeatOverride && cafeMiraSeatOverride.wpIdx === activeMiraWpIdx
-              ? cafeMiraSeatOverride
-              : nextInteriorWp;
-          const miraGoalIsSit =
-            (nextInteriorWp?.activity ?? cafeMiraPreset.activity) === 'sit_relax';
-          let miraSeatOccupied = false;
-          let miraAlternateSeat: ReturnType<typeof findNearestUnoccupiedSeatForNpc> = null;
-          if (!cafeMiraIsSitting && cafeMiraPauseTimer <= 0 && miraGoalIsSit && miraGoal) {
-            seatedOccupantsScratch.length = 0;
-            if (playerUnit?.isSitting && activeCafeSeatedSpot) {
-              seatedOccupantsScratch.push({
-                id: '__local_player__',
-                x: activeCafeSeatedSpot.x,
-                z: activeCafeSeatedSpot.z,
-                isSitting: true,
-              });
-            }
-            for (const av of remotePlayerAvatars.values()) {
-              if (!av.root.visible || !av.peer.isSitting) continue;
-              seatedOccupantsScratch.push({
-                id: av.peer.sessionId,
-                x: av.renderX,
-                z: av.renderZ,
-                isSitting: true,
-              });
-            }
-            if (
-              isSeatSpotOccupiedByActors(
-                { x: miraGoal.x, z: miraGoal.z },
-                seatedOccupantsScratch,
-                0.92,
-                'citizen_mira',
-              )
-            ) {
-              miraSeatOccupied = true;
-              miraAlternateSeat = findNearestUnoccupiedSeatForNpc({
-                targetX: miraGoal.x,
-                targetZ: miraGoal.z,
-                npcX: cafeMiraX,
-                npcZ: cafeMiraZ,
-                npcId: 'citizen_mira',
-                candidateSeats: CAFE_INTERIOR_SEAT_SPOTS,
-                occupants: seatedOccupantsScratch,
-                maxSearchRadiusM: 18.0,
-              });
-            }
-          }
-          const steppedInteriorMira = stepCityAmbientNpcSchedule({
-            preset: cafeMiraPreset,
-            x: cafeMiraX,
-            z: cafeMiraZ,
-            yaw: cafeMiraCurrentYaw - Math.PI / 2,
-            waypointIdx: cafeMiraWaypointIdx,
-            pauseTimer: cafeMiraPauseTimer,
-            elapsedSec: timeSec,
-            dt: isTalkingWithCafeMira ? 0 : dt,
-            seatOverride: cafeMiraSeatOverride,
-            isTargetSeatOccupied: miraSeatOccupied,
-            alternateSeat: miraAlternateSeat,
-            yieldForHazard: isTalkingWithCafeMira,
-          });
-          cafeMiraX = steppedInteriorMira.x;
-          cafeMiraZ = steppedInteriorMira.z;
-          cafeMiraWaypointIdx = steppedInteriorMira.waypointIdx;
-          cafeMiraPauseTimer = steppedInteriorMira.pauseTimer;
-          cafeMiraIsSitting = steppedInteriorMira.isSitting && !isTalkingWithCafeMira;
-          cafeMiraSeatOverride = steppedInteriorMira.seatOverride ?? null;
-          if (
-            cafeMiraIsSitting &&
-            playerUnit?.isSitting &&
-            activeCafeSeatedSpot &&
-            Math.hypot(activeCafeSeatedSpot.x - cafeMiraX, activeCafeSeatedSpot.z - cafeMiraZ) <
-              0.75
-          ) {
-            cafeMiraIsSitting = false;
-            cafeMiraPauseTimer = 0;
-            cafeMiraSeatOverride = null;
-          }
-          cafeMiraSeatLiftY = cafeMiraIsSitting ? steppedInteriorMira.activeSeatLiftY : 0;
-          cafeMiraHoldingItemId = steppedInteriorMira.activeHoldingCafeItemId;
-          cafeMiraStatusLabel = steppedInteriorMira.activeStatusLabel;
-          if (steppedInteriorMira.isMoving && !isTalkingWithCafeMira) {
-            cafeMiraWalkCycle += dt * steppedInteriorMira.speedMps * 3.1;
-          }
-          cafeMiraNpcRoot.position.set(cafeMiraX, 0, cafeMiraZ);
-          cafeMiraBodyGroup.position.y = cafeMiraIsSitting ? cafeMiraSeatLiftY : 0;
-          if (cafeMiraShadowMesh) {
-            cafeMiraShadowMesh.visible = !cafeMiraIsSitting;
-          }
+          applyAmbientNpcClipOverrides(cafeMiraRig, cafeMiraPreset, 'tari_idle.001');
 
-          if (isTalkingWithCafeMira && playerUnit) {
-            const toPlayerX = playerUnit.x - cafeMiraX;
-            const toPlayerZ = playerUnit.z - cafeMiraZ;
-            const dLen = Math.hypot(toPlayerX, toPlayerZ);
-            if (dLen >= 0.1) {
-              const targetTalkYaw = Math.atan2(toPlayerX, toPlayerZ);
-              const diff = Math.atan2(
-                Math.sin(targetTalkYaw - cafeMiraCurrentYaw),
-                Math.cos(targetTalkYaw - cafeMiraCurrentYaw),
-              );
-              cafeMiraCurrentYaw += diff * Math.min(1, dt * 8.5);
+          let miraIsMovingNow = false;
+          let miraSpeedNow = 0;
+
+          if (isPairedWithCafeTari && activePairedSession) {
+            cafeMiraX = activePairedSession.anchorX;
+            cafeMiraZ = activePairedSession.anchorZ;
+            cafeMiraCurrentYaw = activePairedSession.anchorYaw + Math.PI / 2;
+            cafeMiraIsSitting = false;
+            cafeMiraSeatLiftY = 0;
+            cafeMiraHoldingItemId = null;
+            cafeMiraStatusLabel = activePairedSession.animLabel;
+          } else if (tariCafeServeState.phase !== 'idle') {
+            const serveStep = stepTariCafeServeOrder({
+              state: tariCafeServeState,
+              x: cafeMiraX,
+              z: cafeMiraZ,
+              yaw: cafeMiraCurrentYaw - Math.PI / 2,
+              dt: isTalkingWithCafeMira ? 0 : dt,
+            });
+            tariCafeServeState = serveStep.nextState;
+            cafeMiraX = serveStep.x;
+            cafeMiraZ = serveStep.z;
+            cafeMiraIsSitting = false;
+            cafeMiraSeatLiftY = 0;
+            cafeMiraHoldingItemId = serveStep.holdingCafeItemId;
+            cafeMiraStatusLabel = serveStep.statusLabel;
+            miraIsMovingNow = serveStep.isMoving && !isTalkingWithCafeMira;
+            miraSpeedNow = isTalkingWithCafeMira ? 0 : serveStep.speedMps;
+            if (!isTalkingWithCafeMira) {
+              cafeMiraCurrentYaw = serveStep.yaw + Math.PI / 2;
+            }
+            if (serveStep.completedThisFrame) {
+              cafeMiraWaypointIdx = 4;
+              cafeMiraPauseTimer = 6.0;
             }
           } else {
-            cafeMiraCurrentYaw = steppedInteriorMira.yaw + Math.PI / 2;
+            const cafeWpLen = cafeMiraPreset.waypoints.length;
+            const activeMiraWpIdx =
+              cafeWpLen > 0
+                ? ((cafeMiraWaypointIdx % cafeWpLen) + cafeWpLen) % cafeWpLen
+                : 0;
+            const nextInteriorWp =
+              cafeWpLen > 0 ? cafeMiraPreset.waypoints[activeMiraWpIdx] : undefined;
+            const miraGoal =
+              cafeMiraSeatOverride && cafeMiraSeatOverride.wpIdx === activeMiraWpIdx
+                ? cafeMiraSeatOverride
+                : nextInteriorWp;
+            const miraGoalIsSit =
+              (nextInteriorWp?.activity ?? cafeMiraPreset.activity) === 'sit_relax';
+            let miraSeatOccupied = false;
+            let miraAlternateSeat: ReturnType<typeof findNearestUnoccupiedSeatForNpc> = null;
+            if (!cafeMiraIsSitting && cafeMiraPauseTimer <= 0 && miraGoalIsSit && miraGoal) {
+              seatedOccupantsScratch.length = 0;
+              if (playerUnit?.isSitting && activeCafeSeatedSpot) {
+                seatedOccupantsScratch.push({
+                  id: '__local_player__',
+                  x: activeCafeSeatedSpot.x,
+                  z: activeCafeSeatedSpot.z,
+                  isSitting: true,
+                });
+              }
+              for (const av of remotePlayerAvatars.values()) {
+                if (!av.root.visible || !av.peer.isSitting) continue;
+                seatedOccupantsScratch.push({
+                  id: av.peer.sessionId,
+                  x: av.renderX,
+                  z: av.renderZ,
+                  isSitting: true,
+                });
+              }
+              if (
+                isSeatSpotOccupiedByActors(
+                  { x: miraGoal.x, z: miraGoal.z },
+                  seatedOccupantsScratch,
+                  0.92,
+                  'citizen_tari',
+                )
+              ) {
+                miraSeatOccupied = true;
+                miraAlternateSeat = findNearestUnoccupiedSeatForNpc({
+                  targetX: miraGoal.x,
+                  targetZ: miraGoal.z,
+                  npcX: cafeMiraX,
+                  npcZ: cafeMiraZ,
+                  npcId: 'citizen_tari',
+                  candidateSeats: CAFE_INTERIOR_SEAT_SPOTS,
+                  occupants: seatedOccupantsScratch,
+                  maxSearchRadiusM: 18.0,
+                });
+              }
+            }
+            const steppedInteriorMira = stepCityAmbientNpcSchedule({
+              preset: cafeMiraPreset,
+              x: cafeMiraX,
+              z: cafeMiraZ,
+              yaw: cafeMiraCurrentYaw - Math.PI / 2,
+              waypointIdx: cafeMiraWaypointIdx,
+              pauseTimer: cafeMiraPauseTimer,
+              elapsedSec: timeSec,
+              dt: isTalkingWithCafeMira ? 0 : dt,
+              seatOverride: cafeMiraSeatOverride,
+              isTargetSeatOccupied: miraSeatOccupied,
+              alternateSeat: miraAlternateSeat,
+              yieldForHazard: isTalkingWithCafeMira,
+            });
+            cafeMiraX = steppedInteriorMira.x;
+            cafeMiraZ = steppedInteriorMira.z;
+            cafeMiraWaypointIdx = steppedInteriorMira.waypointIdx;
+            cafeMiraPauseTimer = steppedInteriorMira.pauseTimer;
+            cafeMiraIsSitting = steppedInteriorMira.isSitting && !isTalkingWithCafeMira;
+            cafeMiraSeatOverride = steppedInteriorMira.seatOverride ?? null;
+            if (
+              cafeMiraIsSitting &&
+              playerUnit?.isSitting &&
+              activeCafeSeatedSpot &&
+              Math.hypot(activeCafeSeatedSpot.x - cafeMiraX, activeCafeSeatedSpot.z - cafeMiraZ) <
+                0.75
+            ) {
+              cafeMiraIsSitting = false;
+              cafeMiraPauseTimer = 0;
+              cafeMiraSeatOverride = null;
+            }
+            cafeMiraSeatLiftY = cafeMiraIsSitting ? steppedInteriorMira.activeSeatLiftY : 0;
+            cafeMiraHoldingItemId = steppedInteriorMira.activeHoldingCafeItemId;
+            cafeMiraStatusLabel = steppedInteriorMira.activeStatusLabel;
+            miraIsMovingNow = steppedInteriorMira.isMoving && !isTalkingWithCafeMira;
+            miraSpeedNow = isTalkingWithCafeMira ? 0 : steppedInteriorMira.speedMps;
+            if (!isTalkingWithCafeMira) {
+              cafeMiraCurrentYaw = steppedInteriorMira.yaw + Math.PI / 2;
+            }
+            if (
+              shouldIndoorTariExitCafe({
+                tariInsideCafe,
+                npcX: cafeMiraX,
+                npcZ: cafeMiraZ,
+                targetWpX: nextInteriorWp?.x ?? 0,
+                targetWpZ: nextInteriorWp?.z ?? 0,
+                pauseTimer: cafeMiraPauseTimer,
+                isInteractingWithPlayer: isTalkingWithCafeMira || isPairedWithCafeTari,
+                isServingOrder: false,
+                cafeWorkShiftActive,
+              })
+            ) {
+              teleportTariOutToWestPlazaFromDoor();
+            }
           }
-          cafeMiraBodyGroup.rotation.y = cafeMiraCurrentYaw;
-          if (cafeMiraChevron) {
-            cafeMiraChevron.group.visible = false;
+
+          if (cafeMiraNpcRoot.visible) {
+            if (miraIsMovingNow) {
+              cafeMiraWalkCycle += dt * miraSpeedNow * 3.1;
+            }
+            cafeMiraNpcRoot.position.set(cafeMiraX, 0, cafeMiraZ);
+            cafeMiraBodyGroup.position.y = cafeMiraIsSitting ? cafeMiraSeatLiftY : 0;
+            if (cafeMiraShadowMesh) {
+              cafeMiraShadowMesh.visible = !cafeMiraIsSitting;
+            }
+
+            if (isTalkingWithCafeMira && playerUnit && !isPairedWithCafeTari) {
+              const toPlayerX = playerUnit.x - cafeMiraX;
+              const toPlayerZ = playerUnit.z - cafeMiraZ;
+              const dLen = Math.hypot(toPlayerX, toPlayerZ);
+              if (dLen >= 0.1) {
+                const targetTalkYaw = Math.atan2(toPlayerX, toPlayerZ);
+                const diff = Math.atan2(
+                  Math.sin(targetTalkYaw - cafeMiraCurrentYaw),
+                  Math.cos(targetTalkYaw - cafeMiraCurrentYaw),
+                );
+                cafeMiraCurrentYaw += diff * Math.min(1, dt * 8.5);
+              }
+            }
+            cafeMiraBodyGroup.rotation.y = cafeMiraCurrentYaw;
+            if (cafeMiraChevron) {
+              cafeMiraChevron.group.visible = false;
+            }
+            if (cafeMiraNameplate) {
+              cafeMiraNameplate.sprite.visible = false;
+            }
+            const cafeTariWorkAction: CafeWorkAnimAction =
+              !miraIsMovingNow && tariCafeServeState.phase === 'preparing'
+                ? 'coffee'
+                : !miraIsMovingNow && tariCafeServeState.phase === 'serving'
+                  ? 'serve'
+                  : 'idle';
+            updateCharacterWeaponStance(
+              cafeMiraRig,
+              'unarmed',
+              cafeMiraWalkCycle,
+              miraIsMovingNow,
+              false,
+              0,
+              0,
+              0,
+              'right',
+              0,
+              0,
+              0.76,
+              0,
+              true,
+              'front',
+              1.0,
+              cafeMiraCurrentYaw,
+              miraSpeedNow,
+              cafeMiraIsSitting,
+              false,
+              false,
+              null,
+              cafeTariWorkAction,
+              'chair',
+              isTalkingWithCafeMira ||
+                isPairedWithCafeTari ||
+                tariCafeServeState.phase !== 'idle'
+                ? null
+                : cafeMiraHoldingItemId,
+            );
           }
-          if (cafeMiraNameplate) {
-            cafeMiraNameplate.sprite.visible = false;
-          }
-          updateCharacterWeaponStance(
-            cafeMiraRig,
-            'unarmed',
-            cafeMiraWalkCycle,
-            steppedInteriorMira.isMoving && !isTalkingWithCafeMira,
-            false,
-            0,
-            0,
-            0,
-            'right',
-            0,
-            0,
-            0.76,
-            0,
-            true,
-            'front',
-            1.0,
-            cafeMiraCurrentYaw,
-            isTalkingWithCafeMira ? 0 : steppedInteriorMira.speedMps,
-            cafeMiraIsSitting,
-            false,
-            false,
-            null,
-            'idle',
-            'chair',
-            isTalkingWithCafeMira ? null : cafeMiraHoldingItemId,
-          );
         }
         if (isTalkingWithCafeMira) {
           cafeMiraPortraitBlend01 = Math.min(1, cafeMiraPortraitBlend01 + Math.min(rawDt, 0.05) / 0.28);
@@ -29429,6 +30230,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               (npcPortraitOrbitPitch - npcPortraitSmoothedPitch) * portraitDampAlpha;
             npcPortraitSmoothedDistScale +=
               (npcPortraitDistanceScale - npcPortraitSmoothedDistScale) * portraitDampAlpha;
+            const orbitConstraints = getPosePortraitOrbitConstraints();
+            const targetHorizOffset = orbitConstraints.freeOrbit ? 0 : 0.44;
+            npcPortraitSmoothedHorizOffset +=
+              (targetHorizOffset - npcPortraitSmoothedHorizOffset) * portraitDampAlpha;
+            if (Math.abs(targetHorizOffset - npcPortraitSmoothedHorizOffset) < 0.001) {
+              npcPortraitSmoothedHorizOffset = targetHorizOffset;
+            }
             const targetPose = computeNpcDialoguePortraitPose({
               npcX: posePortraitState.curCenterX,
               npcY: CAFE_ORIGIN_Y,
@@ -29447,10 +30255,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               orbitYawOffsetRad: npcPortraitSmoothedYaw,
               orbitPitchOffsetRad: npcPortraitSmoothedPitch,
               portraitDistanceScale: npcPortraitSmoothedDistScale,
-              horizontalOffsetFactor: citySelfieCameraOpen ? 0 : 0.44,
-              minYawOffsetRad: citySelfieCameraOpen ? -Math.PI : undefined,
-              maxYawOffsetRad: citySelfieCameraOpen ? Math.PI : undefined,
-              minDistanceScale: citySelfieCameraOpen ? 0.56 : undefined,
+              horizontalOffsetFactor: npcPortraitSmoothedHorizOffset,
+              minYawOffsetRad: orbitConstraints.minYawOffsetRad,
+              maxYawOffsetRad: orbitConstraints.maxYawOffsetRad,
+              minDistanceScale: orbitConstraints.minDistanceScale,
             });
             const t = 1 - Math.pow(1 - posePortraitState.blend01, 3);
             const curFov = THREE.MathUtils.lerp(posePortraitState.startFov, targetPose.fovDeg, t);
@@ -29542,6 +30350,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               (npcPortraitOrbitPitch - npcPortraitSmoothedPitch) * portraitDampAlpha;
             npcPortraitSmoothedDistScale +=
               (npcPortraitDistanceScale - npcPortraitSmoothedDistScale) * portraitDampAlpha;
+            const orbitConstraints = getPosePortraitOrbitConstraints();
+            const targetHorizOffset = orbitConstraints.freeOrbit ? 0 : 0.44;
+            npcPortraitSmoothedHorizOffset +=
+              (targetHorizOffset - npcPortraitSmoothedHorizOffset) * portraitDampAlpha;
+            if (Math.abs(targetHorizOffset - npcPortraitSmoothedHorizOffset) < 0.001) {
+              npcPortraitSmoothedHorizOffset = targetHorizOffset;
+            }
             const targetPose = computeNpcDialoguePortraitPose({
               npcX: posePortraitState.curCenterX,
               npcY: CASINO_ORIGIN_Y,
@@ -29560,10 +30375,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               orbitYawOffsetRad: npcPortraitSmoothedYaw,
               orbitPitchOffsetRad: npcPortraitSmoothedPitch,
               portraitDistanceScale: npcPortraitSmoothedDistScale,
-              horizontalOffsetFactor: citySelfieCameraOpen ? 0 : 0.44,
-              minYawOffsetRad: citySelfieCameraOpen ? -Math.PI : undefined,
-              maxYawOffsetRad: citySelfieCameraOpen ? Math.PI : undefined,
-              minDistanceScale: citySelfieCameraOpen ? 0.56 : undefined,
+              horizontalOffsetFactor: npcPortraitSmoothedHorizOffset,
+              minYawOffsetRad: orbitConstraints.minYawOffsetRad,
+              maxYawOffsetRad: orbitConstraints.maxYawOffsetRad,
+              minDistanceScale: orbitConstraints.minDistanceScale,
             });
             const t = 1 - Math.pow(1 - posePortraitState.blend01, 3);
             const curFov = THREE.MathUtils.lerp(posePortraitState.startFov, targetPose.fovDeg, t);
@@ -29631,19 +30446,35 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           beachHouseNpc.npcGrp.position.x,
           beachHouseNpc.npcGrp.position.z,
         );
-        lobbyCafeNpc.npcGrp.rotation.y = Math.PI / 2;
         beachHouseNpc.npcGrp.rotation.y = Math.PI / 2;
-        if (
-          lobbyCafeNpc.npcGrp.visible &&
-          Math.hypot(
-            lobbyCafeNpc.npcGrp.position.x - finalLookX,
-            lobbyCafeNpc.npcGrp.position.z - finalLookZ,
-          ) <= 52
-        ) {
-          lobbyCafeNpc.npcRig.rightArmPivot.rotation.x = Math.sin(timeSec * 1.8) * 0.08;
-          updateCharacterWeaponStance(lobbyCafeNpc.npcRig, 'unarmed', 0, false, false, 0, 0);
-        } else if (lobbyCafeNpc.npcRig.customGlbController) {
-          lobbyCafeNpc.npcRig.customGlbController.lastStepTimeMs = now;
+        const showOutdoorCityNpcsForHana =
+          !isFlatIndoorRoomTick &&
+          !isFullMapOverview &&
+          !(npcCameraMode === 'fly_to_plaza' && flyTargetMode === 'character_select') &&
+          worldModeRef.current !== 'warzone' &&
+          cityArenaMode !== 'warzone';
+        const isHanaInActiveSessionNow = Boolean(
+          activeWalkTogether?.npcId === 'hana' ||
+            activeRideTogether?.npcId === 'hana' ||
+            (activePairedSession?.partnerKind === 'merchant_npc' &&
+              (activePairedSession.targetId === 'npc_hana' ||
+                activePairedSession.targetId === 'npc_cafe')),
+        );
+        // When outdoor ambient simulation is paused (e.g. showcase/tour camera), keep Hana grounded & softly breathing idle
+        if (!showOutdoorCityNpcsForHana && !isHanaInActiveSessionNow) {
+          lobbyCafeNpc.npcGrp.rotation.y = hanaPatrolState.yaw + Math.PI / 2;
+          if (
+            lobbyCafeNpc.npcGrp.visible &&
+            Math.hypot(
+              lobbyCafeNpc.npcGrp.position.x - finalLookX,
+              lobbyCafeNpc.npcGrp.position.z - finalLookZ,
+            ) <= 52
+          ) {
+            lobbyCafeNpc.npcRig.rightArmPivot.rotation.x = Math.sin(timeSec * 1.8) * 0.08;
+            updateCharacterWeaponStance(lobbyCafeNpc.npcRig, 'unarmed', 0, false, false, 0, 0);
+          } else if (lobbyCafeNpc.npcRig.customGlbController) {
+            lobbyCafeNpc.npcRig.customGlbController.lastStepTimeMs = now;
+          }
         }
         if (
           beachHouseNpc.npcGrp.visible &&
@@ -29971,6 +30802,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             (npcPortraitOrbitPitch - npcPortraitSmoothedPitch) * portraitDampAlpha;
           npcPortraitSmoothedDistScale +=
             (npcPortraitDistanceScale - npcPortraitSmoothedDistScale) * portraitDampAlpha;
+          const orbitConstraints = getPosePortraitOrbitConstraints();
+          const targetHorizOffset = orbitConstraints.freeOrbit ? 0 : 0.44;
+          npcPortraitSmoothedHorizOffset +=
+            (targetHorizOffset - npcPortraitSmoothedHorizOffset) * portraitDampAlpha;
+          if (Math.abs(targetHorizOffset - npcPortraitSmoothedHorizOffset) < 0.001) {
+            npcPortraitSmoothedHorizOffset = targetHorizOffset;
+          }
           const targetPose = computeNpcDialoguePortraitPose({
             npcX: posePortraitState.curCenterX,
             npcY: groundY,
@@ -29988,10 +30826,10 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             orbitYawOffsetRad: npcPortraitSmoothedYaw,
             orbitPitchOffsetRad: npcPortraitSmoothedPitch,
             portraitDistanceScale: npcPortraitSmoothedDistScale,
-            horizontalOffsetFactor: citySelfieCameraOpen ? 0 : 0.44,
-            minYawOffsetRad: citySelfieCameraOpen ? -Math.PI : undefined,
-            maxYawOffsetRad: citySelfieCameraOpen ? Math.PI : undefined,
-            minDistanceScale: citySelfieCameraOpen ? 0.56 : undefined,
+            horizontalOffsetFactor: npcPortraitSmoothedHorizOffset,
+            minYawOffsetRad: orbitConstraints.minYawOffsetRad,
+            maxYawOffsetRad: orbitConstraints.maxYawOffsetRad,
+            minDistanceScale: orbitConstraints.minDistanceScale,
           });
           const t = 1 - Math.pow(1 - posePortraitState.blend01, 3);
           const curFov = THREE.MathUtils.lerp(posePortraitState.startFov, targetPose.fovDeg, t);
@@ -32235,6 +33073,55 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         npcCameraMode === 'fly_to_plaza',
         currentWeatherEnv.timeOfDayHours,
       );
+      // Advance Tari's indoor schedule silently when player is outdoors so she walks back out the Glasshouse door after her interior duties
+      if (
+        tariInsideCafe &&
+        npcCameraMode !== 'cafe_interior' &&
+        !cafeWorkShiftActive &&
+        !isShowcaseCamera &&
+        worldModeRef.current !== 'warzone' &&
+        dt > 0
+      ) {
+        const bgCafeWpLen = cafeMiraPreset.waypoints.length;
+        const bgActiveIdx =
+          bgCafeWpLen > 0 ? ((cafeMiraWaypointIdx % bgCafeWpLen) + bgCafeWpLen) % bgCafeWpLen : 0;
+        const bgNextWp = bgCafeWpLen > 0 ? cafeMiraPreset.waypoints[bgActiveIdx] : undefined;
+        const bgStepped = stepCityAmbientNpcSchedule({
+          preset: cafeMiraPreset,
+          x: cafeMiraX,
+          z: cafeMiraZ,
+          yaw: cafeMiraCurrentYaw - Math.PI / 2,
+          waypointIdx: cafeMiraWaypointIdx,
+          pauseTimer: cafeMiraPauseTimer,
+          elapsedSec: timeSec,
+          dt,
+          seatOverride: cafeMiraSeatOverride,
+        });
+        cafeMiraX = bgStepped.x;
+        cafeMiraZ = bgStepped.z;
+        cafeMiraWaypointIdx = bgStepped.waypointIdx;
+        cafeMiraPauseTimer = bgStepped.pauseTimer;
+        cafeMiraIsSitting = bgStepped.isSitting;
+        cafeMiraSeatLiftY = bgStepped.activeSeatLiftY;
+        cafeMiraHoldingItemId = bgStepped.activeHoldingCafeItemId;
+        cafeMiraStatusLabel = bgStepped.activeStatusLabel;
+        cafeMiraCurrentYaw = bgStepped.yaw + Math.PI / 2;
+        if (
+          shouldIndoorTariExitCafe({
+            tariInsideCafe,
+            npcX: cafeMiraX,
+            npcZ: cafeMiraZ,
+            targetWpX: bgNextWp?.x ?? 0,
+            targetWpZ: bgNextWp?.z ?? 0,
+            pauseTimer: cafeMiraPauseTimer,
+            isInteractingWithPlayer: false,
+            isServingOrder: tariCafeServeState.phase !== 'idle',
+            cafeWorkShiftActive,
+          })
+        ) {
+          teleportTariOutToWestPlazaFromDoor();
+        }
+      }
 
       // 3D-FISH. REAL-TIME CURVED-PLANET NYLON LINE, MINIATURE FLOAT & 3D LANDING LEAP:
       // Evaluated AFTER `applyPlanetCurvatureToObject(playerUnit.root, ...)` so `_tipWorldScratch`
@@ -34261,17 +35148,9 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         realEstateCatalogChevron.chevronArrow.rotation.y = catalogPulseNow * 1.65 + 0.4;
       }
 
-      // Animate Central Plaza Classic Plaza Manor Model House Entrance 3D Triangle ("segitiga untuk memasuki ruangan")
-      const showModelHouseDoorChevron =
-        worldModeRef.current !== 'warzone' &&
-        npcCameraMode === 'none' &&
-        distToModelHouseDoor <= 46;
-      const isNearModelHouseDoor =
-        showModelHouseDoorChevron &&
-        !isKioskModalOpenCanvas &&
-        !isRealEstateCatalogModalOpenDom &&
-        distToModelHouseDoor <= PLAZA_MODEL_HOUSE_DOOR_TRIGGER.triggerRadius;
-      // WS20: Legacy on-map Model Estate & claimed plot house doors removed; apartments are entered via My Things / Real Estate.
+      // Legacy West Plaza Model House door entrance trigger removed (no longer relevant).
+      const showModelHouseDoorChevron = false;
+      const isNearModelHouseDoor = false;
       modelHouseDoorChevron.group.visible = false;
       if (showModelHouseDoorChevron) {
         const mhDoorTerrainY = getTerrainElevation(
@@ -35217,13 +36096,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             !cafeWorkShiftActive
           ) {
             nearbyCandidates.push({
-              id: 'citizen_mira',
-              name: 'Mira',
+              id: 'citizen_tari',
+              name: 'Tari',
               distance: Math.hypot(actorX - cafeMiraX, actorZ - cafeMiraZ),
               isNpc: true,
               isMerchant: false,
               gender: 'female',
-              team: 'red',
+              team: 'blue',
               status: cafeMiraStatusLabel,
             });
           }
@@ -35487,7 +36366,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         } else {
           // C. Active Seated State: Stand Up Pin (+ Casino Game Pin when seated at Casino table/slot)
           // Note: Do NOT skip NPC/Remote Player pins while seated so sitting companions keep their radial pins!
-          if (playerUnit.isSitting) {
+          if (playerUnit.isSitting || scooterRideState) {
             if (npcCameraMode === 'casino_interior' && activeCasinoSeatedSpot) {
               const seatedGameKind = getCasinoGameKindForSeat(activeCasinoSeatedSpot.chairKind);
               const seatedSlotMeta =
@@ -35539,6 +36418,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             } else {
               const isFlat =
                 npcCameraMode === 'cafe_interior';
+              const isScooterRiding = Boolean(scooterRideState);
               const seatStandY =
                 npcCameraMode === 'cafe_interior'
                   ? CAFE_ORIGIN_Y + 1.72
@@ -35554,10 +36434,14 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
                   distance: 0,
                   priority: 100,
                   icon: 'stand_up',
-                  label: 'Stand Up',
+                  label: isScooterRiding ? 'Dismount' : 'Stand Up',
                   accent: 'emerald',
                   onTrigger: () => {
-                    triggerSitOrStandAction();
+                    if (isScooterRiding) {
+                      dismountScooter();
+                    } else {
+                      triggerSitOrStandAction();
+                    }
                   },
                 },
                 isFlat,
@@ -36213,26 +37097,26 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
               CAFE_ORIGIN_Y + (cafeMiraIsSitting ? 1.72 : 2.28),
               cafeMiraZ,
               {
-                id: 'npc_cafe_mira',
+                id: 'npc_cafe_tari',
                 inRange: dMira <= 2.75,
                 distance: dMira,
                 priority: 48,
                 icon: 'npc',
-                label: 'Mira',
+                label: 'Tari',
                 accent: 'amber',
                 onTrigger: () => {
                   selectCharacterFromRadialPin(
                     {
-                      id: 'citizen_mira',
-                      name: 'Mira',
+                      id: 'citizen_tari',
+                      name: 'Tari',
                       distance: dMira,
                       isNpc: true,
                       isMerchant: false,
                       gender: 'female',
-                      team: 'red',
+                      team: 'blue',
                       status: cafeMiraStatusLabel,
                     },
-                    'npc_cafe_mira',
+                    'npc_cafe_tari',
                   );
                 },
               },
@@ -37160,8 +38044,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             const distHana = getPlanetShortestDistance(
               actorX,
               actorZ,
-              REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x,
-              REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.z,
+              lobbyCafeNpc?.npcGrp
+                ? lobbyCafeNpc.npcGrp.position.x
+                : REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x,
+              lobbyCafeNpc?.npcGrp
+                ? lobbyCafeNpc.npcGrp.position.z
+                : REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.z,
             );
             if (distHana <= 35.0 && worldModeRef.current === 'lobby') {
               list.push({
@@ -37217,13 +38105,13 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             const distMira = Math.hypot(actorX - cafeMiraX, actorZ - cafeMiraZ);
             if (distMira <= 35.0) {
               list.push({
-                id: 'citizen_mira',
-                name: 'Mira',
+                id: 'citizen_tari',
+                name: 'Tari',
                 isNpc: true,
                 isMerchant: false,
                 gender: 'female',
                 distance: distMira,
-                team: 'red',
+                team: 'blue',
                 status: cafeMiraStatusLabel,
               });
             }
@@ -37791,8 +38679,8 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
           orbitYawOffsetRad: npcPortraitOrbitYaw,
           orbitPitchOffsetRad: npcPortraitOrbitPitch,
           portraitDistanceScale: detail.distanceScale,
-          minYawOffsetRad: -Math.PI,
-          maxYawOffsetRad: Math.PI,
+          minYawOffsetRad: -Infinity,
+          maxYawOffsetRad: Infinity,
           minDistanceScale: 0.56,
         }).portraitDistanceScale;
       }
@@ -37807,10 +38695,34 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         detail.turnPlayerDeltaRad !== 0 &&
         playerUnit
       ) {
-        playerUnit.yaw += detail.turnPlayerDeltaRad;
-        if (posePortraitState && posePortraitState.targetKey === 'selfie') {
-          posePortraitState.frontDirX = Math.cos(playerUnit.yaw);
-          posePortraitState.frontDirZ = -Math.sin(playerUnit.yaw);
+        if (activePairedSession) {
+          activePairedSession.anchorYaw += detail.turnPlayerDeltaRad;
+          playerUnit.yaw = activePairedSession.anchorYaw;
+          playerUnit.visualYaw = activePairedSession.anchorYaw;
+          if (activePairedSession.partnerKind === 'merchant_npc') {
+            const mNpc =
+              activePairedSession.targetId === 'npc_hana' ||
+              activePairedSession.targetId === 'npc_cafe'
+                ? lobbyCafeNpc
+                : beachHouseNpc;
+            if (mNpc?.npcGrp) {
+              mNpc.npcGrp.rotation.y = activePairedSession.anchorYaw + Math.PI / 2;
+            }
+          }
+          if (posePortraitState && posePortraitState.mode === 'paired') {
+            const cosD = Math.cos(detail.turnPlayerDeltaRad);
+            const sinD = Math.sin(detail.turnPlayerDeltaRad);
+            const prevFx = posePortraitState.frontDirX;
+            const prevFz = posePortraitState.frontDirZ;
+            posePortraitState.frontDirX = prevFx * cosD + prevFz * sinD;
+            posePortraitState.frontDirZ = prevFz * cosD - prevFx * sinD;
+          }
+        } else {
+          playerUnit.yaw += detail.turnPlayerDeltaRad;
+          if (posePortraitState && posePortraitState.targetKey === 'selfie') {
+            posePortraitState.frontDirX = Math.cos(playerUnit.yaw);
+            posePortraitState.frontDirZ = -Math.sin(playerUnit.yaw);
+          }
         }
       }
     };
@@ -38090,6 +39002,12 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
         const citizenId = npcIdToCitizenId(cmd.npcId);
         const pose = getCuratedNpcPairPose(cmd.poseId);
         const isMerchant = cmd.npcId === 'hana' || cmd.npcId === 'kai';
+        if (!isMerchant) {
+          const ambientNpc = cityAmbientNpcs.find((c) => c.preset.id === citizenId);
+          if (ambientNpc && !ambientNpc.glbUpgraded) {
+            upgradeAmbientNpcRigIfNeeded(ambientNpc);
+          }
+        }
         const targetName =
           cmd.npcId.charAt(0).toUpperCase() + cmd.npcId.slice(1);
         void beginSynchronizedPairedPose({
@@ -38268,6 +39186,19 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
             mNpc.npcGrp.position.z = frontZ;
             mNpc.npcGrp.position.y = getTerrainElevation(frontX, frontZ);
             mNpc.npcGrp.rotation.y = facePlayerYaw + Math.PI / 2;
+            if (cmd.npcId === 'hana') {
+              hanaPatrolState.x = frontX;
+              hanaPatrolState.z = frontZ;
+              hanaPatrolState.yaw = facePlayerYaw;
+              hanaPatrolState.pauseTimer = 4.5;
+              hanaPatrolState.navPath = [];
+              hanaPatrolState.navWaypointIndex = 0;
+              hanaPatrolState.navPathGoalKey = '';
+              hanaPatrolState.stuckTimer = 0;
+              hanaPatrolState.consecutiveStuckReplans = 0;
+              hanaPatrolState.lastProgressX = frontX;
+              hanaPatrolState.lastProgressZ = frontZ;
+            }
           }
           return;
         }
@@ -38366,6 +39297,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       window.removeEventListener('shoreline-fishing-sync', onShorelineFishingSync);
       window.removeEventListener('shoreline-fishing-landed', onShorelineFishingLanded);
       window.removeEventListener('cafe-consume-state', onCafeConsumeState);
+      window.removeEventListener('cafe-tari-serve-purchase', onCafeTariServePurchase);
       window.removeEventListener('start-cafe-work-anim', onStartCafeWorkAnim);
       window.removeEventListener('cancel-cafe-work-anim', onCancelCafeWorkAnim);
       window.removeEventListener('stop-cafe-work-shift', onCancelCafeWorkAnim);
@@ -38445,6 +39377,7 @@ export const BuddiesBlitzArena: React.FC<BuddiesBlitzArenaProps> = React.memo(({
       blitzGrassSystem.dispose();
       blitzExplosionSystem.dispose();
       window.removeEventListener(NPC_PORTRAIT_REQUEST_EVENT, handleNpcPortraitRequestEvent);
+      window.removeEventListener(PLAYER_PORTRAIT_REQUEST_EVENT, handlePlayerPortraitRequestEvent);
       npcPortraitStudio.dispose();
 
       // Dispose per-mount procedural geometries & materials while preserving cached GLTF prototypes

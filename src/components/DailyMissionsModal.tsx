@@ -158,7 +158,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                 +{selectedDef.rewardXp} XP
               </span>
               <span className="px-2.5 py-0.5 rounded-full bg-amber-100/90 text-amber-900 text-[10.5px] font-semibold font-mono tabular-nums">
-                +{selectedDef.rewardLul} LUL
+                +{selectedDef.rewardLul} CerBucks
               </span>
             </div>
 
@@ -207,7 +207,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                 onClick={() => onClaimMission(selectedDef.id)}
                 className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm font-semibold text-xs transition-colors cursor-pointer active:scale-[0.98]"
               >
-                Claim (+{selectedDef.rewardLul} LUL)
+                Claim (+{selectedDef.rewardLul} CerBucks)
               </button>
             ) : (
               <button
@@ -279,7 +279,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                           : 'bg-[#dfe4ec]/85 text-slate-800 border border-slate-300/55'
                     }`}
                   >
-                    <span>{isClaimed ? 'Claimed' : isComplete ? 'Claim' : `+${def.rewardLul} LUL`}</span>
+                    <span>{isClaimed ? 'Claimed' : isComplete ? 'Claim' : `+${def.rewardLul} CerBucks`}</span>
                   </div>
                 </button>
               );
@@ -293,7 +293,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                 All-Clear Bonus
               </div>
               <span className="text-[11px] font-semibold font-mono tabular-nums text-slate-600">
-                +{DAILY_ALL_CLEAR_BONUS.rewardLul} LUL · +{DAILY_ALL_CLEAR_BONUS.rewardXp} XP
+                +{DAILY_ALL_CLEAR_BONUS.rewardLul} CerBucks · +{DAILY_ALL_CLEAR_BONUS.rewardXp} XP
               </span>
             </div>
 
@@ -437,7 +437,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                             : 'bg-[#dfe4ec]/85 text-slate-800 border border-slate-300/55'
                       }`}
                     >
-                      <span>{isClaimed ? 'Claimed' : isComplete ? 'Claim' : `+${def.rewardLul} LUL`}</span>
+                      <span>{isClaimed ? 'Claimed' : isComplete ? 'Claim' : `+${def.rewardLul} CerBucks`}</span>
                     </div>
                   </button>
                 );
@@ -451,7 +451,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                   +{selectedDef.rewardXp} XP
                 </span>
                 <span className="px-2.5 py-0.5 rounded-full bg-amber-100/90 text-amber-900 text-[11px] font-semibold font-mono tabular-nums">
-                  +{selectedDef.rewardLul} LUL
+                  +{selectedDef.rewardLul} CerBucks
                 </span>
               </div>
 
@@ -499,7 +499,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                   onClick={() => onClaimMission(selectedDef.id)}
                   className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm font-semibold text-xs transition-colors cursor-pointer active:scale-[0.98]"
                 >
-                  Claim (+{selectedDef.rewardLul} LUL)
+                  Claim (+{selectedDef.rewardLul} CerBucks)
                 </button>
               ) : (
                 <button
@@ -527,7 +527,7 @@ export const DailyMissionsModal: React.FC<DailyMissionsModalProps> = ({
                 />
               </div>
               <span className="text-xs font-semibold font-mono tabular-nums text-slate-700 shrink-0">
-                +{DAILY_ALL_CLEAR_BONUS.rewardLul} LUL · +{DAILY_ALL_CLEAR_BONUS.rewardXp} XP
+                +{DAILY_ALL_CLEAR_BONUS.rewardLul} CerBucks · +{DAILY_ALL_CLEAR_BONUS.rewardXp} XP
               </span>
             </div>
 

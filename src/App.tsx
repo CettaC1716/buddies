@@ -24,6 +24,7 @@ import {
   Users,
   Zap,
   ShoppingBag,
+  Camera,
 } from 'lucide-react';
 import {
   CITY_MINIMAP_POIS,
@@ -399,8 +400,10 @@ import {
   loadNpcClosenessStore,
   npcIdToCitizenId,
   recordNpcConversation,
+  recordNpcMerchantPurchase,
   resolveNpcId,
   saveNpcClosenessStore,
+  type MerchantPurchaseCurrency,
   type NpcClosenessStore,
   type NpcId,
 } from './game/npcClosenessEngine';
@@ -483,6 +486,7 @@ import {
   checkCitizenSubAccountAvailability,
   claimHanaWelcomeNearOnChain,
   claimHanaWelcomeNearAttestedOnChain,
+  connectWithNearConnectorModal,
   fetchHanaClaimAttestation,
   disconnectNearWallet,
   executeMarketContractCallOnChain,
@@ -598,15 +602,17 @@ import {
   type FashionApparelCatalogItem,
   getEquippedTorsoStorageKey,
   getOwnedApparelStorageKey,
-  purchaseFashionApparelToBag,
 } from './game/buddiesFashionKioskRules';
 import {
+  DEFAULT_WARDROBE_ANIM_SET_ID,
   EMPTY_WARDROBE_DRAFT,
   WARDROBE_STUDIO_ITEMS,
+  convertWardrobeLulPriceToCyon,
   getWardrobeCatalogItemById,
   getWardrobeDraftStorageKey,
   getOwnedPairedAnimationItems,
   getOwnedQuickPoseActionItems,
+  isWardrobeItemCompatibleWithGender,
   loadExternalWardrobeCatalogs,
   purchaseWardrobeCatalogItem,
   resolveWardrobeDraftAnimStyle,
@@ -1051,6 +1057,7 @@ export default function App() {
   });
   const [walletNetworkChoice] = useState<NearNetworkId>('testnet');
   const [isVerifyingNearWallet, setIsVerifyingNearWallet] = useState<boolean>(false);
+  const [isOpeningExternalNearWallet, setIsOpeningExternalNearWallet] = useState<boolean>(false);
   const [walletConnectError, setWalletConnectError] = useState<string | null>(null);
   const [, setNearOnChainAccountView] = useState<NearAccountView | null>(null);
   const [, setWalletUsernameDraft] = useState<string>('Buddy Male');
@@ -1417,6 +1424,27 @@ export default function App() {
         realNpcClosenessSnapshotRef.current = cloneNpcClosenessStore(result.store);
         saveNpcClosenessStore(dailyMissionsAccountRef.current, result.store);
       }
+    },
+    [qaDirectorAvailable],
+  );
+
+  const handleRecordMerchantPurchaseCloseness = useCallback(
+    (merchantNpcId: NpcId, amountPaid: number, currency: MerchantPurchaseCurrency) => {
+      if (!Number.isFinite(amountPaid) || amountPaid <= 0) return;
+      const result = recordNpcMerchantPurchase(npcClosenessStoreRef.current, merchantNpcId, {
+        amountPaid,
+        currency,
+      });
+      if (result.appliedDelta <= 0) return;
+      npcClosenessStoreRef.current = result.store;
+      setNpcClosenessStore(result.store);
+      if (qaDirectorAvailable && qaDirectorStateRef.current.enabled) {
+        qaClosenessDirtyRef.current = true;
+      } else {
+        realNpcClosenessSnapshotRef.current = cloneNpcClosenessStore(result.store);
+        saveNpcClosenessStore(dailyMissionsAccountRef.current, result.store);
+      }
+      dispatchNpcEmotionReaction(merchantNpcId, 'happy');
     },
     [qaDirectorAvailable],
   );
@@ -1909,16 +1937,25 @@ export default function App() {
   }, []);
 
   const loadWardrobeDraftFromStorage = useCallback(
-    (acctKey: string, fallbackTorsoId: string | null): WardrobeOutfitDraft => {
+    (
+      acctKey: string,
+      fallbackTorsoId: string | null,
+      gender: 'male' | 'female',
+    ): WardrobeOutfitDraft => {
+      const torsoItem = fallbackTorsoId ? getWardrobeCatalogItemById(fallbackTorsoId) : null;
+      const genderSafeTorsoId =
+        torsoItem && isWardrobeItemCompatibleWithGender(torsoItem, gender)
+          ? fallbackTorsoId
+          : null;
       if (typeof window === 'undefined') {
-        return { ...EMPTY_WARDROBE_DRAFT, topId: fallbackTorsoId };
+        return { ...EMPTY_WARDROBE_DRAFT, topId: genderSafeTorsoId };
       }
       try {
-        const raw = window.localStorage.getItem(getWardrobeDraftStorageKey(acctKey));
-        if (!raw) return { ...EMPTY_WARDROBE_DRAFT, topId: fallbackTorsoId };
+        const raw = window.localStorage.getItem(getWardrobeDraftStorageKey(acctKey, gender));
+        if (!raw) return { ...EMPTY_WARDROBE_DRAFT, topId: genderSafeTorsoId };
         const parsed = JSON.parse(raw) as Partial<WardrobeOutfitDraft> | null;
         if (!parsed || typeof parsed !== 'object') {
-          return { ...EMPTY_WARDROBE_DRAFT, topId: fallbackTorsoId };
+          return { ...EMPTY_WARDROBE_DRAFT, topId: genderSafeTorsoId };
         }
         return {
           topId: typeof parsed.topId === 'string' ? parsed.topId : null,
@@ -1930,6 +1967,10 @@ export default function App() {
           corewearId: typeof parsed.corewearId === 'string' ? parsed.corewearId : null,
           hideOuterForUnderwear: Boolean(parsed.hideOuterForUnderwear),
           hideBaseUnderwear: Boolean(parsed.hideBaseUnderwear),
+          hideBaseBra:
+            parsed.hideBaseBra === undefined
+              ? Boolean(parsed.hideBaseUnderwear)
+              : Boolean(parsed.hideBaseBra),
           bodyShapeId: typeof parsed.bodyShapeId === 'string' ? parsed.bodyShapeId : null,
           eyeStyleId: typeof parsed.eyeStyleId === 'string' ? parsed.eyeStyleId : null,
           browStyleId: typeof parsed.browStyleId === 'string' ? parsed.browStyleId : null,
@@ -1938,7 +1979,10 @@ export default function App() {
           blushId: typeof parsed.blushId === 'string' ? parsed.blushId : null,
           facepaintId: typeof parsed.facepaintId === 'string' ? parsed.facepaintId : null,
           beardId: typeof parsed.beardId === 'string' ? parsed.beardId : null,
-          animSetId: typeof parsed.animSetId === 'string' ? parsed.animSetId : null,
+          animSetId:
+            typeof parsed.animSetId === 'string' && parsed.animSetId.trim().length > 0
+              ? parsed.animSetId
+              : DEFAULT_WARDROBE_ANIM_SET_ID,
           dancePoseId: typeof parsed.dancePoseId === 'string' ? parsed.dancePoseId : null,
           stylePoseId: typeof parsed.stylePoseId === 'string' ? parsed.stylePoseId : null,
           styleActionId: typeof parsed.styleActionId === 'string' ? parsed.styleActionId : null,
@@ -1957,7 +2001,7 @@ export default function App() {
           headScale: typeof parsed.headScale === 'number' && Number.isFinite(parsed.headScale) ? parsed.headScale : 1.0,
         };
       } catch {
-        return { ...EMPTY_WARDROBE_DRAFT, topId: fallbackTorsoId };
+        return { ...EMPTY_WARDROBE_DRAFT, topId: genderSafeTorsoId };
       }
     },
     [],
@@ -1980,27 +2024,39 @@ export default function App() {
   const [equippedTorsoItemId, setEquippedTorsoItemId] = useState<string | null>(() =>
     loadEquippedTorsoFromStorage('guest'),
   );
-  const [equippedWardrobeDraft, setEquippedWardrobeDraft] = useState<WardrobeOutfitDraft>(() => {
+  const [equippedWardrobeDraftByGender, setEquippedWardrobeDraftByGender] = useState<
+    Record<'male' | 'female', WardrobeOutfitDraft>
+  >(() => {
     const initialOwned = loadOwnedApparelFromStorage('guest');
     const initialTorso = loadEquippedTorsoFromStorage('guest');
     const validTorso = initialTorso && initialOwned.includes(initialTorso) ? initialTorso : null;
-    // Keep raw stored draft on initial mount until external catalogs finish loading so saved
+    // Keep raw stored drafts on initial mount until external catalogs finish loading so saved
     // Anim Sets, Makeup, and Fitted Outfits are never wiped before catalog.json resolves.
-    return loadWardrobeDraftFromStorage('guest', validTorso);
+    return {
+      male: loadWardrobeDraftFromStorage('guest', validTorso, 'male'),
+      female: loadWardrobeDraftFromStorage('guest', validTorso, 'female'),
+    };
   });
+  const equippedWardrobeDraft = equippedWardrobeDraftByGender[characterGender];
 
   useEffect(() => {
     const loadedOwned = loadOwnedApparelFromStorage(dailyMissionsAccountKey);
     const loadedEquipped = loadEquippedTorsoFromStorage(dailyMissionsAccountKey);
     const validTorso =
       loadedEquipped && loadedOwned.includes(loadedEquipped) ? loadedEquipped : null;
-    const rawDraft = loadWardrobeDraftFromStorage(dailyMissionsAccountKey, validTorso);
-    const loadedDraft = externalWardrobeCatalogsReady
-      ? sanitizeDraftToOwnedOnly(rawDraft, loadedOwned)
-      : rawDraft;
+    const rawMale = loadWardrobeDraftFromStorage(dailyMissionsAccountKey, validTorso, 'male');
+    const rawFemale = loadWardrobeDraftFromStorage(dailyMissionsAccountKey, validTorso, 'female');
+    const loadedMale = externalWardrobeCatalogsReady
+      ? sanitizeDraftToOwnedOnly(rawMale, loadedOwned, 'male')
+      : rawMale;
+    const loadedFemale = externalWardrobeCatalogsReady
+      ? sanitizeDraftToOwnedOnly(rawFemale, loadedOwned, 'female')
+      : rawFemale;
     setOwnedApparelIds(loadedOwned);
-    setEquippedTorsoItemId(loadedDraft.setId ? null : loadedDraft.topId);
-    setEquippedWardrobeDraft(loadedDraft);
+    setEquippedWardrobeDraftByGender({
+      male: loadedMale,
+      female: loadedFemale,
+    });
   }, [
     dailyMissionsAccountKey,
     externalWardrobeCatalogsReady,
@@ -2008,6 +2064,10 @@ export default function App() {
     loadEquippedTorsoFromStorage,
     loadWardrobeDraftFromStorage,
   ]);
+
+  useEffect(() => {
+    setEquippedTorsoItemId(equippedWardrobeDraft.setId ? null : equippedWardrobeDraft.topId);
+  }, [equippedWardrobeDraft.setId, equippedWardrobeDraft.topId]);
   const lastEnteredHousePlotRef = useRef<{
     team: 'blue' | 'red' | null;
     plotIndex: number | null;
@@ -2058,16 +2118,6 @@ export default function App() {
       return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : 0;
     } catch {
       return 0;
-    }
-  }, []);
-  const writeCasinoRespiteDelta = useCallback((accountId: string, delta: number) => {
-    if (typeof window === 'undefined') return;
-    const key = `bb_casino_respite_delta_v1:${accountId.trim().toLowerCase() || 'guest'}`;
-    try {
-      const clean = Number.isFinite(delta) ? Math.round(delta * 100) / 100 : 0;
-      window.localStorage.setItem(key, String(clean));
-    } catch {
-      // ignore storage quota errors
     }
   }, []);
   const [nearTestnetBalance, setNearTestnetBalance] = useState<number>(0);
@@ -3866,12 +3916,21 @@ export default function App() {
     const isPairedVisible = Boolean(
       !isBlockedByModal && pairedInteractTarget && hud.worldMode !== 'warzone',
     );
+    const isLeftPanelOpen = Boolean(
+      isQuickPoseVisible ||
+        isPairedVisible ||
+        isSocialChatModalOpen ||
+        isSmartphoneOsOpen ||
+        isCitizenDialogueOpen ||
+        activeSpecialModal === 'npc_merchant',
+    );
     window.dispatchEvent(
       new CustomEvent('pose-inspect-open-state', {
         detail: {
           isQuickPoseOpen: isQuickPoseVisible,
           pairedTargetId:
             isPairedVisible && pairedInteractTarget ? String(pairedInteractTarget.id) : null,
+          isLeftPanelOpen,
         },
       }),
     );
@@ -4292,18 +4351,14 @@ export default function App() {
       characterGender,
     );
     const modularUrls = resolveWardrobeDraftToModularOutfitUrls(ownedDraft, characterGender);
-    const hasCustomAnimStyle = Boolean(
-      ownedDraft.animSetId ||
-        ownedDraft.dancePoseId ||
-        ownedDraft.stylePoseId ||
-        ownedDraft.styleActionId,
-    );
     const payload = {
       ...modularUrls,
       clothingTintHex: ownedDraft.clothingTintHex,
       bodyShape: resolveWardrobeDraftBodyShape(ownedDraft),
-      faceCustomization: resolveWardrobeDraftFaceCustomization(ownedDraft, characterGender),
-      animStyle: hasCustomAnimStyle ? resolveWardrobeDraftAnimStyle(ownedDraft) : null,
+      faceCustomization: resolveWardrobeDraftFaceCustomization(ownedDraft, characterGender, {
+        enforcePublicModesty: true,
+      }),
+      animStyle: resolveWardrobeDraftAnimStyle(ownedDraft),
     };
     dispatchBuddyAction(`setEquippedModularOutfit:${JSON.stringify(payload)}`);
   }, [
@@ -4311,61 +4366,80 @@ export default function App() {
     effectiveOwnedApparelIds,
     characterGender,
     gameState,
+    onboardingStep,
+    isPreloadComplete,
+    worldMode,
+    worldTransitionCount,
     externalWardrobeCatalogsReady,
     dispatchBuddyAction,
   ]);
 
   const handlePurchaseFashionApparelToBag = useCallback(
     (item: FashionApparelCatalogItem): { ok: boolean; errorMessage?: string } => {
-      const res = purchaseFashionApparelToBag(ownedApparelIds, hudRef.current.gold, item.id);
-      if (!res.ok) {
-        return { ok: false, errorMessage: res.errorMessage };
+      // Boutique apparel settles in CYON (converted shop currency), never in
+      // $LUL wages: CYON price = clamp(round(priceLul / 5), 20, 300), mirroring
+      // the Wardrobe Studio conversion in buddiesWardrobeStudioRules.
+      if (ownedApparelIds.includes(item.id)) {
+        return { ok: true };
       }
-      if (!res.alreadyOwned) {
-        if (res.priceChargedLul > 0) {
-          dispatchBuddyAction(`adjustPlayerLul:${-res.priceChargedLul}`);
-          setHud((prev) => ({ ...prev, gold: res.nextLulBalance }));
-          const buyerAcct = hudRef.current.nearWalletId || '';
-          if (buyerAcct) {
-            void syncPlayerBalancesToSupabase({
-              nearAccountId: buyerAcct,
-              lulBalance: res.nextLulBalance,
-              cyonBalance: cyonBalanceRef.current,
-              respiteBalance: respiteBalanceRef.current,
-            });
-          }
+      const priceCyon = convertWardrobeLulPriceToCyon(item.priceLul);
+      const currentCyon = cyonBalanceRef.current;
+      if (currentCyon < priceCyon) {
+        return {
+          ok: false,
+          errorMessage: `Insufficient CerCoins (${Math.floor(currentCyon).toLocaleString()} / ${priceCyon} CerCoins). Exchange CerBucks for CerCoins in your Wallet, or claim Hana's starter pack.`,
+        };
+      }
+      const nextCyonBalance = currentCyon - priceCyon;
+      if (priceCyon > 0) {
+        handleRecordMerchantPurchaseCloseness('nadia', priceCyon, 'CYON');
+        setCyonBalance(nextCyonBalance);
+        const buyerAcct = hudRef.current.nearWalletId || '';
+        if (buyerAcct) {
+          void syncPlayerBalancesToSupabase({
+            nearAccountId: buyerAcct,
+            lulBalance: hudRef.current.gold,
+            cyonBalance: nextCyonBalance,
+            respiteBalance: respiteBalanceRef.current,
+          });
         }
-        setOwnedApparelIds(res.nextOwnedIds);
-        try {
-          window.localStorage.setItem(
-            getOwnedApparelStorageKey(dailyMissionsAccountKey),
-            JSON.stringify(res.nextOwnedIds),
-          );
-        } catch {
-          // ignore storage errors
-        }
+      }
+      const nextOwnedIds = [...ownedApparelIds, item.id];
+      setOwnedApparelIds(nextOwnedIds);
+      try {
+        window.localStorage.setItem(
+          getOwnedApparelStorageKey(dailyMissionsAccountKey),
+          JSON.stringify(nextOwnedIds),
+        );
+      } catch {
+        // ignore storage errors
       }
       return { ok: true };
     },
-    [ownedApparelIds, dailyMissionsAccountKey, dispatchBuddyAction],
+    [
+      ownedApparelIds,
+      dailyMissionsAccountKey,
+      dispatchBuddyAction,
+      handleRecordMerchantPurchaseCloseness,
+    ],
   );
 
   const handlePurchaseWardrobeStudioItem = useCallback(
     (item: WardrobeCatalogItem): { ok: boolean; errorMessage?: string } => {
-      const res = purchaseWardrobeCatalogItem(ownedApparelIds, hudRef.current.gold, item.id);
+      const res = purchaseWardrobeCatalogItem(ownedApparelIds, cyonBalanceRef.current, item.id);
       if (!res.ok) {
         return { ok: false, errorMessage: res.errorMessage };
       }
       if (!res.alreadyOwned) {
-        if (res.priceChargedLul > 0) {
-          dispatchBuddyAction(`adjustPlayerLul:${-res.priceChargedLul}`);
-          setHud((prev) => ({ ...prev, gold: res.nextLulBalance }));
+        if (res.priceChargedCyon > 0) {
+          handleRecordMerchantPurchaseCloseness('nadia', res.priceChargedCyon, 'CYON');
+          setCyonBalance(res.nextCyonBalance);
           const buyerAcct = hudRef.current.nearWalletId || '';
           if (buyerAcct) {
             void syncPlayerBalancesToSupabase({
               nearAccountId: buyerAcct,
-              lulBalance: res.nextLulBalance,
-              cyonBalance: cyonBalanceRef.current,
+              lulBalance: hudRef.current.gold,
+              cyonBalance: res.nextCyonBalance,
               respiteBalance: respiteBalanceRef.current,
             });
           }
@@ -4385,11 +4459,90 @@ export default function App() {
     [ownedApparelIds, dailyMissionsAccountKey, dispatchBuddyAction],
   );
 
+  const handleSyncWardrobeAnimSet = useCallback(
+    (nextAnimSetId: string) => {
+      setEquippedWardrobeDraftByGender((prevByGender) => {
+        const prev = prevByGender[characterGender];
+        const candidate: WardrobeOutfitDraft = {
+          ...prev,
+          animSetId: nextAnimSetId || DEFAULT_WARDROBE_ANIM_SET_ID,
+        };
+        const safeDraft = sanitizeDraftToOwnedOnly(
+          candidate,
+          effectiveOwnedApparelIds,
+          characterGender,
+        );
+        if (prev.animSetId === safeDraft.animSetId) {
+          return prevByGender;
+        }
+        const isVirtualPreview =
+          qaDirectorAvailable &&
+          qaDirectorStateRef.current.enabled &&
+          qaDirectorStateRef.current.previewApparelAndPoses;
+        if (!isVirtualPreview) {
+          try {
+            window.localStorage.setItem(
+              getWardrobeDraftStorageKey(dailyMissionsAccountKey, characterGender),
+              JSON.stringify(safeDraft),
+            );
+          } catch {
+            // ignore storage errors
+          }
+        }
+        return {
+          ...prevByGender,
+          [characterGender]: safeDraft,
+        };
+      });
+    },
+    [effectiveOwnedApparelIds, characterGender, dailyMissionsAccountKey, qaDirectorAvailable],
+  );
+
   const handleCompleteWardrobeStudio = useCallback(
-    (committedOwnedDraft: WardrobeOutfitDraft) => {
-      const safeDraft = sanitizeDraftToOwnedOnly(committedOwnedDraft, effectiveOwnedApparelIds);
-      setEquippedWardrobeDraft(safeDraft);
-      const nextTopId = safeDraft.setId ? null : safeDraft.topId;
+    (
+      committedOwnedDraft: WardrobeOutfitDraft,
+      committedByGender?: Record<'male' | 'female', WardrobeOutfitDraft>,
+    ) => {
+      const safeActive = sanitizeDraftToOwnedOnly(
+        committedOwnedDraft,
+        effectiveOwnedApparelIds,
+        characterGender,
+      );
+      setEquippedWardrobeDraftByGender((prevByGender) => {
+        const safeMale = committedByGender?.male
+          ? sanitizeDraftToOwnedOnly(committedByGender.male, effectiveOwnedApparelIds, 'male')
+          : characterGender === 'male'
+            ? safeActive
+            : prevByGender.male;
+        const safeFemale = committedByGender?.female
+          ? sanitizeDraftToOwnedOnly(committedByGender.female, effectiveOwnedApparelIds, 'female')
+          : characterGender === 'female'
+            ? safeActive
+            : prevByGender.female;
+        const isVirtualPreview =
+          qaDirectorAvailable &&
+          qaDirectorStateRef.current.enabled &&
+          qaDirectorStateRef.current.previewApparelAndPoses;
+        if (!isVirtualPreview) {
+          try {
+            window.localStorage.setItem(
+              getWardrobeDraftStorageKey(dailyMissionsAccountKey, 'male'),
+              JSON.stringify(safeMale),
+            );
+            window.localStorage.setItem(
+              getWardrobeDraftStorageKey(dailyMissionsAccountKey, 'female'),
+              JSON.stringify(safeFemale),
+            );
+          } catch {
+            // ignore storage errors
+          }
+        }
+        return {
+          male: safeMale,
+          female: safeFemale,
+        };
+      });
+      const nextTopId = safeActive.setId ? null : safeActive.topId;
       setEquippedTorsoItemId(nextTopId);
       const isVirtualPreview =
         qaDirectorAvailable &&
@@ -4397,10 +4550,6 @@ export default function App() {
         qaDirectorStateRef.current.previewApparelAndPoses;
       if (!isVirtualPreview) {
         try {
-          window.localStorage.setItem(
-            getWardrobeDraftStorageKey(dailyMissionsAccountKey),
-            JSON.stringify(safeDraft),
-          );
           if (nextTopId) {
             window.localStorage.setItem(
               getEquippedTorsoStorageKey(dailyMissionsAccountKey),
@@ -4415,7 +4564,7 @@ export default function App() {
       }
       setIsWardrobeStudioOpen(false);
     },
-    [effectiveOwnedApparelIds, dailyMissionsAccountKey, qaDirectorAvailable],
+    [effectiveOwnedApparelIds, characterGender, dailyMissionsAccountKey, qaDirectorAvailable],
   );
 
   const setAndPersistHouseArchitectureStyle = useCallback(
@@ -5582,9 +5731,9 @@ export default function App() {
       soundEngine.playPowerCore();
       saveDailyMissions(res.nextState);
       dispatchBuddyAction(`adjustPlayerLul:${res.rewardLul}`);
-      grantPlayerXp(res.rewardXp, `${res.definition.title} (+${res.rewardLul} LUL)`);
+      grantPlayerXp(res.rewardXp, `${res.definition.title} (+${res.rewardLul} CerBucks)`);
       dispatchBuddyAction(
-        `socialTalk:Claimed ${res.definition.title}! +${res.rewardLul} LUL & +${res.rewardXp} XP`,
+        `socialTalk:Claimed ${res.definition.title}! +${res.rewardLul} CerBucks & +${res.rewardXp} XP`,
       );
     },
     [dispatchBuddyAction, grantPlayerXp, saveDailyMissions],
@@ -5597,9 +5746,9 @@ export default function App() {
     soundEngine.playPowerCore();
     saveDailyMissions(res.nextState);
     dispatchBuddyAction(`adjustPlayerLul:${res.rewardLul}`);
-    grantPlayerXp(res.rewardXp, `ALL-CLEAR DAILY BONUS (+${res.rewardLul} LUL)`);
+    grantPlayerXp(res.rewardXp, `ALL-CLEAR DAILY BONUS (+${res.rewardLul} CerBucks)`);
     dispatchBuddyAction(
-      `socialTalk:Claimed Daily All-Clear Bonus! +${res.rewardLul} LUL & +${res.rewardXp} XP`,
+      `socialTalk:Claimed Daily All-Clear Bonus! +${res.rewardLul} CerBucks & +${res.rewardXp} XP`,
     );
   }, [dispatchBuddyAction, grantPlayerXp, saveDailyMissions]);
 
@@ -5969,7 +6118,7 @@ export default function App() {
       const now = Date.now();
       const res = purchaseCafeOrderBatch(
         entries,
-        hudRef.current.gold,
+        cyonBalanceRef.current,
         cafeConsumerStateRef.current,
         now,
       );
@@ -5982,10 +6131,10 @@ export default function App() {
             message: `Finish ${activeName} in your hand before ordering again!`,
           };
         }
-        if (res.reason === 'insufficient_lul') {
+        if (res.reason === 'insufficient_cyon') {
           return {
             ok: false,
-            message: `Not enough LUL! Need ${res.totalPriceLul} LUL (work a shift or cash out at the ATM).`,
+            message: `Not enough CerCoins! Need ${res.totalPriceCyon} CerCoins (convert CerBucks at the cafe ATM).`,
           };
         }
         return { ok: false, message: 'Select at least 1 item to order.' };
@@ -5995,14 +6144,13 @@ export default function App() {
       soundEngine.playPickup();
       setCafeConsumerTickMs(now);
       setCafeConsumerState(res.nextConsumerState);
-      dispatchBuddyAction(`adjustPlayerLul:${-res.totalPriceLul}`);
-      setHud((prev) => ({ ...prev, gold: Math.max(0, prev.gold - res.totalPriceLul) }));
-      const lulBuyerAccount = hudRef.current.nearWalletId || '';
-      if (lulBuyerAccount) {
+      setCyonBalance(res.nextCyon);
+      const cyonBuyerAccount = hudRef.current.nearWalletId || '';
+      if (cyonBuyerAccount) {
         void syncPlayerBalancesToSupabase({
-          nearAccountId: lulBuyerAccount,
-          lulBalance: Math.max(0, hudRef.current.gold - res.totalPriceLul),
-          cyonBalance,
+          nearAccountId: cyonBuyerAccount,
+          lulBalance: hudRef.current.gold,
+          cyonBalance: res.nextCyon,
           respiteBalance,
         });
       }
@@ -6016,6 +6164,16 @@ export default function App() {
           ? `Enjoying a ${res.items.length}-item order (${res.items[0].name}...) +${res.xpGained} XP!`
           : `Enjoying ${res.items[0].name} (+${res.xpGained} XP!)`;
       dispatchBuddyAction(`socialTalk:${talkLabel}`);
+      window.dispatchEvent(
+        new CustomEvent('cafe-tari-serve-purchase', {
+          detail: {
+            itemId: res.items[0].id,
+            itemName: res.items[0].name,
+            category: res.items[0].category,
+            totalItems: res.items.length,
+          },
+        }),
+      );
       return {
         ok: true,
         message:
@@ -6024,12 +6182,12 @@ export default function App() {
             : `Ordered ${res.items[0].name}! +${res.xpGained} XP`,
       };
     },
-    [dispatchBuddyAction, grantPlayerXp, cyonBalance, respiteBalance],
+    [dispatchBuddyAction, grantPlayerXp, respiteBalance],
   );
 
   const handlePurchaseCafeItem = useCallback(
     (item: CafeMenuItemSpec): { ok: boolean; message: string } => {
-      const checkLegacy = purchaseCafeMenuItem(item.id, hudRef.current.gold);
+      const checkLegacy = purchaseCafeMenuItem(item.id, cyonBalanceRef.current);
       if (!checkLegacy.item) return { ok: false, message: 'Item not found' };
       return handlePurchaseCafeBatch([{ itemId: item.id, quantity: 1 }]);
     },
@@ -6084,7 +6242,7 @@ export default function App() {
     (betLul: number): { ok: boolean; message: string } => {
       const safeBet = Math.max(0, Math.floor(betLul));
       if (safeBet < 2 || hudRef.current.gold < safeBet) {
-        return { ok: false, message: `Need ${safeBet} LUL to spin.` };
+        return { ok: false, message: `Need ${safeBet} CerBucks to spin.` };
       }
       const nextLul = Math.max(0, hudRef.current.gold - safeBet);
       dispatchBuddyAction(`adjustPlayerLul:${-safeBet}`);
@@ -6098,7 +6256,7 @@ export default function App() {
           respiteBalance,
         });
       }
-      return { ok: true, message: `Staked ${safeBet} LUL` };
+      return { ok: true, message: `Staked ${safeBet} CerBucks` };
     },
     [dispatchBuddyAction, cyonBalance, respiteBalance],
   );
@@ -6136,7 +6294,7 @@ export default function App() {
         soundEngine.playHit();
         return {
           ok: false,
-          message: `Need ${safeCost} LUL to order ${drinkName}.`,
+          message: `Need ${safeCost} CerBucks to order ${drinkName}.`,
         };
       }
       const nextLul = Math.max(0, hudRef.current.gold - safeCost);
@@ -6186,75 +6344,6 @@ export default function App() {
       }
     },
     [dispatchBuddyAction, grantPlayerXp, cyonBalance],
-  );
-
-  const handleCasinoDebitRespiteStake = useCallback(
-    (stakeRespite: number): { ok: boolean; message: string } => {
-      const safeBet = Math.round(Math.max(0.5, stakeRespite) * 100) / 100;
-      if (!Number.isFinite(safeBet) || respiteBalanceRef.current + 1e-6 < safeBet) {
-        return {
-          ok: false,
-          message: `INSUFFICIENT RESPITE · NEED ${safeBet.toFixed(2)} RESPITE`,
-        };
-      }
-      const nextRespite = Math.max(
-        0,
-        Math.round((respiteBalanceRef.current - safeBet) * 100) / 100,
-      );
-      respiteBalanceRef.current = nextRespite;
-      setRespiteBalance(nextRespite);
-
-      const accountKey =
-        (hudRef.current.nearWalletId || playerUid || 'guest').trim().toLowerCase() || 'guest';
-      writeCasinoRespiteDelta(accountKey, readCasinoRespiteDelta(accountKey) - safeBet);
-
-      const account = hudRef.current.nearWalletId || '';
-      if (account) {
-        void syncPlayerBalancesToSupabase({
-          nearAccountId: account,
-          lulBalance: hudRef.current.gold,
-          cyonBalance: cyonBalanceRef.current,
-          respiteBalance: nextRespite,
-        });
-      }
-      return { ok: true, message: `STAKED ${safeBet.toFixed(2)} RESPITE` };
-    },
-    [playerUid, readCasinoRespiteDelta, writeCasinoRespiteDelta],
-  );
-
-  const handleCasinoSettleRespiteWin = useCallback(
-    (payoutRespite: number, xpGained: number, announceHeadline?: string) => {
-      if (payoutRespite > 0) {
-        const safePayout = Math.round(payoutRespite * 100) / 100;
-        const nextRespite = Math.max(
-          0,
-          Math.round((respiteBalanceRef.current + safePayout) * 100) / 100,
-        );
-        respiteBalanceRef.current = nextRespite;
-        setRespiteBalance(nextRespite);
-
-        const accountKey =
-          (hudRef.current.nearWalletId || playerUid || 'guest').trim().toLowerCase() || 'guest';
-        writeCasinoRespiteDelta(accountKey, readCasinoRespiteDelta(accountKey) + safePayout);
-
-        const account = hudRef.current.nearWalletId || '';
-        if (account) {
-          void syncPlayerBalancesToSupabase({
-            nearAccountId: account,
-            lulBalance: hudRef.current.gold,
-            cyonBalance: cyonBalanceRef.current,
-            respiteBalance: nextRespite,
-          });
-        }
-        if (announceHeadline) {
-          dispatchBuddyAction(`socialTalk:${announceHeadline}`);
-        }
-      }
-      if (xpGained > 0) {
-        grantPlayerXp(xpGained, 'GRAND CASINO SLOTS');
-      }
-    },
-    [dispatchBuddyAction, grantPlayerXp, playerUid, readCasinoRespiteDelta, writeCasinoRespiteDelta],
   );
 
   useEffect(() => {
@@ -7352,6 +7441,31 @@ export default function App() {
       resolveAndRestoreExistingGoogleWallet,
     ],
   );
+
+  const handleDirectConnectExternalNearWallet = useCallback(async () => {
+    soundEngine.playUiClick();
+    setWalletConnectError(null);
+    setIsOpeningExternalNearWallet(true);
+    try {
+      const result = await connectWithNearConnectorModal('testnet');
+      await handleConnectWalletAndEnterLobby(result.accountId, {
+        onboardingMode: 'wallet_selector',
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err ?? '');
+      const lower = msg.toLowerCase();
+      if (
+        msg &&
+        !lower.includes('cancel') &&
+        !lower.includes('closed') &&
+        !lower.includes('dismiss')
+      ) {
+        setWalletConnectError(msg);
+      }
+    } finally {
+      setIsOpeningExternalNearWallet(false);
+    }
+  }, [handleConnectWalletAndEnterLobby]);
 
   useEffect(() => {
     const unsubSigningWallet = onNearSigningWalletConnected((walletRes) => {
@@ -8759,7 +8873,7 @@ export default function App() {
           currency: 'LUL',
           amount: earnedLul,
           unit_price: earnedLul,
-          reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) to Kai · +${earnedLul} LUL.`,
+          reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) to Kai · +${earnedLul} CerBucks.`,
         });
       }
     },
@@ -8993,7 +9107,7 @@ export default function App() {
           currency: 'LUL',
           amount: earnedLul,
           unit_price: earnedLul,
-          reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) to Kai · +${earnedLul} LUL.`,
+          reasoning_summary: `Sold ${fish.speciesName} (${fish.weightKg} kg, ${fish.rarity}) to Kai · +${earnedLul} CerBucks.`,
         });
       }
       return { ok: true };
@@ -9323,6 +9437,7 @@ export default function App() {
       },
     });
     if (!res.ok || !res.txHash) return false;
+    handleRecordMerchantPurchaseCloseness('hana', priceRespite, 'RESPITE');
     const resolvedActor = res.signerAccountId || hudRef.current.nearWalletId || actorAccount;
     let nextRespite = Math.max(0, respiteBalance - priceRespite);
     let deedTokenId = 'nep171:house:ownership';
@@ -9609,6 +9724,19 @@ export default function App() {
     }
     const nextOwned = [...ownedMerchantItemIds, item.id];
     setOwnedMerchantItemIds(nextOwned);
+    const merchantNpcForPurchase: NpcId | null =
+      merchantLocation === 'central_plaza'
+        ? 'nadia'
+        : merchantLocation === 'lobby_cafe'
+          ? 'hana'
+          : null;
+    if (merchantNpcForPurchase) {
+      handleRecordMerchantPurchaseCloseness(
+        merchantNpcForPurchase,
+        finalPrice,
+        item.currency === 'CYON' ? 'CYON' : 'RESPITE',
+      );
+    }
     if (item.category === 'nft_house_theme') {
       setActiveHouseThemeId(item.id);
       dispatchBuddyAction(
@@ -10170,7 +10298,7 @@ export default function App() {
                   currency: 'CYON',
                   amount: cyonGranted,
                   unit_price: Number((lulSpent / Math.max(1, cyonGranted)).toFixed(2)),
-                  reasoning_summary: `Exchanged ${lulSpent} LUL for ${cyonGranted} CYON via Smartphone Wallet`,
+                  reasoning_summary: `Exchanged ${lulSpent} CerBucks for ${cyonGranted} CerCoins via Smartphone Wallet`,
                 });
                 void syncPlayerBalancesToSupabase({
                   nearAccountId: actorAccount,
@@ -10707,12 +10835,29 @@ export default function App() {
       l.sellerNearAccount.toLowerCase() === (hud.nearWalletId || '').toLowerCase(),
   ).length;
 
+  const currentLocationLabel =
+    worldMode === 'warzone'
+      ? 'Warzone Arena'
+      : isInsidePrivateHouse
+        ? isSampleHouseView
+          ? 'Model House'
+          : 'Private House'
+        : isInsideGlasshouseCafe
+          ? 'Glasshouse Cafe'
+          : isInsideGrandCasino
+            ? 'Grand Casino'
+            : resolveCityDistrictLabelAtPosition(
+                hud.playerWorldX ?? -85,
+                hud.playerWorldZ ?? 0,
+              );
+
   const characterProfileCommonProps = {
     targetUser: profileTargetUser,
     playerUid: hud.nearWalletId || playerUid,
     connectedAccountEmail: connectedGoogleEmail,
     characterGender,
     playerTeam: hud.playerTeam ?? ('blue' as const),
+    currentDistrict: currentLocationLabel,
     hasHouseOwnership,
     ownedMerchantItemIds,
     ownedApparelIds,
@@ -10777,7 +10922,7 @@ export default function App() {
         tag: 'OPEN HOUSE',
         description:
           'Warm minimalist residence curated by Hana with collector furniture and architectural accents.',
-        imageUrl: '/docs/hero-3-house-interior.jpg',
+        imageUrl: '/assets/kiosk/glass_modern_interior.jpg',
         architectureStyle: 'glass_modern',
         isModelShowcase: true,
       },
@@ -11455,17 +11600,19 @@ export default function App() {
                         <button
                           type="button"
                           data-open-near-wallet-selector-start-btn="true"
-                          disabled={isVerifyingNearWallet || privyOAuthLoading}
-                          onClick={() => {
-                            soundEngine.playUiClick();
-                            setWalletConnectError(null);
-                            setIsNearWalletSelectorOpen(true);
-                          }}
+                          disabled={
+                            isVerifyingNearWallet ||
+                            privyOAuthLoading ||
+                            isOpeningExternalNearWallet
+                          }
+                          onClick={() => void handleDirectConnectExternalNearWallet()}
                           className="inline-flex items-center justify-center gap-2 text-xs font-semibold text-white/80 hover:text-white disabled:opacity-60 cursor-pointer transition-colors"
                         >
                           <Wallet className="w-4 h-4 text-white/70 shrink-0" aria-hidden="true" />
                           <span className="underline underline-offset-4">
-                            Have a NEAR wallet? Connect it here
+                            {isOpeningExternalNearWallet
+                              ? 'Opening NEAR wallet...'
+                              : 'Have a NEAR wallet? Connect it here'}
                           </span>
                         </button>
                       </div>
@@ -13080,10 +13227,10 @@ export default function App() {
                 adaptiveViewport.isPhonePortrait
                   ? 'w-auto'
                   : adaptiveViewport.isCompactHeight
-                    ? 'w-[min(280px,46vw)]'
+                    ? 'w-[min(316px,48vw)]'
                     : adaptiveViewport.isTablet
-                      ? 'w-[min(290px,42vw)]'
-                      : 'w-[calc(100vw-2rem)] max-w-[340px]'
+                      ? 'w-[min(324px,44vw)]'
+                      : 'w-[calc(100vw-2rem)] max-w-[376px]'
               }`}
             >
               {/* Incoming Private Chat Notification Popup (Hidden during active NPC Dialogue) */}
@@ -13261,6 +13408,44 @@ export default function App() {
                     <PersonStanding className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
                   </button>
                 )}
+                {!isNpcTarget && worldMode !== 'warzone' && (
+                  <button
+                    type="button"
+                    data-dock-quick-selfie-camera="true"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      closeSmartphone();
+                      setIsQuickPoseModalOpen(false);
+                      setIsKioskModalOpen(false);
+                      setIsProfileModalOpen(false);
+                      setIsSocialChatModalOpen(false);
+                      setIsPersonalWalletModalOpen(false);
+                      setIsPersonalBagModalOpen(false);
+                      setIsPinTargetPopupOpen(false);
+                      setIsTargetMenuExpanded(false);
+                      setPairedInteractTarget(null);
+                      setActiveSpecialModal('none');
+                      setActiveTeleportKioskModal('none');
+                      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                      window.dispatchEvent(new CustomEvent('close-kiosk-ui'));
+                      setIsSelfieCameraOpen(true);
+                    }}
+                    title={
+                      pairedStatus?.active
+                        ? 'Take Photo Together'
+                        : 'City Selfie Camera'
+                    }
+                    aria-label="City Selfie Camera"
+                    aria-pressed={isSelfieCameraOpen}
+                    className={`w-7 h-7 rounded-full flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0 ${
+                      isSelfieCameraOpen
+                        ? 'bg-gradient-to-br from-emerald-400 to-teal-500 text-white ring-2 ring-white/80 shadow-[0_3px_12px_rgba(16,185,129,0.55)]'
+                        : 'bg-gradient-to-br from-rose-400 to-pink-600 hover:brightness-110 border border-rose-200/50 text-white shadow-[0_3px_10px_rgba(244,63,94,0.42)]'
+                    }`}
+                  >
+                    <Camera className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
+                  </button>
+                )}
                 {!isNpcTarget && (
                   <button
                     type="button"
@@ -13402,7 +13587,9 @@ export default function App() {
                     isSelf: false,
                     isNpc: true,
                     gender:
-                      activeCitizenId === 'citizen_bima' || activeCitizenId === 'citizen_kenji'
+                      activeCitizenId === 'citizen_bima' ||
+                      activeCitizenId === 'citizen_kenji' ||
+                      activeCitizenId === 'city_plaza_raka'
                         ? 'male'
                         : 'female',
                   };
@@ -13595,6 +13782,42 @@ export default function App() {
                       }),
                     );
                   }}
+                  onOpenMerchantCatalogTarget={(entity) => {
+                    setIsPinTargetPopupOpen(false);
+                    closeSmartphone();
+                    setIsTargetMenuExpanded(false);
+                    setIsKioskModalOpen(false);
+                    setIsSocialChatModalOpen(false);
+                    setIsPersonalWalletModalOpen(false);
+                    setIsCitizenDialogueOpen(false);
+                    setActiveSpecialModal('none');
+                    setActiveTeleportKioskModal('none');
+                    window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                    if (
+                      entity.id === 'city_plaza_nadia' ||
+                      entity.id === 'npc_nadia' ||
+                      entity.merchantLocation === 'central_plaza'
+                    ) {
+                      setDistrictStorefrontMap(loadPersistedStorefrontCatalogMap());
+                      setActiveDistrictPlazaCatalog('CENTRAL-PLAZA');
+                      return;
+                    }
+                    if (
+                      entity.id === 'npc_kai' ||
+                      entity.id === 'npc_beach' ||
+                      entity.merchantLocation === 'beach_house'
+                    ) {
+                      window.dispatchEvent(
+                        new CustomEvent('open-npc-merchant-ui', {
+                          detail: { location: 'beach_house' },
+                        }),
+                      );
+                      return;
+                    }
+                    setWestPlazaInitialDept(null);
+                    setDistrictStorefrontMap(loadPersistedStorefrontCatalogMap());
+                    setActiveDistrictPlazaCatalog('WEST-PLAZA');
+                  }}
                   onTalkCitizenTarget={(entity) => {
                     setIsPinTargetPopupOpen(false);
                     closeSmartphone();
@@ -13736,23 +13959,6 @@ export default function App() {
                     } else {
                       dispatchBuddyAction(`equipScooter:${kind}`);
                     }
-                  }}
-                  isSelfieCameraOpen={isSelfieCameraOpen}
-                  onOpenSelfieCamera={() => {
-                    closeSmartphone();
-                    setIsQuickPoseModalOpen(false);
-                    setIsKioskModalOpen(false);
-                    setIsProfileModalOpen(false);
-                    setIsSocialChatModalOpen(false);
-                    setIsPersonalWalletModalOpen(false);
-                    setIsPersonalBagModalOpen(false);
-                    setIsPinTargetPopupOpen(false);
-                    setIsTargetMenuExpanded(false);
-                    setPairedInteractTarget(null);
-                    setActiveSpecialModal('none');
-                    setActiveTeleportKioskModal('none');
-                    window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-                    setIsSelfieCameraOpen(true);
                   }}
                 />
               );
@@ -13989,6 +14195,19 @@ export default function App() {
             nearTxHash: res.txHash,
           };
           setRecruitedFamilyMembers((prev) => [newMember, ...prev]);
+          const recruiterMerchantNpc: NpcId | null =
+            merchantLocation === 'central_plaza'
+              ? 'nadia'
+              : merchantLocation === 'lobby_cafe'
+                ? 'hana'
+                : null;
+          if (recruiterMerchantNpc) {
+            handleRecordMerchantPurchaseCloseness(
+              recruiterMerchantNpc,
+              plan.priceRespite,
+              'RESPITE',
+            );
+          }
 
           if (resolvedActor) {
             void syncPlayerBalancesToSupabase({
@@ -14089,7 +14308,7 @@ export default function App() {
                     currency: 'CYON',
                     amount: cyonGranted,
                     unit_price: Number((lulSpent / Math.max(1, cyonGranted)).toFixed(2)),
-                    reasoning_summary: `Exchanged ${lulSpent} LUL for ${cyonGranted} CYON at ${merchantLocation}`,
+                    reasoning_summary: `Exchanged ${lulSpent} CerBucks for ${cyonGranted} CerCoins at ${merchantLocation}`,
                   });
                   void syncPlayerBalancesToSupabase({
                     nearAccountId: actorAccount,
@@ -14707,21 +14926,6 @@ export default function App() {
             );
           }
           if (app === 'city_feed') {
-            const currentLocationLabel =
-              worldMode === 'warzone'
-                ? 'Warzone Arena'
-                : isInsidePrivateHouse
-                  ? isSampleHouseView
-                    ? 'Model House'
-                    : 'Private House'
-                  : isInsideGlasshouseCafe
-                    ? 'Glasshouse Cafe'
-                    : isInsideGrandCasino
-                      ? 'Grand Casino'
-                      : resolveCityDistrictLabelAtPosition(
-                          hud.playerWorldX ?? -85,
-                          hud.playerWorldZ ?? 0,
-                        );
             return (
               <CityFeedModal
                 embeddedInPhone
@@ -15150,6 +15354,7 @@ export default function App() {
           gameState !== 'playing' ||
           playMode === 'editor' ||
           cityViewActive ||
+          isSelfieCameraOpen ||
           onboardingStep !== 'completed' ||
           isKioskModalOpen ||
           isProfileModalOpen ||
@@ -15520,6 +15725,32 @@ export default function App() {
                 pillAccentClassName: 'border-fuchsia-200/95',
                 dataAttr: { 'data-nearby-entity-interact-btn': 'true' },
                 onSelect: () => {
+                  const namedNpc = resolveNpcId(String(dockEntity.id));
+                  const isQaBypass = qaDirectorAvailable && qaDirectorStateRef.current.enabled;
+                  if (
+                    namedNpc &&
+                    !isQaBypass &&
+                    !canStartDirectPairedPoseForTarget({
+                      store: npcClosenessStoreRef.current,
+                      targetId: String(dockEntity.id),
+                    })
+                  ) {
+                    setIsPinTargetPopupOpen(false);
+                    closeSmartphone();
+                    if (namedNpc === 'hana' || namedNpc === 'kai' || namedNpc === 'nadia') {
+                      setMerchantLocation(
+                        namedNpc === 'kai'
+                          ? 'beach_house'
+                          : namedNpc === 'nadia'
+                            ? 'central_plaza'
+                            : 'lobby_cafe',
+                      );
+                      setActiveSpecialModal('npc_merchant');
+                    } else {
+                      openCitizenDialogueForId(npcIdToCitizenId(namedNpc), 'sesi_chat');
+                    }
+                    return;
+                  }
                   setIsPinTargetPopupOpen(false);
                   closeSmartphone();
                   setIsQuickPoseModalOpen(false);
@@ -15691,8 +15922,12 @@ export default function App() {
               incomingInvite={!isDockBlockedByModal ? incomingPairedInvite : null}
               onSelectPairedAnimation={(entity, item) => {
                 if (!item.pairedAnim) return;
-                // WS13: Enforce closeness check for any named NPC target.
+                const isApprovedByChatOrQa =
+                  Boolean(lockedPairedCategory) ||
+                  (qaDirectorAvailable && qaDirectorStateRef.current.enabled);
+                // WS13: Enforce closeness check for any named NPC target (unless already approved via chat negotiation or QA Director).
                 if (
+                  !isApprovedByChatOrQa &&
                   !canStartDirectPairedPoseForTarget({
                     store: npcClosenessStoreRef.current,
                     targetId: String(entity.id),
@@ -15710,6 +15945,7 @@ export default function App() {
                     animLabel: item.name,
                     initiateGlbUrl: item.pairedAnim.initiateGlbUrl,
                     receiveGlbUrl: item.pairedAnim.receiveGlbUrl,
+                    closenessApproved: true,
                   })}`,
                 );
               }}
@@ -15753,7 +15989,7 @@ export default function App() {
       <GlasshouseCafeOrderModal
         isOpen={isInsideGlasshouseCafe && activeCafeModal === 'order'}
         onClose={() => setActiveCafeModal('none')}
-        lulBalance={effectiveGold}
+        cyonBalance={cyonBalance}
         levelProgress={levelProgress}
         consumerSummary={cafeConsumerSummary}
         onPurchaseItem={handlePurchaseCafeItem}
@@ -15782,12 +16018,9 @@ export default function App() {
         initialTab={grandCasinoInitialTab}
         slotVariant={grandCasinoSlotVariant}
         lulBalance={effectiveGold}
-        respiteBalance={respiteBalance}
         levelProgress={levelProgress}
         onDebitStake={handleArcadeSlotDebitStake}
-        onDebitSlotRespite={handleCasinoDebitRespiteStake}
         onSettleSlots={handleArcadeSlotSettleSpin}
-        onSettleSlotRespite={handleCasinoSettleRespiteWin}
         onSettleTableGame={handleCasinoSettleTableGame}
         onOrderLoungeDrink={handleOrderCasinoLoungeDrink}
       />
@@ -15875,6 +16108,7 @@ export default function App() {
           setRespiteBalance(nextRespite);
           const nextOwned = [...ownedScooterIds, item.id];
           setOwnedScooterIds(nextOwned);
+          handleRecordMerchantPurchaseCloseness('hana', item.priceRespite, 'RESPITE');
           if (typeof window !== 'undefined') {
             try {
               window.localStorage.setItem(
@@ -15931,7 +16165,7 @@ export default function App() {
       <FashionBoutiqueModal
         isOpen={isFashionBoutiqueModalOpen && hud.worldMode !== 'warzone'}
         onClose={() => setIsFashionBoutiqueModalOpen(false)}
-        lulBalance={effectiveGold}
+        cyonBalance={cyonBalance}
         characterGender={characterGender}
         ownedApparelIds={effectiveOwnedApparelIds}
         equippedTorsoItemId={equippedTorsoItemId}
@@ -15947,11 +16181,13 @@ export default function App() {
         lulBalance={effectiveGold}
         ownedApparelIds={effectiveOwnedApparelIds}
         initialDraft={equippedWardrobeDraft}
+        initialDraftByGender={equippedWardrobeDraftByGender}
         onChangeGender={(nextGender) => {
           setCharacterGender(nextGender);
           dispatchBuddyAction(`setCharacterGender:${nextGender}`);
         }}
         onPurchaseItem={handlePurchaseWardrobeStudioItem}
+        onSyncAnimSet={handleSyncWardrobeAnimSet}
         onComplete={handleCompleteWardrobeStudio}
         onClose={() => setIsWardrobeStudioOpen(false)}
       />
@@ -16103,7 +16339,9 @@ export default function App() {
             ownerAccountId={ownerAccount}
             visitorAccountId={(hud.nearWalletId || playerUid || 'guest').trim()}
             respiteBalance={respiteBalance > 0 ? respiteBalance : 1250}
+            cyonBalance={cyonBalance}
             ownedMerchantItemIds={effectiveOwnedMerchantItemIds}
+            ownedApparelIds={effectiveOwnedApparelIds}
             billboardLogoUrl={null}
             leaseExpiresText="Permanent District Flagship"
             isGracePeriod={false}
@@ -16119,6 +16357,11 @@ export default function App() {
             onEndLease={() => {}}
             onRemoveBuilding={() => {}}
             onAtomicPurchase={(purchase) => {
+              handleRecordMerchantPurchaseCloseness(
+                plazaId === 'WEST-PLAZA' ? 'hana' : 'nadia',
+                purchase.grossRespite,
+                'RESPITE',
+              );
               const qtyByItemId: Record<string, number> = {};
               const purchasedInventoryItemIds: string[] = [];
               const purchasedGiftBagUnits: string[] = [];
@@ -16161,6 +16404,119 @@ export default function App() {
                 const base = prev > 0 ? prev : 1250;
                 return Math.max(0, base - purchase.grossRespite);
               });
+              if (purchasedGiftBagUnits.length > 0) {
+                setOwnedGiftBagItemIds((prev) => {
+                  const next = [...prev, ...purchasedGiftBagUnits];
+                  try {
+                    window.localStorage.setItem(
+                      `bb_owned_gift_bag_v1:${dailyMissionsAccountKey}`,
+                      JSON.stringify(next),
+                    );
+                  } catch {
+                    // ignore storage errors
+                  }
+                  return next;
+                });
+              }
+              if (purchasedInventoryItemIds.length > 0) {
+                setOwnedMerchantItemIds((prev) =>
+                  Array.from(new Set([...prev, ...purchasedInventoryItemIds])),
+                );
+                if (purchasedInventoryItemIds.includes('private_house_deed')) {
+                  setHasHouseOwnership(true);
+                }
+                const purchasedScooters = purchasedInventoryItemIds.filter(
+                  (id) => id === 'scooter_electric_bike' || id === 'scooter_push_kick',
+                );
+                if (purchasedScooters.length > 0) {
+                  setOwnedScooterIds((prev) => {
+                    const next = Array.from(new Set([...prev, ...purchasedScooters]));
+                    try {
+                      window.localStorage.setItem(
+                        `bb_owned_scooters_v1:${dailyMissionsAccountKey}`,
+                        JSON.stringify(next),
+                      );
+                    } catch {
+                      // ignore storage failures
+                    }
+                    return next;
+                  });
+                }
+                const purchasedWardrobeItems = purchasedInventoryItemIds.filter(
+                  (id) =>
+                    id.startsWith('apparel_') ||
+                    id.startsWith('bl_set_') ||
+                    Boolean(getWardrobeCatalogItemById(id)),
+                );
+                if (purchasedWardrobeItems.length > 0) {
+                  setOwnedApparelIds((prev) => {
+                    const next = Array.from(new Set([...prev, ...purchasedWardrobeItems]));
+                    try {
+                      window.localStorage.setItem(
+                        getOwnedApparelStorageKey(dailyMissionsAccountKey),
+                        JSON.stringify(next),
+                      );
+                    } catch {
+                      // ignore storage errors
+                    }
+                    return next;
+                  });
+                }
+              }
+            }}
+            onCyonPurchase={(purchase) => {
+              handleRecordMerchantPurchaseCloseness(
+                plazaId === 'WEST-PLAZA' ? 'hana' : 'nadia',
+                purchase.grossCyon,
+                'CYON',
+              );
+              const qtyByItemId: Record<string, number> = {};
+              const purchasedInventoryItemIds: string[] = [];
+              const purchasedGiftBagUnits: string[] = [];
+              let unitsBought = 0;
+
+              for (const line of purchase.items) {
+                qtyByItemId[line.item.id] = (qtyByItemId[line.item.id] || 0) + line.quantity;
+                unitsBought += line.quantity;
+                if (line.item.linkedInventoryItemId) {
+                  purchasedInventoryItemIds.push(line.item.linkedInventoryItemId);
+                  const giftEntry = getGiftCatalogItem(line.item.linkedInventoryItemId);
+                  if (giftEntry && isGiftPickerEligibleItem(giftEntry)) {
+                    for (let q = 0; q < line.quantity; q += 1) {
+                      purchasedGiftBagUnits.push(line.item.linkedInventoryItemId);
+                    }
+                  }
+                }
+              }
+
+              const updatedItems = config.items.map((it) => {
+                const bought = qtyByItemId[it.id] || 0;
+                if (!bought) return it;
+                return {
+                  ...it,
+                  escrowStockCount: Math.max(0, it.escrowStockCount - bought),
+                };
+              });
+
+              persistDistrictConfig({
+                ...config,
+                items: updatedItems,
+                totalUnitsSold: config.totalUnitsSold + unitsBought,
+              });
+
+              if (purchase.grossCyon > 0) {
+                const nextCyon = Math.max(0, cyonBalanceRef.current - purchase.grossCyon);
+                setCyonBalance(nextCyon);
+                const cyonBuyerAccount = hud.nearWalletId || '';
+                if (cyonBuyerAccount) {
+                  void syncPlayerBalancesToSupabase({
+                    nearAccountId: cyonBuyerAccount,
+                    lulBalance: hudRef.current.gold,
+                    cyonBalance: nextCyon,
+                    respiteBalance,
+                  });
+                }
+              }
               if (purchasedGiftBagUnits.length > 0) {
                 setOwnedGiftBagItemIds((prev) => {
                   const next = [...prev, ...purchasedGiftBagUnits];
@@ -16336,7 +16692,7 @@ export default function App() {
         hud.worldMode !== 'warzone' && (
           <div
             data-npc-togetherness-pill="true"
-            className="fixed top-[max(0.75rem,var(--safe-top))] left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/85 border border-white/20 text-white shadow-lg backdrop-blur-md pointer-events-auto"
+            className="fixed bottom-[calc(142px+var(--safe-bottom))] left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/85 border border-white/20 text-white shadow-lg backdrop-blur-md pointer-events-auto"
           >
             <span className="text-xs font-medium text-white/90">
               {npcTogethernessState.ridingNpcId

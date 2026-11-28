@@ -10,15 +10,11 @@ import {
 export interface CasinoBlackjackInteractivePanelProps {
   isActive: boolean;
   lulBalance: number;
-  respiteBalance?: number;
   onClose?: () => void;
   onDebitStake: (stakeLul: number) => { ok: boolean; message: string };
   onSettleTableGame: (payoutLul: number, xpGained: number, announceHeadline?: string) => void;
-  onDebitRespite?: (stakeRespite: number) => { ok: boolean; message: string };
-  onSettleRespite?: (payoutRespite: number, xpGained: number, announceHeadline?: string) => void;
 }
 
-type BjCurrencyMode = 'LUL' | 'RESPITE';
 type BjPhase = 'BETTING' | 'PLAYER_TURN' | 'DEALER_TURN';
 
 interface BjChipSpec {
@@ -362,22 +358,11 @@ const LuxuryPlayingCardSvg: React.FC<{
 
 export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractivePanelProps> = ({
   lulBalance,
-  respiteBalance = 0,
   onClose,
   onDebitStake,
   onSettleTableGame,
-  onDebitRespite,
-  onSettleRespite,
 }) => {
-  const canUseRespite = Boolean(onDebitRespite && onSettleRespite);
-  const [currencyMode, setCurrencyMode] = useState<BjCurrencyMode>(() =>
-    lulBalance <= 0 && respiteBalance > 0 && onDebitRespite && onSettleRespite ? 'RESPITE' : 'LUL',
-  );
-
-  const rawVaultBalance =
-    currencyMode === 'RESPITE' && canUseRespite
-      ? Math.max(0, Math.floor(respiteBalance))
-      : Math.max(0, Math.floor(lulBalance));
+  const rawVaultBalance = Math.max(0, Math.floor(lulBalance));
 
   const shoeRef = useRef<PlayingCard[]>(buildSixDeckShoe());
   const [shoeCount, setShoeCount] = useState<number>(() => shoeRef.current.length);
@@ -418,23 +403,19 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
     ante: number;
     raise: number;
     tie: number;
-    currency: BjCurrencyMode;
   }>({
     ante: 0,
     raise: 0,
     tie: 0,
-    currency: 'LUL',
   });
 
   const dealerTimerRef = useRef<number | null>(null);
   const bannerTimerRef = useRef<number | null>(null);
   const onSettleLulRef = useRef(onSettleTableGame);
-  const onSettleRespiteRef = useRef(onSettleRespite);
 
   useEffect(() => {
     onSettleLulRef.current = onSettleTableGame;
-    onSettleRespiteRef.current = onSettleRespite;
-  }, [onSettleTableGame, onSettleRespite]);
+  }, [onSettleTableGame]);
 
   useEffect(() => {
     return () => {
@@ -491,7 +472,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
       const stepDealer = (workingDealer: PlayingCard[]) => {
         const dEval = evaluateBlackjackHandTotal(workingDealer);
         const pEval = evaluateBlackjackHandTotal(currentPlayerHand);
-        const { ante, raise, tie, currency } = committedRoundRef.current;
+        const { ante, raise, tie } = committedRoundRef.current;
         const mainStake = ante + raise;
 
         if (playerNaturalBj) {
@@ -504,7 +485,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
             setRoundBadgeText('PUSH 21');
             triggerCenterBanner(
               tie > 0
-                ? `PUSH + TIE BONUS +${(tie * 11).toLocaleString()} ${currency}!`
+                ? `PUSH + TIE BONUS +${(tie * 11).toLocaleString()} CerBucks!`
                 : 'PUSH (BOTH BLACKJACK)',
               tie > 0 ? 'win' : 'push',
             );
@@ -514,24 +495,16 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
             xp = 24;
             setRoundBadgeText('★ BLACKJACK!');
             triggerCenterBanner(
-              `★ BLACKJACK 3:2! +${payout.toLocaleString()} ${currency}`,
+              `★ BLACKJACK 3:2! +${payout.toLocaleString()} CerBucks`,
               'win',
             );
           }
 
-          if (currency === 'RESPITE' && onSettleRespiteRef.current) {
-            onSettleRespiteRef.current(
-              payout,
-              xp,
-              payout > mainStake ? `NATURAL BLACKJACK 21! +${payout} RESPITE` : undefined,
-            );
-          } else {
-            onSettleLulRef.current(
-              payout,
-              xp,
-              payout > mainStake ? `NATURAL BLACKJACK 21! +${payout} LUL` : undefined,
-            );
-          }
+          onSettleLulRef.current(
+            payout,
+            xp,
+            payout > mainStake ? `NATURAL BLACKJACK 21! +${payout} CerBucks` : undefined,
+          );
 
           if (payout > mainStake) soundEngine.playCasinoJackpotFanfare(true);
           else soundEngine.playCasinoChipClink(1);
@@ -562,7 +535,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
           xp = 12;
           setRoundBadgeText('★ PLAYER WINS!');
           triggerCenterBanner(
-            `DEALER BUSTS (${dEval.total}) · +${mainPayout.toLocaleString()} ${currency}!`,
+            `DEALER BUSTS (${dEval.total}) · +${mainPayout.toLocaleString()} CerBucks!`,
             'win',
           );
         } else if (pEval.total > dEval.total) {
@@ -570,7 +543,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
           xp = 12;
           setRoundBadgeText('★ PLAYER WINS!');
           triggerCenterBanner(
-            `PLAYER WINS ${pEval.total} TO ${dEval.total} · +${mainPayout.toLocaleString()} ${currency}!`,
+            `PLAYER WINS ${pEval.total} TO ${dEval.total} · +${mainPayout.toLocaleString()} CerBucks!`,
             'win',
           );
         } else if (pEval.total < dEval.total) {
@@ -586,7 +559,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
           setRoundBadgeText(tie > 0 ? '★ TIE BONUS 10:1!' : 'PUSH');
           triggerCenterBanner(
             tie > 0
-              ? `TIE AT ${pEval.total}! BONUS +${tiePayout.toLocaleString()} ${currency}!`
+              ? `TIE AT ${pEval.total}! BONUS +${tiePayout.toLocaleString()} CerBucks!`
               : `PUSH: TIED AT ${pEval.total}`,
             tie > 0 ? 'win' : 'push',
           );
@@ -596,14 +569,10 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
         const totalRisked = mainStake + tie;
         const headline =
           totalPayout > totalRisked
-            ? `BLACKJACK WIN +${totalPayout.toLocaleString()} ${currency}!`
+            ? `BLACKJACK WIN +${totalPayout.toLocaleString()} CerBucks!`
             : undefined;
 
-        if (currency === 'RESPITE' && onSettleRespiteRef.current) {
-          onSettleRespiteRef.current(totalPayout, xp, headline);
-        } else {
-          onSettleLulRef.current(totalPayout, xp, headline);
-        }
+        onSettleLulRef.current(totalPayout, xp, headline);
 
         if (totalPayout > totalRisked) {
           soundEngine.playCasinoJackpotFanfare(false);
@@ -627,12 +596,12 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
     if (phase !== 'BETTING') return;
     if (safeStagedAnte + safeStagedTie + selectedChip > rawVaultBalance) {
       soundEngine.playUiCancel();
-      triggerCenterBanner(`INSUFFICIENT ${currencyMode} BALANCE`, 'info');
+      triggerCenterBanner(`INSUFFICIENT CerBucks BALANCE`, 'info');
       return;
     }
     soundEngine.playCasinoChipClink(1);
     setAnteBet(safeStagedAnte + selectedChip);
-  }, [phase, safeStagedAnte, safeStagedTie, selectedChip, rawVaultBalance, currencyMode, triggerCenterBanner]);
+  }, [phase, safeStagedAnte, safeStagedTie, selectedChip, rawVaultBalance, triggerCenterBanner]);
 
   const handleRemoveAnteChip = useCallback(
     (e: React.MouseEvent) => {
@@ -648,12 +617,12 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
     if (phase !== 'BETTING') return;
     if (safeStagedAnte + safeStagedTie + selectedChip > rawVaultBalance) {
       soundEngine.playUiCancel();
-      triggerCenterBanner(`INSUFFICIENT ${currencyMode} BALANCE`, 'info');
+      triggerCenterBanner(`INSUFFICIENT CerBucks BALANCE`, 'info');
       return;
     }
     soundEngine.playCasinoChipClink(1);
     setTieSideBet(safeStagedTie + selectedChip);
-  }, [phase, safeStagedAnte, safeStagedTie, selectedChip, rawVaultBalance, currencyMode, triggerCenterBanner]);
+  }, [phase, safeStagedAnte, safeStagedTie, selectedChip, rawVaultBalance, triggerCenterBanner]);
 
   const handleRemoveTieChip = useCallback(
     (e: React.MouseEvent) => {
@@ -678,13 +647,13 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
     const needed = lastRoundBets.ante + lastRoundBets.tie;
     if (needed <= 0 || needed > rawVaultBalance) {
       soundEngine.playUiCancel();
-      triggerCenterBanner(`INSUFFICIENT ${currencyMode} BALANCE TO REBET`, 'info');
+      triggerCenterBanner(`INSUFFICIENT CerBucks BALANCE TO REBET`, 'info');
       return;
     }
     soundEngine.playCasinoChipClink(2);
     setAnteBet(lastRoundBets.ante);
     setTieSideBet(lastRoundBets.tie);
-  }, [phase, lastRoundBets, rawVaultBalance, currencyMode, triggerCenterBanner]);
+  }, [phase, lastRoundBets, rawVaultBalance, triggerCenterBanner]);
 
   const handleDeal = useCallback(() => {
     if (phase !== 'BETTING') return;
@@ -711,10 +680,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
     }
 
     const totalDebit = effectiveAnte + effectiveTie;
-    const debitRes =
-      currencyMode === 'RESPITE' && onDebitRespite
-        ? onDebitRespite(totalDebit)
-        : onDebitStake(totalDebit);
+    const debitRes = onDebitStake(totalDebit);
 
     if (!debitRes.ok) {
       soundEngine.playUiCancel();
@@ -733,7 +699,6 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
       ante: effectiveAnte,
       raise: 0,
       tie: effectiveTie,
-      currency: currencyMode,
     };
 
     const p0 = drawFromShoe();
@@ -761,11 +726,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
       setPhase('BETTING');
       setRoundBadgeText('DEALER BJ 21');
       triggerCenterBanner('DEALER NATURAL BLACKJACK 21', 'loss');
-      if (currencyMode === 'RESPITE' && onSettleRespiteRef.current) {
-        onSettleRespiteRef.current(0, 2);
-      } else {
-        onSettleLulRef.current(0, 2);
-      }
+      onSettleLulRef.current(0, 2);
       return;
     }
 
@@ -776,8 +737,6 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
     safeStagedTie,
     rawVaultBalance,
     selectedChip,
-    currencyMode,
-    onDebitRespite,
     onDebitStake,
     drawFromShoe,
     resolveDealerAndSettle,
@@ -793,17 +752,12 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
 
     const pEval = evaluateBlackjackHandTotal(nextPlayer);
     if (pEval.isBust) {
-      const { currency } = committedRoundRef.current;
       setDealerHoleHidden(false);
       setDoubledRaiseBet(0);
       setPhase('BETTING');
       setRoundBadgeText(`BUST (${pEval.total})`);
       triggerCenterBanner(`BUST! SCORE: ${pEval.total}`, 'loss');
-      if (currency === 'RESPITE' && onSettleRespiteRef.current) {
-        onSettleRespiteRef.current(0, 2);
-      } else {
-        onSettleLulRef.current(0, 2);
-      }
+      onSettleLulRef.current(0, 2);
       return;
     }
 
@@ -821,16 +775,12 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
   const handleDoubleDown = useCallback(() => {
     if (phase !== 'PLAYER_TURN' || playerHand.length !== 2) return;
     const extraStake = committedRoundRef.current.ante;
-    const curMode = committedRoundRef.current.currency;
 
-    const debitRes =
-      curMode === 'RESPITE' && onDebitRespite
-        ? onDebitRespite(extraStake)
-        : onDebitStake(extraStake);
+    const debitRes = onDebitStake(extraStake);
 
     if (!debitRes.ok) {
       soundEngine.playUiCancel();
-      triggerCenterBanner(`INSUFFICIENT ${curMode} BALANCE TO DOUBLE`, 'info');
+      triggerCenterBanner(`INSUFFICIENT CerBucks BALANCE TO DOUBLE`, 'info');
       return;
     }
 
@@ -850,11 +800,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
       setPhase('BETTING');
       setRoundBadgeText(`BUST (${pEval.total})`);
       triggerCenterBanner(`BUSTED ON DOUBLE (${pEval.total})`, 'loss');
-      if (curMode === 'RESPITE' && onSettleRespiteRef.current) {
-        onSettleRespiteRef.current(0, 2);
-      } else {
-        onSettleLulRef.current(0, 2);
-      }
+      onSettleLulRef.current(0, 2);
       return;
     }
 
@@ -863,7 +809,6 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
     phase,
     playerHand,
     dealerHand,
-    onDebitRespite,
     onDebitStake,
     drawFromShoe,
     resolveDealerAndSettle,
@@ -893,7 +838,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
     >
       {/* 1. TOP DEALER HARDWARE RAIL */}
       <div className="w-full px-5 py-3.5 bg-white/[0.03] border-b border-white/10 flex items-center justify-between gap-3">
-        {/* Left: 6-Deck Dealing Shoe + Currency Switch + Live Balance */}
+        {/* Left: 6-Deck Dealing Shoe + Live Balance */}
         <div className="flex items-center gap-2.5 sm:gap-3">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.05] border border-white/10" title="6-Deck Dealing Shoe">
             <span className="text-[10px] uppercase tracking-wider text-amber-300 font-bold">
@@ -903,30 +848,13 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
             <span className="text-xs font-mono-tabular font-bold text-slate-200">{shoeCount} CARDS</span>
           </div>
 
-          {canUseRespite && (
-            <button
-              type="button"
-              disabled={phase !== 'BETTING'}
-              title="Switch Betting Currency (LUL / RESPITE)"
-              onClick={() => {
-                if (phase !== 'BETTING') return;
-                soundEngine.playUiClick();
-                setAnteBet(0);
-                setTieSideBet(0);
-                setCurrencyMode((prev) => (prev === 'LUL' ? 'RESPITE' : 'LUL'));
-              }}
-              className="px-3 py-1.5 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-amber-300/35 text-amber-300 font-mono-tabular text-[10.5px] font-bold uppercase cursor-pointer disabled:opacity-40 transition-colors"
-            >
-              {currencyMode} ⇄
-            </button>
-          )}
 
           <div className="flex items-center bg-emerald-400/10 px-3 py-1.5 rounded-full border border-emerald-400/30 font-mono-tabular gap-1.5">
             <span className="text-[9.5px] uppercase tracking-wider text-emerald-300/85 font-bold hidden sm:inline">
               BALANCE:
             </span>
             <span className="text-emerald-400 font-bold text-xs sm:text-sm">
-              {displayedAvailableBalance.toLocaleString()} {currencyMode}
+              {displayedAvailableBalance.toLocaleString()} CerBucks
             </span>
           </div>
         </div>
@@ -945,7 +873,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
               BET:
             </span>
             <span className="text-amber-300 font-bold text-xs sm:text-sm">
-              {totalDisplayedBet.toLocaleString()} {currencyMode}
+              {totalDisplayedBet.toLocaleString()} CerBucks
             </span>
           </div>
 
@@ -1139,7 +1067,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
                 )}
               </button>
               <div className="mt-1.5 bg-black/45 backdrop-blur-md border border-amber-300/35 px-3 py-0.5 rounded-full text-[10px] font-mono-tabular font-bold text-amber-200 tracking-wide">
-                Ante: {safeStagedAnte.toLocaleString()} {currencyMode}
+                Ante: {safeStagedAnte.toLocaleString()} CerBucks
               </div>
             </div>
 
@@ -1300,7 +1228,7 @@ export const CasinoBlackjackInteractivePanel: React.FC<CasinoBlackjackInteractiv
                 <button
                   key={chip.value}
                   type="button"
-                  title={`Select ${chip.value} ${currencyMode} Chip`}
+                  title={`Select ${chip.value} CerBucks Chip`}
                   onClick={() => {
                     soundEngine.playCasinoChipClink(1);
                     setSelectedChip(chip.value);

@@ -14613,8 +14613,8 @@ export const CITY_TRANSIT_DESTINATIONS: readonly CityTransitDestinationSpec[] = 
     targetWorldMode: 'safezone',
     description:
       'Northern residential boulevard along the tram rail loop with 4 claimable House Plots and gated citizen estates.',
-    heroImageUrl: '/docs/hero-3-house-interior.jpg',
-    thumbnailUrl: '/docs/hero-3-house-interior.jpg',
+    heroImageUrl: '/assets/kiosk/glass_modern_exterior.jpg',
+    thumbnailUrl: '/assets/kiosk/glass_modern_exterior.jpg',
     kioskX: 3.5,
     kioskY: 0.26,
     kioskZ: -41.15,
@@ -15406,8 +15406,8 @@ export const CITY_AMBIENT_NPC_PRESETS: readonly CityAmbientNpcPreset[] = [
   {
     id: 'city_plaza_raka',
     displayName: 'Raka',
-    activityLabel: 'WEST PLAZA EXPLORER',
-    roleTitle: 'Boutique, Cafe & Transit Regular',
+    activityLabel: 'BEACH CLUB SECURITY',
+    roleTitle: 'Beach Club Security Guard',
     gender: 'male',
     baseGlbVariant: 'player',
     teamTint: 'blue',
@@ -15425,21 +15425,18 @@ export const CITY_AMBIENT_NPC_PRESETS: readonly CityAmbientNpcPreset[] = [
     speedMps: 1.55,
     pauseSecAtWaypoint: 18.0,
     waypoints: [
-      { x: -95.65, z: -4.6, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'BROWSING INTERIOR STUDIO', durationSec: 16.0 },
-      { x: -90.55, z: 20.8, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'BUYING CAFE DONUT', durationSec: 10.5, holdingCafeItemId: 'donut' },
-      { x: -86.55, z: 19.1, yaw: 0.0, moveMode: 'walk', activity: 'cafe_hangout', label: 'ENJOYING DONUT AT PATIO', durationSec: 17.0, holdingCafeItemId: 'donut' },
-      { x: -44.2, z: 2.0, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'OASIS BENCH REST', durationSec: 26.0, seatLiftY: 0.0 },
-      { x: -93.85, z: -11.0, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'CHECKING SCOOTER DISPLAYS', durationSec: 18.0 },
-      { x: -77.2, z: -70.6, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'VISITING GRAND CASINO', durationSec: 16.0 },
-      { x: -78.59, z: -56.6, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'CASINO BENCH REST', durationSec: 24.0, seatLiftY: 0.12 },
-      { x: -77.2, z: 50.6, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'TENNIS CLUB PROMENADE', durationSec: 16.5 },
+      { x: 84.5, z: 22.0, yaw: Math.PI / 2, moveMode: 'walk', activity: 'walk_patrol', label: 'BEACH CLUB ENTRANCE WATCH', durationSec: 18.0 },
+      { x: 86.0, z: 6.0, yaw: Math.PI / 2, moveMode: 'walk', activity: 'walk_patrol', label: 'LOUNGE DECK PATROL', durationSec: 18.0 },
+      { x: 60.0, z: 1.5, yaw: 0.0, moveMode: 'walk', activity: 'walk_patrol', label: 'EAST HARBOR CROSSING CHECK', durationSec: 14.0 },
+      { x: 84.5, z: -14.0, yaw: Math.PI / 2, moveMode: 'walk', activity: 'sightseeing', label: 'CENTER BOARDWALK WATCH', durationSec: 16.0 },
+      { x: 84.5, z: -64.0, yaw: Math.PI / 2, moveMode: 'walk', activity: 'walk_patrol', label: 'NORTH BEACH PERIMETER', durationSec: 18.0 },
     ],
   },
   {
     id: 'city_plaza_nadia',
     displayName: 'Nadia',
     activityLabel: 'FASHION & LIFESTYLE',
-    roleTitle: 'West District Columnist & Shopper',
+    roleTitle: 'Central Plaza Merchant & Stylist',
     gender: 'female',
     teamTint: 'red',
     clothingTintHex: '#ec4899',
@@ -15464,8 +15461,8 @@ export const CITY_AMBIENT_NPC_PRESETS: readonly CityAmbientNpcPreset[] = [
   {
     id: 'citizen_mira',
     displayName: 'Mira',
-    activityLabel: 'CAFE & SKETCH STROLL',
-    roleTitle: 'Streetwear Illustrator',
+    activityLabel: 'BEACH CLUB DANCER',
+    roleTitle: 'Beach Club Dancer',
     gender: 'female',
     baseGlbVariant: 'player',
     teamTint: 'red',
@@ -15479,21 +15476,18 @@ export const CITY_AMBIENT_NPC_PRESETS: readonly CityAmbientNpcPreset[] = [
     speedMps: 1.55,
     pauseSecAtWaypoint: 18.0,
     waypoints: [
-      { x: -87.45, z: 16.2, yaw: -Math.PI * 0.45, moveMode: 'walk', activity: 'cafe_hangout', label: 'GLASSHOUSE TERRACE', durationSec: 15.0 },
-      { x: -90.55, z: 20.8, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'ORDERING CINNAMON ROLL', durationSec: 10.5, holdingCafeItemId: 'cinnamon_roll' },
-      { x: -86.55, z: 15.2, yaw: 0.0, moveMode: 'walk', activity: 'cafe_hangout', label: 'SKETCHING AT PATIO', durationSec: 17.0, holdingCafeItemId: 'cinnamon_roll' },
-      { x: -44.2, z: 2.0, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'OASIS SKETCHBENCH', durationSec: 26.0, seatLiftY: 0.0, holdingCafeItemId: 'cinnamon_roll' },
-      { x: -97.05, z: 4.9, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'SKETCHING BOUTIQUE LOOKS', durationSec: 18.0 },
-      { x: -81.23, z: -16.05, yaw: Math.PI, moveMode: 'walk', activity: 'sit_relax', label: 'PLAZA BENCH SKETCHING', durationSec: 24.0, seatLiftY: 0.02 },
-      { x: -95.65, z: -4.9, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'BROWSING INTERIOR STUDIO', durationSec: 16.5 },
-      { x: -78.59, z: -56.6, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'CASINO BENCH SKETCHBOOK', durationSec: 24.0, seatLiftY: 0.12 },
+      { x: 84.5, z: 22.0, yaw: Math.PI / 2, moveMode: 'walk', activity: 'sightseeing', label: 'BEACH CLUB WARMUP', durationSec: 16.0 },
+      { x: 86.0, z: 6.0, yaw: Math.PI / 2, moveMode: 'walk', activity: 'walk_patrol', label: 'BEACH CLUB DANCE REHEARSAL', durationSec: 18.0 },
+      { x: 60.0, z: -1.5, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'sightseeing', label: 'EAST HARBOR CROSSING DANCE PROMO', durationSec: 16.0 },
+      { x: 84.5, z: -14.0, yaw: Math.PI / 2, moveMode: 'walk', activity: 'sightseeing', label: 'SUNSET DANCE SET', durationSec: 18.0 },
+      { x: 84.5, z: -64.0, yaw: Math.PI / 2, moveMode: 'walk', activity: 'sightseeing', label: 'NORTH PALM STROLL', durationSec: 16.0 },
     ],
   },
   {
     id: 'citizen_bima',
     displayName: 'Bima',
-    activityLabel: 'SCOOTER & SPORT FAN',
-    roleTitle: 'Urban Mobility & Tennis Fan',
+    activityLabel: 'CITY CITIZEN',
+    roleTitle: 'City Citizen',
     gender: 'male',
     teamTint: 'red',
     equippedHairUrl: '/assets/outfit/bima/blitz_hair_trend_autumn_edit_2_9582695C.glb',
@@ -15510,18 +15504,22 @@ export const CITY_AMBIENT_NPC_PRESETS: readonly CityAmbientNpcPreset[] = [
     speedMps: 1.65,
     pauseSecAtWaypoint: 18.0,
     waypoints: [
-      { x: -100.25, z: -14.8, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'INSPECTING DISPLAY SCOOTERS', durationSec: 18.0 },
-      { x: -90.55, z: 20.8, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'BUYING DOUBLE ESPRESSO', durationSec: 10.5, holdingCafeItemId: 'espresso' },
-      { x: -44.2, z: 2.0, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'OASIS ESPRESSO BREAK', durationSec: 26.0, seatLiftY: 0.0, holdingCafeItemId: 'espresso' },
-      { x: -77.2, z: 50.6, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'WATCHING TENNIS COURT', durationSec: 19.0 },
-      { x: -77.2, z: -60.5, yaw: Math.PI * 0.75, moveMode: 'walk', activity: 'sightseeing', label: 'CASINO VALET WALK', durationSec: 16.0 },
+      { x: -87.45, z: 16.2, yaw: -Math.PI * 0.45, moveMode: 'walk', activity: 'cafe_hangout', label: 'MORNING ESPRESSO STOP', durationSec: 10.0, holdingCafeItemId: 'espresso' },
+      { x: -54.5, z: -59.0, yaw: Math.PI / 2, moveMode: 'walk', activity: 'sightseeing', label: 'NORTH SHOPPING AVENUE (WEST)', durationSec: 14.0 },
+      { x: 5.5, z: -59.0, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'walk_patrol', label: 'NORTH SHOPPING BOULEVARD', durationSec: 10.0 },
+      { x: -44.2, z: -2.0, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'OASIS BENCH BREAK', durationSec: 20.0, seatLiftY: 0.0 },
+      { x: -84.5, z: 58.0, yaw: 0.0, moveMode: 'walk', activity: 'walk_patrol', label: 'SOUTHWEST PROMENADE', durationSec: 10.0 },
+      { x: -52.4, z: 59.0, yaw: Math.PI / 2, moveMode: 'walk', activity: 'sightseeing', label: 'SOUTH SHOPPING AVENUE (WEST)', durationSec: 14.0 },
+      { x: -7.6, z: 59.0, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'walk_patrol', label: 'SOUTH SHOPPING BOULEVARD', durationSec: 10.0 },
+      { x: -80.5, z: 58.0, yaw: 0.0, moveMode: 'walk', activity: 'walk_patrol', label: 'PROMENADE WEST END', durationSec: 10.0 },
+      { x: -86.24, z: -30.41, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'CLOCK TOWER REST', durationSec: 20.0, seatLiftY: -0.05 },
     ],
   },
   {
     id: 'citizen_tari',
     displayName: 'Tari',
-    activityLabel: 'BOUTIQUE & CASINO GUEST',
-    roleTitle: 'Fashion Patron & Lounge Socialite',
+    activityLabel: 'GLASSHOUSE CAFE · WEST PLAZA',
+    roleTitle: 'Glasshouse Cafe Staff',
     gender: 'female',
     baseGlbVariant: 'player',
     teamTint: 'blue',
@@ -15535,19 +15533,20 @@ export const CITY_AMBIENT_NPC_PRESETS: readonly CityAmbientNpcPreset[] = [
     speedMps: 1.50,
     pauseSecAtWaypoint: 18.0,
     waypoints: [
-      { x: -101.25, z: 5.3, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'ADMIRING BOUTIQUE DRESSES', durationSec: 19.0 },
-      { x: -90.55, z: 20.8, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'ORDERING ICED LATTE', durationSec: 10.5, holdingCafeItemId: 'iced_latte' },
-      { x: -81.23, z: -17.65, yaw: Math.PI, moveMode: 'walk', activity: 'sit_relax', label: 'SIPPING ICED LATTE', durationSec: 26.0, seatLiftY: 0.02, holdingCafeItemId: 'iced_latte' },
-      { x: -77.2, z: -70.6, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'VISITING GRAND CASINO', durationSec: 18.0 },
-      { x: -78.59, z: -56.6, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'CASINO PLAZA LOUNGE', durationSec: 26.0, seatLiftY: 0.12 },
-      { x: -44.2, z: -2.0, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'OASIS SCENIC REST', durationSec: 24.0, seatLiftY: 0.0 },
+      { x: -90.55, z: 22.15, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'ENTERING GLASSHOUSE CAFE', durationSec: 12.0 },
+      { x: -87.45, z: 16.2, yaw: -Math.PI * 0.45, moveMode: 'walk', activity: 'cafe_hangout', label: 'GLASSHOUSE CAFE TERRACE', durationSec: 16.0, holdingCafeItemId: 'iced_latte' },
+      { x: -81.23, z: -16.05, yaw: Math.PI, moveMode: 'walk', activity: 'sit_relax', label: 'WEST PLAZA BENCH SNACK', durationSec: 24.0, seatLiftY: 0.02, holdingCafeItemId: 'iced_latte' },
+      { x: -86.55, z: 15.2, yaw: 0.0, moveMode: 'walk', activity: 'cafe_hangout', label: 'GLASSHOUSE PATIO', durationSec: 16.0 },
+      { x: -81.23, z: -17.65, yaw: Math.PI, moveMode: 'walk', activity: 'sit_relax', label: 'WEST PLAZA BENCH BREAK', durationSec: 24.0, seatLiftY: 0.02 },
+      { x: -86.24, z: -30.41, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'WEST PLAZA CLOCK TOWER', durationSec: 22.0, seatLiftY: -0.05 },
+      { x: -44.2, z: -2.0, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'OASIS LAKE BENCH BREAK', durationSec: 20.0, seatLiftY: 0.0 },
     ],
   },
   {
     id: 'citizen_kenji',
     displayName: 'Kenji',
-    activityLabel: 'TENNIS & LAKE REGULAR',
-    roleTitle: 'Tennis Spectator & Lake Angler',
+    activityLabel: 'CITY CITIZEN',
+    roleTitle: 'City Citizen',
     gender: 'male',
     teamTint: 'red',
     clothingTintHex: '#dc2626',
@@ -15559,47 +15558,53 @@ export const CITY_AMBIENT_NPC_PRESETS: readonly CityAmbientNpcPreset[] = [
     runOverrideClip: 'kenji_run.001',
     sitOverrideClip: 'kenji_sit.001',
     waypoints: [
-      { x: -80.4, z: 50.6, yaw: Math.PI, moveMode: 'walk', activity: 'sightseeing', label: 'TENNIS COURTSIDE', durationSec: 19.0 },
-      { x: -88.8, z: 64.2, yaw: Math.PI / 2, moveMode: 'walk', activity: 'sightseeing', label: 'TENNIS SOUTH GATE', durationSec: 16.0 },
-      { x: -90.55, z: 20.8, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'BUYING BUTTER CROISSANT', durationSec: 10.5, holdingCafeItemId: 'croissant' },
-      { x: -86.24, z: -30.41, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'CLOCK TOWER BENCH SNACK', durationSec: 25.0, seatLiftY: -0.05, holdingCafeItemId: 'croissant' },
-      { x: -44.2, z: -2.0, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'OASIS BENCH REST', durationSec: 22.0, seatLiftY: 0.0 },
-      { x: -42.5, z: -8.5, yaw: 0.0, moveMode: 'walk', activity: 'fishing', label: 'NW LAKE FISHING', durationSec: 26.0 },
-      { x: -28.0, z: -16.0, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'fishing', label: 'NORTH BANK CAST', durationSec: 24.0 },
+      { x: 7.6, z: -59.0, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'sightseeing', label: 'NORTH SHOPPING BOULEVARD', durationSec: 14.0 },
+      { x: 37.0, z: -4.5, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'CENTRAL PLAZA CROISSANT', durationSec: 10.0, holdingCafeItemId: 'croissant' },
+      { x: -44.2, z: 2.0, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'OASIS LAKE BENCH', durationSec: 20.0, seatLiftY: 0.0 },
+      { x: -84.5, z: 58.0, yaw: 0.0, moveMode: 'walk', activity: 'walk_patrol', label: 'SOUTHWEST PROMENADE', durationSec: 10.0 },
+      { x: -52.4, z: 59.0, yaw: Math.PI / 2, moveMode: 'walk', activity: 'sightseeing', label: 'SOUTH SHOPPING AVENUE (WEST)', durationSec: 14.0 },
+      { x: -7.6, z: 59.0, yaw: Math.PI / 2, moveMode: 'walk', activity: 'sightseeing', label: 'SOUTH SHOPPING BOULEVARD', durationSec: 14.0 },
+      { x: -80.5, z: 58.0, yaw: 0.0, moveMode: 'walk', activity: 'walk_patrol', label: 'PROMENADE WEST END', durationSec: 10.0 },
     ],
   },
 ];
 
 /**
- * Interior Glasshouse Cafe schedule for Mira so she strolls calmly between the espresso counter,
- * botanical lounge views, and bistro armchairs with comfortable multi-cycle linger pauses.
+ * Interior Glasshouse Cafe schedule for Tari (Glasshouse Cafe Staff) so she works behind the
+ * espresso counter & pastry display, tidies bistro tables, and exits through the cafe door back
+ * to West Plaza seamlessly. Export name `CAFE_MIRA_INTERIOR_PRESET` is preserved for existing imports.
  */
 export const CAFE_MIRA_INTERIOR_PRESET: CityAmbientNpcPreset = {
-  id: 'citizen_mira',
-  displayName: 'Mira',
-  activityLabel: 'GLASSHOUSE CAFE',
-  roleTitle: 'Streetwear Illustrator',
+  id: 'citizen_tari',
+  displayName: 'Tari',
+  activityLabel: 'GLASSHOUSE CAFE STAFF',
+  roleTitle: 'Glasshouse Cafe Staff',
   gender: 'female',
   baseGlbVariant: 'player',
-  teamTint: 'red',
-  clothingTintHex: '#c026d3',
+  teamTint: 'blue',
+  clothingTintHex: '#0d9488',
   disableClothingTint: true,
-  idleOverrideClip: 'mira_idle.001',
-  walkOverrideClip: 'mira_walk.001',
-  runOverrideClip: 'mira_run.001',
-  sitOverrideClip: 'mira_sit.001',
+  idleOverrideClip: 'tari_idle.001',
+  walkOverrideClip: 'tari_walk.001',
+  runOverrideClip: 'tari_run.001',
+  sitOverrideClip: 'tari_sit.001',
   activity: 'cafe_hangout',
-  speedMps: 0.85,
-  pauseSecAtWaypoint: 16.0,
-  arrivalRadiusM: 0.45,
+  speedMps: 0.95,
+  pauseSecAtWaypoint: 10.0,
+  arrivalRadiusM: 0.42,
   waypoints: [
-    { x: -3.15, z: 0.55, yaw: 0.85 - Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'BROWSING GLASSHOUSE CAFE', durationSec: 16.0 },
-    { x: -1.65, z: -0.95, yaw: Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'ORDERING HOT MOCHA', durationSec: 12.0, holdingCafeItemId: 'hot_mocha' },
-    { x: -4.62, z: -0.65, yaw: Math.PI, moveMode: 'walk', activity: 'sit_relax', label: 'SIPPING MOCHA AT BISTRO', durationSec: 24.0, seatLiftY: 0.19, holdingCafeItemId: 'hot_mocha' },
-    { x: 4.46, z: 1.55, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'SKETCHING AT EAST BISTRO', durationSec: 22.0, seatLiftY: 0.19 },
-    { x: 2.60, z: 3.10, yaw: -Math.PI * 0.3, moveMode: 'walk', activity: 'sightseeing', label: 'ADMIRING CONSERVATORY PLANTS', durationSec: 16.0 },
+    { x: 2.65, z: -0.95, yaw: Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'HEADING BEHIND COUNTER', durationSec: 0.35 },
+    { x: 2.65, z: -3.22, yaw: Math.PI, moveMode: 'walk', activity: 'cafe_hangout', label: 'ENTERING BARISTA STATION', durationSec: 0.35 },
+    { x: -0.88, z: -3.15, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'BREWING HOT MOCHA', durationSec: 9.0 },
+    { x: -0.20, z: -3.22, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'AT BARISTA COUNTER', durationSec: 11.0 },
+    { x: 0.96, z: -3.15, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'CHECKING PASTRY DISPLAY', durationSec: 8.0 },
+    { x: 2.65, z: -3.22, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'STEPPING TO CAFE FLOOR', durationSec: 0.35 },
+    { x: 4.46, z: 1.55, yaw: 0.0, moveMode: 'walk', activity: 'sit_relax', label: 'RESTING AT EAST BISTRO', durationSec: 12.0, seatLiftY: 0.19 },
+    { x: 2.60, z: 3.10, yaw: -Math.PI * 0.3, moveMode: 'walk', activity: 'sightseeing', label: 'CHECKING CONSERVATORY TABLES', durationSec: 7.0 },
+    { x: 0.0, z: 4.35, yaw: -Math.PI / 2, moveMode: 'walk', activity: 'cafe_hangout', label: 'STEPPING OUT TO WEST PLAZA', durationSec: 0.8 },
   ],
 };
+export const CAFE_TARI_INTERIOR_PRESET: CityAmbientNpcPreset = CAFE_MIRA_INTERIOR_PRESET;
 
 export interface CityAmbientNpcLocalAvoidanceSample {
   x: number;
@@ -15808,12 +15813,18 @@ function computeAmbientDwellYawOffset(
   }
 }
 
+const NPC_CAFE_CONSUME_MAX_SEC = 8.0;
+
 function resolveAmbientHoldingCafeItemId(
   prevWp: CityAmbientNpcWaypoint | undefined,
   targetWp: CityAmbientNpcWaypoint | undefined,
   isDwelling: boolean,
+  dwellElapsedSec = 0,
 ): CafeMenuItemId | null {
   if (isDwelling) {
+    if (dwellElapsedSec > NPC_CAFE_CONSUME_MAX_SEC) {
+      return null;
+    }
     return prevWp?.holdingCafeItemId ?? null;
   }
   return prevWp?.holdingCafeItemId && targetWp?.holdingCafeItemId
@@ -15912,6 +15923,8 @@ export function stepCityAmbientNpcSchedule(
     const activeDwellOverride =
       input.seatOverride && input.seatOverride.wpIdx === prevIdx ? input.seatOverride : null;
     const nextPause = Math.max(0, input.pauseTimer - dt);
+    const prevDwellDuration = prevWp.durationSec ?? preset.pauseSecAtWaypoint;
+    const dwellElapsedSec = Math.max(0, prevDwellDuration - nextPause);
     const stopActivity = prevWp.activity ?? preset.activity;
     const isSittingNow = stopActivity === 'sit_relax';
     const gazeOffset = computeAmbientDwellYawOffset(stopActivity, elapsedSec);
@@ -15932,7 +15945,12 @@ export function stepCityAmbientNpcSchedule(
       activeSeatLiftY: activeDwellOverride
         ? activeDwellOverride.seatLiftY
         : (prevWp.seatLiftY ?? preset.seatLiftY ?? 0),
-      activeHoldingCafeItemId: resolveAmbientHoldingCafeItemId(prevWp, targetWp, true),
+      activeHoldingCafeItemId: resolveAmbientHoldingCafeItemId(
+        prevWp,
+        targetWp,
+        true,
+        dwellElapsedSec,
+      ),
       waypointIdx: safeIdx,
       pauseTimer: nextPause,
       navPath: nextPause > 0 ? navPath : [],
@@ -16392,6 +16410,7 @@ export function resolveUnifiedBottomDockProximity(input: {
 
 export type CityViewDistrictId =
   | 'plaza'
+  | 'central_plaza'
   | 'casino'
   | 'tennis'
   | 'kai_pantai'
@@ -16436,9 +16455,9 @@ export const CITY_VIEW_DISTRICTS: readonly CityViewDistrictSpec[] = [
   {
     id: 'plaza',
     hashSlug: 'plaza',
-    aliases: ['toko1', 'toko2', 'toko3', 'cafe', 'balai', 'central-plaza'],
-    label: 'Plaza',
-    fullTitle: 'Central Plaza',
+    aliases: ['west-plaza', 'west_plaza', 'toko1', 'toko2', 'toko3', 'cafe', 'balai'],
+    label: 'West Plaza',
+    fullTitle: 'West Plaza',
     subtitle: 'Civic Hall, Shops, Cafe & Tram Stop',
     lookAtPos: { x: -87.75, y: 3.0, z: -2.0 },
     markerHeightOffset: 11.5,
@@ -16448,7 +16467,24 @@ export const CITY_VIEW_DISTRICTS: readonly CityViewDistrictSpec[] = [
     minDist: 24.0,
     maxDist: 92.0,
     pickRadiusM: 25.0,
-    neighborIds: ['casino', 'tennis'],
+    neighborIds: ['central_plaza', 'casino'],
+  },
+  {
+    id: 'central_plaza',
+    hashSlug: 'central-plaza',
+    aliases: ['central', 'central-park', 'central_park', 'glow', 'fountain'],
+    label: 'Central Plaza',
+    fullTitle: 'Central Plaza',
+    subtitle: 'Cascade Fountain, Glow Studio, Red Studio & Bites',
+    lookAtPos: { x: 29.5, y: 2.5, z: 0.0 },
+    markerHeightOffset: 10.5,
+    defaultYaw: -0.52,
+    defaultPitch: 0.50,
+    defaultDist: 52.0,
+    minDist: 24.0,
+    maxDist: 96.0,
+    pickRadiusM: 22.0,
+    neighborIds: ['plaza', 'beach_club'],
   },
   {
     id: 'casino',

@@ -393,7 +393,7 @@ export function createInitialMerchantMarketState(): MerchantAgentMarketState {
     recentLulExchangedVolume: 0,
     stockByItemId,
     demandByItemId,
-    lastMarketHeadline: 'Market is stable. LUL -> CYON exchange rate is normal and home furniture is in stock.',
+    lastMarketHeadline: 'Market is stable. CerBucks -> CerCoins exchange rate is normal and home furniture is in stock.',
   };
 }
 
@@ -416,22 +416,22 @@ export function evaluateLulToCyonExchangeQuote(state: MerchantAgentMarketState):
   const canExchange = !state.isShopBroke && state.treasuryCyon >= 10;
 
   const reasons: string[] = [
-    `Agent Treasury: ${state.treasuryCyon} CYON`,
-    `LUL Pool: ${state.treasuryLulPool} LUL`,
+    `Agent Treasury: ${state.treasuryCyon} CerCoins`,
+    `CerBucks Pool: ${state.treasuryLulPool} CerBucks`,
   ];
   if (floodPressure > 0) {
-    reasons.push(`Market flooded with LUL (+${floodPressure * 12} LUL anti-bot slippage)`);
+    reasons.push(`Market flooded with CerBucks (+${floodPressure * 12} CerBucks anti-bot slippage)`);
   } else {
-    reasons.push('Balanced LUL volume (base rate 100 LUL = 10 CYON)');
+    reasons.push('Balanced CerBucks volume (base rate 100 CerBucks = 10 CerCoins)');
   }
   if (scarcityPressure > 0) {
-    reasons.push(`NPC CYON reserves running low (+${scarcityPressure * 10} LUL)`);
+    reasons.push(`NPC CerCoins reserves running low (+${scarcityPressure * 10} CerBucks)`);
   }
   if (state.investorDiscountActive) {
     reasons.push('Investor Discount Active (-15%)');
   }
   if (state.isShopBroke) {
-    reasons.push('SHOP TEMPORARILY CLOSED: NPC CYON reserves depleted! Capital investment needed.');
+    reasons.push('SHOP TEMPORARILY CLOSED: NPC CerCoins reserves depleted! Capital investment needed.');
   }
 
   return {
@@ -695,7 +695,7 @@ export function executeLulToCyonExchange(
       updatedState: state,
       updatedLul: playerLul,
       updatedCyon: playerCyon,
-      message: 'My shop CYON reserves are depleted! Please invest capital first to reopen the shop.',
+      message: 'My shop CerCoins reserves are depleted! Please invest capital first to reopen the shop.',
     };
   }
   const quote = evaluateLulToCyonExchangeQuote(state);
@@ -705,7 +705,7 @@ export function executeLulToCyonExchange(
       updatedState: state,
       updatedLul: playerLul,
       updatedCyon: playerCyon,
-      message: `Not enough LUL! Need ${quote.lulCostFor10Cyon} LUL to exchange for ${quote.cyonGranted} CYON.`,
+      message: `Not enough CerBucks! Need ${quote.lulCostFor10Cyon} CerBucks to exchange for ${quote.cyonGranted} CerCoins.`,
     };
   }
 
@@ -719,8 +719,8 @@ export function executeLulToCyonExchange(
     recentLulExchangedVolume: state.recentLulExchangedVolume + quote.lulCostFor10Cyon,
     isShopBroke: brokeNow,
     lastMarketHeadline: brokeNow
-      ? 'NPC TREASURY DEPLETED! Excessive LUL exchanges drained shop CYON reserves.'
-      : `Exchange complete: ${quote.lulCostFor10Cyon} LUL -> +${quote.cyonGranted} CYON.`,
+      ? 'NPC TREASURY DEPLETED! Excessive CerBucks exchanges drained shop CerCoins reserves.'
+      : `Exchange complete: ${quote.lulCostFor10Cyon} CerBucks -> +${quote.cyonGranted} CerCoins.`,
   };
 
   return {
@@ -729,8 +729,8 @@ export function executeLulToCyonExchange(
     updatedLul: playerLul - quote.lulCostFor10Cyon,
     updatedCyon: playerCyon + quote.cyonGranted,
     message: brokeNow
-      ? `Exchanged +${quote.cyonGranted} CYON! However, my shop CYON reserves are now depleted—investor needed!`
-      : `Successfully exchanged ${quote.lulCostFor10Cyon} LUL for +${quote.cyonGranted} CYON!`,
+      ? `Exchanged +${quote.cyonGranted} CerCoins! However, my shop CerCoins reserves are now depleted—investor needed!`
+      : `Successfully exchanged ${quote.lulCostFor10Cyon} CerBucks for +${quote.cyonGranted} CerCoins!`,
   };
 }
 
@@ -760,18 +760,18 @@ export function executeLulToCyonExchangePackets(
     message,
   });
   const want = Math.max(0, Math.floor(packets));
-  if (want < 1) return fail('Enter an amount of LUL to exchange first.');
+  if (want < 1) return fail('Enter an amount of CerBucks to exchange first.');
   if (state.isShopBroke) {
-    return fail('My shop CYON reserves are depleted! Please invest capital first to reopen the shop.');
+    return fail('My shop CerCoins reserves are depleted! Please invest capital first to reopen the shop.');
   }
   const quote = evaluateLulToCyonExchangeQuote(state);
   const totalCost = quote.lulCostFor10Cyon * want;
   const totalCyon = quote.cyonGranted * want;
   if (playerLul < totalCost) {
-    return fail(`Not enough LUL! Need ${totalCost} LUL to exchange for ${totalCyon} CYON.`);
+    return fail(`Not enough CerBucks! Need ${totalCost} CerBucks to exchange for ${totalCyon} CerCoins.`);
   }
   if (state.treasuryCyon < totalCyon) {
-    return fail(`The ATM only has ${state.treasuryCyon} CYON left in reserve.`);
+    return fail(`The ATM only has ${state.treasuryCyon} CerCoins left in reserve.`);
   }
   const nextTreasuryCyon = Math.max(0, state.treasuryCyon - totalCyon);
   const brokeNow = nextTreasuryCyon < 20;
@@ -782,8 +782,8 @@ export function executeLulToCyonExchangePackets(
     recentLulExchangedVolume: state.recentLulExchangedVolume + totalCost,
     isShopBroke: brokeNow,
     lastMarketHeadline: brokeNow
-      ? 'NPC TREASURY DEPLETED! Excessive LUL exchanges drained shop CYON reserves.'
-      : `Exchange complete: ${totalCost} LUL -> +${totalCyon} CYON.`,
+      ? 'NPC TREASURY DEPLETED! Excessive CerBucks exchanges drained shop CerCoins reserves.'
+      : `Exchange complete: ${totalCost} CerBucks -> +${totalCyon} CerCoins.`,
   };
   return {
     ok: true,
@@ -792,8 +792,8 @@ export function executeLulToCyonExchangePackets(
     updatedCyon: playerCyon + totalCyon,
     packetsUsed: want,
     message: brokeNow
-      ? `Exchanged +${totalCyon} CYON! However, my shop CYON reserves are now depleted—investor needed!`
-      : `Successfully exchanged ${totalCost} LUL for +${totalCyon} CYON!`,
+      ? `Exchanged +${totalCyon} CerCoins! However, my shop CerCoins reserves are now depleted—investor needed!`
+      : `Successfully exchanged ${totalCost} CerBucks for +${totalCyon} CerCoins!`,
   };
 }
 
@@ -818,7 +818,7 @@ export function investInMerchantShop(
       updatedState: state,
       updatedLul: playerLul,
       updatedCyon: playerCyon,
-      message: `Need ${investCostLul} LUL to inject investment capital into the NPC Merchant treasury.`,
+      message: `Need ${investCostLul} CerBucks to inject investment capital into the NPC Merchant treasury.`,
     };
   }
 
@@ -839,7 +839,7 @@ export function investInMerchantShop(
     updatedState,
     updatedLul: playerLul - investCostLul,
     updatedCyon: playerCyon + dividendCyon,
-    message: `Thank you Investor! The shop is back open, and you received +${dividendCyon} CYON dividend & a -15% price discount!`,
+    message: `Thank you Investor! The shop is back open, and you received +${dividendCyon} CerCoins dividend & a -15% price discount!`,
   };
 }
 
@@ -883,7 +883,7 @@ export function stepFastForwardEconomyTick(
     // Simulate a market flood that drains merchant CYON reserves (triggers bankruptcy test case!)
     nextTreasuryCyon = 12;
     nextLulVolume += 900;
-    headline = `Day ${nextDay}: Players flooded the market with LUL! NPC CYON reserves drained (${nextTreasuryCyon} CYON) — Shop nearly bankrupt!`;
+    headline = `Day ${nextDay}: Players flooded the market with CerBucks! NPC CerCoins reserves drained (${nextTreasuryCyon} CerCoins) — Shop nearly bankrupt!`;
   } else if (wave > 0) {
     nextTreasuryCyon = Math.max(35, nextTreasuryCyon - 65);
     nextLulVolume += 280;
@@ -1403,7 +1403,7 @@ export function generateNpcMerchantReply(
     (state.isShopBroke || state.treasuryCyon < 250) &&
     /\b(invest|bailout|support|reopen|modal|suntik)\b/.test(q)
   ) {
-    return `Our shop reserve at ${locName} is currently ${state.treasuryCyon} CYON. Investing 300 LUL restores 450 CYON to the shop, pays you a 45 CYON bonus, and unlocks a 15% catalog discount.${guestNotice}`;
+    return `Our shop reserve at ${locName} is currently ${state.treasuryCyon} CerCoins. Investing 300 CerBucks restores 450 CerCoins to the shop, pays you a 45 CerCoins bonus, and unlocks a 15% catalog discount.${guestNotice}`;
   }
 
   // 2. Most Expensive / Record / Sold / Rarest Fish NFT (Live Market Data)
@@ -1533,7 +1533,7 @@ export function generateNpcMerchantReply(
       typeof liveContext?.nearBalance === 'number'
         ? `${liveContext.nearBalance.toFixed(2)} NEAR, `
         : '';
-    return `Your wallet${addr} is active with ${nearPart}${balances.lul} LUL, ${balances.cyon} CYON, and ${balances.respite} RESPITE. Open the Wallet button at the top right anytime to copy your address, send RESPITE, or check your items.`;
+    return `Your wallet${addr} is active with ${nearPart}${balances.lul} CerBucks, ${balances.cyon} CerCoins, and ${balances.respite} RESPITE. Open the Wallet button at the top right anytime to copy your address, send RESPITE, or check your items.`;
   }
 
   // 8. Currencies & Exchange (LUL, CYON, RESPITE, NEAR)
@@ -1542,7 +1542,7 @@ export function generateNpcMerchantReply(
       q,
     )
   ) {
-    return `Earn LUL at Glasshouse Cafe shifts, in the Warzone, or by selling regular fish to Kai, then exchange ${quote.lulCostFor10Cyon} LUL for ${quote.cyonGranted} CYON in the Exchange tab to buy standard gear and furniture. Swap NEAR into RESPITE (1 NEAR = 400 RESPITE) or sell Fish NFTs on Kai's market to use RESPITE for a Private House (100 RESPITE) and collector items. Balance: ${balances.lul} LUL, ${balances.cyon} CYON, ${balances.respite} RESPITE.${guestNotice}`;
+    return `Earn CerBucks at Glasshouse Cafe shifts, in the Warzone, or by selling regular fish to Kai, then exchange ${quote.lulCostFor10Cyon} CerBucks for ${quote.cyonGranted} CerCoins in the Exchange tab to buy standard gear and furniture. Swap NEAR into RESPITE (1 NEAR = 400 RESPITE) or sell Fish NFTs on Kai's market to use RESPITE for a Private House (100 RESPITE) and collector items. Balance: ${balances.lul} CerBucks, ${balances.cyon} CerCoins, ${balances.respite} RESPITE.${guestNotice}`;
   }
 
   // 9. Family Member Companions
@@ -1577,7 +1577,7 @@ export function generateNpcMerchantReply(
       typeof liveContext?.caughtFishCount === 'number'
         ? ` You currently have ${liveContext.caughtFishCount}/20 fish in your Bag.`
         : '';
-    return `Open your Bag (top right) to equip your Fishing Rod, walk to Beachfront Harbor or NW Fishing Lake, and press F to cast. Wait for the bite alert (!), keep the tension bar inside the green zone, then sell fish to Kai for LUL or mint rare catches as NFTs to sell on Kai's market for RESPITE.${bagCount}${guestNotice}`;
+    return `Open your Bag (top right) to equip your Fishing Rod, walk to Beachfront Harbor or NW Fishing Lake, and press F to cast. Wait for the bite alert (!), keep the tension bar inside the green zone, then sell fish to Kai for CerBucks or mint rare catches as NFTs to sell on Kai's market for RESPITE.${bagCount}${guestNotice}`;
   }
 
   // 12. Warzone Combat, Crates & Vehicles
@@ -1586,7 +1586,7 @@ export function generateNpcMerchantReply(
       q,
     )
   ) {
-    return `Enter the Warzone from any Transit Kiosk and pick Blue Team or Red Team (5 lives per match). Grab supply boxes with E, stack them on your base pad, and press F or open the Base Kiosk to build rifles, bazookas, tanks, planes, and HQ upgrades while earning LUL.`;
+    return `Enter the Warzone from any Transit Kiosk and pick Blue Team or Red Team (5 lives per match). Grab supply boxes with E, stack them on your base pad, and press F or open the Base Kiosk to build rifles, bazookas, tanks, planes, and HQ upgrades while earning CerBucks.`;
   }
 
   // 13. Live Shop Stock, Market Day & Dynamic Pricing
@@ -1598,7 +1598,7 @@ export function generateNpcMerchantReply(
     const discountNote = state.investorDiscountActive
       ? ' A 15% supporter discount is currently active on catalog items.'
       : '';
-    return `We are on Market Day ${state.dayCounter} with ${state.treasuryCyon} CYON in shop reserve, and the current rate is ${quote.lulCostFor10Cyon} LUL for ${quote.cyonGranted} CYON. Catalog prices adjust dynamically with item stock and player demand.${discountNote}${guestNotice}`;
+    return `We are on Market Day ${state.dayCounter} with ${state.treasuryCyon} CerCoins in shop reserve, and the current rate is ${quote.lulCostFor10Cyon} CerBucks for ${quote.cyonGranted} CerCoins. Catalog prices adjust dynamically with item stock and player demand.${discountNote}${guestNotice}`;
   }
 
   // 14. About the Game & What Players Can Do
@@ -1616,7 +1616,7 @@ export function generateNpcMerchantReply(
       q,
     )
   ) {
-    return `In Cerria, you can claim a starter pack (0.30 NEAR + 100 LUL + 20 CYON) from Hana, fish at Beachfront Harbor or NW Fishing Lake and trade at Kai's Fish Market, work barista shifts at Glasshouse Cafe, decorate your Private House, or rent a lot and open your own shop.${guestNotice}`;
+    return `In Cerria, you can claim a starter pack (0.30 NEAR + 100 CerBucks + 20 CerCoins) from Hana, fish at Beachfront Harbor or NW Fishing Lake and trade at Kai's Fish Market, work barista shifts at Glasshouse Cafe, decorate your Private House, or rent a lot and open your own shop.${guestNotice}`;
   }
 
   // 16. Where am I / Who are you / City Overview
@@ -1650,7 +1650,7 @@ export function generateNpcMerchantReply(
   }
 
   // 17. Friendly Concierge Fallback
-  return `I am ${npcName} at ${locName} and happy to chat about anything! While live AI is offline right now, I can still answer everything about locations, Fish NFT records, how LUL, CYON, and RESPITE work, or how to get a Private House.`;
+  return `I am ${npcName} at ${locName} and happy to chat about anything! While live AI is offline right now, I can still answer everything about locations, Fish NFT records, how CerBucks, CerCoins, and RESPITE work, or how to get a Private House.`;
 }
 
 /**
@@ -2603,7 +2603,7 @@ export function buildOfflineChatTransactionAck(
 
   switch (intent.kind) {
     case 'exchange_lul_cyon':
-      return `Sure! Today's rate is ${quote.lulCostFor10Cyon} LUL for ${quote.cyonGranted} CYON. I opened the quick exchange card right below—pick your amount and confirm.`;
+      return `Sure! Today's rate is ${quote.lulCostFor10Cyon} CerBucks for ${quote.cyonGranted} CerCoins. I opened the quick exchange card right below—pick your amount and confirm.`;
     case 'swap_near_respite':
       return `Got it! The rate is 1 NEAR = 400 RESPITE (0.25 NEAR = 100 RESPITE). Use the quick swap card right below to confirm cleanly.`;
     case 'buy_house':
@@ -2629,9 +2629,9 @@ export function buildOfflineChatTransactionAck(
       }
       return `Opening the Quick Shop modal right inside this chat so you can pick and check out without leaving the conversation.`;
     case 'invest_shop':
-      return `You can support the shop reserve with 300 LUL for a +45 CYON bonus and a 15% catalog discount. Confirm on the card below.`;
+      return `You can support the shop reserve with 300 CerBucks for a +45 CerCoins bonus and a 15% catalog discount. Confirm on the card below.`;
     case 'claim_welcome':
-      return `Your starter pack claim card (0.30 NEAR + 100 LUL + 20 CYON) is ready right below in chat.`;
+      return `Your starter pack claim card (0.30 NEAR + 100 CerBucks + 20 CerCoins) is ready right below in chat.`;
     case 'teleport_places': {
       const targetNameMap: Record<CityTransitStationId, string> = {
         central_plaza: 'West Plaza',

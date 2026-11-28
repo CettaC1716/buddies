@@ -692,7 +692,7 @@ export const RealEstateCatalogModal: React.FC<RealEstateCatalogModalProps> = ({
                 /
               </span>
               <span className="font-semibold text-sky-300">
-                {cyonBalance.toLocaleString()} CYON
+                {cyonBalance.toLocaleString()} CerCoins
               </span>
             </div>
 

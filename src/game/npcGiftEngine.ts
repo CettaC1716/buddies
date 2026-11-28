@@ -157,7 +157,7 @@ export const CENTRAL_PLAZA_SPECIAL_GIFT_ITEMS: readonly CentralPlazaSpecialGiftS
     name: 'Velvet Rose Bouquet',
     category: 'gift_special',
     subCategory: 'flower',
-    priceRespite: 18,
+    priceRespite: 90,
     description:
       'Hand-tied crimson garden roses wrapped in linen paper and satin ribbon, ready to gift to any friend in Cerria.',
     previewGiftKind: 'rose_bouquet',
@@ -170,7 +170,7 @@ export const CENTRAL_PLAZA_SPECIAL_GIFT_ITEMS: readonly CentralPlazaSpecialGiftS
     name: 'Sunlit Sunflower Bundle',
     category: 'gift_special',
     subCategory: 'flower',
-    priceRespite: 14,
+    priceRespite: 50,
     description:
       'Bright golden sunflowers cut fresh from the plaza conservatory and wrapped in kraft parchment for warm daily gifting.',
     previewGiftKind: 'sunflower_bouquet',
@@ -183,7 +183,7 @@ export const CENTRAL_PLAZA_SPECIAL_GIFT_ITEMS: readonly CentralPlazaSpecialGiftS
     name: 'Lavender Blossom Wrap',
     category: 'gift_special',
     subCategory: 'flower',
-    priceRespite: 16,
+    priceRespite: 70,
     description:
       'Fragrant purple lavender stems paired with soft eucalyptus leaves, tied with cream twine for calming social gifts.',
     previewGiftKind: 'lavender_bouquet',
@@ -196,7 +196,7 @@ export const CENTRAL_PLAZA_SPECIAL_GIFT_ITEMS: readonly CentralPlazaSpecialGiftS
     name: 'Pastel Macaron Box',
     category: 'gift_consumable',
     subCategory: 'patisserie',
-    priceRespite: 15,
+    priceRespite: 60,
     description:
       'Six French almond macarons in rose, pistachio, and vanilla cream arranged in a ribboned keepsake box for NPC gifting.',
     previewGiftKind: 'macaron_box',
@@ -209,7 +209,7 @@ export const CENTRAL_PLAZA_SPECIAL_GIFT_ITEMS: readonly CentralPlazaSpecialGiftS
     name: 'Matcha Truffle Tin',
     category: 'gift_consumable',
     subCategory: 'confection',
-    priceRespite: 20,
+    priceRespite: 110,
     description:
       'Velvety dark chocolate ganache dusted with ceremonial Kyoto matcha inside a brushed brass patisserie tin.',
     previewGiftKind: 'truffle_box',
@@ -222,7 +222,7 @@ export const CENTRAL_PLAZA_SPECIAL_GIFT_ITEMS: readonly CentralPlazaSpecialGiftS
     name: 'Artisan Honey Tea Set',
     category: 'gift_special',
     subCategory: 'tea',
-    priceRespite: 24,
+    priceRespite: 150,
     description:
       'Small-batch wildflower honey and loose chamomile petals paired with stoneware tasting cups for thoughtful gifting.',
     previewGiftKind: 'tea_set',

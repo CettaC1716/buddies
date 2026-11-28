@@ -13,14 +13,36 @@ export interface NpcPortraitPhotoPair {
   capturedAtMs: number;
 }
 
+export type PlayerPortraitGender = 'male' | 'female';
+
 export const NPC_PORTRAITS_UPDATED_EVENT = 'bb-npc-portraits-updated';
 export const NPC_PORTRAIT_REQUEST_EVENT = 'bb-request-npc-portrait';
+export const PLAYER_PORTRAIT_REQUEST_EVENT = 'bb-request-player-portrait';
 
 const SESSION_CACHE_KEY = 'bb_npc_portraits_3d_v1';
+const PLAYER_SESSION_CACHE_KEY = 'bb_player_portraits_3d_v1';
 
 const portraitMap = new Map<CitizenId, NpcPortraitPhotoPair>();
+const playerPortraitMap = new Map<PlayerPortraitGender, NpcPortraitPhotoPair>();
 const placeholderCache = new Map<string, string>();
 let hydratedFromSession = false;
+let hydratedPlayerFromSession = false;
+
+const LEGACY_REMOVED_PROFILE_PHOTO_SNIPPETS = [
+  'avatar_hiro',
+  'avatar_nadia',
+  'family_member_female',
+  'family_member_male',
+  'hq_super_command',
+  'hero-1-beach-pier',
+  'hero-2-tram-station',
+  'hero-6-oasis-lake',
+] as const;
+
+export function isLegacyRemovedAvatarUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return LEGACY_REMOVED_PROFILE_PHOTO_SNIPPETS.some((snippet) => url.includes(snippet));
+}
 
 const NPC_NAME_TO_CITIZEN_ID: ReadonlyArray<readonly [string, CitizenId]> = [
   ['hana', 'npc_hana'],
@@ -44,6 +66,13 @@ const NPC_STUDIO_PALETTES: Readonly<
   citizen_bima: { bgTop: '#fbe7d8', bgBottom: '#d8a483', accent: '#ea580c', initial: 'B' },
   citizen_tari: { bgTop: '#daf3ef', bgBottom: '#84beb4', accent: '#0d9488', initial: 'T' },
   citizen_kenji: { bgTop: '#e3ecf5', bgBottom: '#93a7be', accent: '#dc2626', initial: 'K' },
+};
+
+const PLAYER_STUDIO_PALETTES: Readonly<
+  Record<PlayerPortraitGender, { bgTop: string; bgBottom: string; accent: string; initial: string }>
+> = {
+  male: { bgTop: '#e6eef7', bgBottom: '#9cb3cb', accent: '#38bdf8', initial: 'B' },
+  female: { bgTop: '#f8ebf2', bgBottom: '#d6afc2', accent: '#ec4899', initial: 'B' },
 };
 
 function hydrateFromSessionStorage(): void {
@@ -72,6 +101,31 @@ function hydrateFromSessionStorage(): void {
   }
 }
 
+function hydratePlayerFromSessionStorage(): void {
+  if (hydratedPlayerFromSession || typeof window === 'undefined') return;
+  hydratedPlayerFromSession = true;
+  try {
+    const raw = window.sessionStorage.getItem(PLAYER_SESSION_CACHE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as Record<string, NpcPortraitPhotoPair>;
+    if (!parsed || typeof parsed !== 'object') return;
+    for (const gender of ['male', 'female'] as const) {
+      const value = parsed[gender];
+      if (
+        value &&
+        typeof value.avatarUrl === 'string' &&
+        value.avatarUrl.startsWith('data:image/') &&
+        typeof value.coverUrl === 'string' &&
+        value.coverUrl.startsWith('data:image/')
+      ) {
+        playerPortraitMap.set(gender, value);
+      }
+    }
+  } catch {
+    // Ignore storage read issues
+  }
+}
+
 function persistToSessionStorage(): void {
   if (typeof window === 'undefined') return;
   try {
@@ -85,6 +139,19 @@ function persistToSessionStorage(): void {
   }
 }
 
+function persistPlayerToSessionStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const obj: Record<string, NpcPortraitPhotoPair> = {};
+    for (const [gender, pair] of playerPortraitMap.entries()) {
+      obj[gender] = pair;
+    }
+    window.sessionStorage.setItem(PLAYER_SESSION_CACHE_KEY, JSON.stringify(obj));
+  } catch {
+    // Ignore quota limits; in-memory Map still serves all portraits cleanly
+  }
+}
+
 export function getNpcStudioPalette(citizenId: CitizenId): {
   bgTop: string;
   bgBottom: string;
@@ -92,6 +159,15 @@ export function getNpcStudioPalette(citizenId: CitizenId): {
   initial: string;
 } {
   return NPC_STUDIO_PALETTES[citizenId] ?? NPC_STUDIO_PALETTES.npc_hana;
+}
+
+export function getPlayerStudioPalette(gender: PlayerPortraitGender): {
+  bgTop: string;
+  bgBottom: string;
+  accent: string;
+  initial: string;
+} {
+  return PLAYER_STUDIO_PALETTES[gender] ?? PLAYER_STUDIO_PALETTES.male;
 }
 
 /**
@@ -180,6 +256,44 @@ export function requestNpcPortraitCapture(citizenId: CitizenId): void {
   );
 }
 
+export function getDefaultPlayerPortraitPair(
+  gender: PlayerPortraitGender,
+): NpcPortraitPhotoPair | null {
+  hydratePlayerFromSessionStorage();
+  return playerPortraitMap.get(gender) ?? null;
+}
+
+export function hasDefaultPlayerPortraitPair(gender: PlayerPortraitGender): boolean {
+  hydratePlayerFromSessionStorage();
+  return playerPortraitMap.has(gender);
+}
+
+export function setDefaultPlayerPortraitPair(
+  gender: PlayerPortraitGender,
+  pair: { avatarUrl: string; coverUrl: string },
+): void {
+  hydratePlayerFromSessionStorage();
+  playerPortraitMap.set(gender, {
+    avatarUrl: pair.avatarUrl,
+    coverUrl: pair.coverUrl,
+    capturedAtMs: Date.now(),
+  });
+  persistPlayerToSessionStorage();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(NPC_PORTRAITS_UPDATED_EVENT, { detail: { playerGender: gender } }),
+    );
+  }
+}
+
+export function requestDefaultPlayerPortraitCapture(gender: PlayerPortraitGender): void {
+  if (typeof window === 'undefined') return;
+  if (hasDefaultPlayerPortraitPair(gender)) return;
+  window.dispatchEvent(
+    new CustomEvent(PLAYER_PORTRAIT_REQUEST_EVENT, { detail: { gender } }),
+  );
+}
+
 /**
  * Clean minimal tinted studio placeholder used only for the brief moment
  * before the live 3D NPC portrait photo finishes capturing (never shows old unrelated photos).
@@ -215,6 +329,35 @@ export function buildNpcPlaceholderDataUrl(
   return url;
 }
 
+export function buildDefaultPlayerPlaceholderDataUrl(
+  gender: PlayerPortraitGender,
+  kind: 'avatar' | 'cover',
+): string {
+  const cacheKey = `player_${gender}:${kind}`;
+  const cached = placeholderCache.get(cacheKey);
+  if (cached) return cached;
+
+  const pal = getPlayerStudioPalette(gender);
+  const w = kind === 'cover' ? 640 : 320;
+  const h = kind === 'cover' ? 280 : 320;
+  const cx = kind === 'cover' ? Math.round(w * 0.66) : Math.round(w * 0.5);
+  const cy = Math.round(h * 0.44);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+  <defs>
+    <linearGradient id="pg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="${pal.bgTop}"/>
+      <stop offset="100%" stop-color="${pal.bgBottom}"/>
+    </linearGradient>
+  </defs>
+  <rect width="${w}" height="${h}" fill="url(#pg)"/>
+  <circle cx="${cx}" cy="${cy - 18}" r="${kind === 'cover' ? 28 : 34}" fill="rgba(15,23,42,0.18)"/>
+  <path d="M${cx - (kind === 'cover' ? 46 : 56)} ${cy + (kind === 'cover' ? 66 : 78)} C${cx - (kind === 'cover' ? 44 : 52)} ${cy + 20} ${cx + (kind === 'cover' ? 44 : 52)} ${cy + 20} ${cx + (kind === 'cover' ? 46 : 56)} ${cy + (kind === 'cover' ? 66 : 78)} Z" fill="rgba(15,23,42,0.18)"/>
+</svg>`;
+  const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  placeholderCache.set(cacheKey, url);
+  return url;
+}
+
 /**
  * Returns the NPC's own 3D chest-up selfie (`avatar`) or full-body styled (`cover`) photo.
  * Automatically requests an on-demand 3D studio capture if not yet captured.
@@ -232,7 +375,23 @@ export function resolveNpcPhotoUrl(
 }
 
 /**
- * Subscribes a React component to live NPC 3D portrait capture updates.
+ * Returns the live-captured 3D chest-up selfie (`avatar`) or full-body editorial (`cover`)
+ * portrait matching the player's actual character model (default new player or customized outfit).
+ */
+export function resolveDefaultPlayerPhotoUrl(
+  gender: PlayerPortraitGender,
+  kind: 'avatar' | 'cover',
+): string {
+  const pair = getDefaultPlayerPortraitPair(gender);
+  if (pair) {
+    return kind === 'cover' ? pair.coverUrl : pair.avatarUrl;
+  }
+  requestDefaultPlayerPortraitCapture(gender);
+  return buildDefaultPlayerPlaceholderDataUrl(gender, kind);
+}
+
+/**
+ * Subscribes a React component to live NPC & player 3D portrait capture updates.
  */
 export function useNpcPortraitVersion(): number {
   const [version, setVersion] = useState(0);

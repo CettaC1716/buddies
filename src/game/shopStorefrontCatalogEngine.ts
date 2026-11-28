@@ -5,12 +5,12 @@ import {
   type ShopBuildingFormId,
 } from './buddiesCityRentalLotsRules';
 import { FASHION_APPAREL_CATALOG_ITEMS } from './buddiesFashionKioskRules';
-import { BLENDER_MODULAR_WARDROBE_ITEMS } from './buddiesBlitzGeneratedWardrobeOutfits';
 import { URBAN_SCOOTER_CATALOG_ITEMS } from './buddiesUrbanScooterRules';
 import { MERCHANT_CATALOG_ITEMS } from './buddiesMerchantPricing';
 import { CAFE_MENU_ITEMS, type CafeMenuItemId } from './buddiesCafeRules';
 import { CENTRAL_PLAZA_SPECIAL_GIFT_ITEMS } from './npcGiftEngine';
 import {
+  getWardrobeCatalogItemPriceCyon,
   partitionWardrobeCategoryItems,
   shouldFlipWardrobeThumbY,
   type WardrobeCatalogItem,
@@ -97,6 +97,15 @@ export interface StoreCatalogItem {
   categoryLabel: string;
   description: string;
   basePriceRespite: number;
+  /**
+   * Settlement currency for this listing. Absent means 'RESPITE' (the
+   * storefront escrow default). Wardrobe outfit listings are 'CYON':
+   * clothing settles in CYON through the wardrobe purchase path, never
+   * in RESPITE.
+   */
+  priceCurrency?: 'RESPITE' | 'CYON';
+  /** Explicit CYON shelf price when `priceCurrency` is 'CYON'. */
+  basePriceCyon?: number;
   /** Number of units locked in the Store Escrow Vault available for instant purchase. */
   escrowStockCount: number;
   /** Optional linked wallet / My Things catalog item id when stocked from owner's inventory. */
@@ -124,6 +133,8 @@ export interface StoreCatalogItem {
   previewGiftKind?: CentralPlazaGiftPreviewKind;
   /** Optional sub-filter group label inside large multi-category stores (e.g. Eyes, Lips, Dances). */
   subGroupLabel?: string;
+  /** Optional gender affinity for filtering Men / Women / Unisex items. */
+  itemGender?: 'male' | 'female' | 'unisex';
   /** Optional concise real product spec rows displayed cleanly without fake color/size selectors. */
   previewSpecs?: ReadonlyArray<{ readonly label: string; readonly value: string }>;
   isFeatured: boolean;
@@ -1085,75 +1096,143 @@ export function buildWestPlazaDepartments(): Record<
 > {
   const defaultOptionTier = [{ id: 'standard', label: 'Standard', priceDeltaRespite: 0 }];
 
-  // 1. OUTFITS — Real items from Fashion Boutique & Blender Modular Wardrobe full sets
-  const fashionCoreItems: StoreCatalogItem[] = FASHION_APPAREL_CATALOG_ITEMS.map((item, idx) => ({
-    id: `wp_outfit_${item.id}`,
+  // 1. OUTFITS — All Wardrobe outfit items (Sets, Tops, Bottoms, Shoes, Hair)
+  const wardrobeOutfitSlotDefs: ReadonlyArray<{
+    slot: 'set' | 'top' | 'bottoms' | 'shoes' | 'hair';
+    subGroup: string;
+    typeLabel: string;
+    femaleArchetype: StoreProduct3DArchetype;
+    maleArchetype: StoreProduct3DArchetype;
+  }> = [
+    {
+      slot: 'set',
+      subGroup: 'Set',
+      typeLabel: 'Full Outfit Set',
+      femaleArchetype: 'pleated_dress',
+      maleArchetype: 'classic_blazer',
+    },
+    {
+      slot: 'top',
+      subGroup: 'Top',
+      typeLabel: 'Top Apparel',
+      femaleArchetype: 'knit_cardigan',
+      maleArchetype: 'classic_blazer',
+    },
+    {
+      slot: 'bottoms',
+      subGroup: 'Bottoms',
+      typeLabel: 'Bottoms Apparel',
+      femaleArchetype: 'pleated_dress',
+      maleArchetype: 'tailored_coat',
+    },
+    {
+      slot: 'shoes',
+      subGroup: 'Shoes',
+      typeLabel: 'Footwear',
+      femaleArchetype: 'leather_satchel',
+      maleArchetype: 'leather_satchel',
+    },
+    {
+      slot: 'hair',
+      subGroup: 'Hair',
+      typeLabel: 'Hairstyle',
+      femaleArchetype: 'fedora_hat',
+      maleArchetype: 'fedora_hat',
+    },
+  ];
+
+  const seenWardrobeIds = new Set<string>(FASHION_APPAREL_CATALOG_ITEMS.map((i) => i.id));
+  const mapWardrobeOutfitToStoreItem = (
+    w: WardrobeCatalogItem,
+    def: (typeof wardrobeOutfitSlotDefs)[number],
+    idx: number,
+  ): StoreCatalogItem => {
+    const genderTag = w.gender === 'female' ? 'WOMEN' : w.gender === 'male' ? 'MEN' : 'UNISEX';
+    const fitLabel =
+      w.gender === 'female' ? 'Female Rig' : w.gender === 'male' ? 'Male Rig' : 'Unisex Rig';
+    const isFreeWear = w.priceLul <= 0;
+    // Wardrobe outfits are clothing: they settle in CYON through the
+    // wardrobe purchase path, never in RESPITE. The CYON shelf price is
+    // the wardrobe's own price for the same item
+    // (getWardrobeCatalogItemPriceCyon — the LUL->CYON conversion the
+    // wardrobe purchase path and its server catalog apply); free wear
+    // stays free. basePriceRespite is 0 so no RESPITE charge can be
+    // derived from this listing — settlement must use basePriceCyon.
+    const outfitPriceCyon = getWardrobeCatalogItemPriceCyon(w);
+    return {
+      id: `wp_outfit_${w.id}`,
+      slotIndex: idx,
+      title: w.name,
+      categoryLabel: `${genderTag} · ${w.collection.toUpperCase()}`,
+      description: `${w.subtitle}. ${
+        isFreeWear
+          ? 'Included Free Wear outfit ready to equip in your Wardrobe.'
+          : 'Modular Wardrobe outfit ready to equip in your Wardrobe & Personal Bag.'
+      }`,
+      basePriceRespite: 0,
+      priceCurrency: 'CYON',
+      basePriceCyon: outfitPriceCyon,
+      escrowStockCount: 99,
+      linkedInventoryItemId: w.id,
+      archetype3d: w.gender === 'female' ? def.femaleArchetype : def.maleArchetype,
+      colorVariants: [
+        {
+          id: 'default',
+          label: w.collection,
+          primaryHex: w.swatchGradient?.[0] || '#475569',
+          secondaryHex: w.swatchGradient?.[1] || '#1E293B',
+          accentHex: w.accentHex || '#C99B42',
+        },
+      ],
+      optionTiers: defaultOptionTier,
+      externalUrl: '',
+      externalCtaLabel: '',
+      previewGlbPath: w.glbPath ?? undefined,
+      subGroupLabel: def.subGroup,
+      itemGender: w.gender,
+      previewSpecs: [
+        { label: 'Collection', value: w.collection },
+        { label: 'Fit', value: fitLabel },
+        { label: 'Type', value: def.typeLabel },
+        { label: 'Delivery', value: isFreeWear ? 'Free Wear · Wardrobe' : 'Wardrobe & Bag' },
+      ],
+      isBestseller: def.slot === 'set' && idx < 4,
+      isFeatured: idx < 4,
+    };
+  };
+
+  const wardrobeSetStoreItems: StoreCatalogItem[] = [];
+  const wardrobePieceGroupedLists: StoreCatalogItem[][] = [];
+
+  for (const def of wardrobeOutfitSlotDefs) {
+    const rawSlotItems = partitionWardrobeCategoryItems(
+      def.slot,
+      [],
+      'all',
+      'featured',
+    ).allVisible.filter((w) => {
+      if (w.isStarterDefault || !w.glbPath) return false;
+      if (seenWardrobeIds.has(w.id)) return false;
+      seenWardrobeIds.add(w.id);
+      return true;
+    });
+
+    const mapped = rawSlotItems.map((w, idx) => mapWardrobeOutfitToStoreItem(w, def, idx));
+    if (def.slot === 'set') {
+      wardrobeSetStoreItems.push(...mapped);
+    } else if (mapped.length > 0) {
+      wardrobePieceGroupedLists.push(mapped);
+    }
+  }
+
+  const interleavedWardrobePieces = interleaveByGroup(wardrobePieceGroupedLists);
+  const outfitItems: StoreCatalogItem[] = [
+    ...wardrobeSetStoreItems,
+    ...interleavedWardrobePieces,
+  ].map((item, idx) => ({
+    ...item,
     slotIndex: idx,
-    title: item.name,
-    categoryLabel: item.collectionLabel.toUpperCase(),
-    description: item.description,
-    basePriceRespite: item.priceLul,
-    escrowStockCount: 15,
-    linkedInventoryItemId: item.id,
-    archetype3d: 'knit_cardigan',
-    colorVariants: [
-      {
-        id: 'default',
-        label: item.fitLabel,
-        primaryHex: item.accentColor || '#38BDF8',
-        secondaryHex: '#231812',
-        accentHex: '#D8B78C',
-      },
-    ],
-    optionTiers: defaultOptionTier,
-    externalUrl: '',
-    externalCtaLabel: '',
-    previewGlbPath: item.maleGlbPath,
-    previewSpecs: item.specs,
-    isBestseller: true,
-    isFeatured: true,
   }));
-
-  const signatureSetItems: StoreCatalogItem[] = BLENDER_MODULAR_WARDROBE_ITEMS.filter(
-    (w) =>
-      w.slot === 'set' &&
-      Boolean(w.glbPath) &&
-      w.id !== 'bl_set_f_newplayer' &&
-      w.id !== 'bl_set_m_newplayer',
-  ).map((w, idx) => ({
-    id: `wp_outfit_${w.id}`,
-    slotIndex: fashionCoreItems.length + idx,
-    title: w.name,
-    categoryLabel: `${w.gender === 'female' ? 'WOMEN' : 'MEN'} · ${w.collection.toUpperCase()}`,
-    description: `${w.subtitle}. Full modular avatar outfit ready to equip in your Wardrobe & Personal Bag.`,
-    basePriceRespite: w.priceLul > 0 ? w.priceLul : 25,
-    escrowStockCount: 12,
-    linkedInventoryItemId: w.id,
-    archetype3d: w.gender === 'female' ? 'pleated_dress' : 'classic_blazer',
-    colorVariants: [
-      {
-        id: 'default',
-        label: w.collection,
-        primaryHex: w.swatchGradient?.[0] || '#475569',
-        secondaryHex: w.swatchGradient?.[1] || '#1E293B',
-        accentHex: w.accentHex || '#C99B42',
-      },
-    ],
-    optionTiers: defaultOptionTier,
-    externalUrl: '',
-    externalCtaLabel: '',
-    previewGlbPath: w.glbPath ?? undefined,
-    previewSpecs: [
-      { label: 'Collection', value: w.collection },
-      { label: 'Fit', value: w.gender === 'female' ? 'Female Rig' : 'Male Rig' },
-      { label: 'Type', value: 'Full Outfit Set' },
-      { label: 'Delivery', value: 'Personal Bag' },
-    ],
-    isBestseller: idx < 3,
-    isFeatured: idx >= 2,
-  }));
-
-  const outfitItems: StoreCatalogItem[] = [...fashionCoreItems, ...signatureSetItems];
 
   // 2. VEHICLES — Exact real Urban Scooter Showroom catalog (2 NFT vehicles)
   const vehicleItems: StoreCatalogItem[] = URBAN_SCOOTER_CATALOG_ITEMS.map((veh, idx) => ({
@@ -1429,10 +1508,54 @@ export interface CentralPlazaDepartmentConfig {
   items: StoreCatalogItem[];
 }
 
-function toCentralPlazaRespitePrice(priceLul: number, fallbackRespite: number): number {
-  if (!Number.isFinite(priceLul) || priceLul <= 0) return fallbackRespite;
-  return Math.max(4, Math.round(priceLul / 5));
-}
+/**
+ * Explicit RESPITE shelf prices for Central Plaza's wardrobe-derived
+ * departments (price reset — respite-price-list.md §4 and §7).
+ * RESPITE prices are fixed per-item values, never derived by formula
+ * from another currency's price. A wardrobe item added later and not
+ * yet listed here falls back to the department's entry-tier price
+ * until it is priced explicitly.
+ */
+const GLOW_FACE_RESPITE_PRICE_BY_ITEM_ID: Readonly<Record<string, number>> = {
+  // Top tier — 600 RESPITE
+  face_eyes_hazel_warm: 600,
+  face_eyes_sapphire_sky: 600,
+  face_lips_peach_nude: 600,
+  face_lips_rose_velvet: 600,
+  face_brows_soft_straight: 600,
+  face_brows_sleek_arch: 600,
+  // Entry tier — 300 RESPITE
+  face_eyes_espresso_doll: 300,
+  face_eyes_smoky_emerald: 300,
+  face_eyes_violet_idol: 300,
+  face_lips_cherry_gloss: 300,
+  face_lips_berry_plum: 300,
+  face_lips_coral_blush: 300,
+  face_brows_bold_blade: 300,
+  face_brows_feather_gold: 300,
+  face_brows_sharp_noir: 300,
+};
+const GLOW_FACE_DEFAULT_RESPITE_PRICE = 300;
+
+const RED_STUDIO_RESPITE_PRICE_BY_ITEM_ID: Readonly<Record<string, number>> = {
+  // Top tier — 1,250 RESPITE
+  style_anim_default: 1250,
+  style_anim_runway: 1250,
+  style_anim_calm: 1250,
+  style_dance_groove: 1250,
+  style_dance_wave: 1250,
+  style_dance_cheer: 1250,
+  // Entry tier — 750 RESPITE
+  style_anim_energetic: 750,
+  style_anim_sassy: 750,
+  style_anim_formal: 750,
+  style_anim_street: 750,
+  style_anim_urban: 750,
+  style_dance_salute: 750,
+  style_dance_idol_pop: 750,
+  style_dance_hiphop: 750,
+};
+const RED_STUDIO_DEFAULT_RESPITE_PRICE = 750;
 
 function interleaveByGroup<T>(groups: readonly T[][]): T[] {
   const result: T[] = [];
@@ -1533,7 +1656,8 @@ export function buildCentralPlazaDepartments(): Record<
         title: w.name,
         categoryLabel: slotDef.categoryUpper,
         description: `${w.subtitle}. Unlocks immediately in your Wardrobe Face & Makeup menu.`,
-        basePriceRespite: toCentralPlazaRespitePrice(w.priceLul, 8),
+        basePriceRespite:
+          GLOW_FACE_RESPITE_PRICE_BY_ITEM_ID[w.id] ?? GLOW_FACE_DEFAULT_RESPITE_PRICE,
         escrowStockCount: 99,
         linkedInventoryItemId: w.id,
         archetype3d: 'beauty_palette',
@@ -1552,6 +1676,7 @@ export function buildCentralPlazaDepartments(): Record<
         previewImageUrl: w.thumbUrl ?? undefined,
         previewThumbFlipY: shouldFlipWardrobeThumbY(w),
         subGroupLabel: slotDef.subGroup,
+        itemGender: w.gender,
         previewSpecs: [
           { label: 'Category', value: slotDef.subGroup },
           { label: 'Collection', value: w.collection },
@@ -1638,7 +1763,7 @@ export function buildCentralPlazaDepartments(): Record<
       title: food.name,
       categoryLabel: `CERRIA BITES & SIPS · ${food.category === 'drink' ? 'DRINK' : 'BAKERY'}`,
       description: `${food.prepHint}. Stored in your Personal Gift Bag and ready to gift to any NPC in Cerria.`,
-      basePriceRespite: Math.max(4, Math.round(food.priceLul / 2)),
+      basePriceRespite: food.priceRespite,
       escrowStockCount: 40,
       linkedInventoryItemId: food.id,
       archetype3d: food.category === 'drink' ? 'pourover_carafe' : 'ceramic_mug_set',
@@ -1735,7 +1860,8 @@ export function buildCentralPlazaDepartments(): Record<
         title: w.name,
         categoryLabel: slotDef.categoryUpper,
         description: `${w.subtitle}. Unlocks immediately for your avatar in Wardrobe Style & city emotes.`,
-        basePriceRespite: toCentralPlazaRespitePrice(w.priceLul, 12),
+        basePriceRespite:
+          RED_STUDIO_RESPITE_PRICE_BY_ITEM_ID[w.id] ?? RED_STUDIO_DEFAULT_RESPITE_PRICE,
         escrowStockCount: 99,
         linkedInventoryItemId: w.id,
         archetype3d: 'motion_pose',

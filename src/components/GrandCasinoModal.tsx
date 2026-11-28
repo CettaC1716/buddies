@@ -24,16 +24,9 @@ export interface GrandCasinoModalProps {
   initialTab?: CasinoTab;
   slotVariant?: CasinoSlotGameVariant;
   lulBalance: number;
-  respiteBalance: number;
   levelProgress: PlayerLevelProgress;
   onDebitStake: (stakeLul: number) => { ok: boolean; message: string };
-  onDebitSlotRespite: (stakeRespite: number) => { ok: boolean; message: string };
   onSettleSlots: (evaluation: ArcadeSlotEvaluation) => void;
-  onSettleSlotRespite: (
-    payoutRespite: number,
-    xpGained: number,
-    announceHeadline?: string,
-  ) => void;
   onSettleTableGame: (payoutLul: number, xpGained: number, announceHeadline?: string) => void;
   onOrderLoungeDrink?: (
     drinkName: string,
@@ -114,12 +107,9 @@ export const GrandCasinoModal: React.FC<GrandCasinoModalProps> = ({
   initialTab = 'slots',
   slotVariant = 'lucky_draw',
   lulBalance,
-  respiteBalance,
   levelProgress,
   onDebitStake,
-  onDebitSlotRespite,
   onSettleSlots,
-  onSettleSlotRespite,
   onSettleTableGame,
   onOrderLoungeDrink,
 }) => {
@@ -129,7 +119,7 @@ export const GrandCasinoModal: React.FC<GrandCasinoModalProps> = ({
 
   // Cashier & Lounge Bar feedback
   const [cashierStatusMsg, setCashierStatusMsg] = useState<string>(
-    'SALON PRIVÉ VAULT · TABLE CHIPS IN LUL · 3D ROYALE SLOTS IN RESPITE',
+    'SALON PRIVÉ VAULT · TABLE CHIPS & 3D ROYALE SLOTS IN CerBucks',
   );
   const [barStatusMsg, setBarStatusMsg] = useState<string>(
     'SELECT A SIGNATURE COCKTAIL TO ORDER & EARN BONUS XP',
@@ -198,27 +188,9 @@ export const GrandCasinoModal: React.FC<GrandCasinoModalProps> = ({
       // ignore storage errors
     }
     const bonusLul = 25 + Math.min(50, levelProgress.level * 5);
-    const bonusRespite = 15;
     soundEngine.playCasinoJackpotFanfare(false);
-    onSettleTableGame(bonusLul, 15, `CASHIER CAGE VIP VOUCHER +${bonusLul} LUL & +${bonusRespite} RESPITE!`);
-    onSettleSlotRespite(bonusRespite, 0);
-    setCashierStatusMsg(
-      `ISSUED +${bonusLul} LUL & +${bonusRespite} RESPITE COMPLIMENTARY VIP VOUCHER!`,
-    );
-  };
-
-  const handleCashierExchangeLulToRespite = () => {
-    const lulCost = 50;
-    const respiteOut = 5;
-    const debit = onDebitStake(lulCost);
-    if (!debit.ok) {
-      soundEngine.playHit();
-      setCashierStatusMsg(`NEED ${lulCost} LUL TO EXCHANGE FOR ${respiteOut} RESPITE SLOT CREDITS`);
-      return;
-    }
-    soundEngine.playCasinoChipClink(2);
-    onSettleSlotRespite(respiteOut, 6, `CASHIER EXCHANGE +${respiteOut} RESPITE SLOT CREDITS`);
-    setCashierStatusMsg(`EXCHANGED ${lulCost} LUL → +${respiteOut} RESPITE SLOT CREDITS!`);
+    onSettleTableGame(bonusLul, 15, `CASHIER CAGE VIP VOUCHER +${bonusLul} CerBucks!`);
+    setCashierStatusMsg(`ISSUED +${bonusLul} CerBucks COMPLIMENTARY VIP VOUCHER!`);
   };
 
   const handleOrderDrink = (drink: (typeof LOUNGE_BAR_MENU)[number]) => {
@@ -269,12 +241,10 @@ export const GrandCasinoModal: React.FC<GrandCasinoModalProps> = ({
           <CasinoSlotMachinesPanel
             variant={slotVariant}
             isActive={isOpen && activeStation === 'slots'}
-            respiteBalance={respiteBalance}
             lulBalance={lulBalance}
             onClose={onClose}
-            onDebitRespite={onDebitSlotRespite}
-            onSettleRespite={onSettleSlotRespite}
-            onQuickTopUpRespite={handleCashierExchangeLulToRespite}
+            onDebitLul={onDebitStake}
+            onSettleLul={onSettleTableGame}
             onSettleClassicEvaluation={onSettleSlots}
           />
         </div>
@@ -306,12 +276,9 @@ export const GrandCasinoModal: React.FC<GrandCasinoModalProps> = ({
           <CasinoRouletteInteractivePanel
             isActive={isOpen && activeStation === 'roulette'}
             lulBalance={lulBalance}
-            respiteBalance={respiteBalance}
             onClose={onClose}
             onDebitStake={onDebitStake}
             onSettleTableGame={onSettleTableGame}
-            onDebitRespite={onDebitSlotRespite}
-            onSettleRespite={onSettleSlotRespite}
           />
         </div>
       </div>
@@ -342,12 +309,9 @@ export const GrandCasinoModal: React.FC<GrandCasinoModalProps> = ({
           <CasinoBlackjackInteractivePanel
             isActive={isOpen && activeStation === 'blackjack'}
             lulBalance={lulBalance}
-            respiteBalance={respiteBalance}
             onClose={onClose}
             onDebitStake={onDebitStake}
             onSettleTableGame={onSettleTableGame}
-            onDebitRespite={onDebitSlotRespite}
-            onSettleRespite={onSettleSlotRespite}
           />
         </div>
       </div>
@@ -389,7 +353,7 @@ export const GrandCasinoModal: React.FC<GrandCasinoModalProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-300/15 text-amber-300 border border-amber-300/30 font-mono-tabular font-bold text-xs">
               <CasinoCoinCrestSvg className="w-4 h-4 shrink-0" />
-              <span>{lulBalance.toLocaleString()} LUL</span>
+              <span>{lulBalance.toLocaleString()} CerBucks</span>
             </div>
             <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-400/15 text-emerald-300 border border-emerald-400/30 font-bold text-xs">
               <CasinoTrophyCrestSvg className="w-4 h-4 shrink-0" />
@@ -418,28 +382,24 @@ export const GrandCasinoModal: React.FC<GrandCasinoModalProps> = ({
                 <div className="flex items-center gap-2">
                   <CasinoCrownCrestSvg className="w-5 h-5 shrink-0" />
                   <span className="text-[11px] font-bold uppercase tracking-widest text-amber-300">
-                    CASHIER CAGE &amp; RESPITE SLOT VAULT
+                    CASHIER CAGE &amp; SLOT VAULT
                   </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="p-3.5 rounded-2xl bg-white/[0.05] border border-white/10">
                     <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      TABLE CHIPS (LUL)
+                      TABLE CHIPS (CerBucks)
                     </div>
                     <div className="text-xl font-extrabold font-mono-tabular text-amber-300 mt-0.5">
-                      {lulBalance.toLocaleString()} LUL
+                      {lulBalance.toLocaleString()} CerBucks
                     </div>
                   </div>
                   <div className="p-3.5 rounded-2xl bg-white/[0.05] border border-emerald-400/25">
                     <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-300/90">
-                      3D ROYALE SLOT CREDITS (RESPITE)
+                      3D ROYALE SLOTS (CerBucks)
                     </div>
                     <div className="text-xl font-extrabold font-mono-tabular text-emerald-400 mt-0.5">
-                      {respiteBalance.toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}{' '}
-                      RESPITE
+                      {lulBalance.toLocaleString()} CerBucks
                     </div>
                   </div>
                 </div>
@@ -450,25 +410,17 @@ export const GrandCasinoModal: React.FC<GrandCasinoModalProps> = ({
                     onClick={handleCashierVipComplimentaryVoucher}
                     className="flex-1 min-w-[200px] px-4 py-2.5 rounded-full bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs uppercase tracking-wider cursor-pointer active:scale-[0.98] transition-all shadow-sm"
                   >
-                    CLAIM DAILY VIP (+LUL &amp; +15 RESPITE)
-                  </button>
-                  <button
-                    type="button"
-                    data-casino-cashier-respite-exchange-btn="true"
-                    onClick={handleCashierExchangeLulToRespite}
-                    className="px-5 py-2.5 rounded-full bg-amber-300/20 hover:bg-amber-300/30 text-amber-200 border border-amber-300/40 font-bold text-xs uppercase tracking-wider cursor-pointer active:scale-[0.98] transition-all"
-                  >
-                    50 LUL → +5 RESPITE
+                    CLAIM DAILY VIP (+CerBucks)
                   </button>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 {[
-                  { chip: '1–5 RESPITE', accentClass: 'text-sky-300 border-sky-400/25', tier: 'SAPPHIRE SLOT' },
-                  { chip: '10–25 RESPITE', accentClass: 'text-emerald-300 border-emerald-400/25', tier: 'EMERALD SLOT' },
-                  { chip: '50–100 RESPITE', accentClass: 'text-rose-300 border-rose-400/25', tier: 'RUBY VIP' },
-                  { chip: '250 RESPITE', accentClass: 'text-amber-300 border-amber-300/30', tier: 'GRAND ROYALE' },
+                  { chip: '1–5 CerBucks', accentClass: 'text-sky-300 border-sky-400/25', tier: 'SAPPHIRE SLOT' },
+                  { chip: '10–25 CerBucks', accentClass: 'text-emerald-300 border-emerald-400/25', tier: 'EMERALD SLOT' },
+                  { chip: '50–100 CerBucks', accentClass: 'text-rose-300 border-rose-400/25', tier: 'RUBY VIP' },
+                  { chip: '250 CerBucks', accentClass: 'text-amber-300 border-amber-300/30', tier: 'GRAND ROYALE' },
                 ].map((c) => (
                   <div
                     key={c.tier}
@@ -519,7 +471,7 @@ export const GrandCasinoModal: React.FC<GrandCasinoModalProps> = ({
                         onClick={() => handleOrderDrink(drink)}
                         className="px-4 py-1.5 rounded-full bg-amber-300 hover:bg-amber-200 text-slate-950 font-bold text-[11px] uppercase tracking-wide cursor-pointer active:scale-95 transition-all"
                       >
-                        ORDER ({drink.costLul} LUL)
+                        ORDER ({drink.costLul} CerBucks)
                       </button>
                     </div>
                   </div>

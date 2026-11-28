@@ -2546,7 +2546,15 @@ export function resolvePlayerLocomotionGait(params: {
   isIndoor: boolean;
   clickTotalDistanceM: number;
   clickRemainingDistanceM: number;
+  forceWalk?: boolean;
 }): { gait: PlayerLocomotionGait; speedMultiplier: number } {
+  if (params.forceWalk) {
+    return {
+      gait: 'walk',
+      speedMultiplier: params.isIndoor ? 1.0 : PLAYER_WALK_SPEED_SCALE,
+    };
+  }
+
   // Manual WASD / Arrow / Joystick: walk by default, run ONLY while holding Shift
   if (!params.isClickToWalk) {
     if (params.isShiftHeld) {

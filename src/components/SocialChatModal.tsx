@@ -18,6 +18,12 @@ import {
 } from 'lucide-react';
 import { soundEngine } from '../game/audio';
 import {
+  resolveDefaultPlayerPhotoUrl,
+  resolveNpcCitizenIdFromEntity,
+  resolveNpcPhotoUrl,
+  useNpcPortraitVersion,
+} from '../game/npcPortraitRegistry';
+import {
   createLetterForAccount,
   fetchLettersForAccount,
   markLetterRead,
@@ -397,6 +403,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
   onToggleFollowPlayer,
   onOpenPlayerProfile,
 }) => {
+  useNpcPortraitVersion();
   const [activeTab, setActiveTab] = useState<SocialChatSubTab>(lockedTab ?? initialTab ?? 'public');
   const effectiveTab: SocialChatSubTab = lockedTab ?? activeTab;
   const isStandaloneGlassChat = !embeddedInPhone;
@@ -912,15 +919,8 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
     letters: {
       title: 'Letters',
       subtitle: 'Official city inbox',
-      icon: (
-        <img
-          src="/assets/aistudio/writing_2593648_9a87d6fe.png"
-          alt=""
-          className="w-4 h-4 object-contain"
-          draggable={false}
-        />
-      ),
-      badgeBg: 'from-amber-50 to-orange-100',
+      icon: <Mail className="w-3.5 h-3.5 text-white stroke-[2.2]" aria-hidden="true" />,
+      badgeBg: 'from-amber-400 to-orange-500',
     },
     settings: {
       title: 'Settings',
@@ -938,11 +938,15 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
 
   const activeStandaloneHeaderMeta = lockedHeaderMeta[effectiveTab];
   const standalonePeerPortraitUrl = validSelectedPrivateUser
-    ? validSelectedPrivateUser.gender === 'female' ||
-      simplifyDisplayName(validSelectedPrivateUser.name).toLowerCase().includes('nadia') ||
-      simplifyDisplayName(validSelectedPrivateUser.name).toLowerCase().includes('hana')
-      ? '/assets/avatar_nadia.jpg'
-      : '/assets/avatar_hiro.jpg'
+    ? (() => {
+        const npcCid = resolveNpcCitizenIdFromEntity(validSelectedPrivateUser);
+        if (npcCid) return resolveNpcPhotoUrl(npcCid, 'avatar');
+        const isFemale =
+          validSelectedPrivateUser.gender === 'female' ||
+          simplifyDisplayName(validSelectedPrivateUser.name).toLowerCase().includes('nadia') ||
+          simplifyDisplayName(validSelectedPrivateUser.name).toLowerCase().includes('hana');
+        return resolveDefaultPlayerPhotoUrl(isFemale ? 'female' : 'male', 'avatar');
+      })()
     : null;
 
   const innerPanel = (
@@ -2524,7 +2528,7 @@ export const SocialChatModal: React.FC<SocialChatModalProps> = ({
               )}
 
               <p className="text-[10.5px] text-slate-400 leading-snug px-1">
-                Phone haggling covers raw fish for LUL. Fish NFT trades happen at Kai&apos;s market
+                Phone haggling covers raw fish for CerBucks. Fish NFT trades happen at Kai&apos;s market
                 stall in person.
               </p>
             </div>

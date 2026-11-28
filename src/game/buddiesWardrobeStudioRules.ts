@@ -1,5 +1,7 @@
 import type { BuddyModularOutfitUrls } from './buddiesBlitzShadersAndAssets';
 import {
+  DEFAULT_MALE_UNDERWEAR_ITEM_ID,
+  DEFAULT_MALE_UNDERWEAR_OVERLAY,
   DEFAULT_NEUTRAL_FACE_CUSTOMIZATION,
   type BeautyUvLayerSpec,
   type BuddyFaceCustomizationProfile,
@@ -7,6 +9,8 @@ import {
   type WardrobeEyeStyleSpec,
   type WardrobeLipStyleSpec,
 } from './buddiesFaceCompositor';
+
+export { DEFAULT_MALE_UNDERWEAR_ITEM_ID, DEFAULT_MALE_UNDERWEAR_OVERLAY };
 import { BLENDER_MODULAR_WARDROBE_ITEMS } from './buddiesBlitzGeneratedWardrobeOutfits';
 
 export type WardrobeStudioCategoryId =
@@ -169,6 +173,7 @@ export interface WardrobeOutfitDraft {
   corewearId?: string | null;
   hideOuterForUnderwear?: boolean;
   hideBaseUnderwear?: boolean;
+  hideBaseBra?: boolean;
   bodyShapeId: string | null;
   eyeStyleId: string | null;
   browStyleId: string | null;
@@ -223,6 +228,33 @@ export interface WardrobePoseSpec {
   animUrl: string;
 }
 
+export const DEFAULT_WARDROBE_ANIM_SET_ID = 'anim_set_985c99b7';
+
+export const DEFAULT_CLASSIC_CORE_ANIM_SET_ITEM: WardrobeCatalogItem = {
+  id: DEFAULT_WARDROBE_ANIM_SET_ID,
+  slot: 'style_anim',
+  gender: 'unisex',
+  name: 'Classic Core',
+  subtitle: 'Classic Default · Idle/Walk/Run/Sit',
+  collection: 'Studio Motion · Idle',
+  priceLul: 0,
+  isStarterDefault: false,
+  glbPath: null,
+  animSet: {
+    clipCandidates: [`${DEFAULT_WARDROBE_ANIM_SET_ID}_idle`],
+    walkClipCandidates: [`${DEFAULT_WARDROBE_ANIM_SET_ID}_walk`],
+    runClipCandidates: [`${DEFAULT_WARDROBE_ANIM_SET_ID}_run`],
+    sitClipCandidates: [`${DEFAULT_WARDROBE_ANIM_SET_ID}_sit`],
+    animGlbUrl: '/assets/animations/sets/985C99B7__idle_01.glb',
+    walkGlbUrl: '/assets/animations/sets/985C99B7__walk_01.glb',
+    runGlbUrl: '/assets/animations/sets/985C99B7__run_01.glb',
+    sitGlbUrl: '/assets/animations/sets/985C99B7__sit_01_m.glb',
+    vibeTag: '4-State',
+  },
+  swatchGradient: ['#38bdf8', '#1e3a8a'],
+  accentHex: '#38bdf8',
+};
+
 export const EMPTY_WARDROBE_DRAFT: WardrobeOutfitDraft = {
   topId: null,
   bottomsId: null,
@@ -233,6 +265,7 @@ export const EMPTY_WARDROBE_DRAFT: WardrobeOutfitDraft = {
   corewearId: null,
   hideOuterForUnderwear: false,
   hideBaseUnderwear: false,
+  hideBaseBra: false,
   bodyShapeId: null,
   eyeStyleId: null,
   browStyleId: null,
@@ -241,7 +274,7 @@ export const EMPTY_WARDROBE_DRAFT: WardrobeOutfitDraft = {
   blushId: null,
   facepaintId: null,
   beardId: null,
-  animSetId: null,
+  animSetId: DEFAULT_WARDROBE_ANIM_SET_ID,
   dancePoseId: null,
   stylePoseId: null,
   styleActionId: null,
@@ -1281,7 +1314,7 @@ export const WARDROBE_STUDIO_ITEMS: readonly WardrobeCatalogItem[] = [
     subtitle: 'Natural Starter Motion',
     collection: 'Motion Essentials',
     priceLul: 0,
-    isStarterDefault: true,
+    isStarterDefault: false,
     glbPath: null,
     animSet: {
       clipCandidates: ['idle.001', 'bima_idle.001', 'kai_idle.001'],
@@ -1848,6 +1881,26 @@ export function shouldFlipWardrobeThumbY(
   return Boolean(item.thumbUrl && item.thumbUrl.startsWith('/assets/beauty/'));
 }
 
+const FITTED_SLOT_PRICE_TIERS: Record<'top' | 'bottoms' | 'shoes' | 'hair' | 'set', readonly number[]> = {
+  top: [12, 15, 18, 22, 26, 32, 38, 42],
+  bottoms: [14, 18, 20, 24, 28, 34, 38],
+  shoes: [12, 15, 18, 22, 26, 30, 35],
+  hair: [10, 12, 15, 18, 22, 25, 30],
+  set: [25, 30, 35, 40, 45],
+};
+
+export function computeWardrobeOutfitPriceLul(
+  itemId: string,
+  slot: 'top' | 'bottoms' | 'shoes' | 'hair' | 'set',
+): number {
+  let hash = 0;
+  for (let i = 0; i < itemId.length; i += 1) {
+    hash = (hash * 31 + itemId.charCodeAt(i)) >>> 0;
+  }
+  const tiers = FITTED_SLOT_PRICE_TIERS[slot];
+  return tiers[hash % tiers.length];
+}
+
 /**
  * Lazily fetches `/assets/beauty/catalog.json` (403 beauty/makeup/beard overlays)
  * and `/assets/animations/catalog.json` (134 Dance/Pose/Action/Idle animations)
@@ -1929,7 +1982,7 @@ export function loadExternalWardrobeCatalogs(): Promise<number> {
           name: f.name,
           subtitle: f.slot === 'hair' ? 'Salon Hairstyle' : 'Morph-Fit Boutique',
           collection: f.collection || 'Blitz Boutique',
-          priceLul: 0,
+          priceLul: computeWardrobeOutfitPriceLul(f.id, f.slot),
           isStarterDefault: false,
           glbPath: f.glbPath,
           swatchGradient: grad,
@@ -2200,7 +2253,7 @@ export function getWardrobeCatalogItemById(id: string | null | undefined): Wardr
   return (
     WARDROBE_STUDIO_ITEMS.find((item) => item.id === id) ??
     dynamicExternalItemsById.get(id) ??
-    null
+    (id === DEFAULT_WARDROBE_ANIM_SET_ID ? DEFAULT_CLASSIC_CORE_ANIM_SET_ITEM : null)
   );
 }
 
@@ -2262,6 +2315,7 @@ export function areWardrobeDraftsEqual(a: WardrobeOutfitDraft, b: WardrobeOutfit
     (a.corewearId ?? null) === (b.corewearId ?? null) &&
     Boolean(a.hideOuterForUnderwear) === Boolean(b.hideOuterForUnderwear) &&
     Boolean(a.hideBaseUnderwear) === Boolean(b.hideBaseUnderwear) &&
+    Boolean(a.hideBaseBra) === Boolean(b.hideBaseBra) &&
     a.bodyShapeId === b.bodyShapeId &&
     a.eyeStyleId === b.eyeStyleId &&
     a.browStyleId === b.browStyleId &&
@@ -2377,7 +2431,8 @@ export function applyItemSelectionToDraft(
     return next;
   }
   if (item.slot === 'style_anim') {
-    next.animSetId = next.animSetId === resolvedId ? null : resolvedId;
+    next.animSetId =
+      next.animSetId === resolvedId ? DEFAULT_WARDROBE_ANIM_SET_ID : resolvedId;
     next.stylePoseId = null;
     next.styleActionId = null;
     return next;
@@ -2417,12 +2472,16 @@ export function applyItemSelectionToDraft(
       next.underwearId = null;
       next.corewearId = null;
       next.hideBaseUnderwear = !alreadyBare;
+      next.hideBaseBra = !alreadyBare;
     } else if (item.underwearSubSlot === 'corewear') {
       next.corewearId = (next.corewearId ?? null) === resolvedId ? null : resolvedId;
       if (next.corewearId) next.hideBaseUnderwear = false;
     } else {
       next.underwearId = (next.underwearId ?? null) === resolvedId ? null : resolvedId;
-      if (next.underwearId) next.hideBaseUnderwear = false;
+      if (next.underwearId) {
+        next.hideBaseUnderwear = false;
+        next.hideBaseBra = false;
+      }
     }
     return next;
   }
@@ -2502,7 +2561,56 @@ export function collectUnownedItemsInDraft(
 }
 
 /**
- * Strips any unowned (or opposite-gender) try-on items from a draft before committing to the live avatar.
+ * Ensures neither female nor male characters can appear naked in public.
+ * - When outer clothes are worn (`!draft.hideOuterForUnderwear`), `hideBaseBra` and
+ *   `hideBaseUnderwear` remain allowed so garments where straps/panties should not peek
+ *   through render cleanly.
+ * - When outer clothes are hidden in public (`draft.hideOuterForUnderwear === true`),
+ *   required base coverage is restored unless covered by owned underwear/corewear.
+ */
+export function enforcePublicModestyOnDraft(
+  draft: WardrobeOutfitDraft,
+  characterGender?: 'male' | 'female',
+): WardrobeOutfitDraft {
+  const isMale = characterGender === 'male';
+  const hideOuter = Boolean(draft.hideOuterForUnderwear);
+  const hasUnderwear = Boolean(draft.underwearId);
+  const hasCorewear = Boolean(draft.corewearId);
+
+  let hideBaseUnderwear = Boolean(draft.hideBaseUnderwear);
+  let hideBaseBra = isMale ? false : Boolean(draft.hideBaseBra);
+
+  if (hideOuter) {
+    if (isMale) {
+      if (!hasUnderwear) {
+        hideBaseUnderwear = false;
+      }
+    } else {
+      if (!hasUnderwear && !hasCorewear) {
+        hideBaseUnderwear = false;
+        hideBaseBra = false;
+      } else if (!hasCorewear) {
+        hideBaseBra = false;
+      }
+    }
+  }
+
+  if (
+    hideBaseUnderwear === Boolean(draft.hideBaseUnderwear) &&
+    hideBaseBra === Boolean(draft.hideBaseBra)
+  ) {
+    return draft;
+  }
+  return {
+    ...draft,
+    hideBaseUnderwear,
+    hideBaseBra,
+  };
+}
+
+/**
+ * Strips any unowned (or opposite-gender) try-on items from a draft before committing to the live avatar,
+ * and enforces public modesty rules so neither female nor male characters appear naked in the city.
  */
 export function sanitizeDraftToOwnedOnly(
   draft: WardrobeOutfitDraft,
@@ -2520,39 +2628,44 @@ export function sanitizeDraftToOwnedOnly(
     }
     return item.isStarterDefault ? null : item.id;
   };
-  return {
-    topId: keepIfOwned(draft.topId),
-    bottomsId: keepIfOwned(draft.bottomsId),
-    shoesId: keepIfOwned(draft.shoesId),
-    hairId: keepIfOwned(draft.hairId),
-    setId: keepIfOwned(draft.setId),
-    underwearId: keepIfOwned(draft.underwearId),
-    corewearId: keepIfOwned(draft.corewearId),
-    hideOuterForUnderwear: Boolean(draft.hideOuterForUnderwear),
-    bodyShapeId: keepIfOwned(draft.bodyShapeId),
-    eyeStyleId: keepIfOwned(draft.eyeStyleId),
-    browStyleId: keepIfOwned(draft.browStyleId),
-    lipStyleId: keepIfOwned(draft.lipStyleId),
-    eyeshadowId: keepIfOwned(draft.eyeshadowId),
-    blushId: keepIfOwned(draft.blushId),
-    facepaintId: keepIfOwned(draft.facepaintId),
-    beardId: keepIfOwned(draft.beardId),
-    animSetId: keepIfOwned(draft.animSetId),
-    dancePoseId: keepIfOwned(draft.dancePoseId),
-    stylePoseId: keepIfOwned(draft.stylePoseId),
-    styleActionId: keepIfOwned(draft.styleActionId),
-    stylePairedId: keepIfOwned(draft.stylePairedId),
-    clothingTintHex: draft.clothingTintHex,
-    noseStyleId: keepIfOwned(draft.noseStyleId) ?? 'face_nose_default',
-    lipScale: draft.lipScale ?? 1.0,
-    lipOffsetY: draft.lipOffsetY ?? 0,
-    eyeSpacing: draft.eyeSpacing ?? 0,
-    eyeTiltDeg: draft.eyeTiltDeg ?? 0,
-    eyeScale: draft.eyeScale ?? 1.0,
-    browOffsetY: draft.browOffsetY ?? 0,
-    browTiltDeg: draft.browTiltDeg ?? 0,
-    headScale: draft.headScale ?? 1.0,
-  };
+  return enforcePublicModestyOnDraft(
+    {
+      topId: keepIfOwned(draft.topId),
+      bottomsId: keepIfOwned(draft.bottomsId),
+      shoesId: keepIfOwned(draft.shoesId),
+      hairId: keepIfOwned(draft.hairId),
+      setId: keepIfOwned(draft.setId),
+      underwearId: keepIfOwned(draft.underwearId),
+      corewearId: keepIfOwned(draft.corewearId),
+      hideOuterForUnderwear: Boolean(draft.hideOuterForUnderwear),
+      hideBaseUnderwear: Boolean(draft.hideBaseUnderwear),
+      hideBaseBra: Boolean(draft.hideBaseBra),
+      bodyShapeId: keepIfOwned(draft.bodyShapeId),
+      eyeStyleId: keepIfOwned(draft.eyeStyleId),
+      browStyleId: keepIfOwned(draft.browStyleId),
+      lipStyleId: keepIfOwned(draft.lipStyleId),
+      eyeshadowId: keepIfOwned(draft.eyeshadowId),
+      blushId: keepIfOwned(draft.blushId),
+      facepaintId: keepIfOwned(draft.facepaintId),
+      beardId: keepIfOwned(draft.beardId),
+      animSetId: keepIfOwned(draft.animSetId) ?? DEFAULT_WARDROBE_ANIM_SET_ID,
+      dancePoseId: keepIfOwned(draft.dancePoseId),
+      stylePoseId: keepIfOwned(draft.stylePoseId),
+      styleActionId: keepIfOwned(draft.styleActionId),
+      stylePairedId: keepIfOwned(draft.stylePairedId),
+      clothingTintHex: draft.clothingTintHex,
+      noseStyleId: keepIfOwned(draft.noseStyleId) ?? 'face_nose_default',
+      lipScale: draft.lipScale ?? 1.0,
+      lipOffsetY: draft.lipOffsetY ?? 0,
+      eyeSpacing: draft.eyeSpacing ?? 0,
+      eyeTiltDeg: draft.eyeTiltDeg ?? 0,
+      eyeScale: draft.eyeScale ?? 1.0,
+      browOffsetY: draft.browOffsetY ?? 0,
+      browTiltDeg: draft.browTiltDeg ?? 0,
+      headScale: draft.headScale ?? 1.0,
+    },
+    characterGender,
+  );
 }
 
 /**
@@ -2621,7 +2734,9 @@ export function resolveWardrobeDraftAnimStyle(draft: WardrobeOutfitDraft): {
   sitGlbUrl: string | null;
   sitClipKey: string | null;
 } {
-  const animItem = getWardrobeCatalogItemById(draft.animSetId);
+  const animItem =
+    getWardrobeCatalogItemById(draft.animSetId ?? DEFAULT_WARDROBE_ANIM_SET_ID) ??
+    DEFAULT_CLASSIC_CORE_ANIM_SET_ITEM;
   const danceItem = getWardrobeCatalogItemById(draft.dancePoseId);
   const poseItem = getWardrobeCatalogItemById(draft.stylePoseId);
   const actionItem = getWardrobeCatalogItemById(draft.styleActionId);
@@ -2697,7 +2812,11 @@ export function resolveWardrobeDraftBodyShape(
 export function resolveWardrobeDraftFaceCustomization(
   draft: WardrobeOutfitDraft,
   characterGender?: 'male' | 'female',
+  options?: { enforcePublicModesty?: boolean },
 ): BuddyFaceCustomizationProfile {
+  const effectiveDraft = options?.enforcePublicModesty
+    ? enforcePublicModestyOnDraft(draft, characterGender)
+    : draft;
   const pickOverlay = (item: WardrobeCatalogItem | null): BeautyUvLayerSpec | null => {
     if (!item || item.isStarterDefault || !item.beautyOverlay) return null;
     if (characterGender === 'male') {
@@ -2706,20 +2825,30 @@ export function resolveWardrobeDraftFaceCustomization(
     return item.beautyOverlay.f ?? item.beautyOverlay.m ?? null;
   };
 
-  const eyeItem = getWardrobeCatalogItemById(draft.eyeStyleId);
-  const browItem = getWardrobeCatalogItemById(draft.browStyleId);
-  const lipItem = getWardrobeCatalogItemById(draft.lipStyleId);
-  const eyeshadowItem = getWardrobeCatalogItemById(draft.eyeshadowId);
-  const blushItem = getWardrobeCatalogItemById(draft.blushId);
-  const facepaintItem = getWardrobeCatalogItemById(draft.facepaintId);
-  const beardItem = getWardrobeCatalogItemById(draft.beardId);
-  const underwearItem = getWardrobeCatalogItemById(draft.underwearId);
-  const corewearItem = getWardrobeCatalogItemById(draft.corewearId);
+  const eyeItem = getWardrobeCatalogItemById(effectiveDraft.eyeStyleId);
+  const browItem = getWardrobeCatalogItemById(effectiveDraft.browStyleId);
+  const lipItem = getWardrobeCatalogItemById(effectiveDraft.lipStyleId);
+  const eyeshadowItem = getWardrobeCatalogItemById(effectiveDraft.eyeshadowId);
+  const blushItem = getWardrobeCatalogItemById(effectiveDraft.blushId);
+  const facepaintItem = getWardrobeCatalogItemById(effectiveDraft.facepaintId);
+  const beardItem = getWardrobeCatalogItemById(effectiveDraft.beardId);
+  const underwearItem = getWardrobeCatalogItemById(effectiveDraft.underwearId);
+  const corewearItem = getWardrobeCatalogItemById(effectiveDraft.corewearId);
 
   const pickGenderedOverlay = (item: WardrobeCatalogItem | null): BeautyUvLayerSpec | null => {
     if (!item || !isWardrobeItemCompatibleWithGender(item, characterGender)) return null;
     return pickOverlay(item);
   };
+
+  const rawUnderwearOverlay =
+    underwearItem?.slot === 'underwear' ? pickGenderedOverlay(underwearItem) : null;
+  const underwearOverlay =
+    rawUnderwearOverlay ??
+    (characterGender === 'male' &&
+    !effectiveDraft.hideBaseUnderwear &&
+    (!effectiveDraft.underwearId || effectiveDraft.underwearId === DEFAULT_MALE_UNDERWEAR_ITEM_ID)
+      ? DEFAULT_MALE_UNDERWEAR_OVERLAY
+      : null);
 
   return {
     eyeStyle:
@@ -2741,44 +2870,44 @@ export function resolveWardrobeDraftFaceCustomization(
     blushOverlay: blushItem?.slot === 'face_blush' ? pickOverlay(blushItem) : null,
     facepaintOverlay: facepaintItem?.slot === 'face_facepaint' ? pickOverlay(facepaintItem) : null,
     beardOverlay: beardItem?.slot === 'face_beard' ? pickGenderedOverlay(beardItem) : null,
-    underwearOverlay:
-      underwearItem?.slot === 'underwear' ? pickGenderedOverlay(underwearItem) : null,
+    underwearOverlay,
     corewearOverlay:
       corewearItem?.slot === 'underwear' ? pickGenderedOverlay(corewearItem) : null,
-    hideBaseUnderwear: Boolean(draft.hideBaseUnderwear),
+    hideBaseUnderwear: Boolean(effectiveDraft.hideBaseUnderwear),
+    hideBaseBra: characterGender === 'male' ? false : Boolean(effectiveDraft.hideBaseBra),
     tuning: {
       lipScale:
-        typeof draft.lipScale === 'number' && Number.isFinite(draft.lipScale)
-          ? Math.max(0.72, Math.min(1.18, draft.lipScale))
+        typeof effectiveDraft.lipScale === 'number' && Number.isFinite(effectiveDraft.lipScale)
+          ? Math.max(0.72, Math.min(1.18, effectiveDraft.lipScale))
           : 1.0,
       lipOffsetY:
-        typeof draft.lipOffsetY === 'number' && Number.isFinite(draft.lipOffsetY)
-          ? Math.max(-6, Math.min(6, draft.lipOffsetY))
+        typeof effectiveDraft.lipOffsetY === 'number' && Number.isFinite(effectiveDraft.lipOffsetY)
+          ? Math.max(-6, Math.min(6, effectiveDraft.lipOffsetY))
           : 0,
       eyeSpacing:
-        typeof draft.eyeSpacing === 'number' && Number.isFinite(draft.eyeSpacing)
-          ? Math.max(-5, Math.min(10, draft.eyeSpacing))
+        typeof effectiveDraft.eyeSpacing === 'number' && Number.isFinite(effectiveDraft.eyeSpacing)
+          ? Math.max(-5, Math.min(10, effectiveDraft.eyeSpacing))
           : 0,
       eyeTiltDeg:
-        typeof draft.eyeTiltDeg === 'number' && Number.isFinite(draft.eyeTiltDeg)
-          ? Math.max(-8, Math.min(10, draft.eyeTiltDeg))
+        typeof effectiveDraft.eyeTiltDeg === 'number' && Number.isFinite(effectiveDraft.eyeTiltDeg)
+          ? Math.max(-8, Math.min(10, effectiveDraft.eyeTiltDeg))
           : 0,
       eyeScale:
-        typeof draft.eyeScale === 'number' && Number.isFinite(draft.eyeScale)
-          ? Math.max(0.82, Math.min(1.22, draft.eyeScale))
+        typeof effectiveDraft.eyeScale === 'number' && Number.isFinite(effectiveDraft.eyeScale)
+          ? Math.max(0.82, Math.min(1.22, effectiveDraft.eyeScale))
           : 1.0,
       browOffsetY:
-        typeof draft.browOffsetY === 'number' && Number.isFinite(draft.browOffsetY)
-          ? Math.max(-7, Math.min(6, draft.browOffsetY))
+        typeof effectiveDraft.browOffsetY === 'number' && Number.isFinite(effectiveDraft.browOffsetY)
+          ? Math.max(-7, Math.min(6, effectiveDraft.browOffsetY))
           : 0,
       browTiltDeg:
-        typeof draft.browTiltDeg === 'number' && Number.isFinite(draft.browTiltDeg)
-          ? Math.max(-10, Math.min(12, draft.browTiltDeg))
+        typeof effectiveDraft.browTiltDeg === 'number' && Number.isFinite(effectiveDraft.browTiltDeg)
+          ? Math.max(-10, Math.min(12, effectiveDraft.browTiltDeg))
           : 0,
-      noseStyleId: draft.noseStyleId ?? 'face_nose_default',
+      noseStyleId: effectiveDraft.noseStyleId ?? 'face_nose_default',
       headScale:
-        typeof draft.headScale === 'number' && Number.isFinite(draft.headScale)
-          ? Math.max(0.78, Math.min(1.06, draft.headScale))
+        typeof effectiveDraft.headScale === 'number' && Number.isFinite(effectiveDraft.headScale)
+          ? Math.max(0.78, Math.min(1.06, effectiveDraft.headScale))
           : 1.0,
     },
   };
@@ -2809,16 +2938,33 @@ export function resolveWardrobeDraftToModularOutfitUrls(
   };
 }
 
+/**
+ * Wardrobe purchases settle in CYON (the converted shop currency), never in
+ * $LUL wages. The canonical catalog keeps its legacy LUL-denominated list
+ * prices (`priceLul`); the CYON shelf price is derived deterministically:
+ * `clamp(round(priceLul * 2 / 5) * 5, 10, 100)` for paid items (rounded to the
+ * nearest 5), 0 for free items.
+ * The server catalog in `api/wardrobe-purchase.ts` applies the same rule.
+ */
+export function convertWardrobeLulPriceToCyon(priceLul: number): number {
+  if (!Number.isFinite(priceLul) || priceLul <= 0) return 0;
+  return Math.min(100, Math.max(10, Math.round((priceLul * 2) / 5) * 5));
+}
+
+export function getWardrobeCatalogItemPriceCyon(item: WardrobeCatalogItem): number {
+  return convertWardrobeLulPriceToCyon(item.priceLul);
+}
+
 export function purchaseWardrobeCatalogItem(
   ownedApparelIds: readonly string[],
-  currentLulBalance: number,
+  currentCyonBalance: number,
   itemId: string,
 ): {
   ok: boolean;
   alreadyOwned: boolean;
   nextOwnedIds: string[];
-  nextLulBalance: number;
-  priceChargedLul: number;
+  nextCyonBalance: number;
+  priceChargedCyon: number;
   errorMessage?: string;
 } {
   const item = getWardrobeCatalogItemById(itemId);
@@ -2827,8 +2973,8 @@ export function purchaseWardrobeCatalogItem(
       ok: false,
       alreadyOwned: false,
       nextOwnedIds: [...ownedApparelIds],
-      nextLulBalance: currentLulBalance,
-      priceChargedLul: 0,
+      nextCyonBalance: currentCyonBalance,
+      priceChargedCyon: 0,
       errorMessage: 'Item not found in wardrobe catalog.',
     };
   }
@@ -2837,26 +2983,27 @@ export function purchaseWardrobeCatalogItem(
       ok: true,
       alreadyOwned: true,
       nextOwnedIds: [...ownedApparelIds],
-      nextLulBalance: currentLulBalance,
-      priceChargedLul: 0,
+      nextCyonBalance: currentCyonBalance,
+      priceChargedCyon: 0,
     };
   }
-  if (currentLulBalance < item.priceLul) {
+  const priceCyon = getWardrobeCatalogItemPriceCyon(item);
+  if (currentCyonBalance < priceCyon) {
     return {
       ok: false,
       alreadyOwned: false,
       nextOwnedIds: [...ownedApparelIds],
-      nextLulBalance: currentLulBalance,
-      priceChargedLul: 0,
-      errorMessage: `Need ${item.priceLul} $LUL (you have ${Math.floor(currentLulBalance)} $LUL).`,
+      nextCyonBalance: currentCyonBalance,
+      priceChargedCyon: 0,
+      errorMessage: `Need ${priceCyon} CerCoins (you have ${Math.floor(currentCyonBalance)} CerCoins).`,
     };
   }
   return {
     ok: true,
     alreadyOwned: false,
     nextOwnedIds: [...ownedApparelIds, item.id],
-    nextLulBalance: currentLulBalance - item.priceLul,
-    priceChargedLul: item.priceLul,
+    nextCyonBalance: currentCyonBalance - priceCyon,
+    priceChargedCyon: priceCyon,
   };
 }
 
@@ -2878,8 +3025,14 @@ export function resolveWardrobeGlassSurfaceMode(input: {
   return 'frosted_blur';
 }
 
-export function getWardrobeDraftStorageKey(accountKey: string): string {
+export function getWardrobeDraftStorageKey(
+  accountKey: string,
+  gender?: 'male' | 'female',
+): string {
   const clean = (accountKey || 'guest').trim() || 'guest';
+  if (gender === 'male' || gender === 'female') {
+    return `bb_wardrobe_outfit_draft_v2:${clean}:${gender}`;
+  }
   return `bb_wardrobe_outfit_draft_v1:${clean}`;
 }
 

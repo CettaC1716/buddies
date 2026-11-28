@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { BLENDER_MODULAR_WARDROBE_ITEMS } from '../src/game/buddiesBlitzGeneratedWardrobeOutfits';
 
 /**
  * Vercel Serverless Function: `/api/wardrobe-purchase`
@@ -10,7 +11,7 @@ import crypto from 'node:crypto';
  * 1. Canonical Catalog & Pricing live ONLY on the server (`WARDROBE_SERVER_CATALOG`).
  *    Any `price` or `slot` sent by the client is ignored; the client sends only `itemId`.
  * 2. Player identity is verified against an authenticated Supabase JWT (`Authorization: Bearer ...`)
- *    or signed wallet session before deducting `$LUL` balance in `bb_profiles`.
+ *    or signed wallet session before deducting CYON balance in `bb_profiles`.
  * 3. Atomic balance check + idempotent ownership check in Supabase (using `SUPABASE_SERVICE_ROLE_KEY`,
  *    never client-writable `localStorage`).
  * 4. Returns an HMAC-SHA256 signed entitlement receipt (`WARDROBE_SIGNING_SECRET`) so
@@ -37,38 +38,73 @@ export interface ServerWardrobeCatalogEntry {
     | 'style_dance'
     | 'style_pose'
     | 'style_action';
-  priceLul: number;
+  priceCyon: number;
   active: boolean;
 }
 
+/**
+ * Wardrobe purchases settle in CYON, never in $LUL wages. Source catalogs keep
+ * legacy LUL-denominated list prices; the CYON shelf price is derived with the
+ * same rule as the client (`convertWardrobeLulPriceToCyon` in
+ * `src/game/buddiesWardrobeStudioRules.ts`):
+ * `clamp(round(priceLul * 2 / 5) * 5, 10, 100)` for paid items (rounded to the
+ * nearest 5), 0 for free items.
+ */
+function convertLulPriceToCyon(priceLul: number): number {
+  if (!Number.isFinite(priceLul) || priceLul <= 0) return 0;
+  return Math.min(100, Math.max(10, Math.round((priceLul * 2) / 5) * 5));
+}
+
+const PAID_MODULAR_HAIR_SERVER_ENTRIES: Record<string, ServerWardrobeCatalogEntry> = Object.fromEntries(
+  BLENDER_MODULAR_WARDROBE_ITEMS.filter(
+    (item) =>
+      !item.isStarterDefault &&
+      item.priceLul > 0 &&
+      (item.slot === 'top' ||
+        item.slot === 'bottoms' ||
+        item.slot === 'shoes' ||
+        item.slot === 'hair' ||
+        item.slot === 'set'),
+  ).map((item) => [
+    item.id,
+    {
+      id: item.id,
+      slot: item.slot as ServerWardrobeCatalogEntry['slot'],
+      priceCyon: convertLulPriceToCyon(item.priceLul),
+      active: true,
+    },
+  ]),
+);
+
 export const WARDROBE_SERVER_CATALOG: Readonly<Record<string, ServerWardrobeCatalogEntry>> = {
-  // Body Shapes (Unisex)
-  apparel_body_slim_runway: { id: 'apparel_body_slim_runway', slot: 'body_shape', priceLul: 20, active: true },
-  apparel_body_athletic_sculpt: { id: 'apparel_body_athletic_sculpt', slot: 'body_shape', priceLul: 25, active: true },
-  apparel_body_glam_hourglass: { id: 'apparel_body_glam_hourglass', slot: 'body_shape', priceLul: 28, active: true },
-  apparel_body_petite_studio: { id: 'apparel_body_petite_studio', slot: 'body_shape', priceLul: 20, active: true },
-  apparel_body_power_hero: { id: 'apparel_body_power_hero', slot: 'body_shape', priceLul: 30, active: true },
+  ...PAID_MODULAR_HAIR_SERVER_ENTRIES,
+  // Body Shapes (Unisex) — priceCyon converted from legacy LUL list prices (20/25/28/20/30)
+  apparel_body_slim_runway: { id: 'apparel_body_slim_runway', slot: 'body_shape', priceCyon: 40, active: true },
+  apparel_body_athletic_sculpt: { id: 'apparel_body_athletic_sculpt', slot: 'body_shape', priceCyon: 50, active: true },
+  apparel_body_glam_hourglass: { id: 'apparel_body_glam_hourglass', slot: 'body_shape', priceCyon: 55, active: true },
+  apparel_body_petite_studio: { id: 'apparel_body_petite_studio', slot: 'body_shape', priceCyon: 40, active: true },
+  apparel_body_power_hero: { id: 'apparel_body_power_hero', slot: 'body_shape', priceCyon: 60, active: true },
 
-  // Face Customization (Unisex)
-  face_eyes_espresso_doll: { id: 'face_eyes_espresso_doll', slot: 'face_eyes', priceLul: 10, active: true },
-  face_eyes_smoky_emerald: { id: 'face_eyes_smoky_emerald', slot: 'face_eyes', priceLul: 14, active: true },
-  face_eyes_violet_idol: { id: 'face_eyes_violet_idol', slot: 'face_eyes', priceLul: 16, active: true },
-  face_brows_bold_blade: { id: 'face_brows_bold_blade', slot: 'face_brows', priceLul: 8, active: true },
-  face_brows_feather_gold: { id: 'face_brows_feather_gold', slot: 'face_brows', priceLul: 10, active: true },
-  face_brows_sharp_noir: { id: 'face_brows_sharp_noir', slot: 'face_brows', priceLul: 12, active: true },
-  face_lips_cherry_gloss: { id: 'face_lips_cherry_gloss', slot: 'face_lips', priceLul: 10, active: true },
-  face_lips_berry_plum: { id: 'face_lips_berry_plum', slot: 'face_lips', priceLul: 12, active: true },
-  face_lips_coral_blush: { id: 'face_lips_coral_blush', slot: 'face_lips', priceLul: 12, active: true },
+  // Face Customization (Unisex) — priceCyon converted from legacy LUL list prices (eyes 10/14/16, brows 8/10/12, lips 10/12/12)
+  face_eyes_espresso_doll: { id: 'face_eyes_espresso_doll', slot: 'face_eyes', priceCyon: 20, active: true },
+  face_eyes_smoky_emerald: { id: 'face_eyes_smoky_emerald', slot: 'face_eyes', priceCyon: 30, active: true },
+  face_eyes_violet_idol: { id: 'face_eyes_violet_idol', slot: 'face_eyes', priceCyon: 30, active: true },
+  face_brows_bold_blade: { id: 'face_brows_bold_blade', slot: 'face_brows', priceCyon: 15, active: true },
+  face_brows_feather_gold: { id: 'face_brows_feather_gold', slot: 'face_brows', priceCyon: 20, active: true },
+  face_brows_sharp_noir: { id: 'face_brows_sharp_noir', slot: 'face_brows', priceCyon: 25, active: true },
+  face_lips_cherry_gloss: { id: 'face_lips_cherry_gloss', slot: 'face_lips', priceCyon: 20, active: true },
+  face_lips_berry_plum: { id: 'face_lips_berry_plum', slot: 'face_lips', priceCyon: 25, active: true },
+  face_lips_coral_blush: { id: 'face_lips_coral_blush', slot: 'face_lips', priceCyon: 25, active: true },
 
-  // Style: Animation Sets & Dance Poses (Unisex)
-  style_anim_energetic: { id: 'style_anim_energetic', slot: 'style_anim', priceLul: 14, active: true },
-  style_anim_sassy: { id: 'style_anim_sassy', slot: 'style_anim', priceLul: 14, active: true },
-  style_anim_formal: { id: 'style_anim_formal', slot: 'style_anim', priceLul: 16, active: true },
-  style_anim_street: { id: 'style_anim_street', slot: 'style_anim', priceLul: 14, active: true },
-  style_anim_urban: { id: 'style_anim_urban', slot: 'style_anim', priceLul: 12, active: true },
-  style_dance_salute: { id: 'style_dance_salute', slot: 'style_dance', priceLul: 10, active: true },
-  style_dance_idol_pop: { id: 'style_dance_idol_pop', slot: 'style_dance', priceLul: 16, active: true },
-  style_dance_hiphop: { id: 'style_dance_hiphop', slot: 'style_dance', priceLul: 18, active: true },
+  // Style: Animation Sets & Dance Poses (Unisex) — priceCyon converted from legacy LUL list prices (anim 14/14/16/14/12, dance 10/16/18)
+  style_anim_energetic: { id: 'style_anim_energetic', slot: 'style_anim', priceCyon: 30, active: true },
+  style_anim_sassy: { id: 'style_anim_sassy', slot: 'style_anim', priceCyon: 30, active: true },
+  style_anim_formal: { id: 'style_anim_formal', slot: 'style_anim', priceCyon: 30, active: true },
+  style_anim_street: { id: 'style_anim_street', slot: 'style_anim', priceCyon: 30, active: true },
+  style_anim_urban: { id: 'style_anim_urban', slot: 'style_anim', priceCyon: 25, active: true },
+  style_dance_salute: { id: 'style_dance_salute', slot: 'style_dance', priceCyon: 20, active: true },
+  style_dance_idol_pop: { id: 'style_dance_idol_pop', slot: 'style_dance', priceCyon: 30, active: true },
+  style_dance_hiphop: { id: 'style_dance_hiphop', slot: 'style_dance', priceCyon: 35, active: true },
 };
 
 const ALLOWED_ORIGINS = [
@@ -110,11 +146,11 @@ async function sbAdminFetch(path: string, init?: RequestInit): Promise<any> {
 export function signWardrobeEntitlementReceipt(params: {
   accountId: string;
   itemId: string;
-  priceLul: number;
+  priceCyon: number;
   issuedAtIso: string;
 }): string {
   const secret = process.env.WARDROBE_SIGNING_SECRET || 'dev-ephemeral-wardrobe-signing-key';
-  const payload = `${params.accountId}|${params.itemId}|${params.priceLul}|${params.issuedAtIso}`;
+  const payload = `${params.accountId}|${params.itemId}|${params.priceCyon}|${params.issuedAtIso}`;
   return crypto.createHmac('sha256', secret).update(payload).digest('hex');
 }
 
@@ -149,7 +185,7 @@ export async function handleWardrobePurchaseRequest(body: Record<string, unknown
 
   // 1. Read authoritative profile balance & owned wardrobe transactions from Supabase
   const profileRows = await sbAdminFetch(
-    `bb_profiles?near_account_id=eq.${encodeURIComponent(accountId)}&select=near_account_id,lul_balance&limit=1`,
+    `bb_profiles?near_account_id=eq.${encodeURIComponent(accountId)}&select=near_account_id,cyon_balance&limit=1`,
   );
   const profile = Array.isArray(profileRows) && profileRows.length > 0 ? profileRows[0] : null;
   if (!profile) {
@@ -168,12 +204,12 @@ export async function handleWardrobePurchaseRequest(body: Record<string, unknown
         alreadyOwned: true,
         itemId: catalogItem.id,
         slot: catalogItem.slot,
-        priceChargedLul: 0,
-        nextLulBalance: Number(profile.lul_balance) || 0,
+        priceChargedCyon: 0,
+        nextCyonBalance: Number(profile.cyon_balance) || 0,
         receiptSignature: signWardrobeEntitlementReceipt({
           accountId,
           itemId: catalogItem.id,
-          priceLul: 0,
+          priceCyon: 0,
           issuedAtIso,
         }),
         issuedAtIso,
@@ -181,39 +217,77 @@ export async function handleWardrobePurchaseRequest(body: Record<string, unknown
     };
   }
 
-  const currentLul = Number(profile.lul_balance) || 0;
-  if (currentLul < catalogItem.priceLul) {
+  const currentCyon = Number(profile.cyon_balance) || 0;
+  if (currentCyon < catalogItem.priceCyon) {
     return {
       status: 402,
       payload: {
         ok: false,
-        reason: 'insufficient_lul',
-        error: `Insufficient $LUL balance. Need ${catalogItem.priceLul} $LUL.`,
+        reason: 'insufficient_cyon',
+        error: `Insufficient CerCoins balance. Need ${catalogItem.priceCyon} CerCoins.`,
       },
     };
   }
 
-  const nextLulBalance = currentLul - catalogItem.priceLul;
+  const nextCyonBalance = currentCyon - catalogItem.priceCyon;
   const issuedAtIso = new Date().toISOString();
   const receiptSignature = signWardrobeEntitlementReceipt({
     accountId,
     itemId: catalogItem.id,
-    priceLul: catalogItem.priceLul,
+    priceCyon: catalogItem.priceCyon,
     issuedAtIso,
   });
 
-  // 2. Optimistic-concurrency balance deduction (fails cleanly on race/double-spend)
-  const updatedRows = await sbAdminFetch(
-    `bb_profiles?near_account_id=eq.${encodeURIComponent(accountId)}&lul_balance=eq.${currentLul}`,
-    {
-      method: 'PATCH',
-      body: JSON.stringify({
-        lul_balance: nextLulBalance,
-        updated_at: issuedAtIso,
-      }),
-    },
-  );
+  // 2. Record the server-side ownership entitlement in the audit ledger FIRST.
+  // Money must never move before the ownership record exists: if this insert
+  // fails (e.g. a ledger column mismatch), the purchase aborts here with the
+  // balance untouched, so a retry can never double-charge the player.
+  await sbAdminFetch(`bb_market_transactions`, {
+    method: 'POST',
+    body: JSON.stringify({
+      buyer_account: accountId,
+      action: 'wardrobe_purchase',
+      item_id: catalogItem.id,
+      slot: catalogItem.slot,
+      amount_cyon: catalogItem.priceCyon,
+      receipt_signature: receiptSignature,
+      created_at: issuedAtIso,
+    }),
+  });
+
+  // Compensation for the deduction step below: remove the entitlement row just
+  // written, keyed on the per-purchase unique receipt signature so a concurrent
+  // purchase's row is never touched. Best-effort — the original failure wins.
+  const rollbackEntitlement = async (): Promise<void> => {
+    try {
+      await sbAdminFetch(
+        `bb_market_transactions?receipt_signature=eq.${encodeURIComponent(receiptSignature)}`,
+        { method: 'DELETE' },
+      );
+    } catch {
+      // Ignore compensation errors; surface the deduction failure instead.
+    }
+  };
+
+  // 3. Optimistic-concurrency balance deduction (fails cleanly on race/double-spend)
+  let updatedRows: any;
+  try {
+    updatedRows = await sbAdminFetch(
+      `bb_profiles?near_account_id=eq.${encodeURIComponent(accountId)}&cyon_balance=eq.${currentCyon}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({
+          cyon_balance: nextCyonBalance,
+          updated_at: issuedAtIso,
+        }),
+      },
+    );
+  } catch (err) {
+    await rollbackEntitlement();
+    throw err;
+  }
   if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
+    await rollbackEntitlement();
     return {
       status: 409,
       payload: {
@@ -224,20 +298,6 @@ export async function handleWardrobePurchaseRequest(body: Record<string, unknown
     };
   }
 
-  // 3. Record immutable server-side ownership entitlement in audit ledger
-  await sbAdminFetch(`bb_market_transactions`, {
-    method: 'POST',
-    body: JSON.stringify({
-      buyer_account: accountId,
-      action: 'wardrobe_purchase',
-      item_id: catalogItem.id,
-      slot: catalogItem.slot,
-      amount_lul: catalogItem.priceLul,
-      receipt_signature: receiptSignature,
-      created_at: issuedAtIso,
-    }),
-  });
-
   return {
     status: 200,
     payload: {
@@ -245,8 +305,8 @@ export async function handleWardrobePurchaseRequest(body: Record<string, unknown
       alreadyOwned: false,
       itemId: catalogItem.id,
       slot: catalogItem.slot,
-      priceChargedLul: catalogItem.priceLul,
-      nextLulBalance,
+      priceChargedCyon: catalogItem.priceCyon,
+      nextCyonBalance,
       receiptSignature,
       issuedAtIso,
     },

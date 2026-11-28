@@ -284,7 +284,7 @@ export const CasinoPokerChipButton: React.FC<{
         </text>
       </svg>
       <span className="mt-0.5 text-[9.5px] font-black uppercase tracking-tight text-[#14161d] font-mono-tabular whitespace-nowrap">
-        {amount} LUL
+        {amount} CerBucks
       </span>
     </button>
   );

@@ -78,7 +78,8 @@ export function isPointOnPedestrianCrosswalkCorridor(
 
 /**
  * Rebuilds the cached 2D A* Navigation Grids for Foot Units (`BuddyUnit`),
- * Tracked Vehicles (`TankVehicle`), and Law-Abiding Island Citizens (`pedestrianGrid`).
+ * Tracked Vehicles (`TankVehicle`), Law-Abiding Island Citizens (`pedestrianGrid`),
+ * and Walk-Together companions trailing the player (`pedestrianFollowGrid`).
  */
 export function buildArenaNavGrids(params: {
   staticStructures: ReadonlyArray<StaticWorldStructureObb>;
@@ -90,7 +91,12 @@ export function buildArenaNavGrids(params: {
     >
   >;
   auditedWorld?: AuditedWorldCollidersSet;
-}): { footGrid: AStarNavGrid; vehicleGrid: AStarNavGrid; pedestrianGrid: AStarNavGrid } {
+}): {
+  footGrid: AStarNavGrid;
+  vehicleGrid: AStarNavGrid;
+  pedestrianGrid: AStarNavGrid;
+  pedestrianFollowGrid: AStarNavGrid;
+} {
   const { staticStructures, trees, activeMapProps, auditedWorld } = params;
   const footGrid = createAStarNavGrid(-112, 112, -112, 112, 1.5);
   const vehicleGrid = createAStarNavGrid(-112, 112, -112, 112, 1.5);
@@ -233,7 +239,23 @@ export function buildArenaNavGrids(params: {
     footGrid.cellSize,
   );
   pedestrianGrid.blocked.set(footGrid.blocked);
+  // 5b. Walk-Together Follower NavGrid: shares the pedestrian grid's blocked raster and
+  // cell costs EXCEPT non-crosswalk road/tramway cells cost 3.2 (the player's own foot-grid
+  // price in buddiesClickToWalkRules) instead of 48.0. A companion trailing the player may
+  // step onto asphalt mid-block to keep up instead of detouring to a distant crosswalk,
+  // while Zebra corridors (0.55) stay cheapest so crossings remain the preferred way over.
+  const pedestrianFollowGrid = createAStarNavGrid(
+    footGrid.minX,
+    footGrid.maxX,
+    footGrid.minZ,
+    footGrid.maxZ,
+    footGrid.cellSize,
+  );
+  pedestrianFollowGrid.blocked.set(footGrid.blocked);
   const cellCosts = new Float32Array(pedestrianGrid.cols * pedestrianGrid.rows);
+  const followCellCosts = new Float32Array(
+    pedestrianFollowGrid.cols * pedestrianFollowGrid.rows,
+  );
   const minCellCost = 0.55;
   for (let row = 0; row < pedestrianGrid.rows; row++) {
     const wz = pedestrianGrid.minZ + (row + 0.5) * pedestrianGrid.cellSize;
@@ -246,9 +268,12 @@ export function buildArenaNavGrids(params: {
       const onCrosswalk = isPointOnPedestrianCrosswalkCorridor(wx, wz, 0.0);
       if (onCrosswalk) {
         cellCosts[idx] = 0.55;
+        followCellCosts[idx] = 0.55;
       } else if (roadSdf <= 0.25) {
         // Non-crosswalk active tramway/asphalt road: severe traffic violation cost
         cellCosts[idx] = 48.0;
+        // Followers keeping up with the player pay only the player's own road price here.
+        followCellCosts[idx] = 3.2;
       } else {
         const harborConcreteSdf = evaluateSeHarborSdf(wx, wz).concreteSdf;
         const onCenterSidewalk = roadSdf > 1.05 && roadSdf <= 4.35;
@@ -260,23 +285,29 @@ export function buildArenaNavGrids(params: {
           harborConcreteSdf <= 0.55 || (wx >= 76.0 && Math.abs(wz) <= 104.0);
         if (onCenterSidewalk || onHalte || onCasinoPromenade || onWestPlaza || onEastPromenade) {
           cellCosts[idx] = 0.6;
+          followCellCosts[idx] = 0.6;
         } else if (onCurbTransition) {
           // Gentle curb buffer so pedestrians walk centered along the sidewalk rather than hugging asphalt
           cellCosts[idx] = 0.95;
+          followCellCosts[idx] = 0.95;
         } else if (evaluateNwLakeSdf(wx, wz) <= 5.2) {
           // Lakeshore perimeter footpath around Centered Oasis Lake
           cellCosts[idx] = 0.78;
+          followCellCosts[idx] = 0.78;
         } else {
           // Unpaved central park / grass lawns (discourage rambling off paved walkways)
           cellCosts[idx] = 1.45;
+          followCellCosts[idx] = 1.45;
         }
       }
     }
   }
   pedestrianGrid.cellCosts = cellCosts;
   pedestrianGrid.minCellCost = minCellCost;
+  pedestrianFollowGrid.cellCosts = followCellCosts;
+  pedestrianFollowGrid.minCellCost = minCellCost;
 
-  return { footGrid, vehicleGrid, pedestrianGrid };
+  return { footGrid, vehicleGrid, pedestrianGrid, pedestrianFollowGrid };
 }
 
 export interface AStarPageableAgent {

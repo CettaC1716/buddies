@@ -85,17 +85,12 @@ import {
   type CityFeedPost,
 } from '../lib/cityFeedService';
 import {
+  isLegacyRemovedAvatarUrl,
+  resolveDefaultPlayerPhotoUrl,
   resolveNpcCitizenIdFromEntity,
   resolveNpcPhotoUrl,
   useNpcPortraitVersion,
 } from '../game/npcPortraitRegistry';
-
-export interface PhotoPresetOption {
-  id: string;
-  label: string;
-  url: string;
-  cropClassName: string;
-}
 
 export interface StatusFeedPost {
   id: string;
@@ -158,47 +153,14 @@ export function renderProfileEmblemIcon(
   }
 }
 
-const STATUS_MOOD_OPTIONS = STATUS_PRESET_OPTIONS;
-
-export const PROFILE_PHOTO_PRESETS: PhotoPresetOption[] = [
-  {
-    id: 'hiro',
-    label: 'HIRO',
-    url: '/assets/avatar_hiro.jpg',
-    // Scaled from left-center origin so top-right Blender viewport text is pushed outside the right edge while keeping full head & torso framed
-    cropClassName: 'object-cover object-[48%_14%] scale-[1.34] origin-[24%_45%]',
-  },
-  {
-    id: 'nadia',
-    label: 'NADIA',
-    url: '/assets/avatar_nadia.jpg',
-    cropClassName: 'object-cover object-[50%_14%] scale-[1.24] origin-[50%_35%]',
-  },
-  {
-    id: 'rookie',
-    label: 'HANA',
-    url: '/assets/kiosk/family_member_female.jpg',
-    cropClassName: 'object-cover object-top scale-105',
-  },
-  {
-    id: 'shinobi',
-    label: 'KAI',
-    url: '/assets/kiosk/family_member_male.jpg',
-    cropClassName: 'object-cover object-top scale-105',
-  },
-  {
-    id: 'veteran',
-    label: 'COASTAL PIER',
-    url: '/docs/hero-1-beach-pier.jpg',
-    cropClassName: 'object-cover object-center',
-  },
-  {
-    id: 'hq',
-    label: 'COMMAND HQ',
-    url: '/assets/kiosk/hq_super_command.webp',
-    cropClassName: 'object-cover object-center',
-  },
-];
+const STATUS_MOOD_OPTIONS = [
+  'Exploring',
+  'Chill',
+  'Fishing',
+  'Racing',
+  'Trading',
+  'Cafe',
+] as const;
 
 export const STATUS_PHOTO_STORAGE_KEY = 'bb_player_status_photo_v1';
 export const AVATAR_PHOTO_STORAGE_KEY = 'bb_player_avatar_photo_v1';
@@ -209,7 +171,12 @@ export const PROFILE_IDENTITY_UPDATED_EVENT = 'bb-profile-identity-updated';
 export function readStoredStatusCoverPhotoUrl(): string {
   if (typeof window === 'undefined') return '';
   try {
-    return window.localStorage.getItem(STATUS_PHOTO_STORAGE_KEY) || '';
+    const raw = window.localStorage.getItem(STATUS_PHOTO_STORAGE_KEY) || '';
+    if (isLegacyRemovedAvatarUrl(raw)) {
+      window.localStorage.removeItem(STATUS_PHOTO_STORAGE_KEY);
+      return '';
+    }
+    return raw;
   } catch {
     return '';
   }
@@ -218,7 +185,12 @@ export function readStoredStatusCoverPhotoUrl(): string {
 export function readStoredAvatarPhotoUrl(): string {
   if (typeof window === 'undefined') return '';
   try {
-    return window.localStorage.getItem(AVATAR_PHOTO_STORAGE_KEY) || '';
+    const raw = window.localStorage.getItem(AVATAR_PHOTO_STORAGE_KEY) || '';
+    if (isLegacyRemovedAvatarUrl(raw)) {
+      window.localStorage.removeItem(AVATAR_PHOTO_STORAGE_KEY);
+      return '';
+    }
+    return raw;
   } catch {
     return '';
   }
@@ -249,10 +221,9 @@ export function resolveSharedEntityPortraitUrl(
   kind: 'avatar' | 'cover' = 'avatar',
 ): string {
   if (isSelf) {
-    return (
-      customCoverUrl ||
-      (characterGender === 'female' ? '/assets/avatar_nadia.jpg' : '/assets/avatar_hiro.jpg')
-    );
+    const safeCustom =
+      customCoverUrl && !isLegacyRemovedAvatarUrl(customCoverUrl) ? customCoverUrl : '';
+    return safeCustom || resolveDefaultPlayerPhotoUrl(characterGender, kind);
   }
   const npcCitizenId = resolveNpcCitizenIdFromEntity(entity);
   if (npcCitizenId) {
@@ -265,19 +236,10 @@ export function resolveSharedEntityPortraitUrl(
     lower.includes('nadia') ||
     lower.includes('mira') ||
     lower.includes('tari');
-  return isFemale ? '/assets/avatar_nadia.jpg' : '/assets/avatar_hiro.jpg';
+  return resolveDefaultPlayerPhotoUrl(isFemale ? 'female' : 'male', kind);
 }
 
-export function getPhotoCropClassName(url: string): string {
-  if (!url) return 'object-cover object-center';
-  const preset = PROFILE_PHOTO_PRESETS.find((p) => p.url === url);
-  if (preset) return preset.cropClassName;
-  if (url.includes('avatar_hiro')) {
-    return 'object-cover object-[48%_14%] scale-[1.34] origin-[24%_45%]';
-  }
-  if (url.includes('avatar_nadia')) {
-    return 'object-cover object-[50%_14%] scale-[1.24] origin-[50%_35%]';
-  }
+export function getPhotoCropClassName(_url: string): string {
   return 'object-cover object-center';
 }
 
@@ -300,6 +262,7 @@ export interface CharacterProfileModalProps {
   connectedAccountEmail?: string;
   characterGender?: 'male' | 'female';
   playerTeam?: 'blue' | 'red';
+  currentDistrict?: string;
   hasHouseOwnership?: boolean;
   ownedMerchantItemIds?: readonly string[];
   ownedApparelIds?: readonly string[];
@@ -335,6 +298,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
   connectedAccountEmail,
   characterGender = 'male',
   playerTeam = 'blue',
+  currentDistrict,
   hasHouseOwnership = false,
   ownedMerchantItemIds = [],
   ownedApparelIds = [],
@@ -362,23 +326,16 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
   // Re-render automatically when an NPC's 3D selfie & full-body cover finish capturing
   useNpcPortraitVersion();
 
-  const defaultPhotoUrl =
-    characterGender === 'female' ? '/assets/avatar_nadia.jpg' : '/assets/avatar_hiro.jpg';
+  const defaultAvatarPhotoUrl = resolveDefaultPlayerPhotoUrl(characterGender, 'avatar');
+  const defaultStatusCoverUrl = resolveDefaultPlayerPhotoUrl(characterGender, 'cover');
 
   const [customStatusPhotoUrl, setCustomStatusPhotoUrl] = useState<string>(() =>
     readStoredStatusCoverPhotoUrl(),
   );
 
-  const [customAvatarPhotoUrl, setCustomAvatarPhotoUrl] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        return window.localStorage.getItem(AVATAR_PHOTO_STORAGE_KEY) || '';
-      } catch {
-        return '';
-      }
-    }
-    return '';
-  });
+  const [customAvatarPhotoUrl, setCustomAvatarPhotoUrl] = useState<string>(() =>
+    readStoredAvatarPhotoUrl(),
+  );
 
   const [localProfileIdentity, setLocalProfileIdentity] = useState<PlayerProfileIdentity>(() =>
     controlledProfileIdentity ?? readStoredProfileIdentity(),
@@ -451,8 +408,9 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
     activeProfileIdentity.links.website,
   );
   const [feedComposerText, setFeedComposerText] = useState<string>('');
-  const [selectedMood, setSelectedMood] = useState<string>(STATUS_PRESET_OPTIONS[3]);
-  const [attachCoverPhoto, setAttachCoverPhoto] = useState<boolean>(false);
+  const [selectedMood, setSelectedMood] = useState<string>(STATUS_MOOD_OPTIONS[0]);
+  const [feedPhotoUrl, setFeedPhotoUrl] = useState<string>('');
+  const [isSubmittingFeedPost, setIsSubmittingFeedPost] = useState<boolean>(false);
   const [activePhotoPicker, setActivePhotoPicker] = useState<'none' | 'status' | 'avatar'>('none');
   const [copiedUid, setCopiedUid] = useState<boolean>(false);
   const [copiedHandle, setCopiedHandle] = useState<boolean>(false);
@@ -460,6 +418,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
 
   const statusFileInputRef = useRef<HTMLInputElement | null>(null);
   const avatarFileInputRef = useRef<HTMLInputElement | null>(null);
+  const feedUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const cleanTargetName = (targetUser?.name || 'CITIZEN')
     .replace(/\s*\((ANDA|YOU|KAMU)\)/gi, '')
@@ -509,7 +468,22 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     void fetchCityFeedPosts().then((posts) => setCityFeedSnapshot(posts));
-    const onFeedUpdated = () => setCityFeedSnapshot(readCachedCityFeedPosts());
+    const onFeedUpdated = () => {
+      setCityFeedSnapshot(readCachedCityFeedPosts());
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = window.localStorage.getItem(STATUS_FEED_STORAGE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              setStatusFeed(parsed);
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+    };
     window.addEventListener(CITY_FEED_UPDATED_EVENT, onFeedUpdated);
     const timer = window.setInterval(() => setNowMs(Date.now()), 30000);
     return () => {
@@ -738,13 +712,13 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
         customStatusPhotoUrl,
         'cover',
       )
-    : customStatusPhotoUrl || defaultPhotoUrl;
+    : customStatusPhotoUrl || defaultStatusCoverUrl;
 
   const resolvedAvatarPhotoUrl = isSelfProfile
-    ? customAvatarPhotoUrl || defaultPhotoUrl
+    ? customAvatarPhotoUrl || defaultAvatarPhotoUrl
     : targetUser
       ? resolveSharedEntityPortraitUrl(targetUser, false, characterGender, '', 'avatar')
-      : defaultPhotoUrl;
+      : defaultAvatarPhotoUrl;
 
   const handleSelectPhotoUrl = (target: 'status' | 'avatar', url: string) => {
     soundEngine.playUiClick();
@@ -763,6 +737,32 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
       if (typeof window !== 'undefined') {
         try {
           window.localStorage.setItem(AVATAR_PHOTO_STORAGE_KEY, url);
+        } catch {
+          // ignore
+        }
+        window.dispatchEvent(new CustomEvent(PROFILE_IDENTITY_UPDATED_EVENT));
+      }
+    }
+    setActivePhotoPicker('none');
+  };
+
+  const handleResetPhotoToDefault = (target: 'status' | 'avatar') => {
+    soundEngine.playUiClick();
+    if (target === 'status') {
+      setCustomStatusPhotoUrl('');
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.removeItem(STATUS_PHOTO_STORAGE_KEY);
+        } catch {
+          // ignore
+        }
+        window.dispatchEvent(new CustomEvent(PROFILE_IDENTITY_UPDATED_EVENT));
+      }
+    } else {
+      setCustomAvatarPhotoUrl('');
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.removeItem(AVATAR_PHOTO_STORAGE_KEY);
         } catch {
           // ignore
         }
@@ -836,7 +836,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
         authorGender: characterGender,
         text: cleaned,
         mood: selectedMood || undefined,
-        location: CERRIA_CITY_NAME,
+        location: currentDistrict || CERRIA_CITY_NAME,
         createdAtMs: now,
         likedByIds: [],
         comments: [],
@@ -845,13 +845,27 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
     setIsEditingCaption(false);
   };
 
-  const handlePublishFeedPost = () => {
-    const cleaned = feedComposerText.trim().slice(0, 160);
-    if (!cleaned) return;
+  const handleUploadFeedPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setFeedPhotoUrl(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handlePublishFeedPost = async () => {
+    const cleaned = feedComposerText.trim().slice(0, 220);
+    if (!cleaned || isSubmittingFeedPost) return;
     soundEngine.playUiClick();
+    setIsSubmittingFeedPost(true);
     const now = Date.now();
-    const postId = `status-${now}`;
-    const photoUrl = attachCoverPhoto ? resolvedStatusPhotoUrl : undefined;
+    const postId = `cf-${now.toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const photoUrl = feedPhotoUrl || undefined;
     const post: StatusFeedPost = {
       id: postId,
       text: cleaned,
@@ -866,23 +880,27 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
     persistStatusCaption(cleaned.slice(0, 80));
     setDraftCaption(cleaned.slice(0, 80));
     setFeedComposerText('');
-    setAttachCoverPhoto(false);
-    void publishCityFeedPost({
-      id: postId,
-      authorId: selfCityActorId,
-      authorNearAccount: playerUid || null,
-      authorName: cleanTargetName || 'Buddy',
-      authorAvatarUrl: resolvedAvatarPhotoUrl,
-      authorTeam: playerTeam,
-      authorGender: characterGender,
-      text: cleaned,
-      mood: selectedMood || undefined,
-      location: CERRIA_CITY_NAME,
-      photoUrl,
-      createdAtMs: now,
-      likedByIds: [],
-      comments: [],
-    });
+    setFeedPhotoUrl('');
+    try {
+      await publishCityFeedPost({
+        id: postId,
+        authorId: selfCityActorId,
+        authorNearAccount: playerUid || null,
+        authorName: cleanTargetName || 'Buddy',
+        authorAvatarUrl: resolvedAvatarPhotoUrl,
+        authorTeam: playerTeam,
+        authorGender: characterGender,
+        text: cleaned,
+        mood: selectedMood || undefined,
+        location: currentDistrict || 'Central Plaza',
+        photoUrl,
+        createdAtMs: now,
+        likedByIds: [],
+        comments: [],
+      });
+    } finally {
+      setIsSubmittingFeedPost(false);
+    }
   };
 
   const handleToggleLikePost = (postId: string) => {
@@ -993,6 +1011,13 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
         accept="image/*"
         className="hidden"
         onChange={(e) => handleUploadPhotoFile('avatar', e)}
+      />
+      <input
+        ref={feedUploadInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleUploadFeedPhoto}
       />
 
       {/* TOP HEADER BAR */}
@@ -1514,14 +1539,64 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
             {isSelfProfile && activePhotoPicker !== 'none' && (
               <div
                 data-profile-photo-picker={activePhotoPicker}
-                className="p-2.5 rounded-2xl bg-[#dfe4ec]/90 border border-slate-300/70 space-y-2.5 text-slate-900"
+                className="p-2.5 rounded-2xl bg-[#dfe4ec]/90 border border-slate-300/70 space-y-2 text-slate-900"
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[11px] font-semibold text-slate-800 truncate">
                     {activePhotoPicker === 'status'
-                      ? 'Select cover photo'
-                      : 'Select circular avatar'}
+                      ? 'Cover photo'
+                      : 'Profile avatar'}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setActivePhotoPicker('none');
+                    }}
+                    aria-label="Close photo picker"
+                    className="w-5 h-5 rounded-full bg-white/75 hover:bg-white text-slate-600 flex items-center justify-center cursor-pointer transition-colors"
+                  >
+                    <X className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(() => {
+                    const isDefaultActive =
+                      activePhotoPicker === 'status'
+                        ? !customStatusPhotoUrl
+                        : !customAvatarPhotoUrl;
+                    const livePreviewUrl =
+                      activePhotoPicker === 'status'
+                        ? defaultStatusCoverUrl
+                        : defaultAvatarPhotoUrl;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => handleResetPhotoToDefault(activePhotoPicker)}
+                        className={`p-1.5 rounded-xl border transition-all cursor-pointer flex items-center gap-2 min-w-0 text-left ${
+                          isDefaultActive
+                            ? 'bg-white text-slate-900 border-slate-900 ring-1 ring-slate-900/20 shadow-xs'
+                            : 'bg-white/70 text-slate-700 border-slate-200/80 hover:border-slate-300 hover:bg-white'
+                        }`}
+                      >
+                        <div className="w-9 h-9 rounded-lg overflow-hidden bg-slate-200 shrink-0">
+                          <img
+                            src={livePreviewUrl}
+                            alt="Character 3D"
+                            className="w-full h-full object-cover object-center"
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[10px] font-semibold truncate">Character 3D</div>
+                          <div className="text-[9px] text-slate-500 truncate">
+                            {isDefaultActive ? 'Active default' : 'Use default'}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })()}
+
                   <button
                     type="button"
                     onClick={() => {
@@ -1532,50 +1607,16 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
                         avatarFileInputRef.current?.click();
                       }
                     }}
-                    className="px-2.5 py-1 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-semibold cursor-pointer shrink-0 transition-colors"
+                    className="p-1.5 rounded-xl border border-slate-200/80 bg-white/70 hover:border-slate-300 hover:bg-white text-slate-800 transition-all cursor-pointer flex items-center gap-2 min-w-0 text-left"
                   >
-                    <span className="flex items-center gap-1">
-                      <Upload className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
-                      <span>Upload</span>
-                    </span>
+                    <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center shrink-0">
+                      <Upload className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[10px] font-semibold truncate">Upload photo</div>
+                      <div className="text-[9px] text-slate-500 truncate">From device</div>
+                    </div>
                   </button>
-                </div>
-
-                <div
-                  className={`grid gap-1.5 ${
-                    embeddedInPhone ? 'grid-cols-3' : 'grid-cols-3 sm:grid-cols-6'
-                  }`}
-                >
-                  {PROFILE_PHOTO_PRESETS.map((preset) => {
-                    const currentUrl =
-                      activePhotoPicker === 'status'
-                        ? resolvedStatusPhotoUrl
-                        : resolvedAvatarPhotoUrl;
-                    const isSelected = currentUrl === preset.url;
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => handleSelectPhotoUrl(activePhotoPicker, preset.url)}
-                        className={`p-1.5 rounded-xl border transition-all cursor-pointer flex flex-col items-center gap-1 min-w-0 ${
-                          isSelected
-                            ? 'bg-white text-slate-900 border-slate-900 ring-1 ring-slate-900/20 shadow-xs'
-                            : 'bg-white/65 text-slate-600 border-slate-200/80 hover:border-slate-300 hover:bg-white'
-                        }`}
-                      >
-                        <div className="w-full h-9 rounded-lg overflow-hidden bg-slate-200">
-                          <img
-                            src={preset.url}
-                            alt={preset.label}
-                            className={`w-full h-full ${preset.cropClassName}`}
-                          />
-                        </div>
-                        <span className="text-[9px] font-semibold truncate w-full text-center">
-                          {preset.label}
-                        </span>
-                      </button>
-                    );
-                  })}
                 </div>
               </div>
             )}
@@ -1607,23 +1648,42 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
               <div className="rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 p-2.5 space-y-2">
                 <textarea
                   rows={2}
-                  maxLength={160}
+                  maxLength={220}
                   value={feedComposerText}
                   onChange={(e) => setFeedComposerText(e.target.value)}
                   onKeyDown={(e) => {
                     e.stopPropagation();
                     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                       e.preventDefault();
-                      handlePublishFeedPost();
+                      void handlePublishFeedPost();
                     }
                   }}
-                  placeholder="Share an update to your Status Feed..."
+                  placeholder={`Share a moment with players in ${CERRIA_CITY_NAME}...`}
                   data-profile-status-feed-input="true"
                   className="w-full resize-none bg-transparent text-[12px] text-slate-900 placeholder:text-slate-400 focus:outline-none leading-snug"
                 />
 
+                {feedPhotoUrl && (
+                  <div className="relative w-full h-24 rounded-xl overflow-hidden border border-slate-300/70 bg-slate-200">
+                    <img
+                      src={feedPhotoUrl}
+                      alt="Attached preview"
+                      referrerPolicy="no-referrer"
+                      className={`w-full h-full ${getPhotoCropClassName(feedPhotoUrl)}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setFeedPhotoUrl('')}
+                      aria-label="Remove attached photo"
+                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-slate-900/75 hover:bg-slate-900 text-white flex items-center justify-center cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
+                )}
+
                 {/* Mood Chips */}
-                <div className="flex items-center gap-1 flex-wrap">
+                <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
                   {STATUS_MOOD_OPTIONS.map((mood) => {
                     const active = selectedMood === mood;
                     return (
@@ -1634,7 +1694,7 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
                           soundEngine.playUiClick();
                           setSelectedMood(active ? '' : mood);
                         }}
-                        className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold border transition-colors cursor-pointer ${
+                        className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold border whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                           active
                             ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                             : 'bg-white/80 text-slate-600 border-slate-200/90 hover:bg-white hover:text-slate-900'
@@ -1648,31 +1708,47 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
 
                 {/* Action Row */}
                 <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-300/60">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      setAttachCoverPhoto((prev) => !prev);
-                    }}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-semibold border cursor-pointer transition-colors shadow-xs ${
-                      attachCoverPhoto
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        : 'bg-white text-slate-700 border-slate-200/90 hover:bg-slate-50'
-                    }`}
-                  >
-                    <ImageIcon className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
-                    <span>{attachCoverPhoto ? 'Photo attached' : 'Attach cover'}</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setFeedPhotoUrl((prev) => (prev ? '' : resolvedStatusPhotoUrl));
+                      }}
+                      title="Attach your profile cover snapshot"
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-semibold border cursor-pointer transition-colors shadow-xs whitespace-nowrap shrink-0 ${
+                        feedPhotoUrl === resolvedStatusPhotoUrl
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-white text-slate-700 border-slate-200/90 hover:bg-slate-50'
+                      }`}
+                    >
+                      <ImageIcon className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
+                      <span>{feedPhotoUrl ? 'Clear photo' : 'Snapshot'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        feedUploadInputRef.current?.click();
+                      }}
+                      title="Upload image"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 shadow-xs text-[10px] font-semibold cursor-pointer transition-colors whitespace-nowrap shrink-0"
+                    >
+                      <Camera className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
+                      <span>Upload</span>
+                    </button>
+                  </div>
 
                   <button
                     type="button"
                     data-profile-post-status-btn="true"
-                    disabled={!feedComposerText.trim()}
-                    onClick={handlePublishFeedPost}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300/80 disabled:text-slate-500 text-white text-[10.5px] font-semibold cursor-pointer disabled:cursor-not-allowed transition-colors shadow-xs"
+                    disabled={!feedComposerText.trim() || isSubmittingFeedPost}
+                    onClick={() => void handlePublishFeedPost()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300/80 disabled:text-slate-500 text-white text-[10.5px] font-semibold cursor-pointer disabled:cursor-not-allowed transition-colors shadow-xs whitespace-nowrap shrink-0"
                   >
                     <Send className="w-3 h-3 stroke-[2.2]" aria-hidden="true" />
-                    <span>Post Status</span>
+                    <span>Post</span>
                   </button>
                 </div>
               </div>
@@ -1726,11 +1802,11 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
                       </p>
 
                       {post.photoUrl && (
-                        <div className="w-full h-24 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
+                        <div className="w-full rounded-lg overflow-hidden border border-slate-200 bg-slate-900/5">
                           <img
                             src={post.photoUrl}
                             alt="Status snapshot"
-                            className={`w-full h-full ${getPhotoCropClassName(post.photoUrl)}`}
+                            className="w-full h-auto max-h-72 object-contain mx-auto block"
                           />
                         </div>
                       )}
@@ -1805,11 +1881,11 @@ export const CharacterProfileModal: React.FC<CharacterProfileModalProps> = ({
                         {post.text}
                       </p>
                       {post.photoUrl && (
-                        <div className="w-full h-24 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
+                        <div className="w-full rounded-lg overflow-hidden border border-slate-200 bg-slate-900/5">
                           <img
                             src={post.photoUrl}
                             alt="Status snapshot"
-                            className={`w-full h-full ${getPhotoCropClassName(post.photoUrl)}`}
+                            className="w-full h-auto max-h-72 object-contain mx-auto block"
                           />
                         </div>
                       )}

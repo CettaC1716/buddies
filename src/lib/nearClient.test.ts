@@ -215,8 +215,8 @@ test('3-currency anti-bot P2P economy and empty-start Modern Japanese Wooden Pav
     respite: 25,
     walletConnected: true,
   });
-  assert.match(currencyReply, /LUL/i);
-  assert.match(currencyReply, /CYON/i);
+  assert.match(currencyReply, /CerBucks/i);
+  assert.match(currencyReply, /CerCoins/i);
   assert.match(currencyReply, /RESPITE/i);
   assert.match(currencyReply, /Kai/i);
 });
@@ -437,8 +437,8 @@ test('Hana and Kai live chat concierge answers Fish NFT sales records, locations
     state,
     balances,
   );
-  assert.match(currencyReply, /LUL/i);
-  assert.match(currencyReply, /CYON/i);
+  assert.match(currencyReply, /CerBucks/i);
+  assert.match(currencyReply, /CerCoins/i);
   assert.match(currencyReply, /RESPITE/i);
 
   // 4. Zero developer jargon & zero emojis in concierge replies
@@ -1230,8 +1230,8 @@ test('parseNpcChatTransactionIntent and buildOfflineChatTransactionAck detect In
   const exIntent = parseNpcChatTransactionIntent('tukar 100 lul ke cyon', 'lobby_cafe');
   assert.deepEqual(exIntent, { kind: 'exchange_lul_cyon', suggestedLulAmount: 100 });
   const exAck = buildOfflineChatTransactionAck(exIntent!, 'tukar 100 lul ke cyon', 'lobby_cafe', market);
-  assert.match(exAck, /LUL/i);
-  assert.match(exAck, /CYON/i);
+  assert.match(exAck, /CerBucks/i);
+  assert.match(exAck, /CerCoins/i);
 
   const swapIntent = parseNpcChatTransactionIntent('swap 0.25 near ke respite', 'lobby_cafe');
   assert.deepEqual(swapIntent, { kind: 'swap_near_respite', suggestedNearAmount: 0.25 });

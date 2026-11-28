@@ -23,9 +23,10 @@ import {
   type MerchantCatalogItem,
   evaluateMerchantItemQuote,
 } from '../game/buddiesMerchantPricing';
-import type {
-  CaughtFishItem,
-  FishNftMarketplaceListing,
+import {
+  getFishSpeciesRespiteStandardPrice,
+  type CaughtFishItem,
+  type FishNftMarketplaceListing,
 } from '../game/buddiesFishingMarket';
 import {
   type DbMarketTransactionRow,
@@ -932,7 +933,8 @@ export const DexMarketplaceModal: React.FC<DexMarketplaceModalProps> = ({
                   const suggested = Math.max(
                     1,
                     fish.suggestedRespitePrice ||
-                      Math.round((fish.sellValueLul || 25) / 10),
+                      getFishSpeciesRespiteStandardPrice(fish.speciesId) ||
+                      1,
                   );
                   const priceInput =
                     listingPriceByFishId[fish.id] ?? String(suggested);

@@ -96,7 +96,7 @@ const ROYALE_3X4_PAYLINES: ReadonlyArray<readonly [number, number, number]> = [
   [3, 2, 3],
 ];
 
-export const RESPITE_SLOT_BET_TIERS = [1, 2, 5, 10, 25, 50, 100, 250] as const;
+export const LUL_SLOT_BET_TIERS = [1, 2, 5, 10, 25, 50, 100, 250] as const;
 
 interface WinningBeamLine {
   coords: Array<{ col: number; row: number }>;
@@ -105,21 +105,21 @@ interface WinningBeamLine {
 
 interface RecentWinnerEntry {
   initials: string;
-  amountRespite: number;
+  amountLul: number;
 }
 
 const INITIAL_RECENT_WINNERS: RecentWinnerEntry[] = [
-  { initials: 'D.K.', amountRespite: 846 },
-  { initials: 'B.E.', amountRespite: 320 },
-  { initials: 'M.W.', amountRespite: 135 },
-  { initials: 'V.T.', amountRespite: 445 },
+  { initials: 'D.K.', amountLul: 846 },
+  { initials: 'B.E.', amountLul: 320 },
+  { initials: 'M.W.', amountLul: 135 },
+  { initials: 'V.T.', amountLul: 445 },
 ];
 
 function pickRandomRoyaleSymbol(): RoyaleSymbolId {
   return ROYALE_WEIGHTED_POOL[Math.floor(Math.random() * ROYALE_WEIGHTED_POOL.length)] ?? 'ACE';
 }
 
-function formatRespiteReadout(val: number): string {
+function formatLulReadout(val: number): string {
   return val.toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -593,28 +593,24 @@ const GrandRoyaleSymbolTile: React.FC<{
 export interface CasinoSlotMachinesPanelProps {
   variant: CasinoSlotGameVariant;
   isActive: boolean;
-  respiteBalance: number;
-  lulBalance?: number;
+  lulBalance: number;
   onClose?: () => void;
-  onDebitRespite: (stakeRespite: number) => { ok: boolean; message: string };
-  onSettleRespite: (
-    payoutRespite: number,
+  onDebitLul: (stakeLul: number) => { ok: boolean; message: string };
+  onSettleLul: (
+    payoutLul: number,
     xpGained: number,
     announceHeadline?: string,
   ) => void;
-  onQuickTopUpRespite?: () => void;
   onSettleClassicEvaluation?: (evaluation: ArcadeSlotEvaluation) => void;
 }
 
 export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = ({
   variant,
   isActive,
-  respiteBalance,
-  lulBalance = 0,
+  lulBalance,
   onClose,
-  onDebitRespite,
-  onSettleRespite,
-  onQuickTopUpRespite,
+  onDebitLul,
+  onSettleLul,
 }) => {
   const jackpotGradId = useId();
   const variantMeta = CASINO_SLOT_VARIANT_META[variant];
@@ -623,9 +619,9 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
   const rafIdsRef = useRef<number[]>([]);
   const pendingSettlementRef = useRef<(() => void) | null>(null);
 
-  // Cabinet controls & HUD states (default to 1 RESPITE when low balance, 5 RESPITE otherwise)
-  const [betIndex, setBetIndex] = useState<number>(() => (respiteBalance >= 5 ? 2 : 0));
-  const [lastWinRespite, setLastWinRespite] = useState<number>(0);
+  // Cabinet controls & HUD states (default to 1 LUL when low balance, 5 LUL otherwise)
+  const [betIndex, setBetIndex] = useState<number>(() => (lulBalance >= 5 ? 2 : 0));
+  const [lastWinLul, setLastWinLul] = useState<number>(0);
   const [isSpinning, setIsSpinning] = useState<boolean>(false);
   const [isTurbo, setIsTurbo] = useState<boolean>(false);
   const [isAutoSpin, setIsAutoSpin] = useState<boolean>(false);
@@ -635,7 +631,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
   const [statusMessage, setStatusMessage] = useState<string>('READY · SPIN TO WIN!');
   const [recentWinners, setRecentWinners] = useState<RecentWinnerEntry[]>(INITIAL_RECENT_WINNERS);
 
-  // Progressive Jackpot Display Tickers (scaled cleanly in RESPITE)
+  // Progressive Jackpot Display Tickers (scaled cleanly in LUL)
   const [jackpots, setJackpots] = useState({
     grand: 125091.48,
     major: 4522.39,
@@ -644,7 +640,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
 
   // VIP Active Boost Multiplier (3X base, surges to 5X during Free Spins!)
   const activeMultiplier = freeSpinsLeft > 0 ? 5 : 3;
-  const currentBet = RESPITE_SLOT_BET_TIERS[betIndex] ?? 5;
+  const currentBet = LUL_SLOT_BET_TIERS[betIndex] ?? 5;
 
   // Refs for auto-spin & canvas overlays
   const isAutoSpinRef = useRef(false);
@@ -761,7 +757,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
         ctx.font = '900 9px monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('R', 0, 0.5);
+        ctx.fillText('L', 0, 0.5);
         ctx.restore();
       }
 
@@ -829,7 +825,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
   const recordWinnerFeed = useCallback((payout: number) => {
     if (payout <= 0) return;
     setRecentWinners((prev) => [
-      { initials: 'YOU', amountRespite: Math.round(payout * 100) / 100 },
+      { initials: 'YOU', amountLul: Math.round(payout * 100) / 100 },
       ...prev.slice(0, 3),
     ]);
   }, []);
@@ -999,7 +995,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
   const wheelAngleRef = useRef<number>(0);
 
   // ===========================================================================
-  // UNIFIED SPIN DISPATCHER (Powered 100% by Real RESPITE Currency)
+  // UNIFIED SPIN DISPATCHER (Powered 100% by Real LUL Currency)
   // ===========================================================================
   const handleSpinRef = useRef<() => void>(() => {});
 
@@ -1018,11 +1014,11 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
     if (isSpinning || isPaytableOpen) return;
 
     const usingFreeSpin = freeSpinsLeft > 0;
-    const stakeRespite = currentBet;
+    const stakeLul = currentBet;
     const multUsed = usingFreeSpin ? 5 : 3;
 
     if (!usingFreeSpin) {
-      const debit = onDebitRespite(stakeRespite);
+      const debit = onDebitLul(stakeLul);
       if (!debit.ok) {
         soundEngine.playHit();
         setStatusMessage(debit.message.toUpperCase());
@@ -1035,11 +1031,11 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
 
     clearAllAnimations();
     setIsSpinning(true);
-    setLastWinRespite(0);
+    setLastWinLul(0);
     setJackpots((prev) => ({
-      grand: prev.grand + stakeRespite * 0.08,
-      major: prev.major + stakeRespite * 0.03,
-      mini: prev.mini + stakeRespite * 0.01,
+      grand: prev.grand + stakeLul * 0.08,
+      major: prev.major + stakeLul * 0.03,
+      mini: prev.mini + stakeLul * 0.01,
     }));
 
     if (soundEnabledRef.current) {
@@ -1100,7 +1096,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
         const allMatch = nonWilds.every((s) => s.id === resolvedSym.id);
 
         if (allMatch) {
-          baseWin += stakeRespite * (resolvedSym.payout3x / 6);
+          baseWin += stakeLul * (resolvedSym.payout3x / 6);
           hitKeys.add(`0-${pattern[0]}`);
           hitKeys.add(`1-${pattern[1]}`);
           hitKeys.add(`2-${pattern[2]}`);
@@ -1129,19 +1125,19 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
       let awardedFreeSpins = 0;
       if (scatterCount >= 3) {
         awardedFreeSpins = 5;
-        baseWin += stakeRespite * 3;
+        baseWin += stakeLul * 3;
         scatterCoords.forEach((sc) => hitKeys.add(`${sc.col}-${sc.row}`));
       } else if (scatterCount === 2) {
         awardedFreeSpins = 2;
         scatterCoords.forEach((sc) => hitKeys.add(`${sc.col}-${sc.row}`));
       }
 
-      const finalWinRespite = Math.round(baseWin * multUsed);
+      const finalWinLul = Math.round(baseWin * multUsed);
       const xpGained =
-        finalWinRespite >= stakeRespite * 8 ? 30 : finalWinRespite > 0 ? 10 : 3;
+        finalWinLul >= stakeLul * 8 ? 30 : finalWinLul > 0 ? 10 : 3;
 
       pendingSettlementRef.current = () => {
-        onSettleRespite(finalWinRespite, xpGained);
+        onSettleLul(finalWinLul, xpGained);
       };
 
       const intermediateLen = isTurboRef.current ? 12 : 22;
@@ -1220,7 +1216,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
             next[colIdx] = targetCols[colIdx];
             return next;
           });
-          playCabinetReelLock(colIdx, colIdx === 2 && finalWinRespite > 0);
+          playCabinetReelLock(colIdx, colIdx === 2 && finalWinLul > 0);
 
           stoppedCount += 1;
           if (stoppedCount === 3) {
@@ -1235,25 +1231,25 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
             }
 
             const headline =
-              finalWinRespite > 0
-                ? `WINNER! +${finalWinRespite} RESPITE`
+              finalWinLul > 0
+                ? `WINNER! +${finalWinLul} CerBucks`
                 : awardedFreeSpins > 0
                   ? `+${awardedFreeSpins} FREE SPINS UNLOCKED!`
                   : 'SPIN AGAIN!';
 
             setStatusMessage(headline);
-            setLastWinRespite(finalWinRespite);
-            onSettleRespite(
-              finalWinRespite,
+            setLastWinLul(finalWinLul);
+            onSettleLul(
+              finalWinLul,
               xpGained,
-              finalWinRespite >= stakeRespite * 5
-                ? `GRAND ROYALE WIN +${finalWinRespite} RESPITE!`
+              finalWinLul >= stakeLul * 5
+                ? `GRAND ROYALE WIN +${finalWinLul} CerBucks!`
                 : undefined,
             );
 
-            if (finalWinRespite > 0) {
-              recordWinnerFeed(finalWinRespite);
-              const big = finalWinRespite >= stakeRespite * 6;
+            if (finalWinLul > 0) {
+              recordWinnerFeed(finalWinLul);
+              const big = finalWinLul >= stakeLul * 6;
               playCabinetWin(big);
               triggerCoinParticleBurst(big ? 65 : 32);
             }
@@ -1284,7 +1280,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
         cherry: 'RUBY',
       };
 
-      const spinRes = spinArcadeSlotReels(Math.max(2, stakeRespite), 9999999);
+      const spinRes = spinArcadeSlotReels(Math.max(2, stakeLul), 9999999);
       const evalClassic = spinRes.evaluation!;
       const centerLine: [RoyaleSymbolId, RoyaleSymbolId, RoyaleSymbolId] = [
         mapArcadeToRoyale[evalClassic.reels[0]],
@@ -1299,12 +1295,12 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
       ];
 
       const rawBaseWin =
-        evalClassic.multiplier > 0 ? Math.round(stakeRespite * evalClassic.multiplier * 0.5) : 0;
-      const finalWinRespite = rawBaseWin > 0 ? Math.max(stakeRespite, rawBaseWin * multUsed) : 0;
+        evalClassic.multiplier > 0 ? Math.round(stakeLul * evalClassic.multiplier * 0.5) : 0;
+      const finalWinLul = rawBaseWin > 0 ? Math.max(stakeLul, rawBaseWin * multUsed) : 0;
       const xpGained = evalClassic.xpGained;
 
       pendingSettlementRef.current = () => {
-        onSettleRespite(finalWinRespite, xpGained);
+        onSettleLul(finalWinLul, xpGained);
       };
 
       const intermediateLen = isTurboRef.current ? 10 : 18;
@@ -1382,7 +1378,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
             pendingSettlementRef.current = null;
             setIsSpinning(false);
 
-            if (finalWinRespite > 0) {
+            if (finalWinLul > 0) {
               const hitKeys = new Set<string>(['0-1', '1-1', '2-1']);
               setWinningCellKeys(hitKeys);
               setWinningBeams([
@@ -1398,20 +1394,20 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
               if (evalClassic.outcomeKind === 'jackpot') {
                 setFreeSpinsLeft((prev) => prev + 3);
               }
-              setStatusMessage(`WINNER! +${finalWinRespite} RESPITE`);
-              setLastWinRespite(finalWinRespite);
-              recordWinnerFeed(finalWinRespite);
-              playCabinetWin(finalWinRespite >= stakeRespite * 6);
-              triggerCoinParticleBurst(finalWinRespite >= stakeRespite * 6 ? 60 : 28);
+              setStatusMessage(`WINNER! +${finalWinLul} CerBucks`);
+              setLastWinLul(finalWinLul);
+              recordWinnerFeed(finalWinLul);
+              playCabinetWin(finalWinLul >= stakeLul * 6);
+              triggerCoinParticleBurst(finalWinLul >= stakeLul * 6 ? 60 : 28);
             } else {
               setStatusMessage('SPIN AGAIN!');
             }
 
-            onSettleRespite(
-              finalWinRespite,
+            onSettleLul(
+              finalWinLul,
               xpGained,
-              finalWinRespite >= stakeRespite * 5
-                ? `RUBY 777 JACKPOT +${finalWinRespite} RESPITE!`
+              finalWinLul >= stakeLul * 5
+                ? `RUBY 777 JACKPOT +${finalWinLul} CerBucks!`
                 : undefined,
             );
             scheduleAutoSpinNext();
@@ -1430,16 +1426,16 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
     if (variant === 'lucky_draw') {
       setStatusMessage(usingFreeSpin ? 'FREE CHASE ACTIVE!' : 'CHASING VAULT MATRIX...');
       const evaluation: LuckyDrawSpinEvaluation = spinLuckyDrawTile(
-        Math.max(2, stakeRespite),
+        Math.max(2, stakeLul),
         ldVaultPct,
         usingFreeSpin,
       );
       const scaledWin = evaluation.vaultJackpotTriggered
-        ? stakeRespite * 777
-        : Math.round(stakeRespite * evaluation.resolvedMultiplier * (multUsed / 3));
+        ? stakeLul * 777
+        : Math.round(stakeLul * evaluation.resolvedMultiplier * (multUsed / 3));
 
       pendingSettlementRef.current = () => {
-        onSettleRespite(scaledWin, evaluation.xpGained);
+        onSettleLul(scaledWin, evaluation.xpGained);
       };
 
       let chaseTick = 0;
@@ -1480,24 +1476,24 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
             if (evaluation.grantsFreeRespin) {
               setFreeSpinsLeft((prev) => prev + 1);
             }
-            setLastWinRespite(scaledWin);
+            setLastWinLul(scaledWin);
             setStatusMessage(
               scaledWin > 0
-                ? `WINNER! +${scaledWin} RESPITE`
+                ? `WINNER! +${scaledWin} CerBucks`
                 : evaluation.grantsFreeRespin
                   ? '+1 FREE SPIN UNLOCKED!'
                   : 'SPIN AGAIN!',
             );
-            onSettleRespite(
+            onSettleLul(
               scaledWin,
               evaluation.xpGained,
               evaluation.vaultJackpotTriggered
-                ? `x777 VAULT JACKPOT +${scaledWin} RESPITE!`
+                ? `x777 VAULT JACKPOT +${scaledWin} CerBucks!`
                 : undefined,
             );
             if (scaledWin > 0) {
               recordWinnerFeed(scaledWin);
-              playCabinetWin(evaluation.vaultJackpotTriggered || scaledWin >= stakeRespite * 5);
+              playCabinetWin(evaluation.vaultJackpotTriggered || scaledWin >= stakeLul * 5);
               triggerCoinParticleBurst(evaluation.vaultJackpotTriggered ? 75 : 30);
             }
             scheduleAutoSpinNext();
@@ -1519,14 +1515,14 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
     // MODE D: EMERALD 50X FORTUNE WHEEL — EMERALD EAST BANK
     // -------------------------------------------------------------------------
     setStatusMessage('SPINNING FORTUNE WHEEL...');
-    const wheelRes = spinEmeraldFortuneWheel(Math.max(2, stakeRespite));
+    const wheelRes = spinEmeraldFortuneWheel(Math.max(2, stakeLul));
     const wheelWin =
       wheelRes.sector.multiplier > 0
-        ? Math.round(stakeRespite * wheelRes.sector.multiplier * (multUsed / 3))
+        ? Math.round(stakeLul * wheelRes.sector.multiplier * (multUsed / 3))
         : 0;
 
     pendingSettlementRef.current = () => {
-      onSettleRespite(wheelWin, wheelRes.xpGained);
+      onSettleLul(wheelWin, wheelRes.xpGained);
     };
 
     const sectorCenter = wheelRes.sector.index * 45 + 22.5;
@@ -1575,24 +1571,24 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
       pendingSettlementRef.current = null;
       setFlapperTiltDeg(0);
       setIsSpinning(false);
-      setLastWinRespite(wheelWin);
+      setLastWinLul(wheelWin);
       if (wheelRes.sector.multiplier >= 50) {
         setFreeSpinsLeft((prev) => prev + 3);
       }
       setStatusMessage(
-        wheelWin > 0 ? `WINNER! +${wheelWin} RESPITE` : 'LANDED ON MISS · SPIN AGAIN!',
+        wheelWin > 0 ? `WINNER! +${wheelWin} CerBucks` : 'LANDED ON MISS · SPIN AGAIN!',
       );
-      onSettleRespite(
+      onSettleLul(
         wheelWin,
         wheelRes.xpGained,
-        wheelWin >= stakeRespite * 10
-          ? `EMERALD WHEEL +${wheelWin} RESPITE!`
+        wheelWin >= stakeLul * 10
+          ? `EMERALD WHEEL +${wheelWin} CerBucks!`
           : undefined,
       );
       if (wheelWin > 0) {
         recordWinnerFeed(wheelWin);
-        playCabinetWin(wheelWin >= stakeRespite * 8);
-        triggerCoinParticleBurst(wheelWin >= stakeRespite * 8 ? 65 : 28);
+        playCabinetWin(wheelWin >= stakeLul * 8);
+        triggerCoinParticleBurst(wheelWin >= stakeLul * 8 ? 65 : 28);
       }
       scheduleAutoSpinNext();
     };
@@ -1606,8 +1602,8 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
     variant,
     ldVaultPct,
     cellHeightPx,
-    onDebitRespite,
-    onSettleRespite,
+    onDebitLul,
+    onSettleLul,
     clearAllAnimations,
     playCabinetTick,
     playCabinetReelLock,
@@ -1694,7 +1690,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                 MAJOR:
               </span>
               <span className="font-mono-tabular text-base sm:text-lg font-extrabold text-white tracking-wide">
-                {formatRespiteReadout(jackpots.major)} R
+                {formatLulReadout(jackpots.major)} CerBucks
               </span>
             </div>
 
@@ -1712,7 +1708,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                 viewBox="0 0 460 40"
                 className="w-full max-w-[400px] h-8 sm:h-9 mx-auto overflow-visible"
                 role="img"
-                aria-label={`Grand Jackpot ${formatRespiteReadout(jackpots.grand)} RESPITE`}
+                aria-label={`Grand Jackpot ${formatLulReadout(jackpots.grand)} CerBucks`}
               >
                 <defs>
                   <linearGradient id={`${jackpotGradId}-jp`} x1="0" y1="0" x2="0" y2="1">
@@ -1730,7 +1726,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                   fontSize="30"
                   fill={`url(#${jackpotGradId}-jp)`}
                 >
-                  {formatRespiteReadout(jackpots.grand)} RESPITE
+                  {formatLulReadout(jackpots.grand)} CerBucks
                 </text>
               </svg>
             </div>
@@ -1741,7 +1737,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                 MINI:
               </span>
               <span className="font-mono-tabular text-base sm:text-lg font-extrabold text-white tracking-wide">
-                {formatRespiteReadout(jackpots.mini)} R
+                {formatLulReadout(jackpots.mini)} CerBucks
               </span>
             </div>
           </div>
@@ -1869,7 +1865,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                 </>
               )}
 
-              {/* BANK 1: LUCKY DRAW 4x4 CHASE + x777 RESPITE VAULT */}
+              {/* BANK 1: LUCKY DRAW 4x4 CHASE + x777 LUL VAULT */}
               {variant === 'lucky_draw' && (
                 <div className="relative z-20 h-full grid grid-cols-4 grid-rows-4 gap-2 p-3 bg-[#090d17]">
                   {Array.from({ length: 16 }).map((_, flatIdx) => {
@@ -1890,7 +1886,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                             <div className="flex flex-col items-center my-0.5">
                               <CasinoSlotSymbolArtwork id="vault" sizeClass="w-12 h-12" />
                               <div className="font-mono-tabular text-base sm:text-lg font-extrabold text-emerald-300 mt-0.5">
-                                {(currentBet * 777).toLocaleString()} RESPITE
+                                {(currentBet * 777).toLocaleString()} CerBucks
                               </div>
                             </div>
 
@@ -1955,7 +1951,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                         Top Wedge Prize
                       </div>
                       <div className="font-mono-tabular text-lg font-extrabold text-amber-300">
-                        {(currentBet * 50 * (activeMultiplier / 3)).toFixed(0)} RESPITE
+                        {(currentBet * 50 * (activeMultiplier / 3)).toFixed(0)} CerBucks
                       </div>
                     </div>
                     <div className="px-3.5 py-2.5 rounded-2xl bg-white/[0.05] border border-white/10">
@@ -2063,7 +2059,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                       <span className={w.initials === 'YOU' ? 'text-amber-300 font-bold' : ''}>
                         {w.initials}
                       </span>
-                      <span className="text-emerald-400 font-bold">+{w.amountRespite} R</span>
+                      <span className="text-emerald-400 font-bold">+{w.amountLul} CerBucks</span>
                     </div>
                   ))}
                 </div>
@@ -2097,19 +2093,9 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                 <span className="font-cinzel text-xs sm:text-sm font-bold text-amber-300 tracking-widest uppercase">
                   CREDITS:
                 </span>
-                {onQuickTopUpRespite && lulBalance >= 50 && (
-                  <button
-                    type="button"
-                    onClick={onQuickTopUpRespite}
-                    title="Exchange 50 LUL for +5 RESPITE Slot Credits"
-                    className="px-3 py-1 rounded-full bg-amber-300 hover:bg-amber-200 text-slate-950 text-[10px] font-bold font-cinzel whitespace-nowrap cursor-pointer transition-colors"
-                  >
-                    +5 R (50 LUL)
-                  </button>
-                )}
               </div>
               <span className="font-mono-tabular text-xl sm:text-2xl font-extrabold text-white tracking-tight">
-                {formatRespiteReadout(respiteBalance)} RESPITE
+                {formatLulReadout(lulBalance)} CerBucks
               </span>
             </div>
 
@@ -2118,7 +2104,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                 WIN:
               </span>
               <span className="font-mono-tabular text-xl sm:text-2xl font-extrabold text-emerald-400 tracking-tight">
-                {formatRespiteReadout(lastWinRespite)} RESPITE
+                {formatLulReadout(lastWinLul)} CerBucks
               </span>
             </div>
           </section>
@@ -2189,7 +2175,7 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                     TOTAL BET
                   </div>
                   <div className="font-mono-tabular text-base sm:text-lg font-extrabold text-white leading-tight whitespace-nowrap">
-                    {currentBet} RESPITE
+                    {currentBet} CerBucks
                   </div>
                   <div className="text-[9px] text-slate-400 font-semibold tracking-wider uppercase whitespace-nowrap">
                     {modeSubtitle}
@@ -2198,10 +2184,10 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
 
                 <button
                   type="button"
-                  disabled={isSpinning || betIndex >= RESPITE_SLOT_BET_TIERS.length - 1}
+                  disabled={isSpinning || betIndex >= LUL_SLOT_BET_TIERS.length - 1}
                   onClick={() => {
                     playCabinetClick();
-                    setBetIndex((prev) => Math.min(RESPITE_SLOT_BET_TIERS.length - 1, prev + 1));
+                    setBetIndex((prev) => Math.min(LUL_SLOT_BET_TIERS.length - 1, prev + 1));
                   }}
                   aria-label="Increase Bet"
                   className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center disabled:opacity-35 cursor-pointer transition-colors"
@@ -2217,8 +2203,8 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
                 onClick={() => {
                   playCabinetClick();
                   let bestIdx = 0;
-                  for (let i = 0; i < RESPITE_SLOT_BET_TIERS.length; i++) {
-                    if (respiteBalance >= RESPITE_SLOT_BET_TIERS[i]) {
+                  for (let i = 0; i < LUL_SLOT_BET_TIERS.length; i++) {
+                    if (lulBalance >= LUL_SLOT_BET_TIERS[i]) {
                       bestIdx = i;
                     }
                   }
@@ -2342,9 +2328,9 @@ export const CasinoSlotMachinesPanel: React.FC<CasinoSlotMachinesPanelProps> = (
 
               <div className="bg-white/[0.05] border border-white/10 rounded-2xl p-3.5 text-xs leading-relaxed text-slate-300 space-y-1">
                 <p>
-                  <strong className="text-amber-300 font-cinzel">RESPITE Settlement:</strong> All bets
+                  <strong className="text-amber-300 font-cinzel">CerBucks Settlement:</strong> All bets
                   and winnings settle directly against your in-game{' '}
-                  <span className="text-emerald-300 font-semibold">RESPITE</span> balance.
+                  <span className="text-emerald-300 font-semibold">CerBucks</span> balance.
                 </p>
                 <p>
                   <strong className="text-amber-300 font-cinzel">Active VIP Multiplier:</strong> Base

@@ -48,7 +48,7 @@ export function spinCasinoRouletteWheel(
     return {
       ok: false,
       reason: 'invalid_bet',
-      message: 'Minimum Roulette bet is 1 LUL.',
+      message: 'Minimum Roulette bet is 1 CerBucks.',
       betType,
       stakeLul: safeStake,
       pocketNumber: 0,
@@ -64,7 +64,7 @@ export function spinCasinoRouletteWheel(
     return {
       ok: false,
       reason: 'insufficient_lul',
-      message: `Need ${safeStake} LUL to spin Roulette (you have ${safeBal} LUL).`,
+      message: `Need ${safeStake} CerBucks to spin Roulette (you have ${safeBal} CerBucks).`,
       betType,
       stakeLul: safeStake,
       pocketNumber: 0,
@@ -103,8 +103,8 @@ export function spinCasinoRouletteWheel(
   const netDeltaLul = payoutLul - safeStake;
   const xpGained = won ? (betType === 'zero' ? 30 : 8) : 2;
   const message = won
-    ? `#${pocketNumber} (${pocketColor.toUpperCase()}) · WIN +${payoutLul} LUL!`
-    : `#${pocketNumber} (${pocketColor.toUpperCase()}) · HOUSE TAKES -${safeStake} LUL`;
+    ? `#${pocketNumber} (${pocketColor.toUpperCase()}) · WIN +${payoutLul} CerBucks!`
+    : `#${pocketNumber} (${pocketColor.toUpperCase()}) · HOUSE TAKES -${safeStake} CerBucks`;
 
   return {
     ok: true,
@@ -230,7 +230,7 @@ export function dealCasinoBlackjackHand(
         outcome: 'push',
         payoutLul: safeStake,
         xpGained: 4,
-        headline: `DOUBLE BLACKJACK · PUSH (${safeStake} LUL BACK)`,
+        headline: `DOUBLE BLACKJACK · PUSH (${safeStake} CerBucks BACK)`,
       };
     }
     if (pEval.isBlackjack) {
@@ -244,7 +244,7 @@ export function dealCasinoBlackjackHand(
         outcome: 'blackjack',
         payoutLul,
         xpGained: 20,
-        headline: `NATURAL BLACKJACK 21! +${payoutLul} LUL`,
+        headline: `NATURAL BLACKJACK 21! +${payoutLul} CerBucks`,
       };
     }
     return {
@@ -256,7 +256,7 @@ export function dealCasinoBlackjackHand(
       outcome: 'lose',
       payoutLul: 0,
       xpGained: 2,
-      headline: `DEALER BLACKJACK · -${safeStake} LUL`,
+      headline: `DEALER BLACKJACK · -${safeStake} CerBucks`,
     };
   }
 
@@ -289,7 +289,7 @@ export function hitCasinoBlackjackHand(state: CasinoBlackjackState): CasinoBlack
       outcome: 'lose',
       payoutLul: 0,
       xpGained: 2,
-      headline: `BUST (${pEval.total}) · -${state.stakeLul} LUL`,
+      headline: `BUST (${pEval.total}) · -${state.stakeLul} CerBucks`,
     };
   }
 
@@ -332,8 +332,8 @@ export function standCasinoBlackjackHand(state: CasinoBlackjackState): CasinoBla
       payoutLul,
       xpGained: 10,
       headline: dEval.isBust
-        ? `DEALER BUST (${dEval.total}) · WIN +${payoutLul} LUL!`
-        : `YOU WIN ${pTotal} VS ${dEval.total} · +${payoutLul} LUL!`,
+        ? `DEALER BUST (${dEval.total}) · WIN +${payoutLul} CerBucks!`
+        : `YOU WIN ${pTotal} VS ${dEval.total} · +${payoutLul} CerBucks!`,
     };
   }
 
@@ -346,7 +346,7 @@ export function standCasinoBlackjackHand(state: CasinoBlackjackState): CasinoBla
       outcome: 'push',
       payoutLul: state.stakeLul,
       xpGained: 4,
-      headline: `PUSH AT ${pTotal} · ${state.stakeLul} LUL RETURNED`,
+      headline: `PUSH AT ${pTotal} · ${state.stakeLul} CerBucks RETURNED`,
     };
   }
 
@@ -358,7 +358,7 @@ export function standCasinoBlackjackHand(state: CasinoBlackjackState): CasinoBla
     outcome: 'lose',
     payoutLul: 0,
     xpGained: 2,
-    headline: `DEALER WINS ${dEval.total} VS ${pTotal} · -${state.stakeLul} LUL`,
+    headline: `DEALER WINS ${dEval.total} VS ${pTotal} · -${state.stakeLul} CerBucks`,
   };
 }
 
@@ -643,19 +643,19 @@ export function spinLuckyDrawTile(
 
   let headline = '';
   if (vaultJackpotTriggered) {
-    headline = `VAULT 100%! x777 JACKPOT +${totalPayout.toLocaleString()} LUL!`;
+    headline = `VAULT 100%! x777 JACKPOT +${totalPayout.toLocaleString()} CerBucks!`;
   } else if (grantsFreeRespin) {
     headline = 'FREE RE-SPIN UNLOCKED · VAULT CHARGED!';
   } else if (picked.kind === 'mystery') {
-    headline = `MYSTERY BOX ${resolvedMult}x · +${totalPayout} LUL!`;
+    headline = `MYSTERY BOX ${resolvedMult}x · +${totalPayout} CerBucks!`;
   } else if (picked.kind === 'vault_boost') {
-    headline = `VAULT +25% SURGE · +${totalPayout} LUL BACK`;
+    headline = `VAULT +25% SURGE · +${totalPayout} CerBucks BACK`;
   } else if (totalPayout > safeBet) {
-    headline = `LANDED ON ${picked.label} ${picked.sublabel} · +${totalPayout} LUL!`;
+    headline = `LANDED ON ${picked.label} ${picked.sublabel} · +${totalPayout} CerBucks!`;
   } else if (totalPayout === safeBet) {
-    headline = `1x PUSH · ${totalPayout} LUL RETURNED`;
+    headline = `1x PUSH · ${totalPayout} CerBucks RETURNED`;
   } else {
-    headline = isFreeRespin ? 'FREE RE-SPIN MISSED · TRY AGAIN' : `MISS · -${safeBet} LUL`;
+    headline = isFreeRespin ? 'FREE RE-SPIN MISSED · TRY AGAIN' : `MISS · -${safeBet} CerBucks`;
   }
 
   const xpGained = vaultJackpotTriggered ? 60 : totalPayout > safeBet ? 10 : grantsFreeRespin ? 5 : 2;
@@ -762,8 +762,8 @@ export function spinSapphire5LineMatrix(betLul: number): Sapphire5LineEvaluation
     winningLines.length === 0 ? 2 : Math.min(35, 6 + winningLines.length * 8);
   const headline =
     winningLines.length > 0
-      ? `${winningLines.length} PAYLINE HIT! +${payoutLul} LUL`
-      : `NO 3-IN-A-ROW LINE · -${safeBet} LUL`;
+      ? `${winningLines.length} PAYLINE HIT! +${payoutLul} CerBucks`
+      : `NO 3-IN-A-ROW LINE · -${safeBet} CerBucks`;
 
   return { grid, winningLines, payoutLul, xpGained, headline };
 }
@@ -819,8 +819,8 @@ export function spinEmeraldFortuneWheel(
   const xpGained = picked.multiplier >= 15 ? 25 : picked.multiplier > 0 ? 8 : 2;
   const headline =
     payoutLul > 0
-      ? `WHEEL LANDED ON ${picked.label} · +${payoutLul} LUL!`
-      : `WHEEL LANDED ON MISS · -${safeBet} LUL`;
+      ? `WHEEL LANDED ON ${picked.label} · +${payoutLul} CerBucks!`
+      : `WHEEL LANDED ON MISS · -${safeBet} CerBucks`;
   return {
     sector: picked,
     payoutLul,

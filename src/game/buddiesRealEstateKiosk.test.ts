@@ -340,3 +340,37 @@ test('Glass Modern Model House door triangle sits on front circular medallion be
   const farPlaza = evaluatePlazaModelHouseDoorProximity(-91.3, -15.0);
   assert.equal(farPlaza.isNear, false);
 });
+
+test('Merchant Hana shop-front patrol waypoints roam cleanly in front of 3-Bay West Plaza shops without colliding', async () => {
+  const {
+    HANA_SHOP_FRONT_PATROL_SPEED_MPS,
+    HANA_SHOP_FRONT_PATROL_WAYPOINTS,
+  } = await import('./buddiesRealEstateKioskRules');
+  const { computeScooterShopWorldColliders } = await import('./buddiesUrbanScooterRules');
+  const { computeFashionKioskWorldColliders } = await import('./buddiesFashionKioskRules');
+
+  assert.ok(HANA_SHOP_FRONT_PATROL_WAYPOINTS.length >= 4);
+  assert.ok(HANA_SHOP_FRONT_PATROL_SPEED_MPS >= 1.1 && HANA_SHOP_FRONT_PATROL_SPEED_MPS <= 1.7);
+
+  const allShopColliders = [
+    ...computeRealEstateKioskWorldColliders(),
+    ...computeScooterShopWorldColliders(),
+    ...computeFashionKioskWorldColliders(),
+  ];
+  const hanaRadius = 0.56;
+
+  for (const wp of HANA_SHOP_FRONT_PATROL_WAYPOINTS) {
+    // Stays in the open West Plaza promenade in front of her arcade
+    assert.ok(wp.x >= -101.0 && wp.x <= -95.0, `Expected Hana waypoint x=${wp.x} in West Plaza storefront promenade`);
+    assert.ok(wp.z >= -12.0 && wp.z <= 5.0, `Expected Hana waypoint z=${wp.z} across 3-bay arcade front`);
+    for (const obb of allShopColliders) {
+      const overlapX = Math.abs(wp.x - obb.x) < hanaRadius + obb.halfX;
+      const overlapZ = Math.abs(wp.z - obb.z) < hanaRadius + obb.halfZ;
+      assert.equal(
+        overlapX && overlapZ,
+        false,
+        `Hana patrol waypoint (${wp.x}, ${wp.z}) must not collide with ${obb.id}`,
+      );
+    }
+  }
+});

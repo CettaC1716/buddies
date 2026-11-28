@@ -4,15 +4,10 @@ import { soundEngine } from '../game/audio';
 export interface CasinoRouletteInteractivePanelProps {
   isActive: boolean;
   lulBalance: number;
-  respiteBalance?: number;
   onClose?: () => void;
   onDebitStake: (stakeLul: number) => { ok: boolean; message: string };
   onSettleTableGame: (payoutLul: number, xpGained: number, announceHeadline?: string) => void;
-  onDebitRespite?: (stakeRespite: number) => { ok: boolean; message: string };
-  onSettleRespite?: (payoutRespite: number, xpGained: number, announceHeadline?: string) => void;
 }
-
-type RouletteCurrencyMode = 'LUL' | 'RESPITE';
 
 // Authentic 38-Pocket American Dual-Zero Clockwise Sequence
 const AMERICAN_WHEEL_ORDER: readonly string[] = [
@@ -326,22 +321,11 @@ const FeltStackedChipSvg: React.FC<{ amount: number; compact?: boolean }> = ({
 export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractivePanelProps> = ({
   isActive,
   lulBalance,
-  respiteBalance = 0,
   onClose,
   onDebitStake,
   onSettleTableGame,
-  onDebitRespite,
-  onSettleRespite,
 }) => {
-  const canUseRespite = Boolean(onDebitRespite && onSettleRespite);
-  const [currencyMode, setCurrencyMode] = useState<RouletteCurrencyMode>(() =>
-    lulBalance <= 0 && respiteBalance > 0 && onDebitRespite && onSettleRespite ? 'RESPITE' : 'LUL',
-  );
-
-  const rawVaultBalance =
-    currencyMode === 'RESPITE' && canUseRespite
-      ? Math.max(0, Math.floor(respiteBalance))
-      : Math.max(0, Math.floor(lulBalance));
+  const rawVaultBalance = Math.max(0, Math.floor(lulBalance));
 
   const [selectedChip, setSelectedChip] = useState<number>(25);
   const [activeBets, setActiveBets] = useState<Record<string, number>>({});
@@ -382,15 +366,12 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
     lastTickIndex: number;
     winningPocket: string;
     committedBets: Record<string, number>;
-    committedCurrency: RouletteCurrencyMode;
   } | null>(null);
 
   const onSettleLulRef = useRef(onSettleTableGame);
-  const onSettleRespiteRef = useRef(onSettleRespite);
   useEffect(() => {
     onSettleLulRef.current = onSettleTableGame;
-    onSettleRespiteRef.current = onSettleRespite;
-  }, [onSettleTableGame, onSettleRespite]);
+  }, [onSettleTableGame]);
 
   // Build Complete Spot Registry
   const spotRegistry = useMemo(() => {
@@ -646,11 +627,7 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
   }, []);
 
   const settleCompletedSpin = useCallback(
-    (
-      winningPocket: string,
-      committedBets: Record<string, number>,
-      committedCurrency: RouletteCurrencyMode,
-    ) => {
+    (winningPocket: string, committedBets: Record<string, number>) => {
       let totalStake = 0;
       let totalPayout = 0;
       let winningSpots = 0;
@@ -672,14 +649,10 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
 
       const headline =
         totalPayout > 0
-          ? `#${winningPocket} (${colorUpper}) · ROUND WON +${totalPayout.toLocaleString()} ${committedCurrency}!`
+          ? `#${winningPocket} (${colorUpper}) · ROUND WON +${totalPayout.toLocaleString()} CerBucks!`
           : `#${winningPocket} (${colorUpper}) · NO PAYOUT THIS ROUND`;
 
-      if (committedCurrency === 'RESPITE' && onSettleRespiteRef.current) {
-        onSettleRespiteRef.current(totalPayout, xpGained, headline);
-      } else {
-        onSettleLulRef.current(totalPayout, xpGained, headline);
-      }
+      onSettleLulRef.current(totalPayout, xpGained, headline);
 
       if (totalPayout > 0) {
         soundEngine.playCasinoJackpotFanfare(totalPayout >= totalStake * 12);
@@ -693,7 +666,7 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
         colorCategory: colorCat,
         headline:
           totalPayout > 0
-            ? `ROUND WON! +${totalPayout.toLocaleString()} ${committedCurrency}`
+            ? `ROUND WON! +${totalPayout.toLocaleString()} CerBucks`
             : 'NO PAYOUT THIS ROUND',
         payoutAmount: totalPayout,
         won: totalPayout > 0,
@@ -752,11 +725,7 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
         if (t >= 1) {
           spin.active = false;
           spinAnimRef.current = null;
-          settleCompletedSpin(
-            spin.winningPocket,
-            spin.committedBets,
-            spin.committedCurrency,
-          );
+          settleCompletedSpin(spin.winningPocket, spin.committedBets);
         } else {
           rafId = requestAnimationFrame(tick);
         }
@@ -779,7 +748,7 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
       if (totalStagedWager + selectedChip > rawVaultBalance) {
         soundEngine.playUiCancel();
         setBallStatusText(
-          `INSUFFICIENT ${currencyMode} BALANCE FOR ${selectedChip.toLocaleString()} ${currencyMode} CHIP`,
+          `INSUFFICIENT CerBucks BALANCE FOR ${selectedChip.toLocaleString()} CerBucks CHIP`,
         );
         return;
       }
@@ -793,10 +762,10 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
       }));
       const spec = spotRegistry.get(spotId);
       if (spec) {
-        setBallStatusText(`${spec.label} · +${selectedChip} ${currencyMode}`);
+        setBallStatusText(`${spec.label} · +${selectedChip} CerBucks`);
       }
     },
-    [isSpinning, totalStagedWager, selectedChip, rawVaultBalance, currencyMode, activeBets, spotRegistry],
+    [isSpinning, totalStagedWager, selectedChip, rawVaultBalance, activeBets, spotRegistry],
   );
 
   const removeSpotBetOnRightClick = useCallback(
@@ -841,7 +810,7 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
     if (isSpinning || totalStagedWager === 0) return;
     if (totalStagedWager * 2 > rawVaultBalance) {
       soundEngine.playUiCancel();
-      setBallStatusText(`INSUFFICIENT ${currencyMode} BALANCE TO DOUBLE`);
+      setBallStatusText(`INSUFFICIENT CerBucks BALANCE TO DOUBLE`);
       return;
     }
     soundEngine.playUiConfirm();
@@ -853,8 +822,8 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
       }
       return doubled;
     });
-    setBallStatusText(`WAGER DOUBLED · ${(totalStagedWager * 2).toLocaleString()} ${currencyMode}`);
-  }, [isSpinning, totalStagedWager, rawVaultBalance, currencyMode, activeBets]);
+    setBallStatusText(`WAGER DOUBLED · ${(totalStagedWager * 2).toLocaleString()} CerBucks`);
+  }, [isSpinning, totalStagedWager, rawVaultBalance, activeBets]);
 
   const handleRebet = useCallback(() => {
     if (isSpinning) return;
@@ -869,15 +838,15 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
     }
     if (prevTotal > rawVaultBalance) {
       soundEngine.playUiCancel();
-      setBallStatusText(`INSUFFICIENT ${currencyMode} BALANCE TO REBET`);
+      setBallStatusText(`INSUFFICIENT CerBucks BALANCE TO REBET`);
       return;
     }
     soundEngine.playUiConfirm();
     setBetHistoryStack((prev) => [...prev, { ...activeBets }]);
     setActiveBets({ ...previousRoundBets });
     setSettledBanner(null);
-    setBallStatusText(`PREVIOUS BETS RESTORED (${prevTotal.toLocaleString()} ${currencyMode})`);
-  }, [isSpinning, previousRoundBets, rawVaultBalance, currencyMode, activeBets]);
+    setBallStatusText(`PREVIOUS BETS RESTORED (${prevTotal.toLocaleString()} CerBucks)`);
+  }, [isSpinning, previousRoundBets, rawVaultBalance, activeBets]);
 
   const handleSpinWheel = useCallback(() => {
     if (isSpinning) return;
@@ -887,10 +856,7 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
       return;
     }
 
-    const debitResult =
-      currencyMode === 'RESPITE' && onDebitRespite
-        ? onDebitRespite(totalStagedWager)
-        : onDebitStake(totalStagedWager);
+    const debitResult = onDebitStake(totalStagedWager);
 
     if (!debitResult.ok) {
       soundEngine.playUiCancel();
@@ -929,10 +895,9 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
       lastTickIndex: -1,
       winningPocket,
       committedBets,
-      committedCurrency: currencyMode,
     };
     setIsSpinning(true);
-  }, [isSpinning, totalStagedWager, currencyMode, onDebitRespite, onDebitStake, activeBets]);
+  }, [isSpinning, totalStagedWager, onDebitStake, activeBets]);
 
   const renderSpotChip = (spotId: string, compact = false) => {
     const amount = activeBets[spotId] ?? 0;
@@ -972,7 +937,7 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
           </div>
         </div>
 
-        {/* Integrated Limits, Currency Switch, Vault & Close Button */}
+        {/* Integrated Limits, Vault & Close Button */}
         <div className="flex items-center gap-2.5 sm:gap-3 shrink-0 font-mono-tabular text-xs">
           <div className="hidden sm:flex items-center gap-1.5 text-slate-300">
             <span className="text-amber-300/80 text-[10px] uppercase">LIMITS:</span>
@@ -981,30 +946,13 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
 
           <div className="hidden sm:block h-3.5 w-px bg-white/15" />
 
-          {canUseRespite && (
-            <button
-              type="button"
-              disabled={isSpinning}
-              title="Switch Betting Currency (LUL / RESPITE)"
-              onClick={() => {
-                if (isSpinning) return;
-                soundEngine.playUiClick();
-                setActiveBets({});
-                setBetHistoryStack([]);
-                setCurrencyMode((prev) => (prev === 'LUL' ? 'RESPITE' : 'LUL'));
-              }}
-              className="px-3 py-1 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-amber-300/35 text-amber-300 text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors"
-            >
-              {currencyMode} ⇄
-            </button>
-          )}
 
           <div className="flex items-center gap-1.5 bg-emerald-400/10 px-3 py-1 rounded-full border border-emerald-400/30">
             <span className="text-[10px] text-emerald-300 uppercase tracking-wider font-bold">
               VAULT
             </span>
             <span className="text-emerald-400 font-bold text-xs sm:text-sm tracking-wide">
-              {availableVaultAfterStage.toLocaleString()} {currencyMode}
+              {availableVaultAfterStage.toLocaleString()} CerBucks
             </span>
           </div>
 
@@ -1609,8 +1557,8 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
                   }`}
                 >
                   {settledBanner.won
-                    ? `+${settledBanner.payoutAmount.toLocaleString()} ${currencyMode}`
-                    : `0 ${currencyMode}`}
+                    ? `+${settledBanner.payoutAmount.toLocaleString()} CerBucks`
+                    : `0 CerBucks`}
                 </div>
               </div>
             </div>
@@ -1630,7 +1578,7 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
                 <button
                   key={chip.value}
                   type="button"
-                  title={`Select ${chip.value.toLocaleString()} ${currencyMode} Chip`}
+                  title={`Select ${chip.value.toLocaleString()} CerBucks Chip`}
                   onClick={() => {
                     soundEngine.playUiClick();
                     setSelectedChip(chip.value);
@@ -1650,7 +1598,7 @@ export const CasinoRouletteInteractivePanel: React.FC<CasinoRouletteInteractiveP
             <div className="px-3.5 py-1.5 rounded-xl bg-white/[0.05] border border-white/10 flex flex-col items-center min-w-[98px]">
               <span className="text-[9px] text-amber-300 uppercase">TOTAL WAGER</span>
               <span className="text-white font-bold">
-                {totalStagedWager.toLocaleString()} {currencyMode}
+                {totalStagedWager.toLocaleString()} CerBucks
               </span>
             </div>
             <div className="px-3.5 py-1.5 rounded-xl bg-white/[0.05] border border-white/10 flex flex-col items-center min-w-[88px]">

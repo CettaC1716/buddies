@@ -37,9 +37,17 @@ test('all 7 named NPC stub personas register cleanly and export valid emotion ta
   }
 });
 
-test('api/npc-chat rejects unknown and ambient NPC ids with HTTP 400', async () => {
+test('api/npc-chat accepts Raka as a named NPC and rejects unknown ambient NPC ids with HTTP 400', async () => {
+  const rakaRes = await handleNpcChatRequest(
+    { npcId: 'city_plaza_raka', message: 'Halo Raka, aman di Beach Club?' },
+    { apiKeyOverride: '' },
+  );
+  assert.equal(rakaRes.status, 200);
+  assert.equal(rakaRes.payload.ok, true);
+  assert.equal(rakaRes.payload.npcId, 'raka');
+
   const ambientRes = await handleNpcChatRequest(
-    { npcId: 'city_plaza_raka', message: 'Hello Raka!' },
+    { npcId: 'ambient_visitor_01', message: 'Hello stranger!' },
     { apiKeyOverride: '' },
   );
   assert.equal(ambientRes.status, 400);
@@ -166,9 +174,9 @@ test('server system instruction enforces persona rules, flirt profile, and anti-
   assert.match(prompt, /Sam/);
 });
 
-test('client sendNpcChatMessage rejects ambient NPC cleanly', async () => {
+test('client sendNpcChatMessage rejects unknown ambient NPC cleanly', async () => {
   const ambient = await sendNpcChatMessage({
-    npcId: 'city_plaza_raka',
+    npcId: 'ambient_visitor_01',
     message: 'Hello!',
     closenessBand: 'stranger',
     canLongConversation: false,

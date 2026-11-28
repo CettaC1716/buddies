@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Armchair,
   ArrowLeft,
@@ -6,19 +6,22 @@ import {
   Bike,
   Building2,
   CalendarDays,
+  Check,
   Coffee,
   Disc3,
-  Heart,
   Home,
   Package,
   RotateCcw,
+  Search,
   Settings,
   Shirt,
   ShoppingBag,
+  SlidersHorizontal,
   Sparkles,
   Store,
   Trash2,
   Wallet,
+  X,
 } from 'lucide-react';
 import {
   CITY_RENTAL_LOTS,
@@ -37,9 +40,14 @@ import {
   type LotStorefrontConfig,
   type StoreCatalogItem,
   type StoreProduct3DArchetype,
+  type StoreProductOptionTier,
   type WestPlazaDepartmentId,
 } from '../game/shopStorefrontCatalogEngine';
-import { loadExternalWardrobeCatalogs } from '../game/buddiesWardrobeStudioRules';
+import {
+  getWardrobeCatalogItemById,
+  isWardrobeItemOwned,
+  loadExternalWardrobeCatalogs,
+} from '../game/buddiesWardrobeStudioRules';
 import {
   ShopBuilding3DDiorama,
   ShopProduct3DTurntable,
@@ -47,6 +55,14 @@ import {
 } from './ShopProduct3DTurntable';
 import { getOrRenderScooterPortraitUrl } from './UrbanScooterShowroomModal';
 import { getOrRenderFurniturePortraitUrl } from './Furniture3dThumbnail';
+import {
+  getCachedWardrobeItemThumbnail,
+  renderWardrobeItemThumbnail,
+} from './wardrobe3dThumbnailRasterizer';
+import {
+  getCachedMotionSilhouetteThumbnail,
+  renderMotionSilhouetteThumbnail,
+} from '../game/shopMotionSilhouetteRenderer';
 import { soundEngine } from '../game/audio';
 
 export interface ShopStorefrontTabletModalProps {
@@ -57,7 +73,11 @@ export interface ShopStorefrontTabletModalProps {
   ownerAccountId: string;
   visitorAccountId: string;
   respiteBalance: number;
+  /** Player CYON balance — CYON-denominated listings (West Plaza wardrobe outfits) settle against it. */
+  cyonBalance?: number;
   ownedMerchantItemIds: readonly string[];
+  /** Owned Wardrobe apparel IDs (used to mark owned outfits with a green checkmark). */
+  ownedApparelIds?: readonly string[];
   billboardLogoUrl: string | null;
   leaseExpiresText: string;
   isGracePeriod: boolean;
@@ -77,6 +97,21 @@ export interface ShopStorefrontTabletModalProps {
     ownerSettledRespite: number;
     cityFeeRespite: number;
   }) => void;
+  /**
+   * Settles a purchase of CYON-denominated listings (priceCurrency 'CYON',
+   * e.g. West Plaza wardrobe outfits) against the player's CYON balance.
+   * RESPITE listings keep using onAtomicPurchase.
+   */
+  onCyonPurchase?: (params: {
+    items: Array<{
+      item: StoreCatalogItem;
+      colorLabel: string;
+      tierLabel: string;
+      unitPriceCyon: number;
+      quantity: number;
+    }>;
+    grossCyon: number;
+  }) => void;
   onExtendLease: () => void;
   onEndLease: () => void;
   onRemoveBuilding: () => void;
@@ -90,6 +125,28 @@ export interface ShopStorefrontTabletModalProps {
   /** Optional initial store to open directly in West Plaza (omit or null to open mixed Home). */
   initialWestPlazaDepartment?: WestPlazaDepartmentId | null;
 }
+
+type StoreItemCurrency = 'RESPITE' | 'CYON';
+
+/** Settlement currency of a catalog listing; absent priceCurrency means RESPITE. */
+const storeItemCurrency = (item: StoreCatalogItem): StoreItemCurrency =>
+  item.priceCurrency ?? 'RESPITE';
+
+/**
+ * Shelf unit price in the item's own settlement currency. Option tiers only
+ * carry RESPITE deltas, so CYON listings price straight from basePriceCyon.
+ */
+const storeItemUnitPrice = (
+  item: StoreCatalogItem,
+  tier?: StoreProductOptionTier | null,
+): number =>
+  storeItemCurrency(item) === 'CYON'
+    ? Math.max(0, item.basePriceCyon ?? 0)
+    : Math.max(0, item.basePriceRespite + (tier?.priceDeltaRespite ?? 0));
+
+/** "1,250 RESPITE" / "300 CYON" style shelf label in the item's own currency. */
+const storeItemPriceLabel = (item: StoreCatalogItem): string =>
+  `${storeItemUnitPrice(item).toLocaleString()} ${storeItemCurrency(item)}`;
 
 type TabletTabId = 'home' | 'catalog' | 'shop' | 'bag' | 'manage';
 
@@ -471,24 +528,32 @@ const ProductArchetypeArtwork: React.FC<{
         )}
 
         {archetype === 'motion_pose' && (
-          <g>
-            <ellipse
-              cx="32"
-              cy="48"
-              rx="16"
-              ry="4.5"
-              fill={secondaryHex}
-              stroke="#231812"
-              strokeWidth="2"
-            />
-            <circle cx="33" cy="16" r="5" fill={primaryHex} stroke="#231812" strokeWidth="2" />
+          <g fill="#111318">
+            <ellipse cx="32" cy="56" rx="10" ry="2.2" fill="#111318" opacity="0.14" />
+            <circle cx="33" cy="14" r="4.8" />
+            <path d="M27.5 21.5 C29.5 19.8 36.5 19.8 38.2 22.5 L37.2 35.2 L28.4 35.2 Z" />
             <path
-              d="M21 26 L32 23 L43 20 M32 23 L30 35 L23 46 M30 35 L39 46"
+              d="M28.4 22.6 L23.2 17.4 L28.2 13.8"
               fill="none"
-              stroke={primaryHex}
-              strokeWidth="3.6"
+              stroke="#111318"
+              strokeWidth="3.2"
               strokeLinecap="round"
               strokeLinejoin="round"
+            />
+            <path
+              d="M37.4 23.2 L39.2 33.4 L37.6 37.8"
+              fill="none"
+              stroke="#111318"
+              strokeWidth="3.1"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M30.2 34.8 L28.6 52.8 M35.6 34.8 L39.2 53.5"
+              fill="none"
+              stroke="#111318"
+              strokeWidth="3.8"
+              strokeLinecap="round"
             />
           </g>
         )}
@@ -557,27 +622,101 @@ const CatalogItemThumbnail: React.FC<{
   fallbackAccentHex,
   sizeClass = 'w-12 h-12',
 }) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const outfitGlbPath =
+    item.previewGlbPath && item.previewGlbPath.includes('/assets/outfit/')
+      ? item.previewGlbPath
+      : null;
+  const motionItemId =
+    item.archetype3d === 'motion_pose' && item.linkedInventoryItemId
+      ? item.linkedInventoryItemId
+      : null;
+
+  const [glbThumbUrl, setGlbThumbUrl] = useState<string | null>(() => {
+    if (outfitGlbPath) return getCachedWardrobeItemThumbnail(outfitGlbPath);
+    if (motionItemId) return getCachedMotionSilhouetteThumbnail(motionItemId);
+    return null;
+  });
+
+  useEffect(() => {
+    if (!outfitGlbPath && !motionItemId) {
+      setGlbThumbUrl(null);
+      return;
+    }
+    const cached = outfitGlbPath
+      ? getCachedWardrobeItemThumbnail(outfitGlbPath)
+      : getCachedMotionSilhouetteThumbnail(motionItemId);
+    if (cached) {
+      setGlbThumbUrl(cached);
+      return;
+    }
+    setGlbThumbUrl(null);
+    const el = containerRef.current;
+    let cancelled = false;
+
+    const triggerRender = () => {
+      const renderPromise = outfitGlbPath
+        ? renderWardrobeItemThumbnail(outfitGlbPath)
+        : renderMotionSilhouetteThumbnail(motionItemId);
+      void renderPromise.then((url) => {
+        if (!cancelled && url) {
+          setGlbThumbUrl(url);
+        }
+      });
+    };
+
+    if (el && typeof IntersectionObserver !== 'undefined') {
+      const obs = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((e) => e.isIntersecting)) {
+            obs.disconnect();
+            triggerRender();
+          }
+        },
+        { rootMargin: '160px' },
+      );
+      obs.observe(el);
+      return () => {
+        cancelled = true;
+        obs.disconnect();
+      };
+    }
+
+    triggerRender();
+    return () => {
+      cancelled = true;
+    };
+  }, [outfitGlbPath, motionItemId]);
+
   const portraitSrc = useMemo(() => {
     if (item.previewImageUrl) return item.previewImageUrl;
+    if (glbThumbUrl) return glbThumbUrl;
     if (item.previewScooterKind) return getOrRenderScooterPortraitUrl(item.previewScooterKind);
     if (item.previewFurnitureId) return getOrRenderFurniturePortraitUrl(item.previewFurnitureId);
     return '';
-  }, [item.previewImageUrl, item.previewScooterKind, item.previewFurnitureId]);
+  }, [item.previewImageUrl, glbThumbUrl, item.previewScooterKind, item.previewFurnitureId]);
 
   if (portraitSrc) {
     const isBeautyThumb =
       Boolean(item.previewThumbFlipY) || portraitSrc.includes('/assets/beauty/');
+    const isMotionThumb = Boolean(motionItemId && glbThumbUrl && portraitSrc === glbThumbUrl);
+    const isOutfitThumb = Boolean(outfitGlbPath && glbThumbUrl && portraitSrc === glbThumbUrl);
     return (
       <div
+        ref={containerRef}
         className={`${sizeClass} rounded-xl overflow-hidden ${
-          isBeautyThumb ? 'bg-[#FAF6F0]' : 'bg-[#F3ECE1]'
+          isBeautyThumb || isMotionThumb ? 'bg-[#FAF6F0]' : 'bg-[#F3ECE1]'
         } border border-black/10 flex items-center justify-center shrink-0`}
       >
         <img
           src={portraitSrc}
           alt={item.title}
           className={`w-full h-full ${
-            item.previewImageUrl && !isBeautyThumb ? 'object-cover' : 'object-contain p-1'
+            item.previewImageUrl && !isBeautyThumb && !isOutfitThumb && !isMotionThumb
+              ? 'object-cover'
+              : isMotionThumb
+                ? 'object-contain p-0.5'
+                : 'object-contain p-1'
           } ${item.previewThumbFlipY ? 'scale-y-[-1]' : ''}`}
         />
       </div>
@@ -586,13 +725,15 @@ const CatalogItemThumbnail: React.FC<{
 
   const col = item.colorVariants[0];
   return (
-    <ProductArchetypeArtwork
-      archetype={item.archetype3d}
-      primaryHex={col?.primaryHex ?? fallbackPrimaryHex}
-      secondaryHex={col?.secondaryHex ?? fallbackSecondaryHex}
-      accentHex={col?.accentHex ?? fallbackAccentHex}
-      sizeClass={sizeClass}
-    />
+    <div ref={containerRef} className="shrink-0 flex items-center justify-center">
+      <ProductArchetypeArtwork
+        archetype={item.archetype3d}
+        primaryHex={col?.primaryHex ?? fallbackPrimaryHex}
+        secondaryHex={col?.secondaryHex ?? fallbackSecondaryHex}
+        accentHex={col?.accentHex ?? fallbackAccentHex}
+        sizeClass={sizeClass}
+      />
+    </div>
   );
 };
 
@@ -603,7 +744,9 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
   isOwner,
   ownerAccountId,
   respiteBalance,
+  cyonBalance = 0,
   ownedMerchantItemIds,
+  ownedApparelIds = [],
   billboardLogoUrl,
   leaseExpiresText,
   isGracePeriod,
@@ -612,6 +755,7 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
   onUpdateConfig,
   onUpdateBillboardLogo,
   onAtomicPurchase,
+  onCyonPurchase,
   onExtendLease,
   onEndLease,
   onRemoveBuilding,
@@ -622,25 +766,28 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
   const isCentralPlazaHub = lotId === 'CENTRAL-PLAZA';
   const isDistrictHub = isWestPlazaHub || isCentralPlazaHub;
   const shopDioramaAnchorRef = useRef<HTMLDivElement | null>(null);
-  const [centralCatalogRevision, setCentralCatalogRevision] = useState(0);
+  const [wardrobeCatalogRevision, setWardrobeCatalogRevision] = useState(0);
   useEffect(() => {
-    if (!isCentralPlazaHub) return;
+    if (!isDistrictHub) return;
     let active = true;
     void loadExternalWardrobeCatalogs().then((count) => {
       if (active && count > 0) {
-        setCentralCatalogRevision((r) => r + 1);
+        setWardrobeCatalogRevision((r) => r + 1);
       }
     });
     return () => {
       active = false;
     };
-  }, [isCentralPlazaHub]);
+  }, [isDistrictHub]);
 
-  const westPlazaDepts = useMemo(() => buildWestPlazaDepartments(), []);
+  const westPlazaDepts = useMemo(() => {
+    void wardrobeCatalogRevision;
+    return buildWestPlazaDepartments();
+  }, [wardrobeCatalogRevision]);
   const centralPlazaDepts = useMemo(() => {
-    void centralCatalogRevision;
+    void wardrobeCatalogRevision;
     return buildCentralPlazaDepartments();
-  }, [centralCatalogRevision]);
+  }, [wardrobeCatalogRevision]);
 
   const [activeWestPlazaDept, setActiveWestPlazaDept] = useState<WestPlazaDepartmentId>(
     initialWestPlazaDepartment ?? 'outfits',
@@ -648,6 +795,31 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
   const [activeCentralPlazaDept, setActiveCentralPlazaDept] =
     useState<CentralPlazaDepartmentId>('glow');
   const [activeSubGroupFilter, setActiveSubGroupFilter] = useState<string>('All');
+  const [searchOpen, setSearchOpen] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [filterOpen, setFilterOpen] = useState<boolean>(false);
+  const filterPopoverRef = useRef<HTMLDivElement | null>(null);
+  const [genderFilter, setGenderFilter] = useState<'all' | 'male' | 'female'>('all');
+  const [ownershipFilter, setOwnershipFilter] = useState<'all' | 'owned' | 'unowned'>('all');
+  const [priceRangeFilter, setPriceRangeFilter] = useState<
+    'all' | 'free' | '1_15' | '16_25' | '26_35' | '36_plus'
+  >('all');
+  const [minPriceInput, setMinPriceInput] = useState<string>('');
+  const [maxPriceInput, setMaxPriceInput] = useState<string>('');
+  const [visibleStripCount, setVisibleStripCount] = useState<number>(48);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    const onPointerDownOutside = (e: MouseEvent) => {
+      if (filterPopoverRef.current && !filterPopoverRef.current.contains(e.target as Node)) {
+        setFilterOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', onPointerDownOutside);
+    return () => window.removeEventListener('mousedown', onPointerDownOutside);
+  }, [filterOpen]);
+
   const [activeTab, setActiveTab] = useState<TabletTabId>(() =>
     isWestPlazaHub && initialWestPlazaDepartment ? 'shop' : 'home',
   );
@@ -667,6 +839,34 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
   const activeWestDept = westPlazaDepts[activeWestPlazaDept];
   const activeCentralDept = centralPlazaDepts[activeCentralPlazaDept];
   const activeDistrictDept = isWestPlazaHub ? activeWestDept : activeCentralDept;
+
+  const ownedMerchantSet = useMemo(() => new Set(ownedMerchantItemIds), [ownedMerchantItemIds]);
+  const ownedApparelSet = useMemo(() => new Set(ownedApparelIds), [ownedApparelIds]);
+
+  const isStoreItemOwned = useCallback(
+    (item: StoreCatalogItem): boolean => {
+      const invId = item.linkedInventoryItemId;
+      if (!invId) return false;
+      if (ownedApparelSet.has(invId) || ownedMerchantSet.has(invId)) return true;
+      const wardrobeItem = getWardrobeCatalogItemById(invId);
+      if (wardrobeItem) {
+        return isWardrobeItemOwned(wardrobeItem, ownedApparelIds);
+      }
+      return false;
+    },
+    [ownedApparelIds, ownedApparelSet, ownedMerchantSet],
+  );
+
+  const resolveItemGender = useCallback((item: StoreCatalogItem): 'male' | 'female' | 'unisex' => {
+    if (item.itemGender) return item.itemGender;
+    const cat = item.categoryLabel.toUpperCase();
+    if (cat.includes('WOMEN') || cat.includes('FEMALE')) return 'female';
+    if (cat.includes('MEN') || cat.includes('MALE')) return 'male';
+    const fitSpec = item.previewSpecs?.find((s) => s.label.toLowerCase() === 'fit')?.value ?? '';
+    if (/female|women/i.test(fitSpec)) return 'female';
+    if (/male|men/i.test(fitSpec)) return 'male';
+    return 'unisex';
+  }, []);
 
   const westPlazaDeptByItemId = useMemo(() => {
     const map: Record<string, WestPlazaDepartmentId> = {};
@@ -699,20 +899,92 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
   );
 
   const availableSubGroups = useMemo(() => {
-    if (!isCentralPlazaHub) return [];
+    if (!isDistrictHub) return [];
     const seen = new Set<string>();
     for (const it of rawDeptItems) {
       if (it.subGroupLabel) seen.add(it.subGroupLabel);
     }
     const list = Array.from(seen);
     return list.length > 1 ? ['All', ...list] : [];
-  }, [isCentralPlazaHub, rawDeptItems]);
+  }, [isDistrictHub, rawDeptItems]);
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (genderFilter !== 'all') count += 1;
+    if (ownershipFilter !== 'all') count += 1;
+    if (priceRangeFilter !== 'all' || minPriceInput.trim() !== '' || maxPriceInput.trim() !== '') {
+      count += 1;
+    }
+    return count;
+  }, [genderFilter, ownershipFilter, priceRangeFilter, minPriceInput, maxPriceInput]);
+
+  const resetStoreFilters = useCallback(() => {
+    setGenderFilter('all');
+    setOwnershipFilter('all');
+    setPriceRangeFilter('all');
+    setMinPriceInput('');
+    setMaxPriceInput('');
+    setSearchQuery('');
+  }, []);
 
   const displayItems = useMemo(() => {
-    if (!isCentralPlazaHub || activeSubGroupFilter === 'All') return rawDeptItems;
-    const filtered = rawDeptItems.filter((it) => it.subGroupLabel === activeSubGroupFilter);
-    return filtered.length > 0 ? filtered : rawDeptItems;
-  }, [isCentralPlazaHub, rawDeptItems, activeSubGroupFilter]);
+    const q = searchQuery.trim().toLowerCase();
+    const parsedMin = minPriceInput.trim() !== '' ? Number(minPriceInput) : null;
+    const parsedMax = maxPriceInput.trim() !== '' ? Number(maxPriceInput) : null;
+
+    return rawDeptItems.filter((it) => {
+      if (isDistrictHub && activeSubGroupFilter !== 'All' && it.subGroupLabel !== activeSubGroupFilter) {
+        return false;
+      }
+      if (genderFilter !== 'all') {
+        const g = resolveItemGender(it);
+        if (g !== 'unisex' && g !== genderFilter) return false;
+      }
+      if (ownershipFilter !== 'all') {
+        const owned = isStoreItemOwned(it);
+        if (ownershipFilter === 'owned' && !owned) return false;
+        if (ownershipFilter === 'unowned' && owned) return false;
+      }
+      const p = storeItemUnitPrice(it);
+      if (priceRangeFilter === 'free' && p !== 0) return false;
+      if (priceRangeFilter === '1_15' && !(p >= 1 && p <= 15)) return false;
+      if (priceRangeFilter === '16_25' && !(p >= 16 && p <= 25)) return false;
+      if (priceRangeFilter === '26_35' && !(p >= 26 && p <= 35)) return false;
+      if (priceRangeFilter === '36_plus' && !(p >= 36)) return false;
+      if (parsedMin !== null && !Number.isNaN(parsedMin) && p < parsedMin) return false;
+      if (parsedMax !== null && !Number.isNaN(parsedMax) && p > parsedMax) return false;
+
+      if (q) {
+        const hay = `${it.title} ${it.categoryLabel} ${it.description} ${it.subGroupLabel ?? ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [
+    rawDeptItems,
+    isDistrictHub,
+    activeSubGroupFilter,
+    genderFilter,
+    ownershipFilter,
+    priceRangeFilter,
+    minPriceInput,
+    maxPriceInput,
+    searchQuery,
+    resolveItemGender,
+    isStoreItemOwned,
+  ]);
+
+  useEffect(() => {
+    setVisibleStripCount(48);
+  }, [
+    activeWestPlazaDept,
+    activeCentralPlazaDept,
+    activeSubGroupFilter,
+    genderFilter,
+    ownershipFilter,
+    priceRangeFilter,
+    searchQuery,
+  ]);
 
   const allCatalogItemsForBag = useMemo(
     () =>
@@ -742,9 +1014,6 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
   const [selectedTierByItemId, setSelectedTierByItemId] = useState<Record<string, string>>({});
   const [quantity, setQuantity] = useState<number>(1);
   const [bagItems, setBagItems] = useState<BagLineItem[]>([]);
-  const [favoriteItemIds, setFavoriteItemIds] = useState<string[]>(() =>
-    displayItems[0] ? [displayItems[0].id] : [],
-  );
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Owner Manage Store Editing State
@@ -786,12 +1055,38 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
     );
   }, [activeItem, selectedTierByItemId]);
 
+  const activeItemBagKey = useMemo(() => {
+    if (!activeItem) return '';
+    return `${activeItem.id}:${activeColor?.id ?? 'default'}:${activeTier?.id ?? 'default'}`;
+  }, [activeItem, activeColor, activeTier]);
+
+  const isActiveItemInBag = useMemo(
+    () => Boolean(activeItemBagKey && bagItems.some((line) => line.key === activeItemBagKey)),
+    [activeItemBagKey, bagItems],
+  );
+
   const unitPriceRespite = useMemo(() => {
     if (!activeItem) return 0;
-    return Math.max(1, activeItem.basePriceRespite + (activeTier?.priceDeltaRespite ?? 0));
+    return Math.max(0, activeItem.basePriceRespite + (activeTier?.priceDeltaRespite ?? 0));
   }, [activeItem, activeTier]);
 
   const totalLinePriceRespite = unitPriceRespite * quantity;
+
+  const activeItemCurrency: StoreItemCurrency = activeItem
+    ? storeItemCurrency(activeItem)
+    : 'RESPITE';
+
+  const unitPriceCyon = useMemo(() => {
+    if (!activeItem) return 0;
+    return activeItemCurrency === 'CYON' ? Math.max(0, activeItem.basePriceCyon ?? 0) : 0;
+  }, [activeItem, activeItemCurrency]);
+
+  const totalLinePriceCyon = unitPriceCyon * quantity;
+
+  /** Unit / line price of the active item in its own settlement currency. */
+  const activeUnitPrice = activeItemCurrency === 'CYON' ? unitPriceCyon : unitPriceRespite;
+  const activeTotalLinePrice =
+    activeItemCurrency === 'CYON' ? totalLinePriceCyon : totalLinePriceRespite;
 
   const totalBagCount = useMemo(
     () => bagItems.reduce((acc, line) => acc + line.quantity, 0),
@@ -807,14 +1102,18 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
           item.colorVariants.find((c) => c.id === line.colorId) ?? item.colorVariants[0];
         const tier =
           item.optionTiers.find((t) => t.id === line.tierId) ?? item.optionTiers[0];
-        const unitPrice = Math.max(1, item.basePriceRespite + (tier?.priceDeltaRespite ?? 0));
+        const currency = storeItemCurrency(item);
+        const unitPrice = storeItemUnitPrice(item, tier);
         return {
           ...line,
           item,
           colorLabel: color?.label ?? 'Standard',
           tierLabel: tier?.label ?? 'Standard',
-          unitPriceRespite: unitPrice,
-          lineTotalRespite: unitPrice * line.quantity,
+          currency,
+          unitPriceRespite: currency === 'RESPITE' ? unitPrice : 0,
+          unitPriceCyon: currency === 'CYON' ? unitPrice : 0,
+          lineTotalRespite: currency === 'RESPITE' ? unitPrice * line.quantity : 0,
+          lineTotalCyon: currency === 'CYON' ? unitPrice * line.quantity : 0,
         };
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
@@ -822,6 +1121,11 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
 
   const bagSubtotalRespite = useMemo(
     () => detailedBagLines.reduce((acc, l) => acc + l.lineTotalRespite, 0),
+    [detailedBagLines],
+  );
+
+  const bagSubtotalCyon = useMemo(
+    () => detailedBagLines.reduce((acc, l) => acc + l.lineTotalCyon, 0),
     [detailedBagLines],
   );
 
@@ -886,8 +1190,46 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
 
   const handleInstantAtomicBuySingle = () => {
     if (!activeItem) return;
+    if (isStoreItemOwned(activeItem) && unitPriceRespite === 0) {
+      soundEngine.playUiClick();
+      showToast(`${activeItem.title} is already owned in your Wardrobe — ready to wear!`);
+      return;
+    }
     if (activeItem.escrowStockCount < quantity) {
       showToast(`Only ${activeItem.escrowStockCount} unit(s) available in Store Vault.`);
+      return;
+    }
+    if (activeItemCurrency === 'CYON') {
+      // CYON-denominated listing (West Plaza wardrobe outfit): settles
+      // against the CYON balance, never RESPITE. Free wear stays free.
+      if (!onCyonPurchase) {
+        showToast('CerCoins checkout is unavailable at this store.');
+        return;
+      }
+      if (cyonBalance < totalLinePriceCyon) {
+        showToast(
+          `Insufficient CerCoins balance (${cyonBalance} CerCoins available, ${totalLinePriceCyon} required).`,
+        );
+        return;
+      }
+      soundEngine.playUiClick();
+      onCyonPurchase({
+        items: [
+          {
+            item: activeItem,
+            colorLabel: activeColor?.label ?? 'Standard',
+            tierLabel: activeTier?.label ?? 'Standard',
+            unitPriceCyon,
+            quantity,
+          },
+        ],
+        grossCyon: totalLinePriceCyon,
+      });
+      showToast(
+        totalLinePriceCyon > 0
+          ? `Paid ${totalLinePriceCyon} CerCoins — ${activeItem.title} added to your Wardrobe & Bag.`
+          : `${activeItem.title} added to your Wardrobe & Bag.`,
+      );
       return;
     }
     const settlement = computeAtomicSaleSettlement(totalLinePriceRespite);
@@ -917,35 +1259,67 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
 
   const handleCheckoutBagAtomic = () => {
     if (detailedBagLines.length === 0) return;
-    const settlement = computeAtomicSaleSettlement(bagSubtotalRespite);
-    if (respiteBalance < settlement.grossRespite) {
+    const respiteLines = detailedBagLines.filter((l) => l.currency === 'RESPITE');
+    const cyonLines = detailedBagLines.filter((l) => l.currency === 'CYON');
+    // Validate every currency leg before settling any of them.
+    if (cyonLines.length > 0 && !onCyonPurchase) {
+      showToast('CerCoins checkout is unavailable at this store.');
+      return;
+    }
+    if (bagSubtotalCyon > 0 && cyonBalance < bagSubtotalCyon) {
+      showToast(
+        `Insufficient CerCoins balance (${cyonBalance} CerCoins available, ${bagSubtotalCyon} required).`,
+      );
+      return;
+    }
+    const settlement =
+      respiteLines.length > 0 ? computeAtomicSaleSettlement(bagSubtotalRespite) : null;
+    if (settlement && respiteBalance < settlement.grossRespite) {
       showToast(
         `Insufficient RESPITE balance (${respiteBalance} RESPITE available, ${settlement.grossRespite} required).`,
       );
       return;
     }
     soundEngine.playUiClick();
-    onAtomicPurchase({
-      items: detailedBagLines.map((l) => ({
-        item: l.item,
-        colorLabel: l.colorLabel,
-        tierLabel: l.tierLabel,
-        unitPriceRespite: l.unitPriceRespite,
-        quantity: l.quantity,
-      })),
-      ...settlement,
-    });
+    if (settlement) {
+      onAtomicPurchase({
+        items: respiteLines.map((l) => ({
+          item: l.item,
+          colorLabel: l.colorLabel,
+          tierLabel: l.tierLabel,
+          unitPriceRespite: l.unitPriceRespite,
+          quantity: l.quantity,
+        })),
+        ...settlement,
+      });
+    }
+    if (cyonLines.length > 0 && onCyonPurchase) {
+      onCyonPurchase({
+        items: cyonLines.map((l) => ({
+          item: l.item,
+          colorLabel: l.colorLabel,
+          tierLabel: l.tierLabel,
+          unitPriceCyon: l.unitPriceCyon,
+          quantity: l.quantity,
+        })),
+        grossCyon: bagSubtotalCyon,
+      });
+    }
     setBagItems([]);
-    showToast(
-      `Order Settled Atomically! ${settlement.ownerSettledRespite} RESPITE sent to store owner wallet & items added to My Things.`,
-    );
-  };
-
-  const toggleFavorite = (itemId: string) => {
-    soundEngine.playUiClick();
-    setFavoriteItemIds((prev) =>
-      prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId],
-    );
+    const settledParts: string[] = [];
+    if (settlement) {
+      settledParts.push(
+        `${settlement.ownerSettledRespite} RESPITE sent to store owner wallet`,
+      );
+    }
+    if (cyonLines.length > 0) {
+      settledParts.push(
+        bagSubtotalCyon > 0
+          ? `${bagSubtotalCyon} CerCoins paid for outfits & style`
+          : 'free outfits claimed',
+      );
+    }
+    showToast(`Order Settled Atomically! ${settledParts.join(' · ')} & items added to My Things.`);
   };
 
   const editingItem = config.items[editingSlotIndex] ?? config.items[0];
@@ -1269,7 +1643,7 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                   })}
           </nav>
 
-          {/* Right: Wallet Balance & Favorites */}
+          {/* Right: Wallet Balance & Search */}
           <div className="flex items-center gap-2 shrink-0 pointer-events-auto">
             <div
               className="px-3.5 py-2 rounded-full border text-xs font-bold flex items-center gap-2 tabular-nums whitespace-nowrap"
@@ -1285,31 +1659,78 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
               />
               <span>{respiteBalance.toLocaleString()} RESPITE</span>
             </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                if (activeItem) toggleFavorite(activeItem.id);
-              }}
-              className="px-3 py-2 rounded-full border text-xs font-bold flex items-center gap-1.5 tabular-nums cursor-pointer transition-transform active:scale-95"
+            <div
+              className="px-3.5 py-2 rounded-full border text-xs font-bold flex items-center gap-2 tabular-nums whitespace-nowrap"
               style={{
                 backgroundColor: theme.cardBgHex,
                 borderColor: theme.borderHex,
               }}
-              title="Saved favorite items"
+              title="Player CerCoins balance (outfits & style settle in CerCoins)"
             >
-              <Heart
-                className="w-3.5 h-3.5"
-                style={{
-                  color: theme.accentHex,
-                  fill:
-                    activeItem && favoriteItemIds.includes(activeItem.id)
-                      ? theme.accentHex
-                      : 'none',
-                }}
+              <span
+                className="w-2.5 h-2.5 rounded-full shrink-0"
+                style={{ backgroundColor: theme.accentHex }}
               />
-              <span>{favoriteItemIds.length}</span>
-            </button>
+              <span>{cyonBalance.toLocaleString()} CerCoins</span>
+            </div>
+
+            {searchOpen || searchQuery ? (
+              <div
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs transition-all"
+                style={{
+                  backgroundColor: '#FFFFFF',
+                  borderColor: theme.activeNavPillHex,
+                }}
+              >
+                <Search className="w-3.5 h-3.5 shrink-0" style={{ color: theme.accentHex }} />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSearchQuery(val);
+                    if (activeTab === 'home' && val.trim().length > 0) {
+                      setActiveTab('shop');
+                    }
+                  }}
+                  placeholder="Search items..."
+                  className="w-28 sm:w-40 bg-transparent outline-none text-xs font-medium placeholder:text-[#9A8A7B]"
+                  style={{ color: theme.primaryTextHex }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    setSearchQuery('');
+                    setSearchOpen(false);
+                  }}
+                  className="p-0.5 rounded-full hover:bg-black/5 cursor-pointer"
+                  aria-label="Clear search"
+                >
+                  <X className="w-3 h-3" style={{ color: theme.mutedTextHex }} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  setSearchOpen(true);
+                  window.setTimeout(() => searchInputRef.current?.focus(), 20);
+                }}
+                className="p-2.5 rounded-full border text-xs font-bold flex items-center justify-center cursor-pointer transition-transform active:scale-95 hover:opacity-90"
+                style={{
+                  backgroundColor: theme.cardBgHex,
+                  borderColor: theme.borderHex,
+                  color: theme.primaryTextHex,
+                }}
+                title="Search catalog items"
+                aria-label="Search catalog items"
+              >
+                <Search className="w-3.5 h-3.5" style={{ color: theme.accentHex }} />
+              </button>
+            )}
           </div>
         </header>
 
@@ -1625,7 +2046,7 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                             className="mt-0.5 text-[11px] font-semibold tabular-nums"
                             style={{ color: theme.mutedTextHex }}
                           >
-                            {item.basePriceRespite} RESPITE
+                            {storeItemPriceLabel(item)}
                           </p>
                         </button>
                       );
@@ -1690,7 +2111,7 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                             className="mt-0.5 text-[11px] font-semibold tabular-nums"
                             style={{ color: theme.mutedTextHex }}
                           >
-                            {item.basePriceRespite} RESPITE
+                            {storeItemPriceLabel(item)}
                           </p>
                         </button>
                       );
@@ -1704,7 +2125,7 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
           {/* --------------------------------------------------------------- */}
           {/* VIEW 2: SHOP / ORDER PRODUCT (2-COLUMN FOCUS + "YOU ARE HERE")  */}
           {/* --------------------------------------------------------------- */}
-          {activeTab === 'shop' && activeItem && (
+          {activeTab === 'shop' && (
             <div className="h-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch pointer-events-none">
               {/* Left Anchor Column: Order Product Heading + "you are here" anchor for persistent 3D diorama */}
               <div className="lg:col-span-4 flex flex-col justify-between py-2 pointer-events-none">
@@ -1733,7 +2154,8 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                     style={{ color: theme.mutedTextHex }}
                   >
                     {isDistrictHub
-                      ? activeItem.previewImageUrl &&
+                      ? activeItem &&
+                        activeItem.previewImageUrl &&
                         !activeItem.previewGlbPath &&
                         !activeItem.previewFurnitureId &&
                         !activeItem.previewScooterKind &&
@@ -1853,35 +2275,291 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                     </button>
                   )}
 
-                  <div className="flex items-center gap-3 text-xs">
-                    {activeItem.linkedInventoryItemId && (
-                      <span
-                        className="font-semibold"
-                        style={{ color: theme.accentHex }}
-                      >
-                        Verified Wallet Asset
-                      </span>
-                    )}
-                    <span
-                      className="font-bold tabular-nums"
-                      style={{
-                        color:
-                          activeItem.escrowStockCount > 0
-                            ? theme.primaryTextHex
-                            : '#DC2626',
+                  {/* Filter Icon & Popover (Men/Women, Owned with green check, Price Range) */}
+                  <div ref={filterPopoverRef} className="relative flex items-center gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setFilterOpen((v) => !v);
                       }}
+                      className="px-3 py-1.5 rounded-full border text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer hover:opacity-90"
+                      style={{
+                        backgroundColor:
+                          filterOpen || activeFilterCount > 0 ? theme.activeNavPillHex : '#FFFFFF',
+                        borderColor:
+                          filterOpen || activeFilterCount > 0
+                            ? theme.activeNavPillHex
+                            : theme.borderHex,
+                        color:
+                          filterOpen || activeFilterCount > 0 ? '#FFFFFF' : theme.primaryTextHex,
+                      }}
+                      title="Filter items by Men/Women, Owned, and Price Range"
                     >
-                      {activeItem.escrowStockCount > 0
-                        ? `Vault Stock: ${activeItem.escrowStockCount}`
-                        : 'Vault Sold Out'}
-                    </span>
+                      <SlidersHorizontal className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>Filter</span>
+                      {activeFilterCount > 0 && (
+                        <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-white/25 text-[10px] font-extrabold tabular-nums">
+                          {activeFilterCount}
+                        </span>
+                      )}
+                    </button>
+
+                    {filterOpen && (
+                      <div
+                        className="absolute right-0 top-full mt-2 w-[285px] sm:w-[310px] rounded-2xl border p-3.5 shadow-[0_18px_42px_rgba(35,24,18,0.16)] z-30 space-y-3"
+                        style={{
+                          backgroundColor: '#FFFDF9',
+                          borderColor: theme.borderHex,
+                          color: theme.primaryTextHex,
+                        }}
+                      >
+                        <div className="flex items-center justify-between pb-1.5 border-b" style={{ borderColor: theme.borderHex }}>
+                          <span className="text-[11px] font-extrabold tracking-[0.14em] uppercase">
+                            Filter Products
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {activeFilterCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  soundEngine.playUiClick();
+                                  resetStoreFilters();
+                                }}
+                                className="text-[10px] font-bold underline cursor-pointer"
+                                style={{ color: theme.accentHex }}
+                              >
+                                Reset
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setFilterOpen(false)}
+                              className="p-0.5 rounded-full hover:bg-black/5 cursor-pointer"
+                              aria-label="Close filter menu"
+                            >
+                              <X className="w-3.5 h-3.5" style={{ color: theme.mutedTextHex }} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Gender Filter: Men / Women */}
+                        <div className="space-y-1.5">
+                          <p
+                            className="text-[10px] font-extrabold tracking-[0.14em] uppercase"
+                            style={{ color: theme.mutedTextHex }}
+                          >
+                            Men / Women
+                          </p>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {(
+                              [
+                                { id: 'all', label: 'All' },
+                                { id: 'male', label: 'Men' },
+                                { id: 'female', label: 'Women' },
+                              ] as const
+                            ).map((opt) => {
+                              const selected = genderFilter === opt.id;
+                              return (
+                                <button
+                                  key={opt.id}
+                                  type="button"
+                                  onClick={() => {
+                                    soundEngine.playUiClick();
+                                    setGenderFilter(opt.id);
+                                  }}
+                                  className="py-1.5 px-2 rounded-xl border text-[11px] font-bold transition-all cursor-pointer"
+                                  style={{
+                                    backgroundColor: selected ? theme.darkButtonHex : '#FFFFFF',
+                                    borderColor: selected ? theme.darkButtonHex : theme.borderHex,
+                                    color: selected ? '#FFFFFF' : theme.primaryTextHex,
+                                  }}
+                                >
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Ownership Filter */}
+                        <div className="space-y-1.5">
+                          <p
+                            className="text-[10px] font-extrabold tracking-[0.14em] uppercase"
+                            style={{ color: theme.mutedTextHex }}
+                          >
+                            Ownership Status
+                          </p>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {(
+                              [
+                                { id: 'all', label: 'All' },
+                                { id: 'owned', label: 'Owned' },
+                                { id: 'unowned', label: 'Shop Only' },
+                              ] as const
+                            ).map((opt) => {
+                              const selected = ownershipFilter === opt.id;
+                              const isOwnedBtn = opt.id === 'owned';
+                              return (
+                                <button
+                                  key={opt.id}
+                                  type="button"
+                                  onClick={() => {
+                                    soundEngine.playUiClick();
+                                    setOwnershipFilter(opt.id);
+                                  }}
+                                  className="py-1.5 px-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer"
+                                  style={{
+                                    backgroundColor: selected
+                                      ? isOwnedBtn
+                                        ? '#16A34A'
+                                        : theme.darkButtonHex
+                                      : '#FFFFFF',
+                                    borderColor: selected
+                                      ? isOwnedBtn
+                                        ? '#16A34A'
+                                        : theme.darkButtonHex
+                                      : theme.borderHex,
+                                    color: selected ? '#FFFFFF' : theme.primaryTextHex,
+                                  }}
+                                >
+                                  {isOwnedBtn && (
+                                    <Check
+                                      className="w-3 h-3 stroke-[3]"
+                                      style={{ color: selected ? '#FFFFFF' : '#16A34A' }}
+                                    />
+                                  )}
+                                  <span>{opt.label}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Price Range Filter */}
+                        <div className="space-y-1.5">
+                          <p
+                            className="text-[10px] font-extrabold tracking-[0.14em] uppercase"
+                            style={{ color: theme.mutedTextHex }}
+                          >
+                            Price Range
+                          </p>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {(
+                              [
+                                { id: 'all', label: 'All' },
+                                { id: 'free', label: 'Free' },
+                                { id: '1_15', label: '1 – 15' },
+                                { id: '16_25', label: '16 – 25' },
+                                { id: '26_35', label: '26 – 35' },
+                                { id: '36_plus', label: '36+' },
+                              ] as const
+                            ).map((opt) => {
+                              const selected = priceRangeFilter === opt.id;
+                              return (
+                                <button
+                                  key={opt.id}
+                                  type="button"
+                                  onClick={() => {
+                                    soundEngine.playUiClick();
+                                    setPriceRangeFilter(opt.id);
+                                    if (opt.id !== 'all') {
+                                      setMinPriceInput('');
+                                      setMaxPriceInput('');
+                                    }
+                                  }}
+                                  className="py-1.5 px-2 rounded-xl border text-[11px] font-bold transition-all cursor-pointer tabular-nums"
+                                  style={{
+                                    backgroundColor: selected ? theme.activeNavPillHex : '#FFFFFF',
+                                    borderColor: selected
+                                      ? theme.activeNavPillHex
+                                      : theme.borderHex,
+                                    color: selected ? '#FFFFFF' : theme.primaryTextHex,
+                                  }}
+                                >
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 pt-1">
+                            <input
+                              type="number"
+                              min={0}
+                              placeholder="Min"
+                              value={minPriceInput}
+                              onChange={(e) => {
+                                setPriceRangeFilter('all');
+                                setMinPriceInput(e.target.value);
+                              }}
+                              className="w-full px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold bg-white outline-none tabular-nums"
+                              style={{ borderColor: theme.borderHex }}
+                            />
+                            <span className="text-[11px] font-bold" style={{ color: theme.mutedTextHex }}>
+                              –
+                            </span>
+                            <input
+                              type="number"
+                              min={0}
+                              placeholder="Max"
+                              value={maxPriceInput}
+                              onChange={(e) => {
+                                setPriceRangeFilter('all');
+                                setMaxPriceInput(e.target.value);
+                              }}
+                              className="w-full px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold bg-white outline-none tabular-nums"
+                              style={{ borderColor: theme.borderHex }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="pt-1 border-t flex items-center justify-between text-[10px] font-semibold" style={{ borderColor: theme.borderHex, color: theme.mutedTextHex }}>
+                          <span>{displayItems.length} matching items</span>
+                          <button
+                            type="button"
+                            onClick={() => setFilterOpen(false)}
+                            className="px-3 py-1 rounded-full text-[10px] font-extrabold text-white cursor-pointer"
+                            style={{ backgroundColor: theme.darkButtonHex }}
+                          >
+                            Apply
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
+                {!activeItem ? (
+                  <div className="flex-1 flex flex-col items-center justify-center py-12 text-center space-y-3">
+                    <p
+                      className="text-xl font-bold"
+                      style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+                    >
+                      No matching products found
+                    </p>
+                    <p className="text-xs max-w-xs" style={{ color: theme.mutedTextHex }}>
+                      Try adjusting your search query or clearing the Men/Women, Ownership, or Price Range filters.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        resetStoreFilters();
+                        setActiveSubGroupFilter('All');
+                      }}
+                      className="px-4 py-2 rounded-full text-xs font-extrabold uppercase tracking-wider text-white cursor-pointer"
+                      style={{ backgroundColor: theme.darkButtonHex }}
+                    >
+                      Reset Filters
+                    </button>
+                  </div>
+                ) : (
+                  <>
                 {/* Center Product Split: Left 3D Turntable Stage | Right Purchase Configurator */}
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-stretch my-auto">
                   {/* Left: Interactive 3D Product Turntable Stage */}
-                  <div className="md:col-span-5 flex flex-col">
+                  <div className="md:col-span-5 flex flex-col relative">
                     <ShopProduct3DTurntable
                       archetype={activeItem.archetype3d}
                       primaryHex={activeColor?.primaryHex ?? theme.accentHex}
@@ -1893,10 +2571,24 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                       previewScooterKind={activeItem.previewScooterKind}
                       previewCafeFoodId={activeItem.previewCafeFoodId}
                       previewGiftKind={activeItem.previewGiftKind}
+                      previewMotionItemId={
+                        activeItem.archetype3d === 'motion_pose'
+                          ? (activeItem.linkedInventoryItemId ?? undefined)
+                          : undefined
+                      }
                       previewImageUrl={activeItem.previewImageUrl}
                       previewThumbFlipY={activeItem.previewThumbFlipY}
                       previewImageAlt={activeItem.title}
                     />
+                    {isStoreItemOwned(activeItem) && (
+                      <div
+                        className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-[#16A34A] text-white text-[10px] font-extrabold tracking-wide uppercase flex items-center gap-1 shadow-sm pointer-events-none"
+                        title="Item already owned in your Wardrobe / Bag"
+                      >
+                        <Check className="w-3 h-3 stroke-[3]" aria-hidden="true" />
+                        <span>Owned</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Right: Product Details, Specs / Variants & Checkout */}
@@ -1911,18 +2603,32 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                           : `${activeItem.categoryLabel} · ${(activeColor?.label ?? 'STANDARD').toUpperCase()}`}
                       </p>
 
-                      <h2
-                        className="mt-1 text-2xl sm:text-[32px] font-bold leading-tight"
-                        style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
-                      >
-                        {activeItem.title}
-                      </h2>
+                      <div className="mt-1 flex items-center gap-2 flex-wrap">
+                        <h2
+                          className="text-2xl sm:text-[32px] font-bold leading-tight"
+                          style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+                        >
+                          {activeItem.title}
+                        </h2>
+                        {isStoreItemOwned(activeItem) && (
+                          <span
+                            className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#16A34A] text-white shadow-sm shrink-0"
+                            title="Owned item"
+                          >
+                            <Check className="w-3.5 h-3.5 stroke-[3]" aria-hidden="true" />
+                          </span>
+                        )}
+                      </div>
 
                       <p
                         className="mt-1 text-xl sm:text-2xl font-extrabold tabular-nums"
-                        style={{ color: theme.accentHex }}
+                        style={{
+                          color: activeUnitPrice === 0 ? '#16A34A' : theme.accentHex,
+                        }}
                       >
-                        {totalLinePriceRespite.toLocaleString()} RESPITE
+                        {activeUnitPrice === 0
+                          ? 'FREE WEAR'
+                          : `${activeTotalLinePrice.toLocaleString()} ${activeItemCurrency}`}
                       </p>
 
                       <p
@@ -2038,7 +2744,7 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                       </div>
                     )}
 
-                    {/* Quantity Stepper + Add to Bag + Instant Atomic Buy */}
+                    {/* Quantity Stepper + Add to Bag (Green Capsule on Added) + Instant Atomic Buy */}
                     <div className="flex flex-wrap items-center gap-2.5 pt-1">
                       <div
                         className="flex items-center rounded-full border px-2 py-1"
@@ -2078,10 +2784,19 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                         type="button"
                         disabled={activeItem.escrowStockCount <= 0}
                         onClick={handleAddToBag}
-                        className="flex-1 min-w-[150px] py-3 px-4 rounded-full text-xs font-extrabold tracking-wider uppercase text-white shadow-sm hover:opacity-95 active:scale-[0.99] transition-all cursor-pointer disabled:opacity-40"
-                        style={{ backgroundColor: theme.accentHex }}
+                        className="flex-1 min-w-[150px] py-3 px-4 rounded-full text-xs font-extrabold tracking-wider uppercase text-white shadow-sm hover:opacity-95 active:scale-[0.99] transition-all cursor-pointer disabled:opacity-40 flex items-center justify-center gap-1.5"
+                        style={{
+                          backgroundColor: isActiveItemInBag ? '#16A34A' : theme.accentHex,
+                        }}
                       >
-                        + ADD TO BAG
+                        {isActiveItemInBag ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 stroke-[3]" aria-hidden="true" />
+                            <span>ADDED</span>
+                          </>
+                        ) : (
+                          <span>+ ADD TO BAG</span>
+                        )}
                       </button>
 
                       <button
@@ -2092,7 +2807,9 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                         style={{ backgroundColor: theme.darkButtonHex }}
                         title="Instant Atomic Settlement directly to Store Owner Wallet"
                       >
-                        BUY NOW
+                        {isStoreItemOwned(activeItem) && unitPriceRespite === 0
+                          ? 'OWNED'
+                          : 'BUY NOW'}
                       </button>
                     </div>
 
@@ -2114,7 +2831,7 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                           className="text-[11px] font-medium tabular-nums"
                           style={{ color: theme.mutedTextHex }}
                         >
-                          ({totalLinePriceRespite} RESPITE · {activeTier?.label})
+                          ({activeTotalLinePrice} {activeItemCurrency} · {activeTier?.label})
                         </span>
                       </div>
                     )}
@@ -2126,8 +2843,9 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                   className="pt-3 mt-3 border-t flex items-stretch gap-2 overflow-x-auto pb-1"
                   style={{ borderColor: theme.borderHex }}
                 >
-                  {displayItems.map((item) => {
+                  {displayItems.slice(0, visibleStripCount).map((item) => {
                     const isSelected = item.id === activeItem.id;
+                    const itemOwned = isStoreItemOwned(item);
                     return (
                       <button
                         key={item.id}
@@ -2137,7 +2855,7 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                           setSelectedItemId(item.id);
                           setQuantity(1);
                         }}
-                        className="shrink-0 w-[112px] rounded-2xl border p-2 flex flex-col items-center text-center transition-all cursor-pointer"
+                        className="relative shrink-0 w-[112px] rounded-2xl border p-2 flex flex-col items-center text-center transition-all cursor-pointer"
                         style={{
                           backgroundColor: isSelected ? '#FFFFFF' : theme.cardBgHex,
                           borderColor: isSelected
@@ -2148,12 +2866,20 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                             : 'none',
                         }}
                       >
+                        {itemOwned && (
+                          <span
+                            className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-[#16A34A] text-white flex items-center justify-center shadow-sm z-10"
+                            title="Owned"
+                          >
+                            <Check className="w-2.5 h-2.5 stroke-[3.2]" aria-hidden="true" />
+                          </span>
+                        )}
                         <CatalogItemThumbnail
                           item={item}
                           fallbackPrimaryHex={theme.accentHex}
                           fallbackSecondaryHex={theme.darkButtonHex}
                           fallbackAccentHex={theme.accentHex}
-                          sizeClass="w-10 h-10"
+                          sizeClass={item.archetype3d === 'motion_pose' ? 'w-12 h-12' : 'w-10 h-10'}
                         />
                         <span className="mt-1.5 text-[11px] font-bold truncate w-full">
                           {item.title}
@@ -2161,7 +2887,28 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                       </button>
                     );
                   })}
+                  {displayItems.length > visibleStripCount && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setVisibleStripCount((c) => c + 48);
+                      }}
+                      className="shrink-0 w-[112px] rounded-2xl border border-dashed p-2 flex flex-col items-center justify-center text-center text-[11px] font-bold transition-colors hover:bg-white cursor-pointer"
+                      style={{
+                        borderColor: theme.borderHex,
+                        color: theme.accentHex,
+                      }}
+                    >
+                      <span>+{displayItems.length - visibleStripCount} more</span>
+                      <span className="text-[10px] font-semibold mt-0.5" style={{ color: theme.mutedTextHex }}>
+                        Load next 48
+                      </span>
+                    </button>
+                  )}
                 </div>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -2192,18 +2939,26 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {displayItems.map((item) => {
-                  const col = item.colorVariants[0];
+                {displayItems.slice(0, visibleStripCount).map((item) => {
+                  const itemOwned = isStoreItemOwned(item);
                   return (
                     <div
                       key={item.id}
-                      className="rounded-[24px] border p-5 flex flex-col justify-between space-y-4 shadow-[0_8px_24px_rgba(35,24,18,0.04)]"
+                      className="relative rounded-[24px] border p-5 flex flex-col justify-between space-y-4 shadow-[0_8px_24px_rgba(35,24,18,0.04)]"
                       style={{
                         backgroundColor: theme.cardBgHex,
                         borderColor: theme.borderHex,
                       }}
                     >
-                      <div className="flex items-start justify-between gap-3">
+                      {itemOwned && (
+                        <span
+                          className="absolute top-3.5 right-3.5 w-6 h-6 rounded-full bg-[#16A34A] text-white flex items-center justify-center shadow-sm"
+                          title="Owned"
+                        >
+                          <Check className="w-3.5 h-3.5 stroke-[3]" aria-hidden="true" />
+                        </span>
+                      )}
+                      <div className="flex items-start justify-between gap-3 pr-6">
                         <div className="space-y-1">
                           <span
                             className="text-[10px] font-extrabold tracking-[0.16em] uppercase"
@@ -2219,16 +2974,18 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                           </h3>
                           <p
                             className="text-base font-extrabold tabular-nums"
-                            style={{ color: theme.accentHex }}
+                            style={{ color: storeItemUnitPrice(item) === 0 ? '#16A34A' : theme.accentHex }}
                           >
-                            {item.basePriceRespite} RESPITE
+                            {storeItemUnitPrice(item) === 0
+                              ? 'FREE WEAR'
+                              : storeItemPriceLabel(item)}
                           </p>
                         </div>
-                        <ProductArchetypeArtwork
-                          archetype={item.archetype3d}
-                          primaryHex={col?.primaryHex ?? theme.accentHex}
-                          secondaryHex={col?.secondaryHex ?? theme.darkButtonHex}
-                          accentHex={col?.accentHex ?? theme.accentHex}
+                        <CatalogItemThumbnail
+                          item={item}
+                          fallbackPrimaryHex={theme.accentHex}
+                          fallbackSecondaryHex={theme.darkButtonHex}
+                          fallbackAccentHex={theme.accentHex}
                           sizeClass="w-16 h-16"
                         />
                       </div>
@@ -2241,8 +2998,8 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                       </p>
 
                       <div className="flex items-center justify-between pt-2 border-t" style={{ borderColor: theme.borderHex }}>
-                        <span className="text-[11px] font-semibold" style={{ color: theme.mutedTextHex }}>
-                          Vault Stock: {item.escrowStockCount} · {item.colorVariants.length} Colors
+                        <span className="text-[11px] font-semibold" style={{ color: itemOwned ? '#16A34A' : theme.mutedTextHex }}>
+                          {itemOwned ? '✓ Owned in Wardrobe' : `Stock: ${item.escrowStockCount}`}
                         </span>
                         <button
                           type="button"
@@ -2257,6 +3014,21 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                   );
                 })}
               </div>
+              {displayItems.length > visibleStripCount && (
+                <div className="flex justify-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setVisibleStripCount((c) => c + 48);
+                    }}
+                    className="px-5 py-2.5 rounded-full border text-xs font-bold cursor-pointer hover:bg-white transition-colors"
+                    style={{ borderColor: theme.borderHex, color: theme.primaryTextHex }}
+                  >
+                    Load more ({displayItems.length - visibleStripCount} remaining)
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -2343,8 +3115,9 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                                 className="mt-1 text-xs font-extrabold tabular-nums"
                                 style={{ color: theme.accentHex }}
                               >
-                                {line.unitPriceRespite} RESPITE × {line.quantity} ={' '}
-                                {line.lineTotalRespite} RESPITE
+                                {line.currency === 'CYON'
+                                  ? `${line.unitPriceCyon} CerCoins × ${line.quantity} = ${line.lineTotalCyon} CerCoins`
+                                  : `${line.unitPriceRespite} RESPITE × ${line.quantity} = ${line.lineTotalRespite} RESPITE`}
                               </p>
                             </div>
                           </div>
@@ -2414,6 +3187,24 @@ export const ShopStorefrontTabletModal: React.FC<ShopStorefrontTabletModalProps>
                               {split.grossRespite} RESPITE
                             </span>
                           </div>
+                          {bagSubtotalCyon > 0 && (
+                            <div className="pt-2 border-t space-y-2" style={{ borderColor: theme.borderHex }}>
+                              <div className="flex justify-between">
+                                <span style={{ color: theme.mutedTextHex }}>
+                                  Outfits &amp; Style (paid from CerCoins balance)
+                                </span>
+                                <span className="font-bold tabular-nums">
+                                  {bagSubtotalCyon} CerCoins
+                                </span>
+                              </div>
+                              <div className="flex justify-between text-sm font-extrabold">
+                                <span>CerCoins Total</span>
+                                <span style={{ color: theme.accentHex }}>
+                                  {bagSubtotalCyon} CerCoins
+                                </span>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })()}

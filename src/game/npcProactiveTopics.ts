@@ -5,7 +5,7 @@ import type { NpcChatSituation } from './npcTextChat';
 /**
  * Natural Proactive Topic Initiation Engine
  * =========================================
- * Gives Cerria's 7 named NPCs organic, persona-grounded, situation-aware
+ * Gives Cerria's 8 named NPCs organic, persona-grounded, situation-aware
  * conversation starters so they don't passively wait for the player to carry
  * every chat.
  *
@@ -81,8 +81,8 @@ function buildPersonaCandidates(ctx: ProactiveTopicRequestContext): TopicCandida
     const walkMap: Record<NpcId, { text: string; emotion: NpcEmotionTag }> = {
       hana: {
         text: close
-          ? `Walking past ${place} at this pace actually feels like a real break. Have you noticed any little corners of town lately that made you stop and look twice?`
-          : `It is nice taking a slow lap around ${place} instead of rushing between errands. Where do you usually like to wander when you have a free afternoon?`,
+          ? `Catching a quiet moment near ${place} with you actually feels like a real break. Have you noticed any little corners of town lately that made you stop and look twice?`
+          : `It is nice taking a breather around ${place} instead of rushing between errands. Where do you usually like to wander when you have a free afternoon?`,
         emotion: 'happy',
       },
       kai: {
@@ -93,32 +93,38 @@ function buildPersonaCandidates(ctx: ProactiveTopicRequestContext): TopicCandida
       },
       mira: {
         text: close
-          ? `Okay, walking through ${place} with you is officially better than my afternoon coffee break. If we detour for snacks right now, sweet or savory?`
-          : `Love getting out from behind the espresso counter for a walk! Anything around ${place} catch your eye today?`,
+          ? `Okay, walking through ${place} with you is officially better than any rehearsal break. If we detour for snacks right now, iced drink or something sweet?`
+          : `Love stretching my legs past ${place} between Beach Club dance sets! Anything around here catch your eye today?`,
         emotion: 'laugh',
       },
       nadia: {
         text: close
-          ? `The light around ${place} is weirdly flattering right now—don't laugh, I can't turn my stylist brain off. What kind of look have you been wanting to try next?`
-          : `Strolling through ${place} is honestly the best way to spot new street-style ideas. Notice any colors around here you'd actually wear?`,
+          ? `The light around ${place} is weirdly flattering right now—don't laugh, I can't turn my stylist brain off. What kind of mood have you been in today?`
+          : `Taking a breather around ${place} is honestly the best way to notice everyday details. Anything fun happen in your week so far?`,
         emotion: 'proud',
       },
       tari: {
         text: close
-          ? `Walking around ${place} with you has me humming a totally new melody already. Be honest—are we keeping it chill today or looking for a bit of trouble?`
-          : `The vibe out here around ${place} is too good to stay indoors! What kind of music matches a walk like this for you?`,
+          ? `Walking around ${place} with you beats every cafe break I have ever taken. Be honest—are we grabbing pastries next or just wandering wherever the breeze goes?`
+          : `So nice getting fresh air around ${place} outside Glasshouse Cafe! What kind of afternoon vibe are you in today?`,
         emotion: 'laugh',
       },
       bima: {
         text: close
-          ? `Good to stretch our legs away from the showroom. If you weren't wandering ${place} right now, where would you be heading?`
-          : `Pavement's clean around ${place} today. Easy walk—got anywhere particular in mind, or just taking it slow?`,
+          ? `Good to stretch our legs around ${place} together. If we keep roaming town right now, north shops, south avenues, or somewhere quiet?`
+          : `Streets feel clean and calm around ${place} today. Easy walk—got anywhere particular in mind, or just taking it slow?`,
         emotion: 'happy',
       },
       kenji: {
         text: close
-          ? `Walking past ${place} without checking a timetable feels strangely liberating. Tell me—what has been on your mind today?`
-          : `Taking the footpaths around ${place} is a nice change from watching the tram loop. Do you usually explore on foot or take the tram?`,
+          ? `Walking past ${place} with you makes every block of the city feel quieter in the best way. Tell me—what has been on your mind today?`
+          : `Taking the footpaths around ${place} is always a pleasant change of pace. Do you have a favorite shopping street or park in Cerria?`,
+        emotion: 'happy',
+      },
+      raka: {
+        text: close
+          ? `Walking away from the Beach Club gate with you is honestly the best break I could ask for. Where do you feel like heading next?`
+          : `Good pace around ${place}. Nice getting off the boardwalk for a bit—what have you been up to today?`,
         emotion: 'happy',
       },
     };
@@ -133,7 +139,7 @@ function buildPersonaCandidates(ctx: ProactiveTopicRequestContext): TopicCandida
   if (activity === 'riding_as_passenger') {
     const rideMap: Record<NpcId, { text: string; emotion: NpcEmotionTag }> = {
       hana: {
-        text: `The breeze past ${place} feels amazing from back here! Keep this smooth pace—where are you taking us next?`,
+        text: `The breeze past ${place} feels amazing! Keep this smooth pace—where are you heading next?`,
         emotion: 'happy',
       },
       kai: {
@@ -141,7 +147,7 @@ function buildPersonaCandidates(ctx: ProactiveTopicRequestContext): TopicCandida
         emotion: 'laugh',
       },
       mira: {
-        text: `Haha, wind in my hair and zero espresso spills to worry about! Can we loop past the waterfront after ${place}?`,
+        text: `Haha, wind in my hair and the whole coast rushing past! Can we loop by the Beach Club shoreline after ${place}?`,
         emotion: 'laugh',
       },
       nadia: {
@@ -149,16 +155,20 @@ function buildPersonaCandidates(ctx: ProactiveTopicRequestContext): TopicCandida
         emotion: 'shy',
       },
       tari: {
-        text: `Oh, this breeze around ${place} is unreal! Feels like the opening scene of a music video—keep cruising!`,
+        text: `Oh, this breeze around ${place} is unreal! Way better than wiping down espresso cups—keep cruising!`,
         emotion: 'laugh',
       },
       bima: {
-        text: `Suspension handles the bumps near ${place} nicely. Smooth throttle work—want to take the coastal loop next?`,
+        text: `Suspension handles the avenues near ${place} nicely. Smooth throttle work—want to loop past the north and south shops next?`,
         emotion: 'proud',
       },
       kenji: {
-        text: `Have to admit, cruising past ${place} with you beats waiting for the next tram arrival. Just keep an eye on the crosswalks, alright?`,
+        text: `Have to admit, cruising past ${place} with you is wonderfully relaxing. Just keep an eye on the crosswalks, alright?`,
         emotion: 'happy',
+      },
+      raka: {
+        text: `Haha, riding passenger past ${place} beats standing watch all afternoon! Nice handling—where to next?`,
+        emotion: 'laugh',
       },
     };
     candidates.push({
@@ -182,7 +192,7 @@ function buildPersonaCandidates(ctx: ProactiveTopicRequestContext): TopicCandida
         emotion: 'happy',
       },
       mira: {
-        text: `Okay, sitting down for five minutes feels heavenly. Quick question while we people-watch in ${place}: if you could invent a drink for today's mood, what's in it?`,
+        text: `Okay, sitting down for five minutes after dancing feels heavenly. Quick question while we chill in ${place}: what song has been stuck in your head lately?`,
         emotion: 'happy',
       },
       nadia: {
@@ -190,7 +200,7 @@ function buildPersonaCandidates(ctx: ProactiveTopicRequestContext): TopicCandida
         emotion: 'neutral',
       },
       tari: {
-        text: `Rare moment of me sitting still in ${place}! Tell me a good story from your week before I start tapping a rhythm on the bench.`,
+        text: `My favorite West Plaza break right here in ${place}! Tell me a good story from your week while we catch the breeze.`,
         emotion: 'laugh',
       },
       bima: {
@@ -198,7 +208,11 @@ function buildPersonaCandidates(ctx: ProactiveTopicRequestContext): TopicCandida
         emotion: 'happy',
       },
       kenji: {
-        text: `Even a station officer has to sit down now and then. How are things treating you around ${place} today?`,
+        text: `A quiet bench in ${place} is always welcome after walking half the city. How are things treating you today?`,
+        emotion: 'happy',
+      },
+      raka: {
+        text: `Rare moment of sitting down off patrol in ${place}! Feels good—tell me what has been the best part of your day so far.`,
         emotion: 'happy',
       },
     };
@@ -217,11 +231,12 @@ function buildPersonaCandidates(ctx: ProactiveTopicRequestContext): TopicCandida
         ? `Listen to that rain against the plaza awnings. Makes me want two warm mugs and a long talk—do you like rainy weather or prefer clear skies?`
         : `The rain makes ${place} look like a watercolor painting today. Are you staying dry out there, or do you actually enjoy walking in a drizzle?`,
       kai: `Rain on the water always shifts the bite window—half the harbor clears out, which honestly makes it peaceful. You mind getting caught in a shower?`,
-      mira: `Rainy weather ALWAYS doubles the cinnamon roll cravings at Glasshouse Cafe! Tell me honestly—are you a hot mocha person or iced coffee even in the rain?`,
-      nadia: `Rain is the ultimate stress test for a jacket silhouette. Have you noticed how much sharper the street colors look in ${place} when the pavement's wet?`,
-      tari: `Rainy air gives the whole waterfront such a cozy acoustic-set mood! Makes me want to play something mellow—what's your go-to rainy-day song?`,
-      bima: `Wet pavement around ${place} means taking turns a little wider on scooters. Good excuse to slow down with a strong coffee, though—how's your day holding up?`,
-      kenji: `Rain always slows commuters down around the tram platform, so I'm keeping an extra eye on the timings. Staying warm and dry out here?`,
+      mira: `Rain along the Beach Club palms gives the whole shoreline such a moody dance-video vibe! Do you love rainy evenings or wish the sun was out?`,
+      nadia: `Rain makes the whole street glow completely differently. Outside of staying dry, what is your favorite rainy-day comfort ritual?`,
+      tari: `Rainy weather ALWAYS doubles the cinnamon roll cravings at Glasshouse Cafe! Tell me honestly—are you a hot mocha person or iced coffee even in the rain?`,
+      bima: `Wet pavement around ${place} slows the whole city down in a nice way. Good excuse for a strong coffee, though—how's your day holding up?`,
+      kenji: `Rain makes the shopping avenues and parks smell remarkably fresh. Staying warm and dry on your walk today?`,
+      raka: `Rain keeps the Beach Club boardwalk super calm—just waves and neon reflections. You mind getting caught in a coastal shower?`,
     };
     candidates.push({
       key: `${npcId}_rain`,
@@ -235,13 +250,16 @@ function buildPersonaCandidates(ctx: ProactiveTopicRequestContext): TopicCandida
         ? `The warm lamp glow around ${place} at this hour is my favorite part of town. Did today turn out the way you hoped?`
         : `Everything in ${place} softens once the streetlamps flick on. Are you winding down for the evening or just getting started?`,
       kai: `Harbor air cools off fast after sunset—best time to hear the water without the daytime rush. Had a good day out there?`,
-      mira: `Evening lights make the cafe windows glow so cozy! Between us, are you a night owl or an early-morning sunrise type?`,
-      nadia: `Evening light around ${place} changes every fabric color completely—warm gold makes neutrals pop. Heading anywhere fun tonight?`,
-      tari: close
-        ? `The evening breeze always wakes my favorite part of the day up—especially when you're around. Wanna swap favorite late-night hangout spots?`
-        : `Once the evening lights hit the waterfront, the whole mood lifts! Are you more of a live-music night person or quiet-stroll kind of evening?`,
-      bima: `Streets around ${place} get calmer after dusk—honestly my favorite window for a smooth loop. How'd your day go?`,
-      kenji: `Evening shift is quieter once the rush clears; I like hearing the last tram bells echo across ${place}. Been a busy day for you?`,
+      mira: close
+        ? `Sunset lights at the Beach Club always wake my favorite part of the day up—especially when you're here. Wanna swap favorite late-night hangout spots?`
+        : `Once the evening lights hit the Beach Club deck, the whole mood lifts! Are you more of a music-and-dancing night person or quiet-stroll kind of evening?`,
+      nadia: `Evening light around ${place} softens the whole plaza completely. Forget work for a second—doing anything relaxing tonight?`,
+      tari: `Evening lights make the Glasshouse Cafe windows glow so cozy! Between us, are you a night owl or an early-morning sunrise type?`,
+      bima: `Streets around ${place} get calmer after dusk—honestly my favorite window for wandering town. How'd your day go?`,
+      kenji: `Evening walks across the city are much quieter once the afternoon bustle fades. Been a good day for you so far?`,
+      raka: close
+        ? `Beach Club breeze cools down right after sunset—always makes me glad when you drop by. How did your day turn out?`
+        : `Evening lights along the Beach Club shore are hard to beat. Winding down for the night or just getting your evening started?`,
     };
     candidates.push({
       key: `${npcId}_${situation.timePhase}`,
@@ -257,15 +275,15 @@ function buildPersonaCandidates(ctx: ProactiveTopicRequestContext): TopicCandida
       {
         key: 'hana_cozy_corner',
         text: close
-          ? `I was just sketching out a cozy sunlit reading nook and wondered what your dream room would look like. Big windows, warm wood, or something sleek and modern?`
-          : `I've been helping folks picture their ideal corner in town today—if you could design your own little space from scratch, what vibe would you go for first?`,
+          ? `I was just daydreaming about quiet getaways and wondered—if you had a whole free weekend with zero obligations, what would you do first?`
+          : `Taking a tiny mental break from plaza errands—if you could design your ideal relaxing afternoon anywhere in town, what would it look like?`,
         emotion: 'happy',
       },
       {
         key: 'hana_plaza_ritual',
         text: warm
-          ? `Funny thing—I noticed everyone in ${place} has one tiny daily habit, like the bench they always pick or the coffee they order first. What's yours?`
-          : `Central Plaza has a lot of hidden little shortcuts once you know where to look. Have you stumbled onto a favorite spot in town yet?`,
+          ? `Funny thing—I noticed everyone in ${place} has one tiny daily habit, like the bench they always pick or the snack they crave first. What's yours?`
+          : `Central and West Plaza both have hidden little corners once you slow down. Have you stumbled onto a favorite spot in town yet?`,
         emotion: 'happy',
       },
       {
@@ -285,7 +303,7 @@ function buildPersonaCandidates(ctx: ProactiveTopicRequestContext): TopicCandida
       {
         key: 'kai_food_banter',
         text: warm
-          ? `Serious harbor question for you: fresh grilled catch by the sea breeze, or one of Hana's club sandwiches with an espresso?`
+          ? `Serious harbor question for you: fresh grilled catch by the sea breeze, or a club sandwich with a strong espresso?`
           : `Quiet stretch at the harbor right now. What brought you wandering down this way today?`,
         emotion: 'happy',
       },
@@ -297,64 +315,64 @@ function buildPersonaCandidates(ctx: ProactiveTopicRequestContext): TopicCandida
     ],
     mira: [
       {
-        key: 'mira_coffee_vibe',
+        key: 'mira_dance_vibe',
         text: close
-          ? `Okay, I tried pouring a leaf pattern on a caramel latte earlier and it turned out looking suspiciously like a tiny cloud. Tell me—what's been making you smile lately?`
-          : `I'm testing a theory that you can tell someone's whole mood by what they crave in the afternoon. Coffee, something sweet, or straight-up fresh air?`,
+          ? `I've been working out a new sunset dance routine down at the Beach Club, and I keep catching myself wondering what song you'd pick for us. Upbeat or slow and dreamy?`
+          : `The sea breeze has such a good rhythm at the Beach Club today! Are you more into lively crowd energy or a chill sunset walk by the waves?`,
         emotion: 'laugh',
       },
       {
-        key: 'mira_people_watch',
+        key: 'mira_spontaneous',
         text: warm
-          ? `Watching the plaza crowd from Glasshouse Cafe gives you the best stories—everyone's always on a mission. What's your mission today?`
-          : `Welcome by! Between espresso shots I love hearing what folks around ${place} are up to—anything fun on your radar today?`,
+          ? `Be honest with me—if you had a totally free evening after my set, are we grabbing iced drinks, dancing by the shore, or cruising around town?`
+          : `Hey! Always fun catching fresh energy around the Beach Club—what's been the highlight of your day so far?`,
         emotion: 'happy',
       },
       {
         key: 'mira_playlist',
-        text: `I've been trying to refresh the afternoon cafe playlist without putting everyone to sleep. What kind of tracks do you put on when you want a good vibe?`,
+        text: `Half the fun of dancing at the Beach Club is finding that one track nobody can sit still to. What kind of music always puts you in a good mood?`,
         emotion: 'happy',
       },
     ],
     nadia: [
       {
-        key: 'nadia_palette',
+        key: 'nadia_off_work',
         text: close
-          ? `Can I get your honest eye on something? I'm torn between warm earth tones and crisp coastal blues for next week's boutique display—which mood feels more right to you?`
-          : `Good eye-level light out here in ${place} today. Tell me—do you dress for comfort first, or do you like making a bold statement?`,
-        emotion: 'proud',
+          ? `Can I step away from boutique talk for a second? Tell me honestly—what is something random you've been really into lately, music, food, anything?`
+          : `Good light out here in ${place} today, though I promise I won't lecture you on jackets. What has been keeping your week interesting lately?`,
+        emotion: 'happy',
       },
       {
         key: 'nadia_details',
         text: warm
-          ? `I swear, one well-chosen jacket or pair of shoes can flip someone's whole posture. What's one piece in your wardrobe you never get tired of?`
-          : `People underestimate how much color balance changes a walk through the plaza. Have you browsed any new looks around town lately?`,
+          ? `I swear, one great playlist or a quiet iced latte can flip my whole mood in five minutes. What's your instant mood-lifter?`
+          : `Even when the plaza gets lively, I love hearing what folks around town are up to. Exploring anywhere fun today?`,
         emotion: 'happy',
       },
       {
         key: 'nadia_break',
-        text: `Even perfectionists need five minutes away from fixing collars. How's your week been treating you outside the usual rush?`,
+        text: `Even perfectionists need five minutes away from work. How's your week been treating you outside the usual rush?`,
         emotion: 'neutral',
       },
     ],
     tari: [
       {
-        key: 'tari_new_hook',
+        key: 'tari_coffee_vibe',
         text: close
-          ? `I've had half an acoustic chorus stuck in my head since sunrise—something warm and breezy. Want to help me pick the vibe: sunset-nostalgic or upbeat beach party?`
-          : `The sea breeze has such a good rhythm today! Are you more into lively crowd energy or a chill sunset spot by the pier?`,
+          ? `Okay, I just stepped out of Glasshouse Cafe with a fresh latte and saved half my break hoping you'd wander past West Plaza. Tell me—what's been making you smile lately?`
+          : `I'm testing a theory at Glasshouse Cafe that you can tell someone's whole mood by their afternoon craving. Coffee, warm pastry, or straight-up fresh air?`,
         emotion: 'laugh',
       },
       {
-        key: 'tari_spontaneous',
+        key: 'tari_west_plaza',
         text: warm
-          ? `Be honest with me—if you had a totally free evening with zero plans, are we chasing live music, grabbing iced drinks, or taking a spontaneous coastal ride?`
-          : `Hey! Always fun catching new energy around the waterfront—what's been the highlight of your day so far?`,
+          ? `Sitting out on the West Plaza benches between cafe runs gives you the best stories—everyone's always on a mission. What's your mission today?`
+          : `Hey! Always fun seeing friendly faces around West Plaza and Glasshouse Cafe—anything fun on your radar today?`,
         emotion: 'happy',
       },
       {
-        key: 'tari_crowd_story',
-        text: `Half the fun of hosting at the beach club is seeing which song gets even the shyest person tapping their foot. What song gets you every time?`,
+        key: 'tari_playlist',
+        text: `I've been trying to refresh my after-shift playlist for relaxing out on the plaza benches. What kind of tracks do you put on when you want a good vibe?`,
         emotion: 'happy',
       },
     ],
@@ -362,20 +380,20 @@ function buildPersonaCandidates(ctx: ProactiveTopicRequestContext): TopicCandida
       {
         key: 'bima_routes',
         text: close
-          ? `Tuned up two scooters before lunch and now I'm itching for a clean road loop. What's your favorite stretch of town when you just want to clear your head?`
-          : `Quiet stretch outside the showroom. Do you prefer cruising around town on wheels, or taking the plaza footpaths slow?`,
+          ? `Walked from the north shops all the way down toward the south avenues today, and honestly the best part is still running into you. Where's your favorite stretch of town to clear your head?`
+          : `Just looping across town between the shopping districts and the plazas. Do you prefer cruising around on a scooter, or taking the avenues slow on foot?`,
         emotion: 'happy',
       },
       {
         key: 'bima_craft',
         text: warm
-          ? `Funny how a squeaky brake or loose bolt bugs me until I fix it, even off shift. You got any little thing like that you're particular about?`
-          : `Good weather for keeping tires gripping cleanly. Everything running smoothly on your end today?`,
+          ? `Funny how wandering every block makes you notice all the tiny details—good street snacks, quiet benches, sunset angles. Found any hidden gems in Cerria lately?`
+          : `Good weather for roaming around town today. Everything running smoothly on your end?`,
         emotion: 'neutral',
       },
       {
         key: 'bima_espresso',
-        text: `Debating whether it's a double-espresso afternoon or a quiet tennis-court walk later. How's your energy holding up today?`,
+        text: `Debating whether it's a double-espresso afternoon or a slow walk by Oasis Lake later. How's your energy holding up today?`,
         emotion: 'happy',
       },
     ],
@@ -383,21 +401,42 @@ function buildPersonaCandidates(ctx: ProactiveTopicRequestContext): TopicCandida
       {
         key: 'kenji_quiet_spot',
         text: close
-          ? `Off the record, once the commuter rush clears I like finding the quietest bench near the clock tower just to breathe. Where do you go in town when you want peace and quiet?`
-          : `The tram loop is running right on the minute today, which leaves a rare quiet pocket. Have you explored all the districts along the line yet?`,
+          ? `Off the record, after strolling past the north and south shopping rows I love finding a quiet bench just to breathe—especially with you. Where do you go in town when you want peace and quiet?`
+          : `The north and south shopping avenues are wonderfully lively today, while the parks stay calm. Have you explored all the districts around Cerria yet?`,
         emotion: 'happy',
       },
       {
         key: 'kenji_food',
         text: warm
-          ? `After a tidy shift at the kiosk, a hot bowl of ramen or strong coffee feels earned. What's your go-to meal after a long day?`
+          ? `After a long city walk, a warm bowl of ramen or a crisp croissant with strong coffee always feels earned. What's your go-to meal after a full day?`
           : `Good day around ${place}. Do you like planning your stops out in order, or just wandering wherever looks interesting?`,
         emotion: 'neutral',
       },
       {
-        key: 'kenji_clock',
-        text: `I check the clock tower out of habit, though I suppose not everyone lives by a timetable. How has the pace of your day been?`,
+        key: 'kenji_pace',
+        text: `I used to rush everywhere on a strict schedule, but strolling the city at an easy pace has grown on me. How has the rhythm of your day been?`,
         emotion: 'happy',
+      },
+    ],
+    raka: [
+      {
+        key: 'raka_beach_watch',
+        text: close
+          ? `Keeping watch at the Beach Club is easy when the waves are calm, though I admit I check the entrance twice whenever I think you might stop by. How's your day going?`
+          : `Breeze off the Beach Club boardwalk is solid today. Came down for the ocean view, the music, or just getting away from the busy avenues?`,
+        emotion: 'happy',
+      },
+      {
+        key: 'raka_off_duty',
+        text: warm
+          ? `Between rounds I'm always thinking about what to eat after my shift—something spicy or a huge late-night snack. What's your go-to comfort food?`
+          : `Quiet stretch along the Beach Club deck right now. Anything interesting happen around town today?`,
+        emotion: 'laugh',
+      },
+      {
+        key: 'raka_sunset',
+        text: `Best perk of Beach Club security is getting front-row seats to every ocean sunset. You more of a beach person or a city-plaza person?`,
+        emotion: 'proud',
       },
     ],
   };

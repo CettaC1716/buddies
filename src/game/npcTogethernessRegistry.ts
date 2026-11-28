@@ -1,7 +1,9 @@
 import {
+  canPairPose,
   getLocalClosenessDateKey,
   getNpcClosenessBand,
   getNpcClosenessRecord,
+  isHighTierMerchantNpc,
   npcIdToCitizenId,
   resolveNpcId,
   type ClosenessBand,
@@ -514,7 +516,13 @@ export function evaluateSitCommandVerdict(params: {
 export interface CategoryVerdictResult {
   accepted: boolean;
   category: TogethernessActionCategory;
-  reason: 'accepted' | 'phone_chat_blocked' | 'cooldown' | 'closeness_too_low' | 'wrong_vehicle';
+  reason:
+    | 'accepted'
+    | 'phone_chat_blocked'
+    | 'cooldown'
+    | 'closeness_too_low'
+    | 'wrong_vehicle'
+    | 'merchant_role_restricted';
   replyLine: string;
 }
 
@@ -559,7 +567,12 @@ export function evaluateProgressiveCategoryVerdict(params: {
       return {
         accepted: false,
         category: params.category,
-        reason: decision.reason === 'closeness_too_low' ? 'closeness_too_low' : 'wrong_vehicle',
+        reason:
+          decision.reason === 'merchant_role_restricted'
+            ? 'merchant_role_restricted'
+            : decision.reason === 'closeness_too_low'
+              ? 'closeness_too_low'
+              : 'wrong_vehicle',
         replyLine: decision.replyLine,
       };
     }
@@ -588,11 +601,15 @@ export function evaluateProgressiveCategoryVerdict(params: {
   }
 
   // Paired animation category — individually band-gated
+  // High-tier merchants (Hana & Nadia) require high closeness (`canPairPose`, score >= 70)
+  // before any paired pose is accepted.
   const spec = PAIRED_CATEGORY_SPECS[params.category];
   const currentBand = getNpcClosenessBand(params.store, params.npcId, nowMs);
   // Ensure closeness record exists (pure read)
   getNpcClosenessRecord(params.store, params.npcId);
-  if (!isBandAtLeast(currentBand, spec.minBand)) {
+  const merchantGateFailed =
+    isHighTierMerchantNpc(params.npcId) && !canPairPose(params.store, params.npcId, nowMs);
+  if (merchantGateFailed || !isBandAtLeast(currentBand, spec.minBand)) {
     return {
       accepted: false,
       category: params.category,

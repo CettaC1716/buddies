@@ -223,7 +223,7 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     baseCyonPerKg: 12,
     baseLulPerKg: 12,
     mintFeeLul: 0,
-    suggestedRespitePrice: 5,
+    suggestedRespitePrice: 100,
     dropWeight: 44,
     colorHex: '#38bdf8',
     loreTag: 'Schooling coastal fish found along the East Beach seawall.',
@@ -243,7 +243,7 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     baseCyonPerKg: 14,
     baseLulPerKg: 14,
     mintFeeLul: 0,
-    suggestedRespitePrice: 8,
+    suggestedRespitePrice: 250,
     dropWeight: 30,
     colorHex: '#60a5fa',
     loreTag: 'Fast saltwater swimmer prized by Kai at the Beach Safezone.',
@@ -263,7 +263,7 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     baseCyonPerKg: 20,
     baseLulPerKg: 20,
     mintFeeLul: 0,
-    suggestedRespitePrice: 15,
+    suggestedRespitePrice: 400,
     dropWeight: 16,
     colorHex: '#2dd4bf',
     loreTag: 'Vibrant turquoise scales that shimmer under coastal sunlight.',
@@ -283,7 +283,7 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     baseCyonPerKg: 30,
     baseLulPerKg: 30,
     mintFeeLul: 0,
-    suggestedRespitePrice: 28,
+    suggestedRespitePrice: 900,
     dropWeight: 7,
     colorHex: '#facc15',
     loreTag: 'Deep-water trophy predator rarely venturing near the pier.',
@@ -303,7 +303,7 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     baseCyonPerKg: 55,
     baseLulPerKg: 55,
     mintFeeLul: 0,
-    suggestedRespitePrice: 60,
+    suggestedRespitePrice: 2600,
     dropWeight: 3,
     colorHex: '#c084fc',
     loreTag: 'Ancient bioluminescent relic of the East Trench. Collector NFT centerpiece.',
@@ -325,7 +325,7 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     baseCyonPerKg: 12,
     baseLulPerKg: 12,
     mintFeeLul: 0,
-    suggestedRespitePrice: 6,
+    suggestedRespitePrice: 150,
     dropWeight: 42,
     colorHex: '#94a3b8',
     loreTag: 'Calm freshwater carp thriving in the Central Oasis basin.',
@@ -345,7 +345,7 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     baseCyonPerKg: 15,
     baseLulPerKg: 15,
     mintFeeLul: 0,
-    suggestedRespitePrice: 8,
+    suggestedRespitePrice: 250,
     dropWeight: 28,
     colorHex: '#4ade80',
     loreTag: 'Camouflaged among the lush green reeds of the central lake.',
@@ -365,7 +365,7 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     baseCyonPerKg: 22,
     baseLulPerKg: 22,
     mintFeeLul: 0,
-    suggestedRespitePrice: 16,
+    suggestedRespitePrice: 450,
     dropWeight: 18,
     colorHex: '#fb7185',
     loreTag: 'Ornamental koi patterned like cherry blossoms.',
@@ -385,7 +385,7 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     baseCyonPerKg: 34,
     baseLulPerKg: 34,
     mintFeeLul: 0,
-    suggestedRespitePrice: 32,
+    suggestedRespitePrice: 1100,
     dropWeight: 8,
     colorHex: '#38bdf8',
     loreTag: 'Apex freshwater giant charged by nearby wind-turbine currents.',
@@ -405,7 +405,7 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     baseCyonPerKg: 60,
     baseLulPerKg: 60,
     mintFeeLul: 0,
-    suggestedRespitePrice: 65,
+    suggestedRespitePrice: 3000,
     dropWeight: 4,
     colorHex: '#f59e0b',
     loreTag: 'Legendary golden lake guardian sought by every collector on NEAR.',
@@ -416,6 +416,20 @@ export const FISH_SPECIES_CATALOG: FishSpeciesSpec[] = [
     optimalDepthM: 19.0,
   },
 ];
+
+/**
+ * Explicit RESPITE standard price for a species (the catalog's
+ * `suggestedRespitePrice`). Market UIs use this as the listing-price
+ * basis — a RESPITE price is never derived by formula from a LUL
+ * value. Returns null when the species is unknown.
+ */
+export function getFishSpeciesRespiteStandardPrice(
+  speciesId: string | null | undefined,
+): number | null {
+  if (!speciesId) return null;
+  const spec = FISH_SPECIES_CATALOG.find((s) => s.speciesId === speciesId);
+  return spec ? spec.suggestedRespitePrice : null;
+}
 
 /**
  * Detects whether the player at `(worldX, worldZ)` is within casting range of ANY water body

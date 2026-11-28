@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import type { CitizenId } from './buddiesCitizenRoles';
-import { getNpcStudioPalette } from './npcPortraitRegistry';
+import {
+  getNpcStudioPalette,
+  getPlayerStudioPalette,
+  type PlayerPortraitGender,
+} from './npcPortraitRegistry';
 import {
   setBlitzStylizedCharViewportSize,
   type BuddyCharacterRig,
@@ -29,6 +33,11 @@ const NPC_FRAMING_TUNING: Readonly<Record<CitizenId, NpcPoseFramingTuning>> = {
   citizen_bima: { selfieYawRad: -0.14, coverYawRad: 0.22, idleSampleSec: 0.45 },
   citizen_tari: { selfieYawRad: 0.15, coverYawRad: -0.25, idleSampleSec: 0.7 },
   citizen_kenji: { selfieYawRad: -0.16, coverYawRad: 0.25, idleSampleSec: 0.5 },
+};
+
+const PLAYER_FRAMING_TUNING: Readonly<Record<PlayerPortraitGender, NpcPoseFramingTuning>> = {
+  male: { selfieYawRad: 0.16, coverYawRad: -0.24, idleSampleSec: 0.45 },
+  female: { selfieYawRad: -0.16, coverYawRad: 0.24, idleSampleSec: 0.55 },
 };
 
 function createStudioBackdropTexture(bgTop: string, bgBottom: string, accent: string): THREE.CanvasTexture {
@@ -130,6 +139,14 @@ export interface NpcPortraitStudioController {
     viewportW: number,
     viewportH: number,
   ) => NpcPortraitCaptureResult | null;
+  capturePlayerPhotos: (
+    renderer: THREE.WebGLRenderer,
+    gender: PlayerPortraitGender,
+    rig: BuddyCharacterRig,
+    bodyGroup: THREE.Group,
+    viewportW: number,
+    viewportH: number,
+  ) => NpcPortraitCaptureResult | null;
   dispose: () => void;
 }
 
@@ -174,7 +191,7 @@ export function createNpcPortraitStudio(): NpcPortraitStudioController {
   floorShadowMesh.position.y = 0.01;
   studioScene.add(floorShadowMesh);
 
-  const backdropTextures = new Map<CitizenId, THREE.CanvasTexture>();
+  const backdropTextures = new Map<string, THREE.CanvasTexture>();
   const avatarOutCanvas = document.createElement('canvas');
   avatarOutCanvas.width = 320;
   avatarOutCanvas.height = 320;
@@ -182,12 +199,14 @@ export function createNpcPortraitStudio(): NpcPortraitStudioController {
   coverOutCanvas.width = 640;
   coverOutCanvas.height = 280;
 
-  const getBackdropForNpc = (citizenId: CitizenId): THREE.CanvasTexture => {
-    const existing = backdropTextures.get(citizenId);
+  const getBackdropForKey = (
+    cacheKey: string,
+    pal: { bgTop: string; bgBottom: string; accent: string },
+  ): THREE.CanvasTexture => {
+    const existing = backdropTextures.get(cacheKey);
     if (existing) return existing;
-    const pal = getNpcStudioPalette(citizenId);
     const tex = createStudioBackdropTexture(pal.bgTop, pal.bgBottom, pal.accent);
-    backdropTextures.set(citizenId, tex);
+    backdropTextures.set(cacheKey, tex);
     return tex;
   };
 
@@ -235,9 +254,11 @@ export function createNpcPortraitStudio(): NpcPortraitStudioController {
     return outCanvas.toDataURL('image/jpeg', 0.9);
   };
 
-  const captureNpcPhotos = (
+  const captureRigPhotos = (
     renderer: THREE.WebGLRenderer,
-    citizenId: CitizenId,
+    backdropKey: string,
+    palette: { bgTop: string; bgBottom: string; accent: string },
+    tuning: NpcPoseFramingTuning,
     rig: BuddyCharacterRig,
     bodyGroup: THREE.Group,
     viewportW: number,
@@ -254,8 +275,9 @@ export function createNpcPortraitStudio(): NpcPortraitStudioController {
 
     const weaponVis = rig.weaponRigGroup ? rig.weaponRigGroup.visible : false;
     const pistolVis = rig.pistolGroup ? rig.pistolGroup.visible : false;
+    const rodVis = rig.fishingRodGroup ? rig.fishingRodGroup.visible : false;
 
-    // Snapshot animation action weights/times so we can briefly pose the NPC in their
+    // Snapshot animation action weights/times so we can briefly pose the character in their
     // clean standing idle pose even if they were sitting on a bench or mid-stride.
     const savedActions: Array<{
       action: THREE.AnimationAction;
@@ -277,7 +299,6 @@ export function createNpcPortraitStudio(): NpcPortraitStudioController {
       }
       return ctrl.actions.get(ctrl.activeClipName) ?? ctrl.actions.values().next().value ?? null;
     })();
-    const tuning = NPC_FRAMING_TUNING[citizenId] ?? NPC_FRAMING_TUNING.npc_hana;
 
     const prevViewport = new THREE.Vector4();
     const prevScissor = new THREE.Vector4();
@@ -319,6 +340,7 @@ export function createNpcPortraitStudio(): NpcPortraitStudioController {
 
       if (rig.weaponRigGroup) rig.weaponRigGroup.visible = false;
       if (rig.pistolGroup) rig.pistolGroup.visible = false;
+      if (rig.fishingRodGroup) rig.fishingRodGroup.visible = false;
 
       // Move bodyGroup temporarily onto the studio stage at origin facing +Z
       stageGroup.add(bodyGroup);
@@ -345,7 +367,7 @@ export function createNpcPortraitStudio(): NpcPortraitStudioController {
         headBone.getWorldPosition(headPos);
       }
 
-      studioScene.background = getBackdropForNpc(citizenId);
+      studioScene.background = getBackdropForKey(backdropKey, palette);
       renderer.setRenderTarget(null);
       renderer.shadowMap.autoUpdate = false;
 
@@ -441,6 +463,7 @@ export function createNpcPortraitStudio(): NpcPortraitStudioController {
 
       if (rig.weaponRigGroup) rig.weaponRigGroup.visible = weaponVis;
       if (rig.pistolGroup) rig.pistolGroup.visible = pistolVis;
+      if (rig.fishingRodGroup) rig.fishingRodGroup.visible = rodVis;
 
       if (savedActions.length > 0) {
         for (const s of savedActions) {
@@ -463,6 +486,46 @@ export function createNpcPortraitStudio(): NpcPortraitStudioController {
     }
   };
 
+  const captureNpcPhotos = (
+    renderer: THREE.WebGLRenderer,
+    citizenId: CitizenId,
+    rig: BuddyCharacterRig,
+    bodyGroup: THREE.Group,
+    viewportW: number,
+    viewportH: number,
+  ): NpcPortraitCaptureResult | null => {
+    return captureRigPhotos(
+      renderer,
+      citizenId,
+      getNpcStudioPalette(citizenId),
+      NPC_FRAMING_TUNING[citizenId] ?? NPC_FRAMING_TUNING.npc_hana,
+      rig,
+      bodyGroup,
+      viewportW,
+      viewportH,
+    );
+  };
+
+  const capturePlayerPhotos = (
+    renderer: THREE.WebGLRenderer,
+    gender: PlayerPortraitGender,
+    rig: BuddyCharacterRig,
+    bodyGroup: THREE.Group,
+    viewportW: number,
+    viewportH: number,
+  ): NpcPortraitCaptureResult | null => {
+    return captureRigPhotos(
+      renderer,
+      `player_${gender}`,
+      getPlayerStudioPalette(gender),
+      PLAYER_FRAMING_TUNING[gender] ?? PLAYER_FRAMING_TUNING.male,
+      rig,
+      bodyGroup,
+      viewportW,
+      viewportH,
+    );
+  };
+
   const dispose = () => {
     floorShadowGeo.dispose();
     floorShadowMat.dispose();
@@ -473,5 +536,5 @@ export function createNpcPortraitStudio(): NpcPortraitStudioController {
     backdropTextures.clear();
   };
 
-  return { captureNpcPhotos, dispose };
+  return { captureNpcPhotos, capturePlayerPhotos, dispose };
 }

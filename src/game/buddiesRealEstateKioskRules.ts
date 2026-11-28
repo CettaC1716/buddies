@@ -45,7 +45,7 @@ export const REAL_ESTATE_FURNITURE_KIOSK_LAYOUT = {
     y: 0.0,
     z: 4.90,
   },
-  // Merchant Hana world placement directly on the open Central Plaza tiles in front of Center Bay 2
+  // Merchant Hana initial placement directly on the open West Plaza tiles in front of Center Bay 2
   hanaMerchantWorld: {
     x: -100.90,
     y: 2.50,
@@ -53,6 +53,73 @@ export const REAL_ESTATE_FURNITURE_KIOSK_LAYOUT = {
     rotY: Math.PI / 2,
   },
 } as const;
+
+export const HANA_SHOP_FRONT_PATROL_SPEED_MPS = 1.38;
+
+export interface HanaShopFrontPatrolWaypoint {
+  readonly x: number;
+  readonly z: number;
+  readonly yaw: number;
+  readonly pauseMinSec: number;
+  readonly pauseMaxSec: number;
+  readonly label: string;
+}
+
+/**
+ * Curated front-of-shop promenade waypoints across the 3-Bay Commercial Arcade
+ * (Fashion Boutique Bay 1 -> Real Estate & Design Studio Bay 2 -> Urban Scooter Showroom Bay 3).
+ * Coordinates keep >= 1.2m clearance from the arcade apron, A-frame signs, planters, bench, and scooter displays.
+ */
+export const HANA_SHOP_FRONT_PATROL_WAYPOINTS: readonly HanaShopFrontPatrolWaypoint[] = [
+  {
+    x: -100.90,
+    z: -3.15,
+    yaw: 0,
+    pauseMinSec: 4.5,
+    pauseMaxSec: 7.5,
+    label: 'Real Estate Studio Front',
+  },
+  {
+    x: -99.10,
+    z: 1.95,
+    yaw: 0.35,
+    pauseMinSec: 4.0,
+    pauseMaxSec: 7.0,
+    label: 'Fashion Boutique Front',
+  },
+  {
+    x: -96.55,
+    z: 3.10,
+    yaw: -0.45,
+    pauseMinSec: 3.8,
+    pauseMaxSec: 6.5,
+    label: 'West Plaza Promenade',
+  },
+  {
+    x: -96.25,
+    z: -3.55,
+    yaw: Math.PI * 0.88,
+    pauseMinSec: 4.2,
+    pauseMaxSec: 7.0,
+    label: 'Checking Storefront Bays',
+  },
+  {
+    x: -98.85,
+    z: -10.15,
+    yaw: 0.14,
+    pauseMinSec: 4.2,
+    pauseMaxSec: 7.2,
+    label: 'Urban Scooter Showroom Front',
+  },
+  {
+    x: -96.85,
+    z: -7.10,
+    yaw: -0.30,
+    pauseMinSec: 3.4,
+    pauseMaxSec: 5.8,
+    label: 'West Plaza Walkway',
+  },
+] as const;
 
 /**
  * Converts a kiosk-local `(localX, localY, localZ, localRotY)` pose inside

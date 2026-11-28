@@ -97,7 +97,11 @@ import type {
   CityTransitDestinationSpec,
   CityTransitStationId,
 } from '../game/buddiesBlitzRules';
-import type { CaughtFishItem, FishNftMarketplaceListing } from '../game/buddiesFishingMarket';
+import {
+  getFishSpeciesRespiteStandardPrice,
+  type CaughtFishItem,
+  type FishNftMarketplaceListing,
+} from '../game/buddiesFishingMarket';
 import type {
   DbPropertyListingRow,
   FishNftMarketSalesStats,
@@ -144,7 +148,7 @@ type ExchangeQuickMode =
 
 const EXCHANGE_QUICK_MODE_LABELS: Record<ExchangeQuickMode, string> = {
   quick_shop: 'Quick Shop',
-  exchange_lul: 'Exchange LUL',
+  exchange_lul: 'Exchange CerBucks',
   swap_near: 'Swap NEAR',
   buy_house: 'Buy House',
   fishing_gear: 'Fishing Gear',
@@ -413,7 +417,7 @@ const TRADE_LABELS: Record<
 > = {
   en: {
     entryTitle: 'SELL FISH TO KAI',
-    paidIn: 'PAID IN LUL',
+    paidIn: 'PAID IN CerBucks',
     entrySub: 'Haggle the price right here in chat.',
     startHaggling: 'START HAGGLING',
     pickFish: 'PICK A FISH',
@@ -437,7 +441,7 @@ const TRADE_LABELS: Record<
   },
   id: {
     entryTitle: 'SELL FISH TO KAI',
-    paidIn: 'PAID IN LUL',
+    paidIn: 'PAID IN CerBucks',
     entrySub: 'Haggle the price right here in this chat.',
     startHaggling: 'START HAGGLING',
     pickFish: 'PICK A FISH',
@@ -712,17 +716,17 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       return `Welcome to Central Plaza, ${displayCitizen} \u2014 Nadia here, your Central Plaza Manager. Glow Face Studio, Cerria Bites & Sips gifts & treats, and Red Studio animations are all unified in our Central Plaza Catalog right from my dock. What are you in the mood for today?`;
     }
     if (merchantLocation === 'lobby_cafe' && hanaPitchOrigin && !hasHouseOwnership) {
-      return `Hi ${displayCitizen}, I'm Hana \u2014 the West Plaza Commercial & Lifestyle Manager. I oversee our West Plaza Flagship Catalog (Fashion Boutique, Real Estate & Commercial Lots N-01..S-08, and Urban Mobility Scooters). It looks like you don't own a home yet \u2014 you can tour our Model House for free or open the West Plaza Catalog anytime. For currency exchange (LUL \u2192 CYON or NEAR \u2194 RESPITE), open your Smartphone Wallet's Exchange tab!`;
+      return `Hi ${displayCitizen}, I'm Hana \u2014 the West Plaza Commercial & Lifestyle Manager. I oversee our West Plaza Flagship Catalog (Fashion Boutique, Real Estate & Commercial Lots N-01..S-08, and Urban Mobility Scooters). It looks like you don't own a home yet \u2014 you can tour our Model House for free or open the West Plaza Catalog anytime. For currency exchange (CerBucks \u2192 CerCoins or NEAR \u2194 RESPITE), open your Smartphone Wallet's Exchange tab!`;
     }
     if (
       merchantLocation === 'lobby_cafe' &&
       walletConnected &&
       !hanaWelcomeNearClaimed
     ) {
-      return `Welcome to ${locLabel}, ${displayCitizen}! I'm Hana \u2014 your West Plaza Commercial & Lifestyle Manager. I curate the West Plaza Flagship Catalog covering Fashion, Real Estate & Commercial Shop Lots, and Urban Scooters. You can also claim your Citizen Starter Grant (+0.30 NEAR + 100 LUL + 20 CYON) and swap tokens anytime inside your Smartphone Wallet's Exchange tab!`;
+      return `Welcome to ${locLabel}, ${displayCitizen}! I'm Hana \u2014 your West Plaza Commercial & Lifestyle Manager. I curate the West Plaza Flagship Catalog covering Fashion, Real Estate & Commercial Shop Lots, and Urban Scooters. You can also claim your Citizen Starter Grant (+0.30 NEAR + 100 CerBucks + 20 CerCoins) and swap tokens anytime inside your Smartphone Wallet's Exchange tab!`;
     }
     if (!walletConnected && merchantLocation === 'beach_house') {
-      return `Ahoy! I'm Kai \u2014 a fisherman and the keeper of this beach. I run the fish market here at ${locLabel}: I buy your catches, sell tackle, and trade Fish NFTs. You are in Guest Mode, but you can still sell me your raw catches for LUL right here in chat \u2014 and ask me anything at all, whether about fishing or anything else!`;
+      return `Ahoy! I'm Kai \u2014 a fisherman and the keeper of this beach. I run the fish market here at ${locLabel}: I buy your catches, sell tackle, and trade Fish NFTs. You are in Guest Mode, but you can still sell me your raw catches for CerBucks right here in chat \u2014 and ask me anything at all, whether about fishing or anything else!`;
     }
     if (!walletConnected) {
       return `Hi there, I'm Hana \u2014 the West Plaza Commercial & Lifestyle Manager. I manage West Plaza's Fashion Boutique, Real Estate & Commercial Shop Lots (N-01..S-08), and Urban Mobility Scooters. Tap "West Plaza Catalog" above to browse our 3D collections, or ask me anything about business lots, homes, or city life!`;
@@ -751,6 +755,53 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     setIsNpcThinking(false);
     activeNpcRequestIdRef.current += 1;
   };
+
+  const MERCHANT_STARTER_PROMPTS: Record<'central_plaza' | 'beach_house' | 'lobby_cafe', readonly string[]> = {
+    central_plaza: [
+      'What is at Central Plaza?',
+      'Any styling tips today?',
+      'What does Red Studio sell?',
+      'What gifts are at Bites & Sips?',
+      'Tell me about Glow Studio!',
+      'Which animations are popular?',
+    ],
+    beach_house: [
+      'How does fishing work here?',
+      'What can I sell at the Harbor?',
+      'How do currencies work?',
+      'What is this game?',
+      'Any rare fish tips today?',
+    ],
+    lobby_cafe: [
+      'What is this game?',
+      'What can I do in this game?',
+      'How do currencies work?',
+      'How can I buy a house or shop lot?',
+      'What scooters are available?',
+      'What is in Fashion Boutique?',
+    ],
+  };
+
+  const lastSuggestedPromptRef = useRef<string | null>(null);
+  const pickRandomStarterPrompt = (loc: 'central_plaza' | 'beach_house' | 'lobby_cafe'): string => {
+    const pool = MERCHANT_STARTER_PROMPTS[loc] ?? MERCHANT_STARTER_PROMPTS.lobby_cafe;
+    const prev = lastSuggestedPromptRef.current;
+    const candidates = pool.length > 1 && prev ? pool.filter((p) => p !== prev) : pool;
+    const picked = candidates[Math.floor(Math.random() * candidates.length)] ?? pool[0];
+    lastSuggestedPromptRef.current = picked;
+    return picked;
+  };
+  const [suggestedPrompt, setSuggestedPrompt] = useState<string | null>(() =>
+    pickRandomStarterPrompt(merchantLocation),
+  );
+
+  // Pick a fresh random starter question each time a conversation opens or switches merchant
+  useEffect(() => {
+    if (activeModalMode === 'npc_merchant') {
+      setSuggestedPrompt(pickRandomStarterPrompt(merchantLocation));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeModalMode, merchantLocation, activeMerchantNpcId, npcOpenSeq]);
 
   // Restore persisted transcript (or show initial greeting when empty) when NPC modal opens
   useEffect(() => {
@@ -898,6 +949,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       setTradeDoneInfo(null);
     }
     resetChatToGreeting();
+    setSuggestedPrompt(pickRandomStarterPrompt(merchantLocation));
   };
 
   const startTradePick = () => {
@@ -1130,6 +1182,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   const submitPlayerQuestion = (rawText: string) => {
     const text = rawText.trim();
     if (!text) return;
+    setSuggestedPrompt(null);
 
     const detectedLang = detectTradeLang(text);
     if (detectedLang && detectedLang !== tradeLangRef.current) {
@@ -2103,7 +2156,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                               : 'bg-emerald-100/95 text-emerald-700 border border-emerald-200/80'
                           }`}
                         >
-                          {item.isNft ? 'NFT' : 'CYON'}
+                          {item.isNft ? 'NFT' : 'CerCoins'}
                         </span>
                       </div>
                       <div className="text-[10.5px] font-semibold text-slate-800 truncate px-0.5">
@@ -3044,7 +3097,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 if (res.ok) {
                                   soundEngine.playPickup();
                                   triggerNpcSpeech(
-                                    `${res.amountNear.toFixed(2)} NEAR + 100 LUL + 20 CYON added! Feel free to explore the city or ask me anything.`,
+                                    `${res.amountNear.toFixed(2)} NEAR + 100 CerBucks + 20 CerCoins added! Feel free to explore the city or ask me anything.`,
                                   );
                                 } else {
                                   soundEngine.playHit();
@@ -3065,7 +3118,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       ) : (
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between gap-2 text-xs font-medium text-emerald-200">
-                            <span>Starter pack added: 0.30 NEAR + 100 LUL + 20 CYON.</span>
+                            <span>Starter pack added: 0.30 NEAR + 100 CerBucks + 20 CerCoins.</span>
                             {hanaClaimResult?.txHash && (
                               <a
                                 href={
@@ -3165,31 +3218,23 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     </div>
                   );
                 })()}
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {(merchantLocation === 'central_plaza'
-                    ? ([
-                        'What is at Central Plaza?',
-                        'Any styling tips today?',
-                        'What does Red Studio sell?',
-                      ] as const)
-                    : ([
-                        'What is this game?',
-                        'What can I do in this game?',
-                        'How do currencies work?',
-                      ] as const)
-                  ).map((prompt) => (
+                <div className="flex items-center gap-1.5">
+                  {suggestedPrompt && (
                     <button
-                      key={prompt}
                       type="button"
+                      data-chat-suggested-prompt="true"
                       onClick={() => {
                         soundEngine.playUiClick();
-                        submitPlayerQuestion(prompt);
+                        const promptToSend = suggestedPrompt;
+                        setSuggestedPrompt(null);
+                        submitPlayerQuestion(promptToSend);
                       }}
-                      className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/18 text-white/90 border border-white/12 text-[10.5px] font-medium cursor-pointer transition-colors"
+                      className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/18 text-white/90 border border-white/12 text-[10.5px] font-medium cursor-pointer transition-colors truncate max-w-[72%]"
+                      title={suggestedPrompt}
                     >
-                      {prompt}
+                      {suggestedPrompt}
                     </button>
-                  ))}
+                  )}
                   <button
                     type="button"
                     data-chat-clear-btn="true"
@@ -3377,13 +3422,13 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 {/* Beginner-Friendly Currency Guide */}
                 <div className="px-3.5 py-2.5 rounded-2xl bg-white/85 border border-slate-200/70 text-[11px] font-medium text-slate-600 leading-snug">
                   Swap <span className="font-semibold text-violet-600">NEAR -&gt; RESPITE</span> for Houses, NFT Furniture &amp; Fish Market, or{' '}
-                  <span className="font-semibold text-sky-600">LUL -&gt; CYON</span> for Fishing Gear &amp; Cafe items.
+                  <span className="font-semibold text-sky-600">CerBucks -&gt; CerCoins</span> for Fishing Gear &amp; Cafe items.
                 </div>
 
                 {marketState.isShopBroke && (
                   <div className="p-3 rounded-2xl bg-amber-50/95 text-amber-950 border border-amber-200/80 shadow-xs flex items-center justify-between gap-2 flex-wrap">
                     <span className="text-[11px] font-medium text-amber-900">
-                      Shop CYON reserve is low. Support the shop for +45 CYON and a 15% discount.
+                      Shop CerCoins reserve is low. Support the shop for +45 CerCoins and a 15% discount.
                     </span>
                     <button
                       type="button"
@@ -3392,7 +3437,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       onClick={() => {
                         onInvestInMerchant();
                         triggerNpcSpeech(
-                          'Thank you! Shop reserves are refilled, +45 CYON added, and your 15% catalog discount is active.',
+                          'Thank you! Shop reserves are refilled, +45 CerCoins added, and your 15% catalog discount is active.',
                         );
                       }}
                       className={`px-3 py-1.5 rounded-full text-[10.5px] font-semibold shadow-xs transition-colors ${
@@ -3401,7 +3446,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                       }`}
                     >
-                      Support (300 LUL)
+                      Support (300 CerBucks)
                     </button>
                   </div>
                 )}
@@ -3614,14 +3659,14 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   <div className="px-4 py-2.5 bg-sky-50/70 border-b border-slate-200/70 flex items-center justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-2 min-w-0 flex-wrap">
                       <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200/80 text-[10.5px] font-semibold shrink-0">
-                        LUL to CYON
+                        CerBucks to CerCoins
                       </span>
                       <span className="text-[10.5px] font-medium text-slate-500">
                         For Fishing Gear &amp; Cafe Items
                       </span>
                     </div>
                     <span className="text-[10.5px] font-semibold text-sky-700">
-                      {rateLul} LUL = {rateCyon} CYON
+                      {rateLul} CerBucks = {rateCyon} CerCoins
                     </span>
                   </div>
 
@@ -3629,7 +3674,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     {/* LUL Amount Input Row */}
                     <div className="flex items-center gap-2.5 max-w-xs mx-auto">
                       <div className="w-20 py-2 rounded-xl bg-amber-50 text-amber-800 border border-amber-200/80 text-center text-[11px] font-semibold shrink-0">
-                        <span>LUL</span>
+                        <span>CerBucks</span>
                       </div>
                       <input
                         type="number"
@@ -3650,7 +3695,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     {/* CYON Output Row */}
                     <div className="flex items-center gap-2.5 max-w-xs mx-auto">
                       <div className="w-20 py-2 rounded-xl bg-sky-50 text-sky-700 border border-sky-200/80 text-center text-[11px] font-semibold shrink-0">
-                        <span>CYON</span>
+                        <span>CerCoins</span>
                       </div>
                       <div
                         data-exchange-cyon-output="true"
@@ -3672,7 +3717,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         soundEngine.playUiClick();
                         onExchangeLulToCyon(exchangeLulSpent, calculatedCyon);
                         triggerNpcSpeech(
-                          `Exchanged ${exchangeLulSpent} LUL for +${calculatedCyon} CYON.`,
+                          `Exchanged ${exchangeLulSpent} CerBucks for +${calculatedCyon} CerCoins.`,
                         );
                       }}
                       className={`min-w-[180px] py-2.5 px-6 rounded-full text-xs font-semibold shadow-sm transition-all ${
@@ -3730,7 +3775,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       }`}
                     >
                       <Coins className="w-3 h-3" aria-hidden="true" />
-                      <span>Exchange LUL</span>
+                      <span>Exchange CerBucks</span>
                     </button>
                     <button
                       type="button"
@@ -3874,7 +3919,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                     {walletConnected ? (
                       <div className="flex items-center gap-1.5 shrink-0">
                         <span className="px-2.5 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200/80 text-[10.5px] font-semibold">
-                          {cyonBalance.toLocaleString()} CYON
+                          {cyonBalance.toLocaleString()} CerCoins
                         </span>
                         <span className="px-2.5 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200/80 text-[10.5px] font-semibold">
                           {respiteBalance.toLocaleString()} RESPITE
@@ -4112,7 +4157,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   {walletConnected ? (
                     <div className="flex items-center gap-1.5">
                       <span className="px-2.5 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200/80 text-[10.5px] font-semibold">
-                        {cyonBalance.toLocaleString()} CYON
+                        {cyonBalance.toLocaleString()} CerCoins
                       </span>
                       <span className="px-2.5 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200/80 text-[10.5px] font-semibold">
                         {respiteBalance.toLocaleString()} RESPITE
@@ -4135,7 +4180,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                 </div>
                 <p className="text-[11px] text-slate-500 leading-snug">
                   {walletConnected
-                    ? 'Sell catches for LUL or mint Fish NFTs to trade with players for RESPITE.'
+                    ? 'Sell catches for CerBucks or mint Fish NFTs to trade with players for RESPITE.'
                     : 'Sign in to sell fish or trade Fish NFTs.'}
                 </p>
               </div>
@@ -4219,7 +4264,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                       const lulValue = Math.max(5, fish.sellValueLul || fish.sellValueCyon || 25);
                       const defaultSuggestedRespite = Math.max(
                         1,
-                        fish.suggestedRespitePrice || Math.round(lulValue / 10),
+                        fish.suggestedRespitePrice ||
+                          getFishSpeciesRespiteStandardPrice(fish.speciesId) ||
+                          1,
                       );
                       const priceInputStr =
                         listingPriceByFishId[fish.id] ?? String(defaultSuggestedRespite);
@@ -4251,7 +4298,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           nftTokenId: fish.nftTokenId,
                           valueLabel: fish.isMintedNft
                             ? `${parsedListPriceRespite} RESPITE`
-                            : `+${lulValue} LUL`,
+                            : `+${lulValue} CerBucks`,
                           ownerOrSellerLabel: fish.caughtByAccount
                             ? `Angler: ${fish.caughtByAccount}`
                             : undefined,
@@ -4325,12 +4372,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                   soundEngine.playUiClick();
                                   onSellCaughtFish?.(fish);
                                   triggerNpcSpeech(
-                                    `Fresh ${fish.speciesName} (${fish.weightKg} kg)! Here is +${lulValue} LUL — convert your LUL into CYON in the Exchange tab.`,
+                                    `Fresh ${fish.speciesName} (${fish.weightKg} kg)! Here is +${lulValue} CerBucks — convert your CerBucks into CerCoins in the Exchange tab.`,
                                   );
                                 }}
                                 className="flex-1 py-1.5 px-3 rounded-full bg-amber-400 hover:bg-amber-500 text-slate-900 shadow-xs text-[10.5px] font-semibold cursor-pointer transition-colors"
                               >
-                                Sell (+{lulValue} LUL)
+                                Sell (+{lulValue} CerBucks)
                               </button>
 
                               <button
@@ -4482,17 +4529,22 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         listing.sellerNearAccount.toLowerCase() ===
                         playerNearAccount.toLowerCase();
                       if ((fishMarketTab === 'mine') !== isOwnListing) return null;
-                      const listingPriceRespite = Math.max(
-                        1,
-                        listing.priceRespite ||
-                          (listing.priceLul > 200
-                            ? Math.round(listing.priceLul / 50)
-                            : listing.priceLul),
-                      );
+                      // RESPITE prices are explicit: a listing without a
+                      // valid priceRespite has no RESPITE price and cannot
+                      // be bought — never derive one from its LUL field.
+                      const explicitListingPriceRespite =
+                        typeof listing.priceRespite === 'number' &&
+                        Number.isFinite(listing.priceRespite) &&
+                        listing.priceRespite > 0
+                          ? Math.floor(listing.priceRespite)
+                          : null;
+                      const hasValidRespitePrice = explicitListingPriceRespite !== null;
+                      const listingPriceRespite = explicitListingPriceRespite ?? 0;
                       const canBuy =
                         walletConnected &&
                         busyFishActionId === null &&
-                        (isOwnListing || respiteBalance >= listingPriceRespite);
+                        (isOwnListing ||
+                          (hasValidRespitePrice && respiteBalance >= listingPriceRespite));
                       const rarityBadgeStyle =
                         listing.rarity === 'Mythic'
                           ? 'bg-purple-100 text-purple-800 border-purple-200/80'
@@ -4514,7 +4566,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           isTrophy: listing.isTrophy,
                           isMintedNft: true,
                           nftTokenId: listing.nftTokenId,
-                          valueLabel: `${listingPriceRespite.toLocaleString()} RESPITE`,
+                          valueLabel: hasValidRespitePrice
+                            ? `${listingPriceRespite.toLocaleString()} RESPITE`
+                            : 'No RESPITE price',
                           ownerOrSellerLabel: `Seller: ${listing.sellerNearAccount}`,
                         });
                       };
@@ -4614,7 +4668,9 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                                 ? 'Processing...'
                                 : isOwnListing
                                   ? 'Unlist'
-                                  : `Buy (${listingPriceRespite.toLocaleString()} RESPITE)`}
+                                  : hasValidRespitePrice
+                                    ? `Buy (${listingPriceRespite.toLocaleString()} RESPITE)`
+                                    : 'Buy (no RESPITE price)'}
                             </button>
                           </div>
                         </div>

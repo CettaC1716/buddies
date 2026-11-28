@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { IndividualCommanderBaseState } from './buddiesBlitzRules';
@@ -10,7 +9,6 @@ import {
 import {
   CITY_RENTAL_LOTS,
   CITY_RENTAL_LOT_SIZE_M,
-  COMMERCIAL_SIDEWALK_STRIPS,
   SHOP_BILLBOARD_MESH_SPEC,
   SHOP_BUILDING_FORMS,
   STANDARD_SHOP_FOOTPRINT_SPEC,
@@ -1314,15 +1312,12 @@ export function buildCityRentalLotsVisuals(options?: {
   const tmpShowcaseColor = new THREE.Color();
   const tmpUpperColor = new THREE.Color();
   const tmpLampColor = new THREE.Color();
-  const tmpStreetGlobeColor = new THREE.Color();
   const DAY_SHOWCASE_COLOR = new THREE.Color('#c8e4f4');
   const NIGHT_SHOWCASE_COLOR = new THREE.Color('#ffe9bd');
   const DAY_UPPER_COLOR = new THREE.Color('#3b4c63');
   const NIGHT_UPPER_COLOR = new THREE.Color('#ffda96');
   const DAY_LAMP_COLOR = new THREE.Color('#d8e0ea');
   const NIGHT_LAMP_COLOR = new THREE.Color('#fff5d4');
-  const DAY_STREET_GLOBE = new THREE.Color('#dce3ec');
-  const NIGHT_STREET_GLOBE = new THREE.Color('#ffebb5');
 
   const lotNodes: CityRentalLotNodeController[] = [];
   const hitProxyMeshes: THREE.Mesh[] = [];
@@ -1480,87 +1475,7 @@ export function buildCityRentalLotsVisuals(options?: {
     });
   }
 
-  // Street furniture neatly positioned along the outer curb of the new 4.80m curbed tram-style block sidewalks
-  // (batched with InstancedMesh so all 4 blocks' streetlamps, planters, benches & bike racks cost just 6 draw calls!)
-  const sidewalkFurnitureGroup = new THREE.Group();
-  sidewalkFurnitureGroup.name = 'CommercialAvenueStreetFurniture';
-  rootGroup.add(sidewalkFurnitureGroup);
-
-  const lampPostMat = regMat(new THREE.MeshLambertMaterial({ color: '#272c36' }));
-  const avenueLampGlobeMat = regMat(new THREE.MeshBasicMaterial({ color: '#dce3ec' }));
-  const benchWoodMat = regMat(new THREE.MeshLambertMaterial({ color: '#9c6b3b' }));
-  const planterPotMat = regMat(new THREE.MeshLambertMaterial({ color: '#5b6472' }));
-  const planterFoliageMat = regMat(new THREE.MeshLambertMaterial({ color: '#2f855a' }));
-
-  const lampPoleGeo = regGeo(new THREE.CylinderGeometry(0.06, 0.08, 3.6, 8));
-  const lampHeadGeo = regGeo(new THREE.SphereGeometry(0.22, 8, 8));
-  const benchSeatGeo = regGeo(new RoundedBoxGeometry(0.55, 0.14, 1.6, 1, 0.02));
-  const planterBoxGeo = regGeo(new RoundedBoxGeometry(0.68, 0.5, 0.68, 1, 0.03));
-  const planterBushGeo = regGeo(new THREE.SphereGeometry(0.44, 8, 8));
-  const bikeRackLoopGeo = regGeo(new THREE.TorusGeometry(0.28, 0.035, 6, 12, Math.PI));
-
-  const poleTransforms: THREE.Matrix4[] = [];
-  const globeTransforms: THREE.Matrix4[] = [];
-  const planterTransforms: THREE.Matrix4[] = [];
-  const bushTransforms: THREE.Matrix4[] = [];
-  const benchTransforms: THREE.Matrix4[] = [];
-  const rackTransforms: THREE.Matrix4[] = [];
-
-  for (const strip of COMMERCIAL_SIDEWALK_STRIPS) {
-    const isNorth = strip.maxZ < 0;
-    const zSign = isNorth ? -1 : 1;
-    // Place furniture cleanly near the road-side curb of the 4.80m city sidewalk (leaving 3.2m+ clear walkway!)
-    const roadEdgeX = strip.sideOfAvenue === 'east' ? strip.minX : strip.maxX;
-    const inwardSign = strip.sideOfAvenue === 'east' ? 1 : -1;
-    const fx = roadEdgeX + inwardSign * 1.05;
-    const solidFurnitureZ = [zSign * 64.5, zSign * 80.33, zSign * 96.2];
-
-    for (let zi = 0; zi < solidFurnitureZ.length; zi++) {
-      const fz = solidFurnitureZ[zi];
-
-      if (zi === 1) {
-        benchTransforms.push(
-          new THREE.Matrix4().makeTranslation(fx, LOT_SURFACE_Y + 0.42, fz - zSign * 2.5),
-        );
-        for (let r = 0; r < 2; r++) {
-          rackTransforms.push(
-            new THREE.Matrix4().makeTranslation(
-              fx,
-              LOT_SURFACE_Y + 0.04,
-              fz + zSign * (3.9 + r * 0.68),
-            ),
-          );
-        }
-      }
-    }
-  }
-
-  const addInstancedFurniture = (
-    name: string,
-    geo: THREE.BufferGeometry,
-    mat: THREE.Material,
-    transforms: THREE.Matrix4[],
-    upgradeWorld = true,
-  ) => {
-    if (transforms.length === 0) return;
-    const inst = new THREE.InstancedMesh(geo, mat, transforms.length);
-    inst.name = name;
-    for (let idx = 0; idx < transforms.length; idx++) {
-      inst.setMatrixAt(idx, transforms[idx]);
-    }
-    inst.instanceMatrix.needsUpdate = true;
-    if (windUniforms && upgradeWorld) {
-      upgradeMeshToBlitzWorldMaterial(inst, windUniforms, undefined, 0.12);
-    }
-    sidewalkFurnitureGroup.add(inst);
-  };
-
-  addInstancedFurniture('CommercialLampPoles', lampPoleGeo, lampPostMat, poleTransforms, true);
-  addInstancedFurniture('CommercialLampGlobes', lampHeadGeo, avenueLampGlobeMat, globeTransforms, false);
-  addInstancedFurniture('CommercialPlanterBoxes', planterBoxGeo, planterPotMat, planterTransforms, true);
-  addInstancedFurniture('CommercialPlanterBushes', planterBushGeo, planterFoliageMat, bushTransforms, true);
-  addInstancedFurniture('CommercialBenches', benchSeatGeo, benchWoodMat, benchTransforms, true);
-  addInstancedFurniture('CommercialBikeRacks', bikeRackLoopGeo, lampPostMat, rackTransforms, true);
+  // Commercial sidewalk benches & hoop bike racks removed across all blocks/maps.
 
   const registerActiveBillboardMats = (node: CityRentalLotNodeController, root: THREE.Object3D) => {
     node.activeBillboardMats.length = 0;
@@ -1726,11 +1641,7 @@ export function buildCityRentalLotsVisuals(options?: {
     sharedShopMats.billboardWashMat.opacity = n * 0.44;
     sharedShopMats.billboardWashMat.visible = n > 0.02;
 
-    // 5. Commercial Avenue Streetlamp Globes
-    tmpStreetGlobeColor.copy(DAY_STREET_GLOBE).lerp(NIGHT_STREET_GLOBE, n);
-    avenueLampGlobeMat.color.copy(tmpStreetGlobeColor);
-
-    // 6. Active Rooftop Billboard Faces (spotlight-lit vibrancy at night)
+    // 5. Active Rooftop Billboard Faces (spotlight-lit vibrancy at night)
     const bbEmissive = n * 0.82;
     for (let i = 0; i < lotNodes.length; i++) {
       const mats = lotNodes[i].activeBillboardMats;

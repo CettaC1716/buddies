@@ -753,7 +753,7 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
     setWinningBeams([]);
     setIsSpinning(true);
     setSpinningCols([true, true, true]);
-    setStatusMessage(`Spinning Reels (${betLul} LUL)...`);
+    setStatusMessage(`Spinning Reels (${betLul} CerBucks)...`);
 
     if (soundEnabledRef.current) {
       soundEngine.playCasinoLeverPull();
@@ -1030,7 +1030,7 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                 DIAMOND 20X:
               </span>
               <span className="font-mono-tabular text-base font-extrabold text-slate-900 whitespace-nowrap">
-                {selectedBet * 20} LUL
+                {selectedBet * 20} CerBucks
               </span>
             </div>
 
@@ -1048,7 +1048,7 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                 viewBox="0 0 420 38"
                 className="w-full max-w-[340px] h-7 sm:h-8 mx-auto overflow-visible"
                 role="img"
-                aria-label={`777 Jackpot ${selectedBet * 50} LUL`}
+                aria-label={`777 Jackpot ${selectedBet * 50} CerBucks`}
               >
                 <defs>
                   <linearGradient id={`${jackpotGradId}-cafe-jp`} x1="0" y1="0" x2="0" y2="1">
@@ -1066,7 +1066,7 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                   fontSize="29"
                   fill={`url(#${jackpotGradId}-cafe-jp)`}
                 >
-                  {selectedBet * 50} LUL
+                  {selectedBet * 50} CerBucks
                 </text>
               </svg>
             </div>
@@ -1077,7 +1077,7 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                 STAR 12X:
               </span>
               <span className="font-mono-tabular text-base font-extrabold text-slate-900 whitespace-nowrap">
-                {selectedBet * 12} LUL
+                {selectedBet * 12} CerBucks
               </span>
             </div>
           </div>
@@ -1223,7 +1223,7 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                         {hit.player}
                       </span>
                       <span className="text-amber-700 font-bold whitespace-nowrap">
-                        +{hit.amountLul} LUL
+                        +{hit.amountLul} CerBucks
                       </span>
                     </div>
                   ))}
@@ -1237,7 +1237,7 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                 </div>
                 <div className="flex justify-between">
                   <span className="text-stone-500">Best</span>
-                  <span>{sessionStats.bestWinLul} LUL</span>
+                  <span>{sessionStats.bestWinLul} CerBucks</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-stone-500">Net</span>
@@ -1251,7 +1251,7 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                     }
                   >
                     {sessionStats.netLul >= 0 ? `+${sessionStats.netLul}` : sessionStats.netLul}{' '}
-                    LUL
+                    CerBucks
                   </span>
                 </div>
               </div>
@@ -1289,12 +1289,12 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                 </span>
                 {lulBalance < ARCADE_SLOT_MIN_BET_LUL && !isSpinning && (
                   <span className="hidden sm:inline text-[10.5px] font-medium text-rose-600 truncate">
-                    Min {ARCADE_SLOT_MIN_BET_LUL} LUL · Work shift or use Cafe ATM
+                    Min {ARCADE_SLOT_MIN_BET_LUL} CerBucks · Work shift or use Cafe ATM
                   </span>
                 )}
               </div>
               <span className="font-mono-tabular text-xl sm:text-2xl font-extrabold text-amber-700 tracking-tight whitespace-nowrap">
-                {lulBalance} LUL
+                {lulBalance} CerBucks
               </span>
             </div>
 
@@ -1303,7 +1303,7 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                 WIN:
               </span>
               <span className="font-mono-tabular text-xl sm:text-2xl font-extrabold text-emerald-600 tracking-tight whitespace-nowrap">
-                {lastWinLul} LUL
+                {lastWinLul} CerBucks
               </span>
             </div>
           </section>
@@ -1403,7 +1403,7 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                       >
                         <div className="text-xs font-extrabold leading-tight">{tier}</div>
                         <div className="text-[8.5px] font-bold uppercase leading-none opacity-85">
-                          LUL
+                          CerBucks
                         </div>
                       </button>
                     );
@@ -1456,7 +1456,7 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                 className="flex-1 lg:flex-initial ml-auto min-w-[175px] sm:min-w-[210px] h-12 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 disabled:from-stone-200 disabled:to-stone-200 disabled:text-stone-400 px-5 flex items-center justify-center gap-2 text-white font-extrabold text-sm sm:text-base uppercase tracking-wider whitespace-nowrap shadow-md cursor-pointer active:scale-[0.98] transition-all"
               >
                 <span className="font-mono-tabular">
-                  {isSpinning ? 'SPINNING...' : `SPIN (${selectedBet} LUL)`}
+                  {isSpinning ? 'SPINNING...' : `SPIN (${selectedBet} CerBucks)`}
                 </span>
                 <Play className="w-4 h-4 fill-current shrink-0" aria-hidden="true" />
               </button>
@@ -1527,7 +1527,7 @@ export const GlasshouseCafeSlotModal: React.FC<GlasshouseCafeSlotModalProps> = (
                     <strong className="font-bold text-slate-900">Center Payline:</strong> Match 3
                     identical symbols across the illuminated middle row for up to{' '}
                     <span className="font-mono-tabular font-bold text-amber-700">50x</span> your
-                    LUL stake, or any 2 matching symbols on the center line for a pair payout.
+                    CerBucks stake, or any 2 matching symbols on the center line for a pair payout.
                   </p>
                   <p>
                     <strong className="font-bold text-slate-900">XP Rewards:</strong> Every spin

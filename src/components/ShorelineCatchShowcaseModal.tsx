@@ -1204,10 +1204,10 @@ export const ShorelineFishingHudAndShowcase: React.FC<ShorelineFishingHudAndModa
                 </span>
                 <b className="block mt-1 font-mono tabular-nums text-xl sm:text-2xl font-bold text-amber-300">
                   +{lastCaughtFishToast.sellValueLul || lastCaughtFishToast.sellValueCyon}
-                  <small className="text-xs font-medium text-slate-400 ml-1">LUL</small>
+                  <small className="text-xs font-medium text-slate-400 ml-1">CerBucks</small>
                 </b>
                 <i className="block not-italic text-[10.5px] text-slate-400 mt-0.5 truncate">
-                  Sell to Kai (Swap LUL &rarr; CYON)
+                  Sell to Kai (Swap CerBucks &rarr; CerCoins)
                 </i>
               </div>
             </div>

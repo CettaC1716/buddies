@@ -33,6 +33,7 @@ import { CafeMenuItemArtwork } from './GlasshouseCafeMenuArtwork';
 import { type NearbyEntityUser } from './SocialChatModal';
 import { soundEngine } from '../game/audio';
 import {
+  resolveDefaultPlayerPhotoUrl,
   resolveNpcCitizenIdFromEntity,
   resolveNpcPhotoUrl,
   useNpcPortraitVersion,
@@ -100,7 +101,7 @@ export const PlayerLevelXpBadge: React.FC<PlayerLevelXpBadgeProps> = ({
           data-testid="hud-player-lul"
           className="flex-1 px-2.5 py-1 bg-amber-50 text-amber-900 border border-amber-200/80 rounded-full font-mono-tabular font-bold text-[10.5px] flex items-center justify-between"
         >
-          <span>LUL</span>
+          <span>CerBucks</span>
           <span>{lulBalance}</span>
         </div>
       </div>
@@ -232,7 +233,8 @@ export const CafeInteriorTopHudBar: React.FC<CafeInteriorTopHudBarProps> = ({
 export interface GlasshouseCafeOrderModalProps {
   isOpen: boolean;
   onClose: () => void;
-  lulBalance: number;
+  /** Player CYON balance — cafe food orders are everyday goods and are paid in CYON. */
+  cyonBalance: number;
   levelProgress: PlayerLevelProgress;
   consumerSummary?: CafeConsumerRemainingSummary | null;
   onPurchaseItem: (item: CafeMenuItemSpec) => { ok: boolean; message: string };
@@ -242,7 +244,7 @@ export interface GlasshouseCafeOrderModalProps {
 export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> = ({
   isOpen,
   onClose,
-  lulBalance,
+  cyonBalance,
   levelProgress,
   consumerSummary,
   onPurchaseItem,
@@ -266,14 +268,14 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
 
   const batchItems: Array<{ item: CafeMenuItemSpec; qty: number }> = [];
   let totalBatchQty = 0;
-  let totalBatchLul = 0;
+  let totalBatchCyon = 0;
   let totalBatchXp = 0;
   for (const item of CAFE_MENU_ITEMS) {
     const qty = batchCounts[item.id] ?? 0;
     if (qty > 0) {
       batchItems.push({ item, qty });
       totalBatchQty += qty;
-      totalBatchLul += item.priceLul * qty;
+      totalBatchCyon += item.priceLul * qty;
       totalBatchXp += item.xpReward * qty;
     }
   }
@@ -303,6 +305,18 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
       setFeedback({
         ok: false,
         text: 'Finish the food/drink in your hand before ordering again!',
+      });
+      return;
+    }
+    // Food orders are everyday goods paid in CYON (never LUL): refuse early
+    // with a CYON shortfall message before handing off to the purchase call.
+    const pendingTotalCyon =
+      totalBatchQty > 0 ? totalBatchCyon : (selectedItem?.priceLul ?? 0);
+    if (pendingTotalCyon > 0 && cyonBalance < pendingTotalCyon) {
+      soundEngine.playHit();
+      setFeedback({
+        ok: false,
+        text: `Not enough CerCoins! Need ${pendingTotalCyon} CerCoins (convert CerBucks at the ATM).`,
       });
       return;
     }
@@ -357,7 +371,7 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
           <div className="flex items-center gap-2.5">
             <div className="px-3 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-200/80 shadow-xs font-mono-tabular font-bold text-xs flex items-center gap-1.5">
               <Coins className="w-3.5 h-3.5 text-amber-600" aria-hidden="true" />
-              {lulBalance} LUL
+              {cyonBalance} CerCoins
             </div>
             <button
               type="button"
@@ -420,7 +434,7 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                     setSelectedId(item.id);
                     setFeedback(null);
                   }}
-                  aria-label={`${item.name} - ${item.priceLul} LUL`}
+                  aria-label={`${item.name} - ${item.priceLul} CerCoins`}
                   className={`relative group flex flex-col items-center justify-between p-2.5 rounded-2xl border transition-all cursor-pointer active:scale-95 ${
                     isSelected
                       ? 'bg-amber-50/90 border-amber-500 ring-2 ring-amber-400/40 -translate-y-0.5 shadow-md'
@@ -461,7 +475,7 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                         +{selectedItem.xpReward} XP
                       </span>
                       <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200/80 text-[10px] font-bold font-mono-tabular">
-                        {selectedItem.priceLul} LUL
+                        {selectedItem.priceLul} CerCoins
                       </span>
                     </div>
 
@@ -567,9 +581,9 @@ export const GlasshouseCafeOrderModal: React.FC<GlasshouseCafeOrderModalProps> =
                   {isConsuming
                     ? 'FINISH CURRENT ITEM...'
                     : totalBatchQty > 0
-                      ? `ORDER BATCH (${totalBatchQty} • ${totalBatchLul} LUL)`
+                      ? `ORDER BATCH (${totalBatchQty} • ${totalBatchCyon} CerCoins)`
                       : selectedItem
-                        ? `ORDER (${selectedItem.priceLul} LUL)`
+                        ? `ORDER (${selectedItem.priceLul} CerCoins)`
                         : 'SELECT AN ITEM'}
                 </button>
               </>
@@ -658,7 +672,7 @@ export const GlasshouseCafeAtmModal: React.FC<GlasshouseCafeAtmModalProps> = ({
         <div className="p-5 space-y-3.5 text-slate-900">
           <div className="grid grid-cols-2 gap-2.5">
             <div className="p-3 bg-white border border-stone-200/80 rounded-2xl text-center shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wide text-amber-700">LUL BALANCE</div>
+              <div className="text-[10px] font-bold uppercase tracking-wide text-amber-700">CerBucks BALANCE</div>
               <div
                 data-atm-lul-balance="true"
                 className="text-xl font-extrabold font-mono-tabular text-slate-900 mt-0.5"
@@ -667,7 +681,7 @@ export const GlasshouseCafeAtmModal: React.FC<GlasshouseCafeAtmModalProps> = ({
               </div>
             </div>
             <div className="p-3 bg-white border border-stone-200/80 rounded-2xl text-center shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wide text-sky-700">CYON BALANCE</div>
+              <div className="text-[10px] font-bold uppercase tracking-wide text-sky-700">CerCoins BALANCE</div>
               <div
                 data-atm-cyon-balance="true"
                 className="text-xl font-extrabold font-mono-tabular text-sky-600 mt-0.5"
@@ -680,13 +694,13 @@ export const GlasshouseCafeAtmModal: React.FC<GlasshouseCafeAtmModalProps> = ({
           <div className="text-center text-[11px] font-medium text-stone-600">
             Exchange Rate:{' '}
             <span className="inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 font-bold">
-              {rate} LUL = 10 CYON
+              {rate} CerBucks = 10 CerCoins
             </span>{' '}
-            · Shop stock: {treasuryCyon} CYON
+            · Shop stock: {treasuryCyon} CerCoins
           </div>
 
           <label className="block text-[10.5px] font-bold uppercase tracking-wider text-stone-500">
-            You pay (LUL)
+            You pay (CerBucks)
           </label>
           <div className="flex gap-2 -mt-1.5">
             <input
@@ -716,12 +730,12 @@ export const GlasshouseCafeAtmModal: React.FC<GlasshouseCafeAtmModalProps> = ({
             <span className="text-[10.5px] font-bold uppercase tracking-wider text-stone-500">
               You receive
             </span>
-            <span className="text-lg font-extrabold text-sky-600 font-mono-tabular">{receiveCyon} CYON</span>
+            <span className="text-lg font-extrabold text-sky-600 font-mono-tabular">{receiveCyon} CerCoins</span>
           </div>
           <p className="text-[11px] font-medium text-stone-500 leading-relaxed">
             {packets > 0
-              ? `${packets} packet${packets > 1 ? 's' : ''} × ${rate} LUL — exactly ${costLul} LUL will be charged, the rest stays in your balance.`
-              : `Enter at least ${rate} LUL to exchange one packet.`}
+              ? `${packets} packet${packets > 1 ? 's' : ''} × ${rate} CerBucks — exactly ${costLul} CerBucks will be charged, the rest stays in your balance.`
+              : `Enter at least ${rate} CerBucks to exchange one packet.`}
           </p>
 
           <button
@@ -1137,7 +1151,7 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
                 if (isFemaleNpcPortrait) {
                   return (
                     <img
-                      src="/assets/avatar_nadia.jpg"
+                      src={resolveDefaultPlayerPhotoUrl('female', 'avatar')}
                       alt={cleanEntityName}
                       className="w-full h-full object-cover"
                     />
@@ -1146,7 +1160,7 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
                 if (nearbyEntity.isNpc) {
                   return (
                     <img
-                      src="/assets/avatar_hiro.jpg"
+                      src={resolveDefaultPlayerPhotoUrl('male', 'avatar')}
                       alt={cleanEntityName}
                       className="w-full h-full object-cover"
                     />

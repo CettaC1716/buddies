@@ -26,19 +26,23 @@ import {
 } from './npcTogetherness';
 import type { NpcScheduleSlot } from './npcPersonaRegistry';
 
-function buildStoreWithScore(npcId: 'hana' | 'kai' | 'mira' | 'nadia' | 'tari' | 'bima' | 'kenji', targetScore: number): NpcClosenessStore {
+function buildStoreWithScore(
+  npcId: 'hana' | 'kai' | 'mira' | 'nadia' | 'tari' | 'bima' | 'kenji' | 'raka',
+  targetScore: number,
+): NpcClosenessStore {
   let store = createEmptyNpcClosenessStore();
-  let remaining = targetScore;
   const nowMs = Date.UTC(2026, 10, 26, 12, 0, 0);
-  while (remaining > 0) {
-    const step = Math.min(12, remaining);
+  let guard = 0;
+  while (store.records[npcId].score < targetScore && guard < 40) {
+    const gap = targetScore - store.records[npcId].score;
+    const step = Math.min(12, Math.max(2, gap));
     const res = recordNpcConversation(store, npcId, {
       closenessDelta: step,
       nowMs,
       dateKey: '2026-11-26',
     });
     store = res.store;
-    remaining -= step;
+    guard += 1;
   }
   return store;
 }
@@ -56,6 +60,8 @@ describe('npcTogetherness — deterministic anchors & persona schedules', () => 
     assert.ok(CITY_LIFE_ANCHORS.glasshouse_cafe_counter);
     assert.ok(CITY_LIFE_ANCHORS.kai_fish_market_pier);
     assert.ok(CITY_LIFE_ANCHORS.nw_lake_shore);
+    assert.ok(CITY_LIFE_ANCHORS.north_shops_center_walk);
+    assert.ok(CITY_LIFE_ANCHORS.south_shops_center_walk);
   });
 
   it('maps 24h world clock hours deterministically to time-slot windows and midnight-wrapping ranges', () => {
@@ -113,14 +119,14 @@ describe('npcTogetherness — deterministic anchors & persona schedules', () => 
 });
 
 describe('npcTogetherness — walk-together, pair poses, and ride-together gating & physics', () => {
-  it('gates pair pose at F1 threshold (45), uses true paired clips, and records shared activity', () => {
-    const lowStore = buildStoreWithScore('nadia', 40);
-    const denied = startNpcPairPose(lowStore, 'nadia');
+  it('gates pair pose at F1 threshold (45) for regular NPCs and high closeness (70) for high-tier merchants while blocking merchant walk/ride', () => {
+    const lowStore = buildStoreWithScore('tari', 40);
+    const denied = startNpcPairPose(lowStore, 'tari');
     assert.equal(denied.allowed, false);
     assert.equal(denied.reason, 'not_unlocked');
 
-    const unlockedStore = buildStoreWithScore('nadia', 50);
-    const started = startNpcPairPose(unlockedStore, 'nadia', {
+    const unlockedStore = buildStoreWithScore('tari', 50);
+    const started = startNpcPairPose(unlockedStore, 'tari', {
       poseId: CURATED_NPC_PAIR_POSES[1].id,
       dateKey: '2026-11-26',
     });
@@ -130,6 +136,27 @@ describe('npcTogetherness — walk-together, pair poses, and ride-together gatin
     assert.equal(started.session.pose.id, CURATED_NPC_PAIR_POSES[1].id);
     assert.ok(started.closenessResult);
     assert.equal(started.closenessResult.appliedDelta, 5);
+
+    // High-tier merchants (Hana & Nadia) require high closeness (>= 70) for pair pose and cannot walk/ride together
+    const merchantMid = buildStoreWithScore('nadia', 54);
+    assert.equal(startNpcPairPose(merchantMid, 'nadia').allowed, false);
+
+    const merchantHigh = buildStoreWithScore('nadia', 76);
+    const merchantPose = startNpcPairPose(merchantHigh, 'nadia', {
+      poseId: CURATED_NPC_PAIR_POSES[1].id,
+      dateKey: '2026-11-26',
+    });
+    assert.equal(merchantPose.allowed, true);
+
+    const merchantWalk = startNpcWalkTogether(merchantHigh, 'nadia');
+    assert.equal(merchantWalk.allowed, false);
+    assert.equal(merchantWalk.reason, 'merchant_role_restricted');
+
+    const merchantRide = startNpcRideTogether(merchantHigh, 'hana', {
+      scooterKind: 'electric_scooter_bike',
+    });
+    assert.equal(merchantRide.allowed, false);
+    assert.equal(merchantRide.reason, 'merchant_role_restricted');
   });
 
   it('gates walk-together at F1 threshold (68) and steps smoothly behind player', () => {

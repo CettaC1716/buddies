@@ -1190,10 +1190,10 @@ export function createChalkboardMenuTexture(): THREE.CanvasTexture {
     ctx.font = 'bold 17px sans-serif';
     ctx.textAlign = 'left';
     const leftItems = [
-      ['Espresso', '3 LUL'],
-      ['Caramel Latte', '10 LUL'],
-      ['Hot Choco Mocha', '6 LUL'],
-      ['Botanical Iced', '3 LUL'],
+      ['Espresso', '3 CerBucks'],
+      ['Caramel Latte', '10 CerBucks'],
+      ['Hot Choco Mocha', '6 CerBucks'],
+      ['Botanical Iced', '3 CerBucks'],
     ];
     leftItems.forEach(([name, price], i) => {
       const y = 94 + i * 36;
@@ -1205,9 +1205,9 @@ export function createChalkboardMenuTexture(): THREE.CanvasTexture {
 
     const rightItems = [
       ['Pastries', ''],
-      ['Butter Croissant', '3 LUL'],
-      ['Cinnamon Roll', '6 LUL'],
-      ['Club Sandwich', '10 LUL'],
+      ['Butter Croissant', '3 CerBucks'],
+      ['Cinnamon Roll', '6 CerBucks'],
+      ['Club Sandwich', '10 CerBucks'],
     ];
     rightItems.forEach(([name, price], i) => {
       const y = 94 + i * 36;
@@ -2551,7 +2551,7 @@ function createAtmMonitorScreenTexture(): THREE.CanvasTexture | null {
     ctx.fillStyle = 'rgba(248, 250, 252, 0.86)';
     ctx.font = 'bold 20px "Barlow", sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText('STANDARD BANK // CASH & LUL', 24, 32);
+    ctx.fillText('STANDARD BANK // CASH & CerBucks', 24, 32);
 
     for (let i = 0; i < 4; i++) {
       const y = 96 + i * 68;
@@ -3168,7 +3168,7 @@ function createArcadeMonitorScreenTexture(): THREE.CanvasTexture | null {
     ctx.fillRect(startX - 12, reelY + reelH / 2 - 4, reelW * 3 + gap * 2 + 24, 8);
     ctx.fillStyle = '#facc15';
     ctx.font = '900 22px "Barlow", "Arial Black", sans-serif';
-    ctx.fillText('WIN UP TO 50X LUL', 256, 326);
+    ctx.fillText('WIN UP TO 50X CerBucks', 256, 326);
 
     // Subtle CRT scanlines + diagonal glass sheen
     ctx.fillStyle = 'rgba(15, 23, 42, 0.14)';

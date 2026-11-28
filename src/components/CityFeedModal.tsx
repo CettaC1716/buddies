@@ -1,8 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Camera,
   Heart,
-  Image as ImageIcon,
   MapPin,
   MessageCircle,
   RefreshCw,
@@ -13,6 +11,8 @@ import {
 } from 'lucide-react';
 import { soundEngine } from '../game/audio';
 import {
+  isLegacyRemovedAvatarUrl,
+  resolveDefaultPlayerPhotoUrl,
   resolveNpcCitizenIdFromEntity,
   resolveNpcPhotoUrl,
   useNpcPortraitVersion,
@@ -21,14 +21,12 @@ import {
   commentCityFeedPost,
   deleteCityFeedPost,
   fetchCityFeedPosts,
-  publishCityFeedPost,
   readCachedCityFeedPosts,
   subscribeToCityFeedRealtime,
   toggleLikeCityFeedPost,
   CITY_FEED_UPDATED_EVENT,
   type CityFeedPost,
 } from '../lib/cityFeedService';
-import { CERRIA_CITY_NAME } from '../lib/cerriaBrand';
 import { getPhotoCropClassName } from './CharacterProfileModal';
 import {
   filterRealHumanOnlinePlayers,
@@ -39,6 +37,7 @@ import { RoleBadgeCircle } from './RoleBadgeCircle';
 import {
   DEFAULT_PLAYER_SOCIAL_GRAPH,
   isFollowingPlayer,
+  isFriendWith,
   type PlayerSocialGraph,
 } from '../game/buddiesSocialGraph';
 import { normalizePlayerPrivacyKey } from '../game/buddiesPrivacySettings';
@@ -63,11 +62,9 @@ export interface CityFeedModalProps {
   onStartWhisper?: (user: NearbyEntityUser) => void;
 }
 
-type FeedFilterTab = 'all' | 'following' | 'nearby' | 'mine';
+type FeedFilterTab = 'all' | 'following' | 'nearby' | 'friend';
 
-const FEED_MOODS = ['Exploring', 'Chill', 'Fishing', 'Racing', 'Trading', 'Cafe'] as const;
 const AVATAR_PHOTO_STORAGE_KEY = 'bb_player_avatar_photo_v1';
-const STATUS_PHOTO_STORAGE_KEY = 'bb_player_status_photo_v1';
 
 function formatRelativeTime(createdAtMs: number, nowMs: number): string {
   const diffSec = Math.max(0, Math.floor((nowMs - createdAtMs) / 1000));
@@ -85,16 +82,14 @@ function resolveAuthorPhoto(
   gender: 'male' | 'female',
   authorName: string,
 ): string {
-  if (avatarUrl) return avatarUrl;
+  if (avatarUrl && !isLegacyRemovedAvatarUrl(avatarUrl)) return avatarUrl;
   const npcCid = resolveNpcCitizenIdFromEntity({ name: authorName, isNpc: true });
   if (npcCid) {
     return resolveNpcPhotoUrl(npcCid, 'avatar');
   }
   const lower = authorName.toLowerCase();
-  if (gender === 'female' || lower.includes('nadia') || lower.includes('hana')) {
-    return '/assets/avatar_nadia.jpg';
-  }
-  return '/assets/avatar_hiro.jpg';
+  const isFemale = gender === 'female' || lower.includes('nadia') || lower.includes('hana');
+  return resolveDefaultPlayerPhotoUrl(isFemale ? 'female' : 'male', 'avatar');
 }
 
 export const CityFeedModal: React.FC<CityFeedModalProps> = ({
@@ -104,7 +99,7 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
   playerName,
   playerUid,
   characterGender,
-  playerTeam,
+  playerTeam: _playerTeam,
   currentDistrict,
   nearbyUsers,
   socialGraph = DEFAULT_PLAYER_SOCIAL_GRAPH,
@@ -112,7 +107,7 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
   onOpenPlayerProfile,
   onStartWhisper,
 }) => {
-  useNpcPortraitVersion();
+  const portraitVersion = useNpcPortraitVersion();
   const cleanSelfName = simplifyDisplayName(playerName) || 'Buddy';
   const selfActorId = useMemo(
     () => (playerUid && playerUid.trim()) || `local-${cleanSelfName.toLowerCase()}`,
@@ -123,40 +118,22 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
     if (typeof window !== 'undefined') {
       try {
         const saved = window.localStorage.getItem(AVATAR_PHOTO_STORAGE_KEY);
-        if (saved) return saved;
+        if (saved && !isLegacyRemovedAvatarUrl(saved)) return saved;
       } catch {
         // ignore
       }
     }
-    return characterGender === 'female' ? '/assets/avatar_nadia.jpg' : '/assets/avatar_hiro.jpg';
-  }, [characterGender]);
-
-  const selfCoverUrl = useMemo(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = window.localStorage.getItem(STATUS_PHOTO_STORAGE_KEY);
-        if (saved) return saved;
-      } catch {
-        // ignore
-      }
-    }
-    return selfAvatarUrl;
-  }, [selfAvatarUrl]);
+    return resolveDefaultPlayerPhotoUrl(characterGender, 'avatar');
+  }, [characterGender, portraitVersion]);
 
   const [posts, setPosts] = useState<CityFeedPost[]>(() => readCachedCityFeedPosts());
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [filterTab, setFilterTab] = useState<FeedFilterTab>('all');
-  const [composerText, setComposerText] = useState<string>('');
-  const [selectedMood, setSelectedMood] = useState<string>('Exploring');
-  const [attachedPhotoUrl, setAttachedPhotoUrl] = useState<string>('');
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [openCommentsPostId, setOpenCommentsPostId] = useState<string | null>(null);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [brokenPhotoIds, setBrokenPhotoIds] = useState<Record<string, boolean>>({});
   const [followedRemoteProfiles, setFollowedRemoteProfiles] = useState<SearchedPlayerProfile[]>([]);
-
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const onlineHumanPeers = useMemo(
     () => filterRealHumanOnlinePlayers(nearbyUsers, cleanSelfName, playerUid),
@@ -270,8 +247,12 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
   );
 
   const filteredPosts = useMemo(() => {
-    if (filterTab === 'mine') {
-      return posts.filter(isOwnPost);
+    if (filterTab === 'friend') {
+      return posts.filter(
+        (p) =>
+          !isOwnPost(p) &&
+          isFriendWith(socialGraph, p.authorNearAccount || p.authorId, p.authorName),
+      );
     }
     if (filterTab === 'following') {
       return posts.filter(
@@ -294,49 +275,6 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
     }
     return posts;
   }, [posts, filterTab, isOwnPost, onlineHumanPeers, socialGraph]);
-
-  const handleUploadSnapshot = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setAttachedPhotoUrl(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
-  };
-
-  const handlePublish = async () => {
-    const cleanText = composerText.trim().slice(0, 220);
-    if (!cleanText || isSubmitting) return;
-    soundEngine.playUiClick();
-    setIsSubmitting(true);
-
-    const newPost: CityFeedPost = {
-      id: `cf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      authorId: selfActorId,
-      authorNearAccount: playerUid || null,
-      authorName: cleanSelfName,
-      authorAvatarUrl: selfAvatarUrl,
-      authorTeam: playerTeam,
-      authorGender: characterGender,
-      text: cleanText,
-      mood: selectedMood || undefined,
-      location: currentDistrict || 'Central Plaza',
-      photoUrl: attachedPhotoUrl || undefined,
-      createdAtMs: Date.now(),
-      likedByIds: [],
-      comments: [],
-    };
-
-    const nextPosts = await publishCityFeedPost(newPost);
-    setPosts(nextPosts);
-    setComposerText('');
-    setAttachedPhotoUrl('');
-    setIsSubmitting(false);
-  };
 
   const handleToggleLike = async (postId: string) => {
     soundEngine.playUiClick();
@@ -397,13 +335,6 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
           : 'relative rounded-[32px] bg-gradient-to-b from-[#171d2c]/86 via-[#111622]/84 to-[#0c101a]/88 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_24px_70px_rgba(0,0,0,0.58)] p-4 text-white flex flex-col max-h-full overflow-hidden'
       }
     >
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={handleUploadSnapshot}
-      />
 
       {/* Header */}
       <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-white/15 shrink-0">
@@ -462,7 +393,7 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
             { id: 'all', label: 'All' },
             { id: 'following', label: `Following (${socialGraph.following.length})` },
             { id: 'nearby', label: `Nearby (${onlineHumanPeers.length})` },
-            { id: 'mine', label: 'Mine' },
+            { id: 'friend', label: `Friend (${socialGraph.friends.length})` },
           ] as const
         ).map((tab) => {
           const active = filterTab === tab.id;
@@ -591,127 +522,6 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
           </div>
         )}
 
-        {/* Composer Card (inZOI Frosted Pearl Card) */}
-        <div
-          data-city-feed-composer="true"
-          className="rounded-2xl bg-[#eef0f4]/92 border border-white/80 shadow-[0_8px_22px_rgba(15,23,42,0.16)] p-3 space-y-2.5 text-slate-900"
-        >
-          <div className="flex items-start gap-2.5">
-            <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-200 border border-white shadow-xs shrink-0">
-              <img
-                src={selfAvatarUrl}
-                alt={cleanSelfName}
-                referrerPolicy="no-referrer"
-                className={`w-full h-full ${getPhotoCropClassName(selfAvatarUrl)}`}
-              />
-            </div>
-
-            <div className="flex-1 min-w-0 rounded-xl bg-[#dfe4ec]/85 border border-slate-300/60 px-2.5 py-2">
-              <textarea
-                rows={2}
-                maxLength={220}
-                value={composerText}
-                onChange={(e) => setComposerText(e.target.value)}
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                    e.preventDefault();
-                    void handlePublish();
-                  }
-                }}
-                placeholder={`Share a moment with players in ${CERRIA_CITY_NAME}...`}
-                data-city-feed-input="true"
-                className="w-full resize-none bg-transparent text-[12px] text-slate-900 placeholder:text-slate-400 focus:outline-none leading-snug"
-              />
-            </div>
-          </div>
-
-          {attachedPhotoUrl && (
-            <div className="relative w-full h-24 rounded-xl overflow-hidden border border-slate-300/70 bg-slate-200">
-              <img
-                src={attachedPhotoUrl}
-                alt="Attached preview"
-                referrerPolicy="no-referrer"
-                className={`w-full h-full ${getPhotoCropClassName(attachedPhotoUrl)}`}
-              />
-              <button
-                type="button"
-                onClick={() => setAttachedPhotoUrl('')}
-                aria-label="Remove attached photo"
-                className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-slate-900/75 hover:bg-slate-900 text-white flex items-center justify-center cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
-            </div>
-          )}
-
-          {/* Mood selector row */}
-          <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
-            {FEED_MOODS.map((mood) => {
-              const active = selectedMood === mood;
-              return (
-                <button
-                  key={mood}
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    setSelectedMood(active ? '' : mood);
-                  }}
-                  className={`px-2.5 py-1 rounded-lg text-[10.5px] font-semibold whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
-                    active
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'bg-[#dfe4ec]/85 hover:bg-white text-slate-600 hover:text-slate-900 border border-slate-300/55'
-                  }`}
-                >
-                  {mood}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Bottom Composer Action Row */}
-          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-300/60">
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  setAttachedPhotoUrl((prev) => (prev ? '' : selfCoverUrl));
-                }}
-                title="Attach your profile cover snapshot"
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/90 shadow-xs text-[10.5px] font-semibold text-slate-700 hover:text-slate-950 cursor-pointer transition-colors whitespace-nowrap shrink-0"
-              >
-                <ImageIcon className="w-3.5 h-3.5 stroke-[2]" aria-hidden="true" />
-                <span>{attachedPhotoUrl ? 'Clear photo' : 'Snapshot'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  fileInputRef.current?.click();
-                }}
-                title="Upload image"
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/90 shadow-xs text-[10.5px] font-semibold text-slate-700 hover:text-slate-950 cursor-pointer transition-colors whitespace-nowrap shrink-0"
-              >
-                <Camera className="w-3.5 h-3.5 stroke-[2]" aria-hidden="true" />
-                <span>Upload</span>
-              </button>
-            </div>
-
-            <button
-              type="button"
-              data-city-feed-submit="true"
-              disabled={!composerText.trim() || isSubmitting}
-              onClick={() => void handlePublish()}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300/80 disabled:text-slate-500 text-white font-semibold text-[11px] shadow-xs cursor-pointer disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0"
-            >
-              <Send className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
-              <span>Post</span>
-            </button>
-          </div>
-        </div>
-
         {/* Feed Timeline */}
         {isLoading && filteredPosts.length === 0 ? (
           <div className="rounded-2xl bg-[#eef0f4]/90 border border-white/80 py-8 px-4 text-center text-[11.5px] font-medium text-slate-600 shadow-sm">
@@ -726,14 +536,18 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
                   : 'No City Feed announcements from followed builders yet'
                 : filterTab === 'nearby'
                   ? 'No posts from nearby players yet'
-                  : filterTab === 'mine'
-                    ? 'You have not posted to City Feed yet'
+                  : filterTab === 'friend'
+                    ? socialGraph.friends.length === 0
+                      ? 'You do not have any friends yet'
+                      : 'No posts from friends yet'
                     : 'No posts in City Feed yet'}
             </div>
             <p className="text-[11px] text-slate-500">
               {filterTab === 'following'
                 ? 'Follow builders from their profile card or search results to see what they are building and their announcements here.'
-                : `Share what you are doing in ${currentDistrict || 'Central Plaza'} so other players can see and reply.`}
+                : filterTab === 'friend'
+                  ? 'Add friends from player profiles or contacts to see their City Feed updates here.'
+                  : `Open your Profile to share what you are doing in ${currentDistrict || 'Central Plaza'} so other players can see and reply.`}
             </p>
           </div>
         ) : (
@@ -824,7 +638,7 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
 
                   {/* Optional Attached Image */}
                   {post.photoUrl && !brokenPhotoIds[post.id] && (
-                    <div className="w-full h-32 rounded-xl overflow-hidden border border-slate-300/70 bg-slate-200">
+                    <div className="w-full rounded-xl overflow-hidden border border-slate-300/70 bg-slate-900/5">
                       <img
                         src={post.photoUrl}
                         alt={`${authorLabel} snapshot`}
@@ -832,7 +646,7 @@ export const CityFeedModal: React.FC<CityFeedModalProps> = ({
                         onError={() =>
                           setBrokenPhotoIds((prev) => ({ ...prev, [post.id]: true }))
                         }
-                        className={`w-full h-full ${getPhotoCropClassName(post.photoUrl)}`}
+                        className="w-full h-auto max-h-[380px] object-contain mx-auto block"
                       />
                     </div>
                   )}

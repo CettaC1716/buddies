@@ -4300,20 +4300,20 @@ test('Safezone Non-Military Plot Claiming & Kiosk Gate Access Settings (PUBLIC, 
   assert.equal(bluePlots[1].safezoneAccessMode, 'PUBLIC');
   assert.equal(claimRes.message.includes('CLAIMED'), true);
 
-  // Verify Safezone static structures for claimed plot 1: house building, fence, gate, sakura planter, and kiosk exist, while military bastion colliders are omitted
+  // Verify WS20 Safezone static structures omit all legacy residential plot, building, fence, gate, planter, kiosk, and bastion colliders (zero ghost colliders)
   const szStructures = buildStaticWorldStructuresList({
     blueBase: { baseGroup: new THREE.Group(), hqX: 0, hqZ: 74 },
+    redBase: { baseGroup: new THREE.Group(), hqX: 0, hqZ: -86 },
     blueCommanderBases: bluePlots,
     redCommanderBases: createIndividualCommanderBasesState('red'),
     isSafezoneMode: true,
   });
   const szIds = szStructures.map((s) => s.id);
-  assert.equal(szIds.includes('blue_plot_1_building'), true, 'House building collider active on claimed Safezone plot');
+  assert.equal(szIds.some((id) => /^(blue|red)_plot_/.test(id)), false, 'All legacy plot & kiosk colliders omitted in Safezone');
+  assert.equal(szIds.includes('red_plot_0_kiosk'), false, 'Legacy red_plot_0 kiosk collider omitted in Safezone NE block');
+  assert.equal(szIds.includes('blue_plot_0_building'), false, 'Legacy Model Estate building collider omitted in Safezone');
+  assert.equal(szIds.includes('blue_plot_1_building'), false, 'Claimed plot building collider omitted in Safezone');
   assert.equal(szIds.includes('bastion_b_1'), false, 'Skyshield turret bastion collider omitted in Safezone');
-  assert.ok(szIds.includes('blue_plot_1_fence_w'), 'Perimeter fence collider active on claimed Safezone plot');
-  assert.ok(szIds.includes('blue_plot_1_gate'), 'Automatic sliding gate collider active on claimed Safezone plot');
-  assert.ok(szIds.includes('blue_plot_1_planter_0'), 'Sakura garden planter collider active on claimed Safezone plot');
-  assert.ok(szIds.includes('blue_plot_1_kiosk'), 'Kiosk machine collider active on claimed Safezone plot');
 
   // 2. Gate Access Mode: PUBLIC -> opens for everyone
   setSafezonePlotAccessMode(bluePlots[1], 'PUBLIC');
@@ -6190,8 +6190,8 @@ test('Island citizens roam the entire map with multi-district activities and val
         `${preset.id} leg speed must stay <= 2.2 m/s`,
       );
       assert.ok(
-        wp.x >= -102 && wp.x <= -24 && wp.z >= -86 && wp.z <= 66,
-        `${preset.id} must stay on the West side of the map (got ${wp.x}, ${wp.z})`,
+        wp.x >= -115 && wp.x <= 125 && wp.z >= -95 && wp.z <= 95,
+        `${preset.id} must stay inside Cerria island bounds (got ${wp.x}, ${wp.z})`,
       );
     }
   }
@@ -6265,15 +6265,32 @@ test('Island citizens roam the entire map with multi-district activities and val
   });
 
   for (const preset of CITY_AMBIENT_NPC_PRESETS) {
-    assert.ok(preset.waypoints.length >= 5, `${preset.id} must have rich West-district stops`);
+    assert.ok(preset.waypoints.length >= 4, `${preset.id} must have multi-stop district itinerary`);
     const minX = Math.min(...preset.waypoints.map((wp) => wp.x));
     const maxX = Math.max(...preset.waypoints.map((wp) => wp.x));
     const minZ = Math.min(...preset.waypoints.map((wp) => wp.z));
     const maxZ = Math.max(...preset.waypoints.map((wp) => wp.z));
     assert.ok(
-      minX >= -102 && maxX <= -24 && minZ >= -86 && maxZ <= 66 && maxZ - minZ >= 45,
-      `${preset.id} must span West-side landmarks cleanly (x=[${minX},${maxX}], z=[${minZ},${maxZ}])`,
+      minX >= -115 && maxX <= 125 && minZ >= -95 && maxZ <= 95,
+      `${preset.id} must stay within Cerria city bounds (x=[${minX},${maxX}], z=[${minZ},${maxZ}])`,
     );
+    if (preset.id === 'citizen_mira' || preset.id === 'city_plaza_raka') {
+      // The crossing post is the district's gate: each Beach Club citizen keeps one
+      // stop at the East Harbor zebra's west landing (labelled CROSSING) so their
+      // route legitimately uses the crosswalk — that gate stop is exempt here, and
+      // the bound below constrains all their in-district Beach Club stops.
+      const districtMinX = Math.min(
+        ...preset.waypoints
+          .filter((wp) => !(wp.label ?? '').includes('CROSSING'))
+          .map((wp) => wp.x),
+      );
+      assert.ok(districtMinX >= 75, `${preset.id} Beach Club stops must stay on East Beach Club district (minX=${districtMinX})`);
+    } else if (preset.id === 'citizen_bima' || preset.id === 'citizen_kenji') {
+      assert.ok(
+        maxX - minX >= 40 || maxZ - minZ >= 70,
+        `${preset.id} citywide citizen must span North/South shopping & city districts (x=[${minX},${maxX}], z=[${minZ},${maxZ}])`,
+      );
+    }
     for (const wp of preset.waypoints) {
       const wpAct = wp.activity ?? preset.activity;
       const dur = wp.durationSec ?? preset.pauseSecAtWaypoint;
@@ -6351,10 +6368,10 @@ test('Island citizens roam the entire map with multi-district activities and val
   }
 
   // Verify A* schedule stepping with obstacle navigation, tram yielding, and sitting transition
-  const walker = CITY_AMBIENT_NPC_PRESETS.find((p) => p.id === 'city_plaza_raka')!;
-  const oasisStopIdx = walker.waypoints.findIndex((wp) => wp.x > -55);
-  assert.ok(oasisStopIdx > 0, 'Expected Raka West-side loop to include cross-road Oasis stop');
-  const startStopIdx = oasisStopIdx - 1;
+  const walker = CITY_AMBIENT_NPC_PRESETS.find((p) => p.id === 'citizen_bima')!;
+  const oasisStopIdx = 1;
+  assert.ok(walker.waypoints.length >= 2, 'Expected Bima citywide loop to have >= 2 stops');
+  const startStopIdx = 0;
   const stepAStar = stepCityAmbientNpcSchedule({
     preset: walker,
     x: walker.waypoints[startStopIdx].x,
@@ -6445,12 +6462,15 @@ test('Island citizens roam the entire map with multi-district activities and val
     'Tari carries her Iced Latte from Cafe to her bench seat',
   );
 
+  const noItemStopIdx = tari.waypoints.findIndex((wp, idx) => idx > cafeBuyStopIdx && !wp.holdingCafeItemId);
+  assert.ok(noItemStopIdx > cafeBuyStopIdx, 'Expected a West Plaza walk stop where Tari puts finished food/cup away');
+  const prevStop = tari.waypoints[noItemStopIdx - 1];
   const afterStandWalkStep = stepCityAmbientNpcSchedule({
     preset: tari,
-    x: tari.waypoints[cafeBuyStopIdx + 1].x,
-    z: tari.waypoints[cafeBuyStopIdx + 1].z,
+    x: prevStop.x,
+    z: prevStop.z,
     yaw: 0,
-    waypointIdx: cafeBuyStopIdx + 2,
+    waypointIdx: noItemStopIdx,
     pauseTimer: 0,
     elapsedSec: 25.0,
     dt: 0.1,
@@ -6460,7 +6480,7 @@ test('Island citizens roam the entire map with multi-district activities and val
   assert.equal(
     afterStandWalkStep.activeHoldingCafeItemId,
     null,
-    'Tari puts the finished cup away when walking toward Grand Casino',
+    'Tari puts finished cup/snack away when strolling empty-handed around West Plaza',
   );
 
   // Verify Glasshouse Cafe interior Mira walks smoothly (never stays static or snaps 1.8m early)
@@ -7116,9 +7136,10 @@ test('Active Plaza & East Harbor Traffic Signal Cycles + Stop Bars + Pedestrian 
   );
 });
 
-test('City View Overview & 7 District Group Spotlights: hash routing, orbital clamps, 3D picking & fly interpolation', () => {
+test('City View Overview & 8 District Group Spotlights: hash routing, orbital clamps, 3D picking & fly interpolation', () => {
   const expectedIds = [
     'plaza',
+    'central_plaza',
     'casino',
     'tennis',
     'kai_pantai',
@@ -7127,6 +7148,8 @@ test('City View Overview & 7 District Group Spotlights: hash routing, orbital cl
     'south_residence',
   ] as const;
   assert.equal(CITY_VIEW_DISTRICTS.length, expectedIds.length);
+  assert.equal(getCityViewDistrictById('plaza').label, 'West Plaza');
+  assert.equal(getCityViewDistrictById('central_plaza').label, 'Central Plaza');
 
   const seenSlugs = new Set<string>();
   for (let i = 0; i < expectedIds.length; i++) {
@@ -7157,6 +7180,8 @@ test('City View Overview & 7 District Group Spotlights: hash routing, orbital cl
   // Hash parser handles Kota, all district slugs, and Plaza store aliases
   assert.equal(parseCityViewHash('#kota'), 'kota');
   assert.equal(parseCityViewHash('#plaza'), 'plaza');
+  assert.equal(parseCityViewHash('#west-plaza'), 'plaza');
+  assert.equal(parseCityViewHash('#central-plaza'), 'central_plaza');
   assert.equal(parseCityViewHash('#toko1'), 'plaza');
   assert.equal(parseCityViewHash('#kai-pantai'), 'kai_pantai');
   assert.equal(parseCityViewHash('#beach-club'), 'beach_club');
@@ -7164,10 +7189,12 @@ test('City View Overview & 7 District Group Spotlights: hash routing, orbital cl
   assert.equal(parseCityViewHash('#south-residence'), 'south_residence');
   assert.equal(parseCityViewHash('#unknown-xyz'), null);
   assert.equal(getCityViewTargetHash('kota'), '#kota');
+  assert.equal(getCityViewTargetHash('central_plaza'), '#central-plaza');
   assert.equal(getCityViewTargetHash('kai_pantai'), '#kai-pantai');
 
-  // Prev / Next wrap around cleanly across all 7 groups
+  // Prev / Next wrap around cleanly across all 8 groups
   assert.equal(getAdjacentCityViewDistrictId('kota', 1), 'plaza');
+  assert.equal(getAdjacentCityViewDistrictId('plaza', 1), 'central_plaza');
   assert.equal(getAdjacentCityViewDistrictId('kota', -1), 'south_residence');
   assert.equal(getAdjacentCityViewDistrictId('south_residence', 1), 'plaza');
   assert.equal(getAdjacentCityViewDistrictId('plaza', -1), 'south_residence');

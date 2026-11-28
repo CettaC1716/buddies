@@ -6,6 +6,7 @@ import {
   ClipboardList,
   Globe,
   Home,
+  Mail,
   Map as MapIcon,
   Maximize2,
   MessageCircle,
@@ -300,15 +301,8 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
     {
       id: 'letters',
       label: 'Letters',
-      gradient: 'from-amber-50 to-orange-100 ring-1 ring-white/80',
-      icon: (
-        <img
-          src="/assets/aistudio/writing_2593648_9a87d6fe.png"
-          alt="Letters"
-          className="w-8 h-8 object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.18)] pointer-events-none"
-          draggable={false}
-        />
-      ),
+      gradient: 'from-amber-400 to-orange-500',
+      icon: <Mail className="w-6 h-6 text-white stroke-[1.9]" />,
       badge: unreadLettersCount > 0 ? (unreadLettersCount > 9 ? '9+' : unreadLettersCount) : undefined,
       badgeColor: 'bg-rose-500 text-white',
       onClick: () => openInPhone('letters'),

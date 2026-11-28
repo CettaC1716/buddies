@@ -33,10 +33,7 @@ import {
   isInsideNorthGrandCasinoFootprint,
 } from './buddiesGrandCasinoRules';
 import { computeScooterShopWorldColliders } from './buddiesUrbanScooterRules';
-import {
-  computeRealEstateKioskWorldColliders,
-  REAL_ESTATE_FURNITURE_KIOSK_LAYOUT,
-} from './buddiesRealEstateKioskRules';
+import { computeRealEstateKioskWorldColliders } from './buddiesRealEstateKioskRules';
 import { computeFashionKioskWorldColliders } from './buddiesFashionKioskRules';
 
 export const MAP_STORAGE_KEY = 'blitz_arena_map_layout_v56';
@@ -660,16 +657,6 @@ export function buildStaticWorldStructuresList(params: {
     ...computeRealEstateKioskWorldColliders(),
     ...computeScooterShopWorldColliders(),
     ...computeFashionKioskWorldColliders(),
-    {
-      id: 'npc_merchant_hana',
-      x: REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.x,
-      z: REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.z,
-      halfX: 0.52,
-      halfZ: 0.52,
-      rotY: REAL_ESTATE_FURNITURE_KIOSK_LAYOUT.hanaMerchantWorld.rotY,
-      heightY: 3.85,
-      mat: 'wood',
-    },
     { id: 'npc_merchant_kai', x: 85.8, z: 60.0, halfX: 0.52, halfZ: 0.52, rotY: 0, heightY: 3.85, mat: 'wood' },
     { id: 'lobby_parasol_table_n', x: -83.95, z: 13.31, halfX: +(1.62 * parasolRatio).toFixed(2), halfZ: +(1.62 * parasolRatio).toFixed(2), rotY: 0, heightY: +(6.2 * parasolRatio).toFixed(2), mat: 'wood' },
     { id: 'lobby_parasol_table_s', x: -83.95, z: 19.09, halfX: +(1.62 * parasolRatio).toFixed(2), halfZ: +(1.62 * parasolRatio).toFixed(2), rotY: 0, heightY: +(6.2 * parasolRatio).toFixed(2), mat: 'wood' },
@@ -1035,14 +1022,16 @@ export function buildStaticWorldStructuresList(params: {
     }
   };
 
-  emitTeamBasePlotColliders('blue', blueBase.hqX, blueBase.hqZ, blueCommanderBases, blueSkyshields);
-  emitTeamBasePlotColliders(
-    'red',
-    redBase?.hqX ?? 0.0,
-    redBase?.hqZ ?? -86.0,
-    redCommanderBases,
-    redSkyshields,
-  );
+  if (!isSafezoneMode) {
+    emitTeamBasePlotColliders('blue', blueBase.hqX, blueBase.hqZ, blueCommanderBases, blueSkyshields);
+    emitTeamBasePlotColliders(
+      'red',
+      redBase?.hqX ?? 0.0,
+      redBase?.hqZ ?? -86.0,
+      redCommanderBases,
+      redSkyshields,
+    );
+  }
 
   return structures;
 }

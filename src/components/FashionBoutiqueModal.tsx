@@ -7,6 +7,7 @@ import {
   FASHION_APPAREL_CATALOG_ITEMS,
   type FashionApparelCatalogItem,
 } from '../game/buddiesFashionKioskRules';
+import { convertWardrobeLulPriceToCyon } from '../game/buddiesWardrobeStudioRules';
 import { loadModularApparelGltf } from '../game/buddiesBlitzShadersAndAssets';
 import { soundEngine } from '../game/audio';
 import { TabletDeviceMockupShell } from './TabletDeviceMockupShell';
@@ -14,7 +15,7 @@ import { TabletDeviceMockupShell } from './TabletDeviceMockupShell';
 export interface FashionBoutiqueModalProps {
   isOpen: boolean;
   onClose: () => void;
-  lulBalance: number;
+  cyonBalance: number;
   characterGender: 'male' | 'female';
   ownedApparelIds: string[];
   equippedTorsoItemId: string | null;
@@ -357,7 +358,7 @@ const Garment3DPreviewCanvas: React.FC<{
 export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
   isOpen,
   onClose,
-  lulBalance,
+  cyonBalance,
   characterGender,
   ownedApparelIds,
   equippedTorsoItemId,
@@ -401,7 +402,8 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
 
   const isOwnedInBag = ownedApparelIds.includes(selectedItem.id);
   const isCurrentlyWearing = equippedTorsoItemId === selectedItem.id;
-  const canAfford = lulBalance >= selectedItem.priceLul;
+  const selectedPriceCyon = convertWardrobeLulPriceToCyon(selectedItem.priceLul);
+  const canAfford = cyonBalance >= selectedPriceCyon;
   const previewGlbPath =
     previewGender === 'female' ? selectedItem.femaleGlbPath : selectedItem.maleGlbPath;
 
@@ -425,7 +427,7 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
         tone: 'err',
         text:
           res.errorMessage ??
-          `Insufficient LUL (${lulBalance.toLocaleString()} / ${selectedItem.priceLul} LUL).`,
+          `Insufficient CerCoins (${cyonBalance.toLocaleString()} / ${selectedPriceCyon} CerCoins).`,
       });
     }
   };
@@ -459,7 +461,7 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
             <div className="px-3.5 py-1.5 rounded-full bg-white/10 border border-white/15 text-xs font-semibold flex items-center gap-2 text-white">
               <span className="text-white/60 font-medium">Balance</span>
               <span className="font-mono font-bold tabular-nums text-white">
-                {lulBalance.toLocaleString()} LUL
+                {cyonBalance.toLocaleString()} CerCoins
               </span>
             </div>
 
@@ -539,7 +541,7 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
                         ? 'Wearing'
                         : itemOwned
                           ? 'In Bag'
-                          : `${item.priceLul} LUL`}
+                          : `${convertWardrobeLulPriceToCyon(item.priceLul)} CerCoins`}
                     </div>
                   </div>
                 </button>
@@ -659,7 +661,7 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-xs text-white/55 font-medium">Boutique Price</span>
                 <span className="text-xl font-bold font-mono tabular-nums text-white">
-                  {selectedItem.priceLul} LUL
+                  {selectedPriceCyon} CerCoins
                 </span>
               </div>
 
@@ -690,8 +692,8 @@ export const FashionBoutiqueModal: React.FC<FashionBoutiqueModalProps> = ({
                   <ShoppingBag className="w-4 h-4 shrink-0" />
                   <span>
                     {canAfford
-                      ? `Buy Top — ${selectedItem.priceLul} LUL (Send to Bag)`
-                      : `Need ${selectedItem.priceLul} LUL (${lulBalance.toLocaleString()} LUL Available)`}
+                      ? `Buy Top — ${selectedPriceCyon} CerCoins (Send to Bag)`
+                      : `Need ${selectedPriceCyon} CerCoins (${cyonBalance.toLocaleString()} CerCoins Available)`}
                   </span>
                 </button>
               ) : (

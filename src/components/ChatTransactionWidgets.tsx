@@ -161,9 +161,9 @@ export function InlineExchangePanel({
     <div className="space-y-2.5">
       <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-slate-500 flex-wrap">
         <span>
-          Rate: <strong className="text-sky-600">{rateLul} LUL = {rateCyon} CYON</strong>
+          Rate: <strong className="text-sky-600">{rateLul} CerBucks = {rateCyon} CerCoins</strong>
         </span>
-        <span>Balance: {lulBalance.toLocaleString()} LUL</span>
+        <span>Balance: {lulBalance.toLocaleString()} CerBucks</span>
       </div>
 
       {!walletConnected ? (
@@ -184,7 +184,7 @@ export function InlineExchangePanel({
                   }}
                   className="px-2.5 py-1 rounded-full bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200/80 text-[10px] font-semibold cursor-pointer transition-colors"
                 >
-                  {presetVal} LUL
+                  {presetVal} CerBucks
                 </button>
               );
             })}
@@ -213,11 +213,11 @@ export function InlineExchangePanel({
                 setDoneMsg(null);
               }}
               onKeyDown={(e) => e.stopPropagation()}
-              aria-label="LUL amount to exchange"
+              aria-label="CerBucks amount to exchange"
               className="w-28 px-3 py-1.5 rounded-xl bg-slate-50 text-slate-900 border border-slate-200/90 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-sky-400 focus:bg-white"
             />
             <span className="text-xs font-semibold text-emerald-600">
-              -&gt; +{cyonOut} CYON
+              -&gt; +{cyonOut} CerCoins
             </span>
             <button
               type="button"
@@ -227,7 +227,7 @@ export function InlineExchangePanel({
                 if (!canExchange) return;
                 soundEngine.playUiClick();
                 onExchangeLulToCyon(lulSpent, cyonOut);
-                const msg = `Exchanged ${lulSpent} LUL for +${cyonOut} CYON.`;
+                const msg = `Exchanged ${lulSpent} CerBucks for +${cyonOut} CerCoins.`;
                 setDoneMsg(msg);
                 onNotifySpeech(msg);
               }}
@@ -242,7 +242,7 @@ export function InlineExchangePanel({
           </div>
           {!quote.canExchange && (
             <div className="text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200/80 rounded-xl px-3 py-1.5">
-              Shop CYON reserve is too low ({marketState.treasuryCyon} CYON). Support shop with 300 LUL to refill.
+              Shop CerCoins reserve is too low ({marketState.treasuryCyon} CerCoins). Support shop with 300 CerBucks to refill.
             </div>
           )}
           {doneMsg && (
@@ -1054,7 +1054,7 @@ export const ChatActionCard: React.FC<
       : null;
 
   const titleByKind: Record<NpcChatTransactionIntent['kind'], string> = {
-    exchange_lul_cyon: 'In-chat exchange · LUL -> CYON',
+    exchange_lul_cyon: 'In-chat exchange · CerBucks -> CerCoins',
     swap_near_respite: 'In-chat swap · NEAR -> RESPITE',
     buy_house: 'In-chat house deal',
     buy_catalog_item: matchedItem ? `Quick buy · ${matchedItem.name}` : 'Quick item deal',
@@ -1236,7 +1236,7 @@ export const ChatActionCard: React.FC<
       {intent.kind === 'invest_shop' && (
         <div className="space-y-2.5">
           <div className="text-[11px] font-medium text-slate-600">
-            The shop holds <strong className="text-sky-600">{props.marketState.treasuryCyon} CYON</strong>. Back the shop with 300 LUL to receive +45 CYON and a 15% catalog discount.
+            The shop holds <strong className="text-sky-600">{props.marketState.treasuryCyon} CerCoins</strong>. Back the shop with 300 LUL to receive +45 CYON and a 15% catalog discount.
           </div>
           {!props.walletConnected ? (
             <GuestSignInStrip onConnectWallet={props.onConnectWallet} />
@@ -1249,7 +1249,7 @@ export const ChatActionCard: React.FC<
                 soundEngine.playPickup();
                 props.onInvestInMerchant();
                 props.onNotifySpeech(
-                  'Thank you! Shop reserves refilled, +45 CYON added, and your 15% catalog discount is active.',
+                  'Thank you! Shop reserves refilled, +45 CerCoins added, and your 15% catalog discount is active.',
                 );
               }}
               className={`px-3.5 py-1.5 rounded-full text-[11px] font-semibold shadow-xs transition-colors ${
@@ -1258,7 +1258,7 @@ export const ChatActionCard: React.FC<
                   : 'bg-slate-200 text-slate-400 cursor-not-allowed'
               }`}
             >
-              Support shop (300 LUL)
+              Support shop (300 CerBucks)
             </button>
           )}
         </div>
@@ -1267,7 +1267,7 @@ export const ChatActionCard: React.FC<
       {intent.kind === 'claim_welcome' && (
         <div className="space-y-2.5">
           <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-slate-600">
-            <span>Starter Pack: 0.30 NEAR + 100 LUL + 20 CYON</span>
+            <span>Starter Pack: 0.30 NEAR + 100 CerBucks + 20 CerCoins</span>
             {props.hanaWelcomeNearClaimed && (
               <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200/80 text-[10px] font-semibold">
                 Claimed
@@ -1287,7 +1287,7 @@ export const ChatActionCard: React.FC<
                 try {
                   const res = await props.onClaimHanaWelcomeNear!();
                   const msg = res.ok
-                    ? `${res.amountNear.toFixed(2)} NEAR + 100 LUL + 20 CYON added!`
+                    ? `${res.amountNear.toFixed(2)} NEAR + 100 CerBucks + 20 CerCoins added!`
                     : res.error || 'Could not claim starter pack right now.';
                   setBonusResult(msg);
                   props.onNotifySpeech(msg);
@@ -1597,8 +1597,8 @@ export const QuickShopChatModal: React.FC<
             </button>
           </div>
           <div className="text-[10.5px] font-semibold text-slate-600 flex items-center gap-2">
-            <span>{props.lulBalance.toLocaleString()} LUL</span>
-            <span>{props.cyonBalance.toLocaleString()} CYON</span>
+            <span>{props.lulBalance.toLocaleString()} CerBucks</span>
+            <span>{props.cyonBalance.toLocaleString()} CerCoins</span>
             <span>{props.respiteBalance.toLocaleString()} R</span>
           </div>
         </div>
@@ -1609,7 +1609,7 @@ export const QuickShopChatModal: React.FC<
               <div className="p-4 rounded-2xl bg-white text-slate-900 border border-slate-200/70 shadow-sm space-y-2.5">
                 <div className="text-xs font-semibold text-sky-600 flex items-center gap-1.5">
                   <Coins className="w-4 h-4" aria-hidden="true" />
-                  <span>Exchange LUL -&gt; CYON</span>
+                  <span>Exchange CerBucks -&gt; CerCoins</span>
                 </div>
                 <InlineExchangePanel
                   marketState={props.marketState}

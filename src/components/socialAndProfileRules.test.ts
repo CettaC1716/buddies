@@ -9,7 +9,8 @@ import {
   ChatMessage,
   NearbyEntityUser,
 } from './SocialChatModal';
-import { getPhotoCropClassName, PROFILE_PHOTO_PRESETS } from './CharacterProfileModal';
+import { getPhotoCropClassName } from './CharacterProfileModal';
+import { isLegacyRemovedAvatarUrl } from '../game/npcPortraitRegistry';
 
 describe('SocialChatModal & CharacterProfileModal pure rules', () => {
   it('excludes NPCs (Hana, Kai, npc_* ids) and self from ONLINE LIST and PRIVATE whisper targets', () => {
@@ -100,10 +101,14 @@ describe('SocialChatModal & CharacterProfileModal pure rules', () => {
     assert.equal(deduped[1].text, 'Sure, let us go!');
   });
 
-  it('applies viewport-debug-hiding crop classes to default character portraits', () => {
-    const hiroCrop = getPhotoCropClassName('/assets/avatar_hiro.jpg');
-    assert.ok(hiroCrop.includes('scale-[1.34]'));
-    assert.ok(PROFILE_PHOTO_PRESETS.length >= 6);
+  it('sanitizes removed legacy profile photo URLs and centers live portraits', () => {
+    assert.equal(isLegacyRemovedAvatarUrl('/assets/kiosk/family_member_male.jpg'), true);
+    assert.equal(isLegacyRemovedAvatarUrl('/docs/hero-1-beach-pier.jpg'), true);
+    assert.equal(isLegacyRemovedAvatarUrl('data:image/jpeg;base64,test'), false);
+    assert.equal(
+      getPhotoCropClassName('data:image/jpeg;base64,test'),
+      'object-cover object-center',
+    );
   });
 
   it('triggers incoming chat notifications strictly for PRIVATE messages from other real players when their thread is not open', () => {

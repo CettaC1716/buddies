@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three';
 import {
   ArrowUpDown,
-  Camera,
   Check,
   ChevronDown,
   ChevronUp,
@@ -12,7 +11,6 @@ import {
   Flame,
   Footprints,
   Hand,
-  Layers,
   Lock,
   Maximize2,
   Music,
@@ -21,7 +19,6 @@ import {
   Play,
   Redo2,
   RotateCcw,
-  ScanFace,
   Shirt,
   ShoppingBag,
   SlidersHorizontal,
@@ -59,6 +56,8 @@ import {
   drawStylizedNoseOnCanvas,
 } from '../game/buddiesFaceCompositor';
 import {
+  DEFAULT_MALE_UNDERWEAR_ITEM_ID,
+  DEFAULT_WARDROBE_ANIM_SET_ID,
   EMPTY_WARDROBE_DRAFT,
   WARDROBE_CLOTHING_TINT_SWATCHES,
   WARDROBE_STUDIO_ITEMS,
@@ -69,6 +68,7 @@ import {
   getExternalWardrobeCatalogCount,
   getVisibleBuiltInWardrobePresets,
   getWardrobeCatalogItemById,
+  getWardrobeCatalogItemPriceCyon,
   isWardrobeItemCompatibleWithGender,
   isWardrobeItemOwned,
   loadExternalWardrobeCatalogs,
@@ -94,7 +94,6 @@ import {
   type WardrobeGlassPreference,
   type WardrobeHistoryState,
   type WardrobeOutfitDraft,
-  type WardrobePoseId,
   type WardrobeSavedPreset,
   type WardrobeSortMode,
   type WardrobeStudioCategoryId,
@@ -105,9 +104,10 @@ import {
   getCachedWardrobeItemThumbnail,
   renderWardrobeItemThumbnail,
 } from './wardrobe3dThumbnailRasterizer';
-import { PROFILE_IDENTITY_UPDATED_EVENT } from './CharacterProfileModal';
-
-const AVATAR_PHOTO_STORAGE_KEY = 'bb_player_avatar_photo_v1';
+import {
+  MOTION_SILHOUETTE_ORB_BG,
+  MotionSilhouetteThumb,
+} from './MotionSilhouetteThumb';
 
 export interface WardrobeStudioModalProps {
   isOpen: boolean;
@@ -116,10 +116,41 @@ export interface WardrobeStudioModalProps {
   lulBalance: number;
   ownedApparelIds: string[];
   initialDraft: WardrobeOutfitDraft;
+  initialDraftByGender?: Record<'male' | 'female', WardrobeOutfitDraft>;
   onChangeGender: (gender: 'male' | 'female') => void;
   onPurchaseItem: (item: WardrobeCatalogItem) => { ok: boolean; errorMessage?: string };
-  onComplete: (committedOwnedDraft: WardrobeOutfitDraft) => void;
+  onSyncAnimSet?: (animSetId: string) => void;
+  onComplete: (
+    committedOwnedDraft: WardrobeOutfitDraft,
+    committedByGender?: Record<'male' | 'female', WardrobeOutfitDraft>,
+  ) => void;
   onClose: () => void;
+}
+
+function BraToggleIcon({
+  slashed = false,
+  className = 'w-4 h-4',
+}: {
+  slashed?: boolean;
+  className?: string;
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.85}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M7.2 9.6 L7.8 4.8" />
+      <path d="M16.8 9.6 L16.2 4.8" />
+      <path d="M3.4 13.8 C3.4 11.1 5.3 9.4 7.4 9.6 C9.4 9.8 11 11.8 12 13.3 C13 11.8 14.6 9.8 16.6 9.6 C18.7 9.4 20.6 11.1 20.6 13.8 C20.6 16.3 18.4 17.6 15.6 17.6 C13.8 17.6 12.6 16.6 12 15.4 C11.4 16.6 10.2 17.6 8.4 17.6 C5.6 17.6 3.4 16.3 3.4 13.8 Z" />
+      {slashed && <line x1="3.5" y1="20.5" x2="20.5" y2="3.5" />}
+    </svg>
+  );
 }
 
 function createStudioDummyBuddyRig(rootGroup: THREE.Group, isSoftwareGl: boolean): BuddyCharacterRig {
@@ -426,13 +457,39 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
   characterGender,
   ownedApparelIds,
   initialDraft,
+  initialDraftByGender,
   onChangeGender,
   onPurchaseItem,
+  onSyncAnimSet,
   onComplete,
   onClose,
 }) => {
-  const [history, setHistory] = useState<WardrobeHistoryState>(() =>
-    createWardrobeHistory(initialDraft),
+  const [historyByGender, setHistoryByGender] = useState<
+    Record<'male' | 'female', WardrobeHistoryState>
+  >(() => ({
+    male: createWardrobeHistory(
+      initialDraftByGender?.male ??
+        (characterGender === 'male' ? initialDraft : EMPTY_WARDROBE_DRAFT),
+    ),
+    female: createWardrobeHistory(
+      initialDraftByGender?.female ??
+        (characterGender === 'female' ? initialDraft : EMPTY_WARDROBE_DRAFT),
+    ),
+  }));
+  const history = historyByGender[characterGender];
+  const setHistory = useCallback(
+    (updater: React.SetStateAction<WardrobeHistoryState>) => {
+      setHistoryByGender((prev) => {
+        const cur = prev[characterGender];
+        const next = typeof updater === 'function' ? updater(cur) : updater;
+        if (next === cur) return prev;
+        return {
+          ...prev,
+          [characterGender]: next,
+        };
+      });
+    },
+    [characterGender],
   );
   const [activeBottomTab, setActiveBottomTab] = useState<WardrobeBottomTabId>('outfit');
   const [activeCategory, setActiveCategory] = useState<WardrobeStudioCategoryId>('top');
@@ -441,15 +498,12 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
   const [filterMode, setFilterMode] = useState<WardrobeFilterMode>('all');
   const [sortMode, setSortMode] = useState<WardrobeSortMode>('featured');
   const [cameraFraming, setCameraFraming] = useState<WardrobeCameraFraming>('upper');
-  const activePoseId: WardrobePoseId = 'runway';
-  const [glassPreference, setGlassPreference] = useState<WardrobeGlassPreference>('auto');
+  const glassPreference: WardrobeGlassPreference = 'auto';
   const [isSoftwareGlDetected, setIsSoftwareGlDetected] = useState<boolean>(false);
   const [studioFrameMs, setStudioFrameMs] = useState<number>(16.6);
   const [savedPresets, setSavedPresets] = useState<WardrobeSavedPreset[]>([]);
   const [thumbMap, setThumbMap] = useState<Record<string, string>>({});
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
-  const [capturedSelfiePreviewUrl, setCapturedSelfiePreviewUrl] = useState<string | null>(null);
-  const [selfieFlashActive, setSelfieFlashActive] = useState<boolean>(false);
   const [externalCatalogRevision, setExternalCatalogRevision] = useState<number>(() =>
     getExternalWardrobeCatalogCount(),
   );
@@ -494,9 +548,6 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
   }, [isOpen, studioLayout.isPortraitSheet]);
 
   const stageHostRef = useRef<HTMLDivElement | null>(null);
-  const backdropImgRef = useRef<HTMLImageElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const captureSelfieFaceRef = useRef<(() => string | null) | null>(null);
   const rigRef = useRef<BuddyCharacterRig | null>(null);
   const activePoseActionRef = useRef<THREE.AnimationAction | null>(null);
   const framingRef = useRef<WardrobeCameraFraming>('upper');
@@ -546,8 +597,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       ? 'bg-[#111622]/86 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_28px_rgba(0,0,0,0.45)]'
       : 'bg-[#111622]/86 border border-white/22 shadow-[inset_0_1px_0_rgba(255,255,255,0.16),0_10px_28px_rgba(0,0,0,0.45)]';
 
-  const showNotice = useCallback((msg: string, previewUrl?: string | null) => {
-    setCapturedSelfiePreviewUrl(previewUrl ?? null);
+  const showNotice = useCallback((msg: string) => {
     setStatusNotice(msg);
   }, []);
 
@@ -555,7 +605,6 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     if (!statusNotice) return;
     const t = window.setTimeout(() => {
       setStatusNotice(null);
-      setCapturedSelfiePreviewUrl(null);
     }, 3200);
     return () => window.clearTimeout(t);
   }, [statusNotice]);
@@ -566,13 +615,55 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     dragStateRef.current.zoomDelta = 0;
   }, [cameraFraming]);
 
-  // Reset history & load user presets whenever Wardrobe Studio opens
+  // Reset history & load user presets whenever Wardrobe Studio opens or account switches
+  const wasOpenRef = useRef<boolean>(false);
+  const lastOpenedAccountKeyRef = useRef<string>(accountKey);
   useEffect(() => {
-    if (!isOpen) return;
-    setHistory(createWardrobeHistory(initialDraft));
-    setSavedPresets(loadSavedWardrobePresets(accountKey));
-    setStatusNotice(null);
-  }, [isOpen, initialDraft, accountKey]);
+    if (!isOpen) {
+      wasOpenRef.current = false;
+      return;
+    }
+    const justOpened = !wasOpenRef.current;
+    const accountChanged = lastOpenedAccountKeyRef.current !== accountKey;
+    if (justOpened || accountChanged) {
+      wasOpenRef.current = true;
+      lastOpenedAccountKeyRef.current = accountKey;
+      setHistoryByGender({
+        male: createWardrobeHistory(
+          initialDraftByGender?.male ??
+            (characterGender === 'male' ? initialDraft : EMPTY_WARDROBE_DRAFT),
+        ),
+        female: createWardrobeHistory(
+          initialDraftByGender?.female ??
+            (characterGender === 'female' ? initialDraft : EMPTY_WARDROBE_DRAFT),
+        ),
+      });
+      setSavedPresets(loadSavedWardrobePresets(accountKey));
+      setStatusNotice(null);
+    }
+  }, [isOpen, initialDraft, initialDraftByGender, characterGender, accountKey]);
+
+  // Keep owned animation set synchronized live between Wardrobe and in-game avatar
+  useEffect(() => {
+    if (!isOpen || !onSyncAnimSet) return;
+    const candidateId = draft.animSetId ?? DEFAULT_WARDROBE_ANIM_SET_ID;
+    const item = getWardrobeCatalogItemById(candidateId);
+    if (
+      item &&
+      item.slot === 'style_anim' &&
+      isWardrobeItemCompatibleWithGender(item, characterGender) &&
+      isWardrobeItemOwned(item, ownedApparelIds)
+    ) {
+      onSyncAnimSet(item.id);
+    }
+  }, [
+    isOpen,
+    draft.animSetId,
+    characterGender,
+    ownedApparelIds,
+    externalCatalogRevision,
+    onSyncAnimSet,
+  ]);
 
   // Pause main city world WebGL loop while full-screen Wardrobe Studio is open (0% background GPU cost)
   useEffect(() => {
@@ -720,18 +811,6 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     activePoseActionRef.current = nextAction;
   }, []);
 
-  const applyStudioPoseClip = useCallback(
-    (poseId: WardrobePoseId) => {
-      const candidateClipNames: Record<WardrobePoseId, string[]> = {
-        runway: ['nadia_idle.001', 'hana_idle.001', 'mira_idle.001', 'idle.001'],
-        relaxed: ['hana_idle.001', 'mira_idle.001', 'kai_idle.001', 'idle.001'],
-        casual: ['idle.001', 'bima_idle.001', 'kai_idle.001'],
-      };
-      applyStudioClipCandidates(candidateClipNames[poseId]);
-    },
-    [applyStudioClipCandidates],
-  );
-
   // Dedicated 3D Dressing Room Studio WebGL Stage
   useEffect(() => {
     if (!isOpen) return;
@@ -779,7 +858,6 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
 
     const canvas = renderer.domElement;
     canvas.className = 'block w-full h-full touch-none select-none cursor-grab active:cursor-grabbing';
-    canvasRef.current = canvas;
     host.innerHTML = '';
     host.appendChild(canvas);
 
@@ -887,12 +965,10 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
         if (!disposed && extClip) {
           applyStudioClipCandidates([extClip.name]);
         } else if (!disposed) {
-          applyStudioPoseClip(activePoseId);
+          applyStudioClipCandidates(animStyle.clipCandidates);
         }
-      } else if (currentDraft.animSetId) {
-        applyStudioClipCandidates(animStyle.clipCandidates);
       } else {
-        applyStudioPoseClip(activePoseId);
+        applyStudioClipCandidates(animStyle.clipCandidates);
       }
       if (!disposed) setIsAvatarLoading(false);
     })();
@@ -1160,122 +1236,8 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     };
     rafId = window.requestAnimationFrame(tick);
 
-    captureSelfieFaceRef.current = () => {
-      if (disposed) return null;
-      try {
-        turntable.updateWorldMatrix(true, true);
-        const headBone = studioRig.customGlbController?.bones.get('Head') ?? null;
-        const headPos = new THREE.Vector3(0, CAMERA_FRAMING_SPECS.face.targetY - 0.14, 0);
-        if (headBone) {
-          headBone.getWorldPosition(headPos);
-        }
-        const faceCenterX = THREE.MathUtils.clamp(headPos.x, -0.45, 0.45);
-        const faceCenterY = THREE.MathUtils.clamp(
-          headPos.y + 0.14,
-          2.7,
-          3.45,
-        );
-        const faceCenterZ = THREE.MathUtils.clamp(headPos.z, -0.45, 0.45);
-
-        const selfieCam = new THREE.PerspectiveCamera(27, 1, 0.1, 40);
-        selfieCam.position.set(faceCenterX, faceCenterY + 0.02, faceCenterZ + 1.9);
-        selfieCam.lookAt(faceCenterX, faceCenterY, faceCenterZ);
-        selfieCam.updateMatrixWorld();
-
-        const cssSquare = Math.max(128, Math.floor(Math.min(stageWidth, stageHeight, 440)));
-        const actualDpr = renderer.getPixelRatio();
-        const snapPx = Math.min(canvas.width, canvas.height, Math.round(cssSquare * actualDpr));
-        if (snapPx < 32) return null;
-
-        setBlitzStylizedCharViewportSize(cssSquare, cssSquare);
-        renderer.setViewport(0, 0, cssSquare, cssSquare);
-        renderer.setScissor(0, 0, cssSquare, cssSquare);
-        renderer.setScissorTest(true);
-        renderer.clear();
-        renderer.render(scene, selfieCam);
-
-        const outSize = 320;
-        const out = document.createElement('canvas');
-        out.width = outSize;
-        out.height = outSize;
-        const ctx = out.getContext('2d');
-        let dataUrl: string | null = null;
-
-        if (ctx) {
-          // Warm dressing-room portrait gradient backing
-          const bg = ctx.createRadialGradient(
-            outSize * 0.35,
-            outSize * 0.3,
-            outSize * 0.08,
-            outSize * 0.5,
-            outSize * 0.5,
-            outSize * 0.78,
-          );
-          bg.addColorStop(0, '#4f373f');
-          bg.addColorStop(0.58, '#2d1f26');
-          bg.addColorStop(1, '#181115');
-          ctx.fillStyle = bg;
-          ctx.fillRect(0, 0, outSize, outSize);
-
-          // Softly blend the cozy studio backdrop behind the avatar if readable
-          const backdropEl = backdropImgRef.current;
-          if (backdropEl && backdropEl.complete && backdropEl.naturalWidth > 0) {
-            try {
-              ctx.save();
-              ctx.globalAlpha = 0.62;
-              const bw = backdropEl.naturalWidth;
-              const bh = backdropEl.naturalHeight;
-              const cropSide = Math.min(bw, bh) * 0.72;
-              const bx = Math.max(0, bw * 0.35 - cropSide * 0.5);
-              const by = Math.max(0, bh * 0.14);
-              ctx.drawImage(backdropEl, bx, by, cropSide, cropSide, 0, 0, outSize, outSize);
-              ctx.restore();
-
-              // Soft portrait vignette over backdrop so the face pops cleanly
-              const vig = ctx.createRadialGradient(
-                outSize * 0.5,
-                outSize * 0.48,
-                outSize * 0.25,
-                outSize * 0.5,
-                outSize * 0.5,
-                outSize * 0.72,
-              );
-              vig.addColorStop(0, 'rgba(20, 14, 18, 0.05)');
-              vig.addColorStop(1, 'rgba(14, 10, 14, 0.45)');
-              ctx.fillStyle = vig;
-              ctx.fillRect(0, 0, outSize, outSize);
-            } catch {
-              // Ignore cross-origin canvas taint fallback; warm gradient remains
-            }
-          }
-
-          // WebGL bottom-left (0, 0) maps to 2D canvas bottom-left (0, canvas.height - snapPx)
-          const srcY = Math.max(0, canvas.height - snapPx);
-          ctx.drawImage(canvas, 0, srcY, snapPx, snapPx, 0, 0, outSize, outSize);
-          dataUrl = out.toDataURL('image/jpeg', 0.9);
-        }
-
-        // Restore live viewport immediately so there is zero visible flicker
-        renderer.setScissorTest(false);
-        renderer.setViewport(0, 0, stageWidth, stageHeight);
-        setBlitzStylizedCharViewportSize(stageWidth, stageHeight);
-        renderer.clear();
-        renderer.render(scene, camera);
-
-        return dataUrl;
-      } catch {
-        renderer.setScissorTest(false);
-        renderer.setViewport(0, 0, stageWidth, stageHeight);
-        setBlitzStylizedCharViewportSize(stageWidth, stageHeight);
-        renderer.clear();
-        renderer.render(scene, camera);
-        return null;
-      }
-    };
-
     return () => {
       disposed = true;
-      captureSelfieFaceRef.current = null;
       window.cancelAnimationFrame(rafId);
       window.removeEventListener('resize', onResize);
       window.removeEventListener('orientationchange', onResize);
@@ -1292,7 +1254,6 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       studioRig.customGlbController?.mixer.stopAllAction();
       rigRef.current = null;
       activePoseActionRef.current = null;
-      canvasRef.current = null;
 
       floorShadowGeo.dispose();
       floorShadowMat.dispose();
@@ -1382,6 +1343,8 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     draft.beardId,
     draft.underwearId,
     draft.corewearId,
+    draft.hideBaseUnderwear,
+    draft.hideBaseBra,
     draft.noseStyleId,
     draft.lipScale,
     draft.lipOffsetY,
@@ -1449,16 +1412,15 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
           },
         );
       }
-    } else if (draft.animSetId || (isPreviewingAnimSetState && animSetPreviewState !== 'idle')) {
-      applyStudioClipCandidates(targetCandidates);
     } else {
-      applyStudioPoseClip(activePoseId);
+      applyStudioClipCandidates(targetCandidates);
     }
     return () => {
       cancelled = true;
     };
   }, [
     isOpen,
+    isAvatarLoading,
     activeBottomTab,
     activeStyleCategory,
     animSetPreviewState,
@@ -1468,9 +1430,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     draft.stylePoseId,
     draft.styleActionId,
     draft.stylePairedId,
-    activePoseId,
     applyStudioClipCandidates,
-    applyStudioPoseClip,
     draft,
     externalCatalogRevision,
   ]);
@@ -1503,13 +1463,18 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
   const handleSelectPreset = useCallback(
     (preset: WardrobeSavedPreset) => {
       soundEngine.playUiConfirm();
-      if (
-        (preset.gender === 'male' || preset.gender === 'female') &&
-        preset.gender !== characterGender
-      ) {
-        onChangeGender(preset.gender);
+      const targetGender: 'male' | 'female' =
+        preset.gender === 'male' || preset.gender === 'female' ? preset.gender : characterGender;
+      if (targetGender !== characterGender) {
+        onChangeGender(targetGender);
       }
-      setHistory((prev) => pushWardrobeDraft(prev, { ...EMPTY_WARDROBE_DRAFT, ...preset.draft }));
+      setHistoryByGender((prev) => ({
+        ...prev,
+        [targetGender]: pushWardrobeDraft(prev[targetGender], {
+          ...EMPTY_WARDROBE_DRAFT,
+          ...preset.draft,
+        }),
+      }));
       showNotice(`Loaded character "${preset.name}"`);
     },
     [characterGender, onChangeGender, showNotice],
@@ -1546,71 +1511,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     soundEngine.playUiClick();
     setHistory((prev) => pushWardrobeDraft(prev, { ...EMPTY_WARDROBE_DRAFT }));
     showNotice('Reset outfit to Starter Essentials');
-  }, [showNotice]);
-
-  const triggerSelfieShutterFlash = useCallback(() => {
-    setSelfieFlashActive(true);
-    window.setTimeout(() => setSelfieFlashActive(false), 180);
-  }, []);
-
-  const handleCaptureProfileSnapshot = useCallback(() => {
-    const glCanvas = canvasRef.current;
-    if (!glCanvas) return;
-    soundEngine.playUiConfirm();
-    try {
-      const out = document.createElement('canvas');
-      out.width = 256;
-      out.height = 256;
-      const ctx = out.getContext('2d');
-      if (!ctx) return;
-
-      // Warm studio gradient backing behind transparent avatar capture
-      const bg = ctx.createLinearGradient(0, 0, 256, 256);
-      bg.addColorStop(0, '#3e2d34');
-      bg.addColorStop(1, '#1d1519');
-      ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, 256, 256);
-
-      const srcW = glCanvas.width;
-      const srcH = glCanvas.height;
-      const cropSize = Math.min(srcW, srcH) * 0.72;
-      const sx = Math.max(0, srcW * 0.37 - cropSize * 0.5);
-      const sy = Math.max(0, srcH * 0.14);
-      ctx.drawImage(glCanvas, sx, sy, cropSize, cropSize, 0, 0, 256, 256);
-
-      const dataUrl = out.toDataURL('image/jpeg', 0.88);
-      window.localStorage.setItem(AVATAR_PHOTO_STORAGE_KEY, dataUrl);
-      window.dispatchEvent(new CustomEvent(PROFILE_IDENTITY_UPDATED_EVENT));
-      triggerSelfieShutterFlash();
-      showNotice('Photo saved to your Profile Avatar', dataUrl);
-    } catch {
-      showNotice('Could not save snapshot on this browser');
-    }
-  }, [showNotice, triggerSelfieShutterFlash]);
-
-  const handleCaptureFaceSelfie = useCallback(() => {
-    setCameraFraming('face');
-    const captureFn = captureSelfieFaceRef.current;
-    if (!captureFn) {
-      soundEngine.playUiClick();
-      showNotice('Avatar preview is still loading');
-      return;
-    }
-    const dataUrl = captureFn();
-    if (!dataUrl) {
-      showNotice('Could not capture face selfie on this browser');
-      return;
-    }
-    soundEngine.playUiConfirm();
-    try {
-      window.localStorage.setItem(AVATAR_PHOTO_STORAGE_KEY, dataUrl);
-      window.dispatchEvent(new CustomEvent(PROFILE_IDENTITY_UPDATED_EVENT));
-      triggerSelfieShutterFlash();
-      showNotice('Face selfie saved as Profile Photo', dataUrl);
-    } catch {
-      showNotice('Could not save face selfie on this browser');
-    }
-  }, [showNotice, triggerSelfieShutterFlash]);
+  }, [setHistory, showNotice]);
 
   const handleBuyPreviewItem = useCallback(
     (item: WardrobeCatalogItem) => {
@@ -1620,7 +1521,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
         showNotice(`Unlocked "${item.name}" and added to Owned Wardrobe`);
       } else {
         soundEngine.playUiClick();
-        showNotice(res.errorMessage || 'Not enough $LUL');
+        showNotice(res.errorMessage || 'Not enough CerCoins');
       }
     },
     [onPurchaseItem, showNotice],
@@ -1628,9 +1529,19 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
 
   const handleCommitComplete = useCallback(() => {
     soundEngine.playUiConfirm();
-    const ownedOnly = sanitizeDraftToOwnedOnly(draft, ownedApparelIds, characterGender);
-    onComplete(ownedOnly);
-  }, [draft, ownedApparelIds, characterGender, onComplete]);
+    const safeMale = sanitizeDraftToOwnedOnly(
+      historyByGender.male.present,
+      ownedApparelIds,
+      'male',
+    );
+    const safeFemale = sanitizeDraftToOwnedOnly(
+      historyByGender.female.present,
+      ownedApparelIds,
+      'female',
+    );
+    const ownedOnly = characterGender === 'male' ? safeMale : safeFemale;
+    onComplete(ownedOnly, { male: safeMale, female: safeFemale });
+  }, [historyByGender, ownedApparelIds, characterGender, onComplete]);
 
   const handleCycleFilter = useCallback(() => {
     soundEngine.playUiClick();
@@ -1643,22 +1554,6 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       prev === 'featured' ? 'price_asc' : prev === 'price_asc' ? 'price_desc' : 'featured',
     );
   }, []);
-
-  const handleCycleGlass = useCallback(() => {
-    soundEngine.playUiClick();
-    setGlassPreference((prev) => {
-      const next: WardrobeGlassPreference =
-        prev === 'auto' ? 'smoked_pseudo' : prev === 'smoked_pseudo' ? 'frosted_blur' : 'auto';
-      showNotice(
-        next === 'smoked_pseudo'
-          ? 'Smoked Glass (0% FPS overhead)'
-          : next === 'frosted_blur'
-            ? 'Frosted Glass Blur'
-            : 'Glass: Auto',
-      );
-      return next;
-    });
-  }, [showNotice]);
 
   const handleResetFace = useCallback(() => {
     soundEngine.playUiClick();
@@ -1762,12 +1657,15 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     setHistory((prev) =>
       pushWardrobeDraft(prev, {
         ...prev.present,
-        animSetId: null,
+        animSetId: DEFAULT_WARDROBE_ANIM_SET_ID,
         dancePoseId: null,
+        stylePoseId: null,
+        styleActionId: null,
+        stylePairedId: null,
         clothingTintHex: null,
       }),
     );
-    showNotice('Reset animation, dance & dye to Starter');
+    showNotice('Reset animation, dance & dye to Classic Core');
   }, [showNotice]);
 
   const handleBottomTabClick = useCallback(
@@ -1826,9 +1724,18 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
             Boolean(draft.hideBaseUnderwear)
           );
         }
-        return item.underwearSubSlot === 'corewear'
-          ? draft.corewearId === item.id
-          : draft.underwearId === item.id;
+        if (item.underwearSubSlot === 'corewear') {
+          return draft.corewearId === item.id;
+        }
+        if (
+          characterGender === 'male' &&
+          item.id === DEFAULT_MALE_UNDERWEAR_ITEM_ID &&
+          (draft.underwearId ?? null) === null &&
+          !draft.hideBaseUnderwear
+        ) {
+          return true;
+        }
+        return draft.underwearId === item.id;
       }
       if (item.slot === 'body_shape') {
         return item.isStarterDefault ? draft.bodyShapeId === null : draft.bodyShapeId === item.id;
@@ -1869,7 +1776,8 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
           : currentNose === item.id;
       }
       if (item.slot === 'style_anim') {
-        return item.isStarterDefault ? draft.animSetId === null : draft.animSetId === item.id;
+        const effectiveAnimSetId = draft.animSetId ?? DEFAULT_WARDROBE_ANIM_SET_ID;
+        return effectiveAnimSetId === item.id;
       }
       if (item.slot === 'style_dance') {
         return item.isStarterDefault ? draft.dancePoseId === null : draft.dancePoseId === item.id;
@@ -1891,7 +1799,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       }
       return false;
     },
-    [draft],
+    [draft, characterGender],
   );
 
   const partitionedSlotItems = useMemo(() => {
@@ -2064,8 +1972,12 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       item.slot === 'face_facepaint' ||
       item.slot === 'face_beard' ||
       item.slot === 'face_nose';
-    const isStyleDanceOrPose =
-      item.slot === 'style_dance' || item.slot === 'style_pose' || item.slot === 'style_action';
+    const isStyleMotionItem =
+      item.slot === 'style_anim' ||
+      item.slot === 'style_dance' ||
+      item.slot === 'style_pose' ||
+      item.slot === 'style_action' ||
+      item.slot === 'style_paired';
     return (
       <button
         key={item.id}
@@ -2073,7 +1985,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
         data-wardrobe-item-btn={item.id}
         onClick={() => handleSelectItem(item)}
         className="group flex flex-col items-center gap-1.5 text-center cursor-pointer focus-visible:outline-none"
-        title={`${item.name} · ${owned ? 'Owned' : `${item.priceLul} $LUL`}`}
+        title={`${item.name} · ${owned ? 'Owned' : `${getWardrobeCatalogItemPriceCyon(item)} CerCoins`}`}
       >
         <div
           className={`relative ${orbSizeClass} rounded-full overflow-hidden flex items-center justify-center transition-transform duration-150 group-hover:scale-[1.04] group-active:scale-95 ${
@@ -2082,7 +1994,9 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
               : 'ring-1 ring-white/20 group-hover:ring-white/45'
           }`}
           style={{
-            background: `radial-gradient(circle at 32% 28%, ${item.swatchGradient[0]}, ${item.swatchGradient[1]})`,
+            background: isStyleMotionItem
+              ? MOTION_SILHOUETTE_ORB_BG
+              : `radial-gradient(circle at 32% 28%, ${item.swatchGradient[0]}, ${item.swatchGradient[1]})`,
           }}
         >
           {item.slot === 'body_shape' ? (
@@ -2104,38 +2018,12 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                 <span className="text-[9px] font-semibold tracking-wide uppercase">Bare</span>
               </div>
             )
-          ) : item.slot === 'style_paired' ? (
-            <div className="flex flex-col items-center justify-center gap-1 text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">
-              <Users className="w-6 h-6 stroke-[2]" />
-              <span className="text-[9px] font-semibold tracking-wide uppercase text-white/90">
-                {item.pairedAnim?.vibeTag ?? 'Duo'}
-              </span>
-            </div>
-          ) : item.slot === 'style_anim' ? (
-            <div className="flex flex-col items-center justify-center gap-1 text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">
-              <Play className="w-6 h-6 fill-white/90 stroke-[1.75]" />
-              <span className="text-[9px] font-semibold tracking-wide uppercase text-white/90">
-                {item.animSet?.vibeTag ?? 'Anim'}
-              </span>
-            </div>
-          ) : isStyleDanceOrPose ? (
-            <div className="flex flex-col items-center justify-center gap-1 text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.45)]">
-              {item.slot === 'style_action' ||
-              item.dancePose?.danceKind === 'wave' ||
-              item.dancePose?.danceKind === 'salute' ? (
-                <Hand className="w-6 h-6 stroke-[2]" />
-              ) : item.dancePose?.danceKind === 'cheer' || item.dancePose?.danceKind === 'hiphop' ? (
-                <Flame className="w-6 h-6 stroke-[2]" />
-              ) : item.slot === 'style_pose' ||
-                (item.dancePose?.danceKind === 'none' && !item.dancePose?.animGlbUrl) ? (
-                <PersonStanding className="w-6 h-6 stroke-[2]" />
-              ) : (
-                <Music className="w-6 h-6 stroke-[2]" />
-              )}
-              <span className="text-[9px] font-semibold tracking-wide uppercase text-white/90">
-                {item.dancePose?.vibeTag ?? 'Motion'}
-              </span>
-            </div>
+          ) : isStyleMotionItem ? (
+            <MotionSilhouetteThumb
+              wardrobeItemId={item.id}
+              alt={item.name}
+              isPaired={item.slot === 'style_paired'}
+            />
           ) : thumbUrl ? (
             <img
               src={thumbUrl}
@@ -2176,7 +2064,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                 : item.priceLul === 0
                   ? 'Free'
                   : 'Owned'
-              : `${item.priceLul} $LUL`}
+              : `${getWardrobeCatalogItemPriceCyon(item)} CerCoins`}
           </div>
         </div>
       </button>
@@ -2187,32 +2075,6 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
     <div
       className={`inline-flex w-fit items-center gap-0.5 px-1.5 sm:px-2 py-1 rounded-full shrink-0 ${glassPillClass}`}
     >
-      <button
-        type="button"
-        onClick={handleCaptureProfileSnapshot}
-        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white/85 hover:text-white hover:bg-white/12 transition-colors cursor-pointer shrink-0"
-        title="Capture Snapshot to Profile Avatar"
-        aria-label="Take Profile Photo"
-      >
-        <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-      </button>
-
-      <span className="w-px h-4 bg-white/15 mx-0.5 sm:mx-1 shrink-0" aria-hidden="true" />
-
-      <button
-        type="button"
-        data-wardrobe-selfie-btn="true"
-        onClick={handleCaptureFaceSelfie}
-        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
-          cameraFraming === 'face'
-            ? 'bg-white text-slate-950'
-            : 'text-white/85 hover:text-white hover:bg-white/12'
-        }`}
-        title="Take Face Selfie for Profile Photo"
-        aria-label="Take Face Selfie for Profile Photo"
-      >
-        <ScanFace className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-      </button>
       <button
         type="button"
         onClick={() => {
@@ -2275,19 +2137,39 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
         <Redo2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
       </button>
 
-      <span className="w-px h-4 bg-white/15 mx-0.5 sm:mx-1 shrink-0" aria-hidden="true" />
-
-      <button
-        type="button"
-        onClick={handleCycleGlass}
-        className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white/85 hover:text-white hover:bg-white/12 transition-colors cursor-pointer shrink-0"
-        title={`Glass Style: ${
-          resolvedGlassMode === 'smoked_pseudo' ? 'Smoked (0% FPS overhead)' : 'Frosted Blur'
-        }`}
-        aria-label="Toggle Glass Style"
-      >
-        <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-      </button>
+      {characterGender === 'female' && (
+        <>
+          <span className="w-px h-4 bg-white/15 mx-0.5 sm:mx-1 shrink-0" aria-hidden="true" />
+          <button
+            type="button"
+            data-wardrobe-bra-toggle="true"
+            aria-pressed={Boolean(draft.hideBaseBra)}
+            onClick={() => {
+              soundEngine.playUiClick();
+              const nextNoBra = !Boolean(draft.hideBaseBra);
+              setHistory((prev) =>
+                pushWardrobeDraft(prev, {
+                  ...prev.present,
+                  hideBaseBra: nextNoBra,
+                }),
+              );
+              showNotice(nextNoBra ? 'No Bra active' : 'Bra restored');
+            }}
+            className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+              draft.hideBaseBra
+                ? 'bg-white text-slate-950'
+                : 'text-white/85 hover:text-white hover:bg-white/12'
+            }`}
+            title={draft.hideBaseBra ? 'No Bra (Click to Show Bra)' : 'Bra On (Click for No Bra)'}
+            aria-label={draft.hideBaseBra ? 'No Bra' : 'Toggle No Bra'}
+          >
+            <BraToggleIcon
+              slashed={Boolean(draft.hideBaseBra)}
+              className="w-3.5 h-3.5 sm:w-4 sm:h-4"
+            />
+          </button>
+        </>
+      )}
     </div>
   );
 
@@ -2334,7 +2216,6 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
       {/* 1. Dedicated Cozy Warm Dressing Room Studio Backdrop */}
       <div className="absolute inset-0 bg-[#1a1316]">
         <img
-          ref={backdropImgRef}
           src={studioBackdropUrl}
           alt="Wardrobe Dressing Room"
           referrerPolicy="no-referrer"
@@ -2388,11 +2269,6 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
         </>
       )}
 
-      {/* Brief camera shutter flash when capturing face selfie */}
-      {selfieFlashActive && (
-        <div className="pointer-events-none absolute inset-0 z-[18] bg-white/30 transition-opacity duration-150" />
-      )}
-
       {/* Subtle status toast under top toolbar */}
       {statusNotice && (
         <div
@@ -2405,13 +2281,6 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
           <div
             className={`px-3.5 py-1.5 rounded-full text-xs font-medium text-white/95 flex items-center gap-2 ${glassPillClass}`}
           >
-            {capturedSelfiePreviewUrl && (
-              <img
-                src={capturedSelfiePreviewUrl}
-                alt="Profile photo preview"
-                className="w-6 h-6 rounded-full object-cover border border-white/40 shrink-0"
-              />
-            )}
             <span className="truncate">{statusNotice}</span>
           </div>
         </div>
@@ -3580,6 +3449,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                             underwearId: nextRemove ? null : prev.present.underwearId,
                             corewearId: nextRemove ? null : prev.present.corewearId,
                             hideBaseUnderwear: nextRemove,
+                            hideBaseBra: nextRemove,
                           }),
                         );
                         showNotice(
@@ -3681,7 +3551,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
                 {unownedPreviewItems.length > 1 ? ` +${unownedPreviewItems.length - 1}` : ''}
               </div>
               <div className="text-[10px] text-white/60 tabular-nums">
-                Unlock to wear in city · {unownedPreviewItems[0].priceLul} $LUL
+                Unlock to wear in city · {getWardrobeCatalogItemPriceCyon(unownedPreviewItems[0])} CerCoins
               </div>
             </div>
             <button
@@ -3690,7 +3560,7 @@ export const WardrobeStudioModal: React.FC<WardrobeStudioModalProps> = ({
               onClick={() => handleBuyPreviewItem(unownedPreviewItems[0])}
               className="px-3.5 py-1.5 rounded-full bg-amber-300 hover:bg-amber-200 text-slate-950 text-[11px] font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
             >
-              Buy · {unownedPreviewItems[0].priceLul} $LUL
+              Buy · {getWardrobeCatalogItemPriceCyon(unownedPreviewItems[0])} CerCoins
             </button>
           </div>
         )}

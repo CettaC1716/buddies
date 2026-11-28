@@ -193,7 +193,7 @@ export const Furniture3dPreviewModal: React.FC<{
                   : 'bg-emerald-50 text-emerald-700 border-emerald-200'
               }`}
             >
-              {item.isNft ? 'NFT' : 'CYON'}
+              {item.isNft ? 'NFT' : 'CerCoins'}
             </span>
             {typeof item.stock === 'number' && (
               <span className="px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200/80 text-[10px] font-semibold uppercase text-slate-600 tabular-nums">

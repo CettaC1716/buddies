@@ -5933,6 +5933,9 @@ export interface LoadedBlitzAssets {
   idleClip: THREE.AnimationClip | null;
   kaiIdleClip: THREE.AnimationClip | null;
   hanaIdleClip: THREE.AnimationClip | null;
+  hanaWalkClip: THREE.AnimationClip | null;
+  hanaRunClip: THREE.AnimationClip | null;
+  hanaSitClip: THREE.AnimationClip | null;
   nadiaIdleClip: THREE.AnimationClip | null;
   nadiaWalkClip: THREE.AnimationClip | null;
   nadiaRunClip: THREE.AnimationClip | null;
@@ -6001,7 +6004,7 @@ export function getCachedLoadedCitizenGlbs(): {
   };
 }
 
-const BLITZ_3D_TOTAL_ASSET_TASKS = 61;
+const BLITZ_3D_TOTAL_ASSET_TASKS = 62;
 let blitz3dCompletedAssetTasks = 0;
 const blitz3dProgressListeners = new Set<(loaded: number, total: number) => void>();
 
@@ -6390,9 +6393,12 @@ export async function loadAllRealBlitzAssets(
     'Hana animation set (Stylish Runway Catwalk #11)',
   );
   const hanaIdleClipPromise = hanaAnimPackPromise.then((pack) => pack['hana_idle.001']);
-  hanaIdleClipPromise
-    .then((c) => {
-      loadedHanaIdleClip = c;
+  hanaAnimPackPromise
+    .then((pack) => {
+      loadedHanaIdleClip = pack['hana_idle.001'];
+      loadedHanaWalkClip = pack['hana_walk.001'];
+      loadedHanaRunClip = pack['hana_run.001'];
+      loadedHanaSitClip = pack['hana_sit.001'];
     })
     .catch(() => {});
 
@@ -6571,6 +6577,20 @@ export async function loadAllRealBlitzAssets(
     loadedFishingCarryGltf = gltf;
     return gltf;
   });
+  const fishingBbqCarryIdleClipPromise = loadAnimationOnlyGlbClip(
+    '/assets/animations/action/8ED7D19F__action_bbq_stand_pickupfood.glb',
+    'fishing_carry_idle.001',
+    'Fishing rod carry idle (Bbq Stand Pickupfood)',
+  )
+    .then((rawClip) => {
+      const seamless = rawClip ? buildSeamlessFishingCarryIdleFromBbqPickup(rawClip) : null;
+      if (seamless) {
+        loadedFishingCarryIdleClip = seamless;
+        loadedCustomPelvisClips.set('fishing_carry_idle.001', seamless);
+      }
+      return seamless;
+    })
+    .catch(() => null);
   if (onCharacterGltfReady) {
     Promise.all([
       mixamoLocomotionPromise,
@@ -6592,12 +6612,14 @@ export async function loadAllRealBlitzAssets(
       chairCasualGltfPromise,
       sunLoungerGltfPromise,
       fishingCarryGltfPromise,
+      fishingBbqCarryIdleClipPromise,
       scooterBikeClipPromise,
       jumpClipPromise,
       jumpIdleClipPromise,
       idleClipPromise,
       kaiIdleClipPromise,
       hanaIdleClipPromise,
+      hanaAnimPackPromise,
       nadiaAnimPackPromise,
       miraAnimPackPromise,
       bimaAnimPackPromise,
@@ -6696,6 +6718,7 @@ export async function loadAllRealBlitzAssets(
     idleClipPromise,
     kaiIdleClipPromise,
     hanaIdleClipPromise,
+    hanaAnimPackPromise,
     nadiaAnimPackPromise,
     miraAnimPackPromise,
     bimaAnimPackPromise,
@@ -6708,6 +6731,7 @@ export async function loadAllRealBlitzAssets(
     chairCasualGltfPromise,
     sunLoungerGltfPromise,
     fishingCarryGltfPromise,
+    fishingBbqCarryIdleClipPromise,
   ]).then(
     ([
       playerGltf,
@@ -6767,6 +6791,7 @@ export async function loadAllRealBlitzAssets(
       idleClip,
       kaiIdleClip,
       hanaIdleClip,
+      hanaAnimPack,
       nadiaAnimPack,
       miraAnimPack,
       bimaAnimPack,
@@ -6840,6 +6865,9 @@ export async function loadAllRealBlitzAssets(
         idleClip,
         kaiIdleClip,
         hanaIdleClip,
+        hanaWalkClip: hanaAnimPack['hana_walk.001'],
+        hanaRunClip: hanaAnimPack['hana_run.001'],
+        hanaSitClip: hanaAnimPack['hana_sit.001'],
         nadiaIdleClip: nadiaAnimPack['nadia_idle.001'],
         nadiaWalkClip: nadiaAnimPack['nadia_walk.001'],
         nadiaRunClip: nadiaAnimPack['nadia_run.001'],
@@ -6908,9 +6936,101 @@ let loadedJumpIdleClip: THREE.AnimationClip | null = null;
 let loadedIdleClip: THREE.AnimationClip | null = null;
 let loadedKaiIdleClip: THREE.AnimationClip | null = null;
 let loadedHanaIdleClip: THREE.AnimationClip | null = null;
+let loadedHanaWalkClip: THREE.AnimationClip | null = null;
+let loadedHanaRunClip: THREE.AnimationClip | null = null;
+let loadedHanaSitClip: THREE.AnimationClip | null = null;
+let loadedFishingCarryIdleClip: THREE.AnimationClip | null = null;
 const loadedCustomPelvisClips = new Map<string, THREE.AnimationClip>();
 const personalClipSourceSceneMap = new WeakMap<THREE.AnimationClip, THREE.Object3D>();
 const registeredCustomPelvisClips = new Map<string, THREE.AnimationClip>();
+
+function buildSeamlessFishingCarryIdleFromBbqPickup(
+  srcClip: THREE.AnimationClip,
+): THREE.AnimationClip {
+  const holdStartSec = 0.5333;
+  const outTracks: THREE.KeyframeTrack[] = [];
+  let maxOutTime = 0;
+
+  for (const track of srcClip.tracks) {
+    const times = track.times;
+    const values = track.values;
+    const stride = track.getValueSize();
+    if (times.length < 4 || stride <= 0) {
+      outTracks.push(track.clone());
+      continue;
+    }
+    let startIdx = 0;
+    while (startIdx < times.length - 2 && times[startIdx] < holdStartSec) {
+      startIdx++;
+    }
+    const endIdx = times.length - 1;
+    const segLen = endIdx - startIdx + 1;
+    if (segLen < 3) {
+      outTracks.push(track.clone());
+      continue;
+    }
+    // Ping-pong the steady front-carry segment (`t = 0.533s .. 1.733s`) twice so the Left Hand
+    // stays raised in front of the waist/chest holding the rod (`Bbq Stand Pickupfood` pose),
+    // never drops back to `t = 0`, and loops seamlessly with duration >= 4.6s.
+    const seqIndices: number[] = [];
+    for (let cycle = 0; cycle < 2; cycle++) {
+      for (let i = startIdx; i <= endIdx; i++) {
+        if (seqIndices.length === 0 || seqIndices[seqIndices.length - 1] !== i) {
+          seqIndices.push(i);
+        }
+      }
+      for (let i = endIdx - 1; i >= startIdx; i--) {
+        seqIndices.push(i);
+      }
+    }
+    const baseDt = Math.max(1 / 30, (times[endIdx] - times[startIdx]) / Math.max(1, segLen - 1));
+    const outTimes = new Float32Array(seqIndices.length);
+    const outValues = new Float32Array(seqIndices.length * stride);
+    for (let k = 0; k < seqIndices.length; k++) {
+      const srcIdx = seqIndices[k];
+      outTimes[k] = k * baseDt;
+      const srcBase = srcIdx * stride;
+      const dstBase = k * stride;
+      for (let s = 0; s < stride; s++) {
+        outValues[dstBase + s] = values[srcBase + s];
+      }
+      if (stride === 4 && k > 0) {
+        const prevBase = (k - 1) * 4;
+        const dot =
+          outValues[prevBase] * outValues[dstBase] +
+          outValues[prevBase + 1] * outValues[dstBase + 1] +
+          outValues[prevBase + 2] * outValues[dstBase + 2] +
+          outValues[prevBase + 3] * outValues[dstBase + 3];
+        if (dot < 0) {
+          outValues[dstBase] = -outValues[dstBase];
+          outValues[dstBase + 1] = -outValues[dstBase + 1];
+          outValues[dstBase + 2] = -outValues[dstBase + 2];
+          outValues[dstBase + 3] = -outValues[dstBase + 3];
+        }
+      }
+    }
+    if (outTimes.length > 0) {
+      maxOutTime = Math.max(maxOutTime, outTimes[outTimes.length - 1]);
+    }
+    const TrackCtor = track.constructor as new (
+      name: string,
+      times: Float32Array,
+      values: Float32Array,
+    ) => THREE.KeyframeTrack;
+    outTracks.push(new TrackCtor(track.name, outTimes, outValues));
+  }
+
+  const outClip = new THREE.AnimationClip(
+    'fishing_carry_idle.001',
+    maxOutTime > 0 ? maxOutTime : srcClip.duration,
+    outTracks,
+  );
+  const srcScene = personalClipSourceSceneMap.get(srcClip);
+  if (srcScene) {
+    personalClipSourceSceneMap.set(outClip, srcScene);
+  }
+  return outClip;
+}
 
 export function registerMixamoLocomotionSuiteGltf(gltf: GLTF | null): void {
   loadedMixamoLocomotionGltf = gltf;
@@ -10082,8 +10202,8 @@ export function buildProceduralFishingRod(addPart: AddWeaponPartFn): THREE.Group
     g,
     new THREE.BoxGeometry(0.11, 0.020, 0.020),
     '#94a3b8',
-    [0.055, -0.11, 0.04],
-    [0, 0, -0.35],
+    [-0.055, -0.11, 0.04],
+    [0, 0, 0.35],
     [1, 1, 1],
     0.008,
   );
@@ -10601,6 +10721,21 @@ export function populateFishingRodFromGlb(
 
   const reelCrankNode = rodGlbRoot.getObjectByName('rod03');
   if (reelCrankNode) {
+    // Mirror `rod03` onto the Right-Hand (`-X`) side of `Object001` so the Right Hand turns the reel crank!
+    reelCrankNode.position.z = -Math.abs(reelCrankNode.position.z);
+    reelCrankNode.scale.z = -Math.abs(reelCrankNode.scale.z || 1);
+    reelCrankNode.traverse((c) => {
+      if ((c as THREE.Mesh).isMesh) {
+        const m = c as THREE.Mesh;
+        const mats = Array.isArray(m.material) ? m.material : [m.material];
+        for (const mat of mats) {
+          if (mat) {
+            mat.side = THREE.DoubleSide;
+            mat.needsUpdate = true;
+          }
+        }
+      }
+    });
     targetFishingRodGroup.userData.reelCrankMesh = reelCrankNode;
   }
 
@@ -13955,9 +14090,9 @@ function syncLoadedPersonalClipsIntoTemplate(
     ['nadia_walk.001', cachedLoadedBlitzAssets?.nadiaWalkClip],
     ['nadia_run.001', cachedLoadedBlitzAssets?.nadiaRunClip],
     ['hana_idle.001', loadedHanaIdleClip ?? cachedLoadedBlitzAssets?.hanaIdleClip],
-    ['hana_walk.001', undefined],
-    ['hana_run.001', undefined],
-    ['hana_sit.001', undefined],
+    ['hana_walk.001', loadedHanaWalkClip ?? cachedLoadedBlitzAssets?.hanaWalkClip],
+    ['hana_run.001', loadedHanaRunClip ?? cachedLoadedBlitzAssets?.hanaRunClip],
+    ['hana_sit.001', loadedHanaSitClip ?? cachedLoadedBlitzAssets?.hanaSitClip],
     ['nadia_sit.001', cachedLoadedBlitzAssets?.nadiaSitClip],
     ['mira_idle.001', cachedLoadedBlitzAssets?.miraIdleClip],
     ['mira_walk.001', cachedLoadedBlitzAssets?.miraWalkClip],
@@ -13985,6 +14120,7 @@ function syncLoadedPersonalClipsIntoTemplate(
     ['tari_walk.001', cachedLoadedBlitzAssets?.tariWalkClip],
     ['tari_run.001', cachedLoadedBlitzAssets?.tariRunClip],
     ['tari_sit.001', cachedLoadedBlitzAssets?.tariSitClip],
+    ['fishing_carry_idle.001', loadedFishingCarryIdleClip],
   ];
   const tgtNeedsPreRotRetarget =
     Boolean(tgtSceneRoot) &&
@@ -14654,6 +14790,7 @@ function getSanitizedCharBuddiesTemplate(gltf: GLTF): SanitizedCharBuddiesTempla
         const filteredSuite = new Map(mixamoSuite.clips);
         filteredSuite.delete('hana_idle.001');
         filteredSuite.delete('kai_idle.001');
+        filteredSuite.delete('fishing_carry_idle.001');
         const lazyClips = new LazyMixamoPelvisClipMap(filteredSuite, retargetCtx);
         for (const [nativeName, nativeClip] of nativeClips.entries()) {
           if (!lazyClips.has(nativeName)) {
@@ -16856,9 +16993,7 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     const savedFace = bodyGroup.userData?.desiredFaceCustomization as
       | BuddyFaceCustomizationProfile
       | undefined;
-    if (savedFace) {
-      applyBuddyRigFaceCustomization(rig, savedFace);
-    }
+    applyBuddyRigFaceCustomization(rig, savedFace ?? null);
     const savedStyleAnim = bodyGroup.userData?.desiredStyleAnim as
       | BuddyStyleAnimSpec
       | null
@@ -16889,6 +17024,13 @@ export function upgradeBuddyRigWithCharBuddiesGlb(
     | undefined;
   if (savedFace) {
     applyBuddyRigFaceCustomization(rig, savedFace);
+  }
+  const savedStyleAnim = bodyGroup.userData?.desiredStyleAnim as
+    | BuddyStyleAnimSpec
+    | null
+    | undefined;
+  if (savedStyleAnim) {
+    void applyBuddyRigStyleAnimation(rig, savedStyleAnim);
   }
 }
 
@@ -20717,7 +20859,14 @@ function stepCharBuddiesGlbRigController(
     ((rig.idleClipOverrideName && !ctrl.clips.has(rig.idleClipOverrideName)) ||
       (rig.walkClipOverrideName && !ctrl.clips.has(rig.walkClipOverrideName)) ||
       (rig.runClipOverrideName && !ctrl.clips.has(rig.runClipOverrideName)) ||
-      (rig.sitClipOverrideName && !ctrl.clips.has(rig.sitClipOverrideName)))
+      (rig.sitClipOverrideName && !ctrl.clips.has(rig.sitClipOverrideName)) ||
+      (weaponId === 'fishing_rod' &&
+        !Map.prototype.has.call(ctrl.clips, 'fishing_carry_idle.001') &&
+        Boolean(
+          loadedFishingCarryIdleClip ||
+            loadedCustomPelvisClips.has('fishing_carry_idle.001') ||
+            registeredCustomPelvisClips.has('fishing_carry_idle.001'),
+        )))
   ) {
     syncLoadedPersonalClipsIntoTemplate(
       ctrl.clips,
@@ -20776,6 +20925,7 @@ function stepCharBuddiesGlbRigController(
   const isCafeEatingPose = Boolean(
     rig.cafeConsumingItemId &&
       isAlive &&
+      !isMoving &&
       !rig.isSeatedRiderRef &&
       !carryingCrate &&
       !isDriving &&
@@ -20879,9 +21029,9 @@ function stepCharBuddiesGlbRigController(
         rightArmLift = -0.22 - Math.max(0, pumpWave) * 0.16 + surgeTug * 0.8;
       }
       if (Math.abs(spineBackLean) > 0.004 || Math.abs(rightArmLift) > 0.004) {
-        const spine1 = ctrl.bones.get('Spine1');
-        const spine2 = ctrl.bones.get('Spine2');
-        const rArm = ctrl.bones.get('RightArm');
+        const spine1 = ctrl.bones.get('Spine1') ?? ctrl.bones.get('Spine01');
+        const spine2 = ctrl.bones.get('Spine2') ?? ctrl.bones.get('Spine02');
+        const lArm = ctrl.bones.get('LeftArm');
         if (spine1) {
           _recoilEuler.set(spineBackLean * 0.55, spineSideTwist * 0.5, 0);
           _recoilDeltaQuat.setFromEuler(_recoilEuler);
@@ -20892,10 +21042,10 @@ function stepCharBuddiesGlbRigController(
           _recoilDeltaQuat.setFromEuler(_recoilEuler);
           spine2.quaternion.multiply(_recoilDeltaQuat);
         }
-        if (rArm && Math.abs(rightArmLift) > 0.004) {
+        if (lArm && Math.abs(rightArmLift) > 0.004) {
           _recoilEuler.set(rightArmLift, 0, 0);
           _recoilDeltaQuat.setFromEuler(_recoilEuler);
-          rArm.quaternion.multiply(_recoilDeltaQuat);
+          lArm.quaternion.multiply(_recoilDeltaQuat);
         }
       }
     }
@@ -21096,23 +21246,29 @@ function stepCharBuddiesGlbRigController(
             }
           }
         } else if (weaponId === 'fishing_rod') {
-          // 5A. FISHING ANIMATION + TWO-HANDED FIGHTING & SPINNING-REEL CRANKING IK:
-          // In calm idle/cast, let Mixamo's 30 native finger tracks drive both hands naturally.
-          // During 'fighting' / 'bite', place Left Hand on the spinning reel crank handle (circular cranking motion
-          // when `isReeling` is active!) or bracing the lower cork butt when holding against a fish surge!
+          // 5A. FISHING ANIMATION + LEFT-HAND ROD GRIP & RIGHT-HAND SPINNING-REEL CRANKING IK:
+          // The Left Hand (`ctrl.leftHandLocalPos`) holds the cork grip of the fishing rod in front of the body.
+          // During 'fighting' / 'bite' / 'nibble' (or whenever `isReeling` is active), the Right Hand (`isRightHand = true`)
+          // grips and turns the spinning reel crank handle on the right (`-X`) side of the reel!
           const fp = rig.fishingPoseState;
-          if (fp && (fp.phase === 'fighting' || fp.phase === 'bite')) {
-            if (fp.phase === 'fighting' && fp.isReeling) {
+          if (
+            fp &&
+            (fp.phase === 'fighting' ||
+              fp.phase === 'bite' ||
+              fp.phase === 'nibble' ||
+              fp.isReeling)
+          ) {
+            if (fp.isReeling) {
               const crankRadius = 0.046;
-              const crankTargetX = ctrl.rightHandLocalPos.x + 0.068;
+              const crankTargetX = ctrl.leftHandLocalPos.x - 0.068;
               const crankTargetY =
-                ctrl.rightHandLocalPos.y - 0.155 + Math.sin(fp.reelAngle) * crankRadius;
+                ctrl.leftHandLocalPos.y - 0.155 + Math.sin(fp.reelAngle) * crankRadius;
               const crankTargetZ =
-                ctrl.rightHandLocalPos.z + 0.025 + Math.cos(fp.reelAngle) * crankRadius;
+                ctrl.leftHandLocalPos.z + 0.025 + Math.cos(fp.reelAngle) * crankRadius;
               solveTwoBoneArmPalmIkLocal(
                 ctrl,
                 bodyGroup,
-                false,
+                true,
                 crankTargetX,
                 crankTargetY,
                 crankTargetZ,
@@ -21122,14 +21278,14 @@ function stepCharBuddiesGlbRigController(
               solveTwoBoneArmPalmIkLocal(
                 ctrl,
                 bodyGroup,
-                false,
-                ctrl.rightHandLocalPos.x + 0.02,
-                ctrl.rightHandLocalPos.y - 0.11,
-                ctrl.rightHandLocalPos.z - 0.13,
-                0.82,
+                true,
+                ctrl.leftHandLocalPos.x - 0.068,
+                ctrl.leftHandLocalPos.y - 0.155,
+                ctrl.leftHandLocalPos.z + 0.025,
+                0.84,
               );
             }
-            sampleMixamoHandPalmLocal(ctrl, bodyGroup, false, ctrl.leftHandLocalPos);
+            sampleMixamoHandPalmLocal(ctrl, bodyGroup, true, ctrl.rightHandLocalPos);
           }
         } else if (weaponId === 'pistol') {
           // 5B. TWO-HANDED TACTICAL PISTOL CUP GRIP:
@@ -21284,6 +21440,7 @@ export function updateCharacterWeaponStance(
   const showCafeConsumingProp = Boolean(
     cafeConsumingItemId &&
       isAlive &&
+      !isMoving &&
       !rig.isSeatedRiderRef &&
       !(scooterRidePose && scooterRidePose.blend > 0.001) &&
       !carryingCrate &&
@@ -21456,13 +21613,31 @@ export function updateCharacterWeaponStance(
     hasHandBones && glbCtrl ? (glbCtrl.rightHandLocalPos.x + glbCtrl.leftHandLocalPos.x) * 0.5 : -0.12;
 
   if (weaponId === 'fishing_rod') {
-    // 0C. 3D JORAN PANCING / FISHING ROD STANCE (`fishing_carry_*.001` Left-Hand shoulder carry,
-    //     or `fishing_idle.001` / `fishing_cast.001` / Fighting Right-Hand forward cast & reel)
+    // 0C. 3D JORAN PANCING / FISHING ROD STANCE:
+    //     Left Hand (`glbCtrl.leftHandLocalPos`) holds the cork grip of the fishing rod in front of the body
+    //     (both in `fishing_carry_idle.001` = `Bbq Stand Pickupfood` and during active fishing),
+    //     while Right Hand turns the spinning reel crank on the `-X` side of the reel!
     const fp = rig.fishingPoseState;
     const castPitch = r * 0.55;
-    const isCarryPose = Boolean(glbCtrl?.activeClipName.startsWith('fishing_carry_'));
+    const activeClip = glbCtrl?.activeClipName ?? '';
+    const isCarryIdlePose = activeClip === 'fishing_carry_idle.001';
+    const isCarryLocomotionOrSitPose =
+      activeClip.startsWith('fishing_carry_') && !isCarryIdlePose;
     if (hasHandBones && glbCtrl) {
-      if (isCarryPose) {
+      if (isCarryIdlePose) {
+        rig.weaponRigGroup.position.set(
+          glbCtrl.leftHandLocalPos.x,
+          glbCtrl.leftHandLocalPos.y,
+          glbCtrl.leftHandLocalPos.z,
+        );
+        _rodTargetDir
+          .set(
+            THREE.MathUtils.clamp(glbCtrl.leftHandGripAxisLocal.x * 0.14, -0.1, 0.1),
+            0.68,
+            Math.max(0.7, Math.abs(glbCtrl.leftHandGripAxisLocal.z)),
+          )
+          .normalize();
+      } else if (isCarryLocomotionOrSitPose) {
         rig.weaponRigGroup.position.set(
           glbCtrl.leftHandLocalPos.x + 0.035,
           glbCtrl.leftHandLocalPos.y,
@@ -21474,32 +21649,29 @@ export function updateCharacterWeaponStance(
         } else {
           _rodTargetDir.set(0.06, 0.67, -0.74);
         }
-        // Keep shoulder-rested blank angled slightly outward (+X) so it never grazes hair/cheek.
         if (_rodTargetDir.z < -0.2 && _rodTargetDir.x < 0.06) {
           _rodTargetDir.x = 0.06;
           _rodTargetDir.normalize();
         }
       } else {
         rig.weaponRigGroup.position.set(
-          glbCtrl.rightHandLocalPos.x,
-          glbCtrl.rightHandLocalPos.y,
-          glbCtrl.rightHandLocalPos.z,
+          glbCtrl.leftHandLocalPos.x,
+          glbCtrl.leftHandLocalPos.y,
+          glbCtrl.leftHandLocalPos.z,
         );
-        _rodTargetDir.copy(glbCtrl.rightHandGripAxisLocal);
+        _rodTargetDir.copy(glbCtrl.leftHandGripAxisLocal);
         if (_rodTargetDir.lengthSq() > 1e-6) {
           _rodTargetDir.normalize();
         } else {
           _rodTargetDir.set(0, 0.68, 0.73);
         }
-        // Prevent a genuinely inverted grip axis during transitions (pointing down/back).
-        // An earlier z<0.15 rule also fired on the upright idle grip and tilted the rod
-        // ~22deg forward off the hand, so only a clearly downward axis is corrected now.
         if (
-          _rodTargetDir.y < -0.05 &&
+          (_rodTargetDir.y < 0.15 || _rodTargetDir.z < 0.35) &&
           (!fp || (fp.phase !== 'charging' && fp.phase !== 'casting'))
         ) {
-          _rodTargetDir.y = 0.15;
-          _rodTargetDir.z = Math.max(0.45, _rodTargetDir.z);
+          _rodTargetDir.x = THREE.MathUtils.clamp(_rodTargetDir.x * 0.25, -0.12, 0.12);
+          _rodTargetDir.y = Math.max(0.62, _rodTargetDir.y);
+          _rodTargetDir.z = Math.max(0.68, _rodTargetDir.z);
           _rodTargetDir.normalize();
         }
         if (fp) {
@@ -43470,7 +43642,7 @@ export function buildBlackCityTransitKioskMesh(
         { label: 'DISTRICTS', sub: 'FAST TRAVEL', col: '#38bdf8', x: 16, y: 58 },
         { label: 'WARZONE', sub: 'RED VS BLUE', col: '#ff3b30', x: 132, y: 58 },
         { label: 'MY HOUSE', sub: '3D INTERIOR', col: '#b8ff3c', x: 16, y: 168 },
-        { label: 'EXCHANGE', sub: 'LUL / CYON', col: '#facc15', x: 132, y: 168 },
+        { label: 'EXCHANGE', sub: 'CerBucks / CerCoins', col: '#facc15', x: 132, y: 168 },
       ];
       for (const card of cards) {
         ctx.fillStyle = '#111827';

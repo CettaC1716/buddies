@@ -521,7 +521,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
     2: {
       headerTitle: 'BASE UPGRADE',
       headerSubtitle:
-        'Upgrade your Command HQ with LUL to fortify perimeter walls, expand radar range, and unlock Tier-3 superweapons.',
+        'Upgrade your Command HQ with CerBucks to fortify perimeter walls, expand radar range, and unlock Tier-3 superweapons.',
       cards: [
         {
           id: 'hq_super_command',
@@ -533,7 +533,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
           inspectDetail: `${
             comboMaxed
               ? 'MAX LV.3 ACTIVE (Nuclear Launcher & Cluster Bomb Unlocked!)'
-              : `Direct Lv.3 Upgrade Cost: ${superCommandCost} LUL`
+              : `Direct Lv.3 Upgrade Cost: ${superCommandCost} CerBucks`
           } · Base HP: ${hud.baseBuildingHp}/${hud.baseBuildingMaxHp} · Fence: ${hud.baseFenceHp}/${hud.baseFenceMaxHp}`,
         },
         {
@@ -543,7 +543,7 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
           illustration: 'hq_tactical_comms',
           actionKind: 'upgrade_base',
           upgradeId: 'upgrade_building_only',
-          inspectDetail: `Step Upgrade Cost: ${commsCost} LUL · Radar Lv.${bLv}: ${
+          inspectDetail: `Step Upgrade Cost: ${commsCost} CerBucks · Radar Lv.${bLv}: ${
             bLv >= 3 ? 'MAX 280m (Full Map)' : bLv === 2 ? '152m -> MAX 280m' : '92m -> 152m'
           }`,
         },
@@ -739,9 +739,9 @@ export const TacticalKioskModal: React.FC<TacticalKioskModalProps> = ({
               <div
                 data-kiosk-gold="true"
                 className="px-2.5 py-1 rounded-full bg-white/[0.07] border border-white/15 text-[11px] font-mono-tabular font-bold tracking-tight text-amber-300"
-                title="LUL (Lulling) Balance"
+                title="CerBucks Balance"
               >
-                {hud.gold.toLocaleString()} LUL
+                {hud.gold.toLocaleString()} CerBucks
               </div>
               <button
                 type="button"

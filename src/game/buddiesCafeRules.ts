@@ -17,6 +17,13 @@ export interface CafeMenuItemSpec {
   name: string;
   category: 'drink' | 'pastry';
   priceLul: number;
+  /**
+   * Explicit RESPITE shelf price when this item is sold as a giftable
+   * treat in the Central Plaza Bites & Sips storefront (price reset,
+   * respite-price-list.md §6). RESPITE prices are explicit values —
+   * never derived by formula from priceLul.
+   */
+  priceRespite: number;
   xpReward: number;
   shiftBucksReward: number;
   prepHint: string;
@@ -29,6 +36,7 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Caramel Latte',
     category: 'drink',
     priceLul: 10,
+    priceRespite: 60,
     xpReward: 35,
     shiftBucksReward: 24,
     prepHint: 'Warm steamed milk latte art',
@@ -39,6 +47,7 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Butter Croissant',
     category: 'pastry',
     priceLul: 3,
+    priceRespite: 50,
     xpReward: 12,
     shiftBucksReward: 12,
     prepHint: 'Flaky golden butter pastry',
@@ -49,6 +58,7 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Club Sandwich',
     category: 'pastry',
     priceLul: 10,
+    priceRespite: 60,
     xpReward: 35,
     shiftBucksReward: 24,
     prepHint: 'Fresh botanical club sandwich',
@@ -59,6 +69,7 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Double Espresso',
     category: 'drink',
     priceLul: 3,
+    priceRespite: 50,
     xpReward: 12,
     shiftBucksReward: 12,
     prepHint: 'Rich classic double espresso',
@@ -69,6 +80,7 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Cinnamon Roll',
     category: 'pastry',
     priceLul: 6,
+    priceRespite: 50,
     xpReward: 22,
     shiftBucksReward: 16,
     prepHint: 'Warm spiced cinnamon roll',
@@ -79,6 +91,7 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Glazed Donut',
     category: 'pastry',
     priceLul: 2,
+    priceRespite: 50,
     xpReward: 8,
     shiftBucksReward: 10,
     prepHint: 'Sweet classic glazed donut',
@@ -89,6 +102,7 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Blueberry Muffin',
     category: 'pastry',
     priceLul: 4,
+    priceRespite: 50,
     xpReward: 16,
     shiftBucksReward: 14,
     prepHint: 'Soft baked blueberry muffin',
@@ -99,6 +113,7 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Botanical Iced Latte',
     category: 'drink',
     priceLul: 3,
+    priceRespite: 50,
     xpReward: 14,
     shiftBucksReward: 12,
     prepHint: 'Chilled botanical iced coffee',
@@ -109,6 +124,7 @@ export const CAFE_MENU_ITEMS: ReadonlyArray<CafeMenuItemSpec> = [
     name: 'Hot Choco Mocha',
     category: 'drink',
     priceLul: 6,
+    priceRespite: 50,
     xpReward: 24,
     shiftBucksReward: 18,
     prepHint: 'Rich warm chocolate mocha',
@@ -871,17 +887,17 @@ export interface PurchaseCafeOrderBatchResult {
     | 'empty_batch'
     | 'exceeds_max_batch'
     | 'invalid_item'
-    | 'insufficient_lul';
+    | 'insufficient_cyon';
   items: CafeMenuItemSpec[];
-  totalPriceLul: number;
-  nextLul: number;
+  totalPriceCyon: number;
+  nextCyon: number;
   xpGained: number;
   nextConsumerState: CafeConsumerQueueState;
 }
 
 export function purchaseCafeOrderBatch(
   entries: ReadonlyArray<CafeBatchOrderEntry | CafeMenuItemId>,
-  currentLul: number,
+  currentCyon: number,
   consumerState: CafeConsumerQueueState,
   nowMs = Date.now(),
 ): PurchaseCafeOrderBatchResult {
@@ -891,8 +907,8 @@ export function purchaseCafeOrderBatch(
       purchased: false,
       reason: 'still_consuming',
       items: [],
-      totalPriceLul: 0,
-      nextLul: currentLul,
+      totalPriceCyon: 0,
+      nextCyon: currentCyon,
       xpGained: 0,
       nextConsumerState: advancedState,
     };
@@ -909,8 +925,8 @@ export function purchaseCafeOrderBatch(
         purchased: false,
         reason: 'invalid_item',
         items: [],
-        totalPriceLul: 0,
-        nextLul: currentLul,
+        totalPriceCyon: 0,
+        nextCyon: currentCyon,
         xpGained: 0,
         nextConsumerState: advancedState,
       };
@@ -922,8 +938,8 @@ export function purchaseCafeOrderBatch(
           purchased: false,
           reason: 'exceeds_max_batch',
           items: [],
-          totalPriceLul: 0,
-          nextLul: currentLul,
+          totalPriceCyon: 0,
+          nextCyon: currentCyon,
           xpGained: 0,
           nextConsumerState: advancedState,
         };
@@ -936,27 +952,27 @@ export function purchaseCafeOrderBatch(
       purchased: false,
       reason: 'empty_batch',
       items: [],
-      totalPriceLul: 0,
-      nextLul: currentLul,
+      totalPriceCyon: 0,
+      nextCyon: currentCyon,
       xpGained: 0,
       nextConsumerState: advancedState,
     };
   }
 
-  let totalPriceLul = 0;
+  let totalPriceCyon = 0;
   let xpGained = 0;
   for (const it of expanded) {
-    totalPriceLul += it.priceLul;
+    totalPriceCyon += it.priceLul;
     xpGained += it.xpReward;
   }
 
-  if (currentLul < totalPriceLul) {
+  if (currentCyon < totalPriceCyon) {
     return {
       purchased: false,
-      reason: 'insufficient_lul',
+      reason: 'insufficient_cyon',
       items: expanded,
-      totalPriceLul,
-      nextLul: currentLul,
+      totalPriceCyon,
+      nextCyon: currentCyon,
       xpGained: 0,
       nextConsumerState: advancedState,
     };
@@ -965,8 +981,8 @@ export function purchaseCafeOrderBatch(
   return {
     purchased: true,
     items: expanded,
-    totalPriceLul,
-    nextLul: currentLul - totalPriceLul,
+    totalPriceCyon,
+    nextCyon: currentCyon - totalPriceCyon,
     xpGained,
     nextConsumerState: {
       activeItem: expanded[0],
@@ -981,16 +997,16 @@ export function purchaseCafeOrderBatch(
 
 export interface PurchaseCafeFoodResult {
   purchased: boolean;
-  reason?: 'insufficient_lul' | 'item_not_found' | 'still_consuming';
+  reason?: 'insufficient_cyon' | 'item_not_found' | 'still_consuming';
   item: CafeMenuItemSpec | null;
-  nextLul: number;
+  nextCyon: number;
   xpGained: number;
   nextConsumerState?: CafeConsumerQueueState;
 }
 
 export function purchaseCafeMenuItem(
   itemId: CafeMenuItemSpec['id'],
-  currentLul: number,
+  currentCyon: number,
   consumerState?: CafeConsumerQueueState,
   nowMs = Date.now(),
 ): PurchaseCafeFoodResult {
@@ -1000,24 +1016,24 @@ export function purchaseCafeMenuItem(
       purchased: false,
       reason: 'item_not_found',
       item: null,
-      nextLul: currentLul,
+      nextCyon: currentCyon,
       xpGained: 0,
       nextConsumerState: consumerState,
     };
   }
   const activeState = consumerState ?? createInitialCafeConsumerState();
-  const batchRes = purchaseCafeOrderBatch([itemId], currentLul, activeState, nowMs);
+  const batchRes = purchaseCafeOrderBatch([itemId], currentCyon, activeState, nowMs);
   if (!batchRes.purchased) {
     return {
       purchased: false,
       reason:
         batchRes.reason === 'still_consuming'
           ? 'still_consuming'
-          : batchRes.reason === 'insufficient_lul'
-            ? 'insufficient_lul'
+          : batchRes.reason === 'insufficient_cyon'
+            ? 'insufficient_cyon'
             : 'item_not_found',
       item,
-      nextLul: currentLul,
+      nextCyon: currentCyon,
       xpGained: 0,
       nextConsumerState: batchRes.nextConsumerState,
     };
@@ -1025,7 +1041,7 @@ export function purchaseCafeMenuItem(
   return {
     purchased: true,
     item,
-    nextLul: batchRes.nextLul,
+    nextCyon: batchRes.nextCyon,
     xpGained: batchRes.xpGained,
     nextConsumerState: batchRes.nextConsumerState,
   };
@@ -2009,6 +2025,359 @@ export function computeIndoorRoomOrbitCameraPose(
     lookZ: clampedLookXZ.z,
   };
 }
+
+// ============================================================================
+// UNIFIED TARI DOORWAY TRANSITION & BARISTA SERVICE CHOREOGRAPHY
+// ============================================================================
+
+export const CAFE_TARI_EXTERIOR_DOOR_STOP = {
+  x: -90.55,
+  z: 22.15,
+  yaw: -Math.PI / 2,
+  arrivalRadiusM: 0.85,
+} as const;
+
+export const CAFE_TARI_INTERIOR_DOOR_ENTRY = {
+  x: 0.0,
+  z: 4.10,
+  yaw: Math.PI / 2,
+} as const;
+
+export const CAFE_TARI_INTERIOR_DOOR_EXIT = {
+  x: 0.0,
+  z: 4.35,
+  yaw: -Math.PI / 2,
+  triggerRadiusM: 0.65,
+} as const;
+
+export const CAFE_TARI_COUNTER_SIDE_FLOOR = {
+  x: 2.65,
+  z: -0.95,
+} as const;
+
+export const CAFE_TARI_COUNTER_SIDE_BACK = {
+  x: 2.65,
+  z: -3.22,
+} as const;
+
+export function shouldOutdoorTariEnterCafe(params: {
+  tariInsideCafe: boolean;
+  npcX: number;
+  npcZ: number;
+  targetWpX: number;
+  targetWpZ: number;
+  pauseTimer: number;
+  isInteractingWithPlayer: boolean;
+}): boolean {
+  if (params.tariInsideCafe || params.isInteractingWithPlayer) return false;
+  const targetIsDoor =
+    Math.hypot(
+      params.targetWpX - CAFE_TARI_EXTERIOR_DOOR_STOP.x,
+      params.targetWpZ - CAFE_TARI_EXTERIOR_DOOR_STOP.z,
+    ) <= 0.65;
+  const distToDoor = Math.hypot(
+    params.npcX - CAFE_TARI_EXTERIOR_DOOR_STOP.x,
+    params.npcZ - CAFE_TARI_EXTERIOR_DOOR_STOP.z,
+  );
+  if (targetIsDoor && distToDoor <= CAFE_TARI_EXTERIOR_DOOR_STOP.arrivalRadiusM) {
+    return true;
+  }
+  return params.pauseTimer > 0 && distToDoor <= CAFE_TARI_EXTERIOR_DOOR_STOP.arrivalRadiusM;
+}
+
+export function shouldIndoorTariExitCafe(params: {
+  tariInsideCafe: boolean;
+  npcX: number;
+  npcZ: number;
+  targetWpX: number;
+  targetWpZ: number;
+  pauseTimer: number;
+  isInteractingWithPlayer: boolean;
+  isServingOrder: boolean;
+  cafeWorkShiftActive: boolean;
+}): boolean {
+  if (
+    !params.tariInsideCafe ||
+    params.cafeWorkShiftActive ||
+    params.isInteractingWithPlayer ||
+    params.isServingOrder
+  ) {
+    return false;
+  }
+  const targetIsDoor =
+    Math.hypot(
+      params.targetWpX - CAFE_TARI_INTERIOR_DOOR_EXIT.x,
+      params.targetWpZ - CAFE_TARI_INTERIOR_DOOR_EXIT.z,
+    ) <= 0.6;
+  const distToDoor = Math.hypot(
+    params.npcX - CAFE_TARI_INTERIOR_DOOR_EXIT.x,
+    params.npcZ - CAFE_TARI_INTERIOR_DOOR_EXIT.z,
+  );
+  if (targetIsDoor && distToDoor <= CAFE_TARI_INTERIOR_DOOR_EXIT.triggerRadiusM) {
+    return true;
+  }
+  return params.pauseTimer > 0 && distToDoor <= CAFE_TARI_INTERIOR_DOOR_EXIT.triggerRadiusM;
+}
+
+export type TariCafeServePhase =
+  | 'idle'
+  | 'walk_side_floor'
+  | 'walk_side_back'
+  | 'walk_to_prep'
+  | 'preparing'
+  | 'walk_to_counter'
+  | 'serving';
+
+export interface TariCafeServeState {
+  phase: TariCafeServePhase;
+  itemId: CafeMenuItemId | null;
+  itemName: string;
+  category: 'drink' | 'pastry';
+  phaseTimerSec: number;
+}
+
+export function createInitialTariCafeServeState(): TariCafeServeState {
+  return {
+    phase: 'idle',
+    itemId: null,
+    itemName: '',
+    category: 'drink',
+    phaseTimerSec: 0,
+  };
+}
+
+function isTariBehindCafeCounter(x: number, z: number): boolean {
+  return x >= -2.0 && x <= 2.25 && z <= -2.55 && z >= -4.22;
+}
+
+export function startTariCafeServeOrder(params: {
+  npcX: number;
+  npcZ: number;
+  itemId: CafeMenuItemId;
+  itemName: string;
+  category: 'drink' | 'pastry';
+}): TariCafeServeState {
+  let initialPhase: TariCafeServePhase;
+  if (isTariBehindCafeCounter(params.npcX, params.npcZ)) {
+    initialPhase = 'walk_to_prep';
+  } else if (params.npcX >= 2.15 && params.npcZ <= -2.6) {
+    initialPhase = 'walk_side_back';
+  } else {
+    initialPhase = 'walk_side_floor';
+  }
+  return {
+    phase: initialPhase,
+    itemId: params.itemId,
+    itemName: params.itemName,
+    category: params.category,
+    phaseTimerSec: 0,
+  };
+}
+
+export interface TariCafeServeStepResult {
+  nextState: TariCafeServeState;
+  x: number;
+  z: number;
+  yaw: number;
+  isMoving: boolean;
+  speedMps: number;
+  holdingCafeItemId: CafeMenuItemId | null;
+  statusLabel: string;
+  completedThisFrame: boolean;
+}
+
+function stepTariTowardTarget(
+  x: number,
+  z: number,
+  yaw: number,
+  targetX: number,
+  targetZ: number,
+  speedMps: number,
+  dt: number,
+): { x: number; z: number; yaw: number; arrived: boolean } {
+  const dx = targetX - x;
+  const dz = targetZ - z;
+  const dist = Math.hypot(dx, dz);
+  const stepDist = speedMps * dt;
+  if (dist <= Math.max(0.14, stepDist)) {
+    return { x: targetX, z: targetZ, yaw, arrived: true };
+  }
+  const nx = dx / dist;
+  const nz = dz / dist;
+  const desiredYaw = Math.atan2(-nz, nx);
+  let dYaw = desiredYaw - yaw;
+  while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+  while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+  const nextYaw = yaw + dYaw * Math.min(1, dt * 10.0);
+  return {
+    x: x + nx * stepDist,
+    z: z + nz * stepDist,
+    yaw: nextYaw,
+    arrived: false,
+  };
+}
+
+export function stepTariCafeServeOrder(params: {
+  state: TariCafeServeState;
+  x: number;
+  z: number;
+  yaw: number;
+  dt: number;
+}): TariCafeServeStepResult {
+  const { state, dt } = params;
+  if (state.phase === 'idle' || !state.itemId) {
+    return {
+      nextState: state,
+      x: params.x,
+      z: params.z,
+      yaw: params.yaw,
+      isMoving: false,
+      speedMps: 0,
+      holdingCafeItemId: null,
+      statusLabel: 'GLASSHOUSE CAFE STAFF',
+      completedThisFrame: false,
+    };
+  }
+
+  const walkSpeed = 1.65;
+  const appliance =
+    state.category === 'pastry'
+      ? CAFE_APPLIANCE_TARGETS.pastryDisplayCase
+      : CAFE_APPLIANCE_TARGETS.drinkEspressoMachine;
+  const prepX = appliance.standX;
+  const prepZ = -3.15;
+  const counterX = CAFE_INTERIOR_BOUNDS.baristaCounterStandX;
+  const counterZ = -3.22;
+  const cleanItemName = state.itemName.trim().toUpperCase() || state.itemId.toUpperCase();
+
+  if (state.phase === 'walk_side_floor') {
+    const move = stepTariTowardTarget(
+      params.x,
+      params.z,
+      params.yaw,
+      CAFE_TARI_COUNTER_SIDE_FLOOR.x,
+      CAFE_TARI_COUNTER_SIDE_FLOOR.z,
+      walkSpeed,
+      dt,
+    );
+    return {
+      nextState: move.arrived ? { ...state, phase: 'walk_side_back', phaseTimerSec: 0 } : state,
+      x: move.x,
+      z: move.z,
+      yaw: move.yaw,
+      isMoving: !move.arrived,
+      speedMps: move.arrived ? 0 : walkSpeed,
+      holdingCafeItemId: null,
+      statusLabel: `TAKING YOUR ${cleanItemName} ORDER`,
+      completedThisFrame: false,
+    };
+  }
+
+  if (state.phase === 'walk_side_back') {
+    const move = stepTariTowardTarget(
+      params.x,
+      params.z,
+      params.yaw,
+      CAFE_TARI_COUNTER_SIDE_BACK.x,
+      CAFE_TARI_COUNTER_SIDE_BACK.z,
+      walkSpeed,
+      dt,
+    );
+    return {
+      nextState: move.arrived ? { ...state, phase: 'walk_to_prep', phaseTimerSec: 0 } : state,
+      x: move.x,
+      z: move.z,
+      yaw: move.yaw,
+      isMoving: !move.arrived,
+      speedMps: move.arrived ? 0 : walkSpeed,
+      holdingCafeItemId: null,
+      statusLabel: `HEADING BEHIND COUNTER`,
+      completedThisFrame: false,
+    };
+  }
+
+  if (state.phase === 'walk_to_prep') {
+    const move = stepTariTowardTarget(params.x, params.z, params.yaw, prepX, prepZ, walkSpeed, dt);
+    return {
+      nextState: move.arrived
+        ? { ...state, phase: 'preparing', phaseTimerSec: 1.1 }
+        : state,
+      x: move.x,
+      z: move.z,
+      yaw: move.arrived ? -Math.PI / 2 : move.yaw,
+      isMoving: !move.arrived,
+      speedMps: move.arrived ? 0 : walkSpeed,
+      holdingCafeItemId: null,
+      statusLabel:
+        state.category === 'pastry'
+          ? `PACKING ${cleanItemName}`
+          : `BREWING ${cleanItemName}`,
+      completedThisFrame: false,
+    };
+  }
+
+  if (state.phase === 'preparing') {
+    const nextTimer = Math.max(0, state.phaseTimerSec - dt);
+    const donePrep = nextTimer <= 0;
+    return {
+      nextState: donePrep
+        ? { ...state, phase: 'walk_to_counter', phaseTimerSec: 0 }
+        : { ...state, phaseTimerSec: nextTimer },
+      x: prepX,
+      z: prepZ,
+      yaw: -Math.PI / 2,
+      isMoving: false,
+      speedMps: 0,
+      holdingCafeItemId: donePrep ? state.itemId : null,
+      statusLabel:
+        state.category === 'pastry'
+          ? `PREPARING ${cleanItemName}`
+          : `BREWING ${cleanItemName}`,
+      completedThisFrame: false,
+    };
+  }
+
+  if (state.phase === 'walk_to_counter') {
+    const move = stepTariTowardTarget(
+      params.x,
+      params.z,
+      params.yaw,
+      counterX,
+      counterZ,
+      walkSpeed * 0.9,
+      dt,
+    );
+    return {
+      nextState: move.arrived
+        ? { ...state, phase: 'serving', phaseTimerSec: 2.4 }
+        : state,
+      x: move.x,
+      z: move.z,
+      yaw: move.arrived ? -Math.PI / 2 : move.yaw,
+      isMoving: !move.arrived,
+      speedMps: move.arrived ? 0 : walkSpeed * 0.9,
+      holdingCafeItemId: state.itemId,
+      statusLabel: `BRINGING YOUR ${cleanItemName}`,
+      completedThisFrame: false,
+    };
+  }
+
+  // phase === 'serving'
+  const nextTimer = Math.max(0, state.phaseTimerSec - dt);
+  const completed = nextTimer <= 0;
+  return {
+    nextState: completed ? createInitialTariCafeServeState() : { ...state, phaseTimerSec: nextTimer },
+    x: counterX,
+    z: counterZ,
+    yaw: -Math.PI / 2,
+    isMoving: false,
+    speedMps: 0,
+    holdingCafeItemId: state.itemId,
+    statusLabel: `SERVING ${cleanItemName}`,
+    completedThisFrame: completed,
+  };
+}
+
 
 
 

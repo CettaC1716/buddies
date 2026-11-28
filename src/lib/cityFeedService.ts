@@ -299,6 +299,22 @@ export async function deleteCityFeedPost(
   postId: string,
   actorId: string,
 ): Promise<CityFeedPost[]> {
+  if (typeof window !== 'undefined') {
+    try {
+      const rawStatusFeed = window.localStorage.getItem('bb_player_status_feed_v1');
+      if (rawStatusFeed) {
+        const parsed = JSON.parse(rawStatusFeed);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter((item) => item && item.id !== postId);
+          if (filtered.length !== parsed.length) {
+            window.localStorage.setItem('bb_player_status_feed_v1', JSON.stringify(filtered));
+          }
+        }
+      }
+    } catch {
+      // ignore localStorage errors
+    }
+  }
   const optimistic = readCachedCityFeedPosts().filter((p) => p.id !== postId);
   emitLocalFeedUpdate(optimistic);
   broadcastCityFeedEvent({ type: 'delete', postId, actorId });

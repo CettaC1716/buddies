@@ -8,6 +8,7 @@ import {
   canPairPose,
   canRideTogether,
   canWalkTogether,
+  isHighTierMerchantNpc,
   npcIdToCitizenId,
   recordNpcSharedActivity,
   resolveNpcId,
@@ -57,6 +58,15 @@ export interface CityLifeAnchor {
  * in their deterministic `schedule` arrays.
  */
 export const CITY_LIFE_ANCHORS: Readonly<Record<string, CityLifeAnchor>> = {
+  glasshouse_cafe_door: {
+    id: 'glasshouse_cafe_door',
+    label: 'Glasshouse Cafe Entrance',
+    x: -90.55,
+    z: 22.15,
+    yaw: -Math.PI / 2,
+    activity: 'cafe_hangout',
+    district: 'glasshouse_cafe',
+  },
   glasshouse_cafe_counter: {
     id: 'glasshouse_cafe_counter',
     label: 'Glasshouse Cafe Counter',
@@ -398,6 +408,60 @@ export const CITY_LIFE_ANCHORS: Readonly<Record<string, CityLifeAnchor>> = {
     activity: 'walk_patrol',
     district: 'central_plaza',
   },
+  north_shops_nw_walk: {
+    id: 'north_shops_nw_walk',
+    label: 'North Shopping Avenue (West)',
+    x: -52.4,
+    z: -70.3,
+    yaw: Math.PI / 2,
+    activity: 'sightseeing',
+    district: 'central_plaza',
+  },
+  north_shops_center_walk: {
+    id: 'north_shops_center_walk',
+    label: 'North Shopping Boulevard',
+    x: 7.6,
+    z: -70.3,
+    yaw: -Math.PI / 2,
+    activity: 'sightseeing',
+    district: 'central_plaza',
+  },
+  north_shops_ne_walk: {
+    id: 'north_shops_ne_walk',
+    label: 'North Shopping Avenue (East)',
+    x: 52.4,
+    z: -70.3,
+    yaw: -Math.PI / 2,
+    activity: 'walk_patrol',
+    district: 'central_plaza',
+  },
+  south_shops_sw_walk: {
+    id: 'south_shops_sw_walk',
+    label: 'South Shopping Avenue (West)',
+    x: -52.4,
+    z: 70.3,
+    yaw: Math.PI / 2,
+    activity: 'sightseeing',
+    district: 'central_plaza',
+  },
+  south_shops_center_walk: {
+    id: 'south_shops_center_walk',
+    label: 'South Shopping Boulevard',
+    x: -7.6,
+    z: 70.3,
+    yaw: Math.PI / 2,
+    activity: 'sightseeing',
+    district: 'central_plaza',
+  },
+  south_shops_se_walk: {
+    id: 'south_shops_se_walk',
+    label: 'South Shopping Avenue (East)',
+    x: 52.4,
+    z: 70.3,
+    yaw: -Math.PI / 2,
+    activity: 'walk_patrol',
+    district: 'central_plaza',
+  },
 } as const;
 
 export const CITY_LIFE_ANCHOR_IDS: readonly string[] = Object.keys(CITY_LIFE_ANCHORS);
@@ -537,29 +601,6 @@ export function resolveNpcScheduledPatrolWaypoints(
         seatLiftY: anchor.seatLiftY,
       }));
   }
-  // Ambient Raka roams Central Urban Plaza (map center) per WS7 pairing revision
-  if (rawNpcId === 'city_plaza_raka') {
-    const rakaAnchorIds = [
-      'central_plaza_west_gate',
-      'central_boutique_front',
-      'central_plaza_north_walk',
-      'central_cozy_cafe_front',
-      'central_plaza_east_walk',
-    ] as const;
-    return rakaAnchorIds
-      .map((id) => getCityLifeAnchor(id))
-      .filter((a): a is CityLifeAnchor => Boolean(a))
-      .map((anchor) => ({
-        x: anchor.x,
-        z: anchor.z,
-        yaw: anchor.yaw,
-        activity: anchor.activity,
-        moveMode: 'walk' as const,
-        label: anchor.label,
-        durationSec: 15.0,
-        seatLiftY: anchor.seatLiftY,
-      }));
-  }
   const npcId = resolveNpcId(rawNpcId);
   if (!npcId) return null;
   ensureAllNpcPersonasRegistered();
@@ -585,6 +626,7 @@ export function resolveNpcScheduledPatrolWaypoints(
       label: slot.activityLabel.trim() || anchor.label,
       durationSec: anchor.activity === 'sit_relax' ? 22.0 : 16.0,
       seatLiftY: anchor.seatLiftY,
+      holdingCafeItemId: slot.holdingCafeItemId as CityAmbientNpcWaypoint['holdingCafeItemId'],
     });
   }
   return waypoints.length > 0 ? waypoints : null;
@@ -685,7 +727,11 @@ export interface NpcRideTogetherSession {
 
 export interface TogethernessActionResult<TSession> {
   allowed: boolean;
-  reason?: 'unknown_npc' | 'not_unlocked' | 'requires_electric_scooter_bike';
+  reason?:
+    | 'unknown_npc'
+    | 'not_unlocked'
+    | 'requires_electric_scooter_bike'
+    | 'merchant_role_restricted';
   message: string;
   session: TSession | null;
   closenessResult: ClosenessMutationResult | null;
@@ -706,6 +752,16 @@ export function startNpcWalkTogether(
       allowed: false,
       reason: 'unknown_npc',
       message: 'This person cannot walk with you right now.',
+      session: null,
+      closenessResult: null,
+    };
+  }
+  if (isHighTierMerchantNpc(npcId)) {
+    return {
+      allowed: false,
+      reason: 'merchant_role_restricted',
+      message:
+        'I have to stay near my plaza shop for guests, so I cannot head out on a walk—stop by and chat with me anytime!',
       session: null,
       closenessResult: null,
     };
@@ -800,6 +856,16 @@ export function startNpcRideTogether(
       allowed: false,
       reason: 'unknown_npc',
       message: 'This person cannot ride with you right now.',
+      session: null,
+      closenessResult: null,
+    };
+  }
+  if (isHighTierMerchantNpc(npcId)) {
+    return {
+      allowed: false,
+      reason: 'merchant_role_restricted',
+      message:
+        'I cannot hop on a scooter away from my plaza duties, though I am always glad when you stop by to talk.',
       session: null,
       closenessResult: null,
     };

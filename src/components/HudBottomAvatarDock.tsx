@@ -2,17 +2,16 @@ import React, { useEffect, useState } from 'react';
 import {
   Backpack,
   Bike,
-  Camera,
   ChevronRight,
   Fish,
   Gift,
   HeartHandshake,
   Lock,
   MessageCircle,
+  ShoppingBag,
   Square,
   User,
   X,
-  Zap,
 } from 'lucide-react';
 import { soundEngine } from '../game/audio';
 import {
@@ -25,6 +24,7 @@ import {
   readStoredStatusCoverPhotoUrl,
 } from './CharacterProfileModal';
 import {
+  resolveDefaultPlayerPhotoUrl,
   resolveNpcCitizenIdFromEntity,
   resolveNpcPhotoUrl,
   useNpcPortraitVersion,
@@ -71,6 +71,7 @@ export interface HudBottomAvatarDockProps {
   onOpenTargetProfile?: (entity: NearbyEntityUser) => void;
   onWhisperTarget?: (entity: NearbyEntityUser) => void;
   onTalkMerchantTarget?: (entity: NearbyEntityUser) => void;
+  onOpenMerchantCatalogTarget?: (entity: NearbyEntityUser) => void;
   onTalkCitizenTarget?: (entity: NearbyEntityUser) => void;
   onGiftTarget?: (entity: NearbyEntityUser) => void;
   onInteractTarget?: (entity: NearbyEntityUser) => void;
@@ -79,8 +80,6 @@ export interface HudBottomAvatarDockProps {
   onOpenScooterShowroom: () => void;
   onToggleFishingRod: () => void;
   onToggleScooterKind: (kind: UrbanScooterKind) => void;
-  isSelfieCameraOpen?: boolean;
-  onOpenSelfieCamera?: () => void;
 }
 
 const PORTRAIT_FRAME_GRADIENTS: Record<
@@ -107,6 +106,27 @@ const CORNER_BADGE_BG: Record<
 
 function cleanCharacterName(raw: string): string {
   return raw.replace(/\s*\((ANDA|YOU|KAMU)\)/gi, '').trim();
+}
+
+function KickScooterIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.1"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M14.5 5h3" />
+      <path d="M16 5l2 10.5" />
+      <path d="M7.5 16.5h8.2l1.8-2.5" />
+      <circle cx="5.5" cy="17.5" r="2.2" />
+      <circle cx="18.5" cy="17.5" r="2.2" />
+    </svg>
+  );
 }
 
 function getDockPhotoCropClassName(url: string): string {
@@ -137,7 +157,7 @@ function resolveEntityPortraitUrl(entity: NearbyEntityUser): string {
     lower.includes('nadia') ||
     lower.includes('mira') ||
     lower.includes('tari');
-  return isFemale ? '/assets/avatar_nadia.jpg' : '/assets/avatar_hiro.jpg';
+  return resolveDefaultPlayerPhotoUrl(isFemale ? 'female' : 'male', 'avatar');
 }
 
 function isEntityMerchant(entity: NearbyEntityUser): boolean {
@@ -150,6 +170,48 @@ function isEntityMerchant(entity: NearbyEntityUser): boolean {
       entity.id === 'city_plaza_nadia' ||
       entity.id === 'npc_nadia',
   );
+}
+
+function getMerchantCatalogMeta(entity: NearbyEntityUser): {
+  kind: 'west_plaza' | 'central_plaza' | 'harbor_market';
+  label: string;
+  gradientClassName: string;
+  desktopBorderShadowClassName: string;
+} | null {
+  if (!isEntityMerchant(entity)) return null;
+  if (
+    entity.id === 'city_plaza_nadia' ||
+    entity.id === 'npc_nadia' ||
+    entity.merchantLocation === 'central_plaza'
+  ) {
+    return {
+      kind: 'central_plaza',
+      label: 'Open Central Plaza Catalog',
+      gradientClassName: 'from-amber-400 to-orange-500',
+      desktopBorderShadowClassName:
+        'border-amber-200/55 shadow-[0_4px_12px_rgba(245,158,11,0.42)]',
+    };
+  }
+  if (
+    entity.id === 'npc_kai' ||
+    entity.id === 'npc_beach' ||
+    entity.merchantLocation === 'beach_house'
+  ) {
+    return {
+      kind: 'harbor_market',
+      label: 'Open Harbor Catalog',
+      gradientClassName: 'from-amber-400 to-orange-500',
+      desktopBorderShadowClassName:
+        'border-amber-200/55 shadow-[0_4px_12px_rgba(245,158,11,0.42)]',
+    };
+  }
+  return {
+    kind: 'west_plaza',
+    label: 'Open West Plaza Catalog',
+    gradientClassName: 'from-rose-400 to-pink-600',
+    desktopBorderShadowClassName:
+      'border-rose-200/55 shadow-[0_4px_12px_rgba(244,63,94,0.42)]',
+  };
 }
 
 /**
@@ -184,6 +246,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
   onOpenTargetProfile,
   onWhisperTarget,
   onTalkMerchantTarget,
+  onOpenMerchantCatalogTarget,
   onTalkCitizenTarget,
   onGiftTarget,
   onInteractTarget,
@@ -192,8 +255,6 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
   onOpenScooterShowroom,
   onToggleFishingRod,
   onToggleScooterKind,
-  isSelfieCameraOpen = false,
-  onOpenSelfieCamera,
 }) => {
   useNpcPortraitVersion();
   const [dockCategory, setDockCategory] = useState<'bag' | 'scooter'>('bag');
@@ -230,14 +291,12 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
       (isTargetInteractionOpen || isPairedModeActive || Boolean(matchingPendingChip)),
   );
 
-  const defaultSelfPortraitUrl =
-    characterGender === 'male'
-      ? '/assets/avatar_hiro.jpg'
-      : '/assets/avatar_nadia.jpg';
+  const defaultSelfPortraitUrl = resolveDefaultPlayerPhotoUrl(characterGender, 'avatar');
   const selfPortraitUrl = customCoverUrl || defaultSelfPortraitUrl;
 
   const targetCleanName = targetEntity ? cleanCharacterName(targetEntity.name) : '';
   const targetIsMerchant = targetEntity ? isEntityMerchant(targetEntity) : false;
+  const targetMerchantCatalogMeta = targetEntity ? getMerchantCatalogMeta(targetEntity) : null;
   const targetIsCitizen = Boolean(targetEntity && targetEntity.isNpc && !targetIsMerchant);
   const targetIsRealPlayer = Boolean(
     targetEntity &&
@@ -392,6 +451,21 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
             >
               <MessageCircle className="w-3.5 h-3.5 stroke-[2.2]" />
             </button>
+            {targetMerchantCatalogMeta && onOpenMerchantCatalogTarget && (
+              <button
+                type="button"
+                data-target-action="merchant_catalog"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  onOpenMerchantCatalogTarget(targetEntity);
+                }}
+                title={targetMerchantCatalogMeta.label}
+                aria-label={targetMerchantCatalogMeta.label}
+                className={`w-7 h-7 rounded-full bg-gradient-to-br ${targetMerchantCatalogMeta.gradientClassName} text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95`}
+              >
+                <ShoppingBag className="w-3.5 h-3.5 stroke-[2.2]" />
+              </button>
+            )}
             {(targetIsRealPlayer || isNpcChatSessionActive) && (
               <button
                 type="button"
@@ -501,26 +575,6 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
               <Fish className="w-3.5 h-3.5 stroke-[2.2]" />
             </button>
 
-            {onOpenSelfieCamera && (
-              <button
-                type="button"
-                data-dock-quick-selfie-camera="true"
-                onClick={() => {
-                  soundEngine.playUiClick();
-                  onOpenSelfieCamera();
-                }}
-                aria-label="City Selfie Camera"
-                aria-pressed={isSelfieCameraOpen}
-                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all ${
-                  isSelfieCameraOpen
-                    ? 'bg-gradient-to-br from-emerald-400 to-teal-500 text-white ring-1 ring-white'
-                    : 'bg-rose-500/35 border border-rose-300/45 text-rose-100'
-                }`}
-              >
-                <Camera className="w-3.5 h-3.5 stroke-[2.2]" />
-              </button>
-            )}
-
             <button
               type="button"
               data-dock-tab-scooter="true"
@@ -546,12 +600,19 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
 
             <button
               type="button"
+              disabled={Boolean(equippedScooterKind)}
               onClick={() => {
+                if (equippedScooterKind) return;
                 soundEngine.playUiClick();
                 onOpenBag();
               }}
+              title={equippedScooterKind ? 'Cannot open My Things while riding a scooter' : 'Open My Things'}
               aria-label="Open My Things"
-              className="w-7 h-7 rounded-full bg-emerald-500/30 border border-emerald-300/40 text-emerald-100 flex items-center justify-center shrink-0 cursor-pointer active:scale-95"
+              className={`w-7 h-7 rounded-full border flex items-center justify-center shrink-0 transition-all ${
+                equippedScooterKind
+                  ? 'bg-slate-700/40 border-slate-600/40 text-slate-500 opacity-40 cursor-not-allowed pointer-events-none'
+                  : 'bg-emerald-500/30 border-emerald-300/40 text-emerald-100 cursor-pointer active:scale-95'
+              }`}
             >
               <Backpack className="w-3.5 h-3.5 stroke-[2.2]" />
             </button>
@@ -853,6 +914,23 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                   </button>
                 )}
 
+                {/* 2b. Open Merchant Catalog (Rose/Amber Glossy Button — shown whenever targeting a Merchant) */}
+                {targetMerchantCatalogMeta && onOpenMerchantCatalogTarget && (
+                  <button
+                    type="button"
+                    data-target-action="merchant_catalog"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      onOpenMerchantCatalogTarget(targetEntity);
+                    }}
+                    title={targetMerchantCatalogMeta.label}
+                    aria-label={targetMerchantCatalogMeta.label}
+                    className={`w-9 h-9 rounded-full bg-gradient-to-br ${targetMerchantCatalogMeta.gradientClassName} hover:brightness-110 border ${targetMerchantCatalogMeta.desktopBorderShadowClassName} text-white flex items-center justify-center transition-all active:scale-95 cursor-pointer`}
+                  >
+                    <ShoppingBag className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+                  </button>
+                )}
+
                 {/* 3. Send Gift (Pink-Rose Glossy Button — human players or inside NPC chat session only) */}
                 {(targetIsRealPlayer || isNpcChatSessionActive) && (
                   <button
@@ -986,7 +1064,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                       {isElectric ? (
                         <Bike className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
                       ) : (
-                        <Zap className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
+                        <KickScooterIcon className="w-4 h-4" />
                       )}
                       {!isOwned && (
                         <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-[#0d1118] border border-white/30 flex items-center justify-center">
@@ -1041,28 +1119,6 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                     <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-lime-300 border-2 border-[#0d1118]" />
                   )}
                 </button>
-
-                {/* 2. Quick Bag Item: City Selfie Camera (Coral-Rose Glossy Button) */}
-                {onOpenSelfieCamera && (
-                  <button
-                    type="button"
-                    data-dock-quick-selfie-camera="true"
-                    onClick={() => {
-                      soundEngine.playUiClick();
-                      onOpenSelfieCamera();
-                    }}
-                    title="City Selfie Camera"
-                    aria-label="City Selfie Camera"
-                    aria-pressed={isSelfieCameraOpen}
-                    className={`relative w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-95 cursor-pointer ${
-                      isSelfieCameraOpen
-                        ? 'bg-gradient-to-br from-emerald-400 to-teal-500 text-white ring-2 ring-white shadow-[0_4px_14px_rgba(16,185,129,0.55)]'
-                        : 'bg-gradient-to-br from-rose-400 to-pink-600 hover:brightness-110 border border-rose-200/50 text-white shadow-[0_4px_12px_rgba(244,63,94,0.42)]'
-                    }`}
-                  >
-                    <Camera className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
-                  </button>
-                )}
               </div>
             </div>
           )}

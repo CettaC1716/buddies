@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import {
   ELECTRIC_SCOOTER_BIKE_SPEC,
   PUSH_KICK_SCOOTER_SPEC,
+  SCOOTER_RIDE_MODEL_SCALE_BY_KIND,
   URBAN_SCOOTER_CATALOG_ITEMS,
   URBAN_SCOOTER_SHOP_LAYOUT,
   URBAN_SCOOTER_SHOP_TRIGGER,
@@ -64,11 +65,13 @@ test('2 front outdoor scooter displays are non-rideable static props and leave e
   assert.equal(bikeDisp.isStaticDisplay, true);
   assert.equal(bikeDisp.isRideable, false);
   assert.equal(bikeDisp.currency, 'RESPITE');
+  assert.equal(bikeDisp.localScale, SCOOTER_RIDE_MODEL_SCALE_BY_KIND.electric_scooter_bike);
 
   assert.equal(kickDisp.kind, 'push_kick_scooter');
   assert.equal(kickDisp.isStaticDisplay, true);
   assert.equal(kickDisp.isRideable, false);
   assert.equal(kickDisp.currency, 'RESPITE');
+  assert.equal(kickDisp.localScale, SCOOTER_RIDE_MODEL_SCALE_BY_KIND.push_kick_scooter);
 
   // Both displays sit strictly to the right of Bay 3's double doors (`localX > entranceDoorLocalXMax`)
   assert.ok(bikeDisp.localX - bikeDisp.plinthHalfWidthLocal > URBAN_SCOOTER_SHOP_LAYOUT.entranceDoorLocalXMax);

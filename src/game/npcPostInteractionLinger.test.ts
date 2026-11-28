@@ -39,10 +39,27 @@ test('WS10 linger sets 25s timer on dialogue close, faces player, and ignores no
   assert.ok(Math.abs(closed.state.remainingSec - 24.9) < 0.01);
   assert.notEqual(closed.yaw, 0, 'NPC should smoothly turn toward player while lingering');
 
-  // Ambient citizen (Raka) does NOT enter named-NPC linger
-  const ambient = stepNpcPostInteractionLinger({
+  // Raka is now a full named NPC -> enters linger cleanly
+  const rakaLinger = stepNpcPostInteractionLinger({
     state: createIdleNpcLingerState(),
     npcId: 'city_plaza_raka',
+    wasTalking: true,
+    isTalking: false,
+    npcX: 21,
+    npcZ: 1,
+    npcYaw: 0,
+    playerX: 21,
+    playerZ: 4,
+    waypoints: SAMPLE_WAYPOINTS,
+    dt: 0.1,
+  });
+  assert.equal(rakaLinger.isLingering, true);
+  assert.equal(rakaLinger.state.active, true);
+
+  // Non-named ambient passerby does NOT enter named-NPC linger
+  const ambient = stepNpcPostInteractionLinger({
+    state: createIdleNpcLingerState(),
+    npcId: 'ambient_passerby_01',
     wasTalking: true,
     isTalking: false,
     npcX: 21,

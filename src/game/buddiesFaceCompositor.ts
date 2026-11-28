@@ -74,8 +74,19 @@ export interface BuddyFaceCustomizationProfile {
   underwearOverlay?: BeautyUvLayerSpec | null;
   corewearOverlay?: BeautyUvLayerSpec | null;
   hideBaseUnderwear?: boolean;
+  hideBaseBra?: boolean;
   tuning?: FaceTuningParams | null;
 }
+
+export const DEFAULT_MALE_UNDERWEAR_ITEM_ID = 'uw_underwear_m_6d78c756';
+
+export const DEFAULT_MALE_UNDERWEAR_OVERLAY: BeautyUvLayerSpec = {
+  url: '/assets/underwear/items/6D78C756_m.webp',
+  x: 1,
+  y: 437,
+  w: 619,
+  h: 256,
+};
 
 export const DEFAULT_NEUTRAL_FACE_CUSTOMIZATION: BuddyFaceCustomizationProfile = {
   eyeStyle: null,
@@ -92,6 +103,7 @@ export const DEFAULT_NEUTRAL_FACE_CUSTOMIZATION: BuddyFaceCustomizationProfile =
   underwearOverlay: null,
   corewearOverlay: null,
   hideBaseUnderwear: false,
+  hideBaseBra: false,
   tuning: null,
 };
 
@@ -205,9 +217,9 @@ export function getBlitzFaceUvCalibration(gender: 'male' | 'female'): BlitzFaceU
     eyeOffsetX: 48,
     eyeHalfW: 27,
     eyeHalfH: 10.5,
-    eyeClearRect: { x: 724, y: 141, w: 182, h: 26 },
-    eyeLeftClearRect: { x: 724, y: 141, w: 84, h: 26 },
-    eyeRightClearRect: { x: 822, y: 141, w: 84, h: 26 },
+    eyeClearRect: { x: 716, y: 140, w: 198, h: 27 },
+    eyeLeftClearRect: { x: 716, y: 140, w: 90, h: 27 },
+    eyeRightClearRect: { x: 824, y: 140, w: 90, h: 27 },
     browCenterY: 181,
     browOffsetX: 55,
     browHalfW: 39,
@@ -222,28 +234,51 @@ export function getBlitzFaceUvCalibration(gender: 'male' | 'female'): BlitzFaceU
   };
 }
 
+function fillRoundedRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+): void {
+  const r = Math.max(0, Math.min(radius, w * 0.5, h * 0.5));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
+}
+
 function clearFeatureRegionWithSkin(
   ctx: CanvasRenderingContext2D,
   rect: BlitzFaceUvRect,
   skinRgb: [number, number, number],
 ): void {
   const [r, g, b] = skinRgb;
-  const cx = rect.x + rect.w * 0.5;
-  const cy = rect.y + rect.h * 0.5;
-  const rx = rect.w * 0.52;
-  const ry = rect.h * 0.52;
+  const cornerR = Math.min(7, rect.w * 0.16, rect.h * 0.25);
   ctx.save();
-  // Elliptical soft-feathered skin clear so erased zone never shows boxy corners or cuts across adjacent features
-  ctx.translate(cx, cy);
-  ctx.scale(rx, ry);
-  const grad = ctx.createRadialGradient(0, 0, 0.58, 0, 0, 1.06);
-  grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 1)`);
-  grad.addColorStop(0.78, `rgba(${r}, ${g}, ${b}, 0.96)`);
-  grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(0, 0, 1.06, 0, Math.PI * 2);
-  ctx.fill();
+  // Soft 2px outer feather + 100% opaque rounded-rect core so corners (inner brow tips & outer eye wings) are completely erased
+  ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.42)`;
+  fillRoundedRectPath(ctx, rect.x - 1.5, rect.y - 1.5, rect.w + 3, rect.h + 3, cornerR + 1.5);
+  ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.78)`;
+  fillRoundedRectPath(ctx, rect.x - 0.5, rect.y - 0.5, rect.w + 1, rect.h + 1, cornerR + 0.5);
+  ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+  fillRoundedRectPath(
+    ctx,
+    rect.x + 0.5,
+    rect.y + 0.5,
+    Math.max(1, rect.w - 1),
+    Math.max(1, rect.h - 1),
+    cornerR,
+  );
   ctx.restore();
 }
 
@@ -1109,6 +1144,7 @@ export function applyBuddyRigFaceCustomization(
         underwearOverlay: profile.underwearOverlay ?? null,
         corewearOverlay: profile.corewearOverlay ?? null,
         hideBaseUnderwear: Boolean(profile.hideBaseUnderwear),
+        hideBaseBra: Boolean(profile.hideBaseBra),
         tuning: profile.tuning ?? null,
       }
     : DEFAULT_NEUTRAL_FACE_CUSTOMIZATION;
@@ -1140,8 +1176,14 @@ export function applyBuddyRigFaceCustomization(
 
   const gender = detectGenderFromGlbRoot(glbRoot, genderHint);
   const uv = getBlitzFaceUvCalibration(gender);
+  const effectiveUnderwearOverlay: BeautyUvLayerSpec | null =
+    resolved.underwearOverlay?.url
+      ? resolved.underwearOverlay
+      : gender === 'male' && !resolved.hideBaseUnderwear
+        ? DEFAULT_MALE_UNDERWEAR_OVERLAY
+        : null;
   const overlayLayers = [
-    resolved.underwearOverlay,
+    effectiveUnderwearOverlay,
     resolved.corewearOverlay,
     resolved.blushOverlay,
     resolved.eyeshadowOverlay,
@@ -1199,7 +1241,8 @@ export function applyBuddyRigFaceCustomization(
     !resolved.lipStyle &&
     overlayLayers.length === 0 &&
     !hasTextureTuning &&
-    !resolved.hideBaseUnderwear;
+    !resolved.hideBaseUnderwear &&
+    !(gender === 'female' && resolved.hideBaseBra);
 
   // Trigger async load for any uncached overlay WebP and re-composite when ready
   const pendingUrls = overlayLayers
@@ -1295,24 +1338,40 @@ export function applyBuddyRigFaceCustomization(
   ctx.save();
   ctx.scale(scaleX, scaleY);
 
-  // -1. Clear baked-in white underwear on the base skin atlas when player removes underwear
-  //     ("Bare / None") or equips custom underwear/corewear so white straps/panties never peek through.
+  // -1. Clear baked-in white underwear / bra on the base skin atlas when player hides them
+  //     ("No Bra" / "Bare / None") or equips custom underwear/corewear so white straps/panties never peek through.
   //     Both atlases keep the face in top-right (x >= 650, y <= 260), cleanly separated from body UVs.
-  if (
-    resolved.hideBaseUnderwear ||
-    Boolean(resolved.underwearOverlay?.url) ||
-    Boolean(resolved.corewearOverlay?.url)
-  ) {
+  const clearAllBaseUnderwear =
+    Boolean(effectiveUnderwearOverlay?.url) ||
+    Boolean(resolved.corewearOverlay?.url) ||
+    (Boolean(resolved.hideBaseUnderwear) && (gender !== 'female' || Boolean(resolved.hideBaseBra)));
+
+  if (clearAllBaseUnderwear) {
     ctx.fillStyle = `rgb(${skinRgb[0]}, ${skinRgb[1]}, ${skinRgb[2]})`;
     if (gender === 'female') {
       ctx.fillRect(0, 368, 616, 482);
     } else {
       ctx.fillRect(0, 380, 600, 260);
     }
+  } else if (gender === 'female') {
+    ctx.fillStyle = `rgb(${skinRgb[0]}, ${skinRgb[1]}, ${skinRgb[2]})`;
+    if (resolved.hideBaseUnderwear) {
+      // Clear base panties region (y: 483..628) while keeping base bra (y: 791..838) intact
+      ctx.fillRect(0, 368, 616, 390);
+    }
+    if (resolved.hideBaseBra) {
+      // Clear base bra region (y: 791..838) while keeping base panties (y: 483..628) and neck (y: 944..1005) intact
+      ctx.fillRect(0, 770, 616, 86);
+    }
   }
 
   // Body 2D Underwear & Corewear
-  drawUvOverlayLayer(ctx, resolved.underwearOverlay);
+  drawUvOverlayLayer(ctx, effectiveUnderwearOverlay);
+  if (gender === 'female' && resolved.hideBaseBra && effectiveUnderwearOverlay?.url) {
+    // Mask bra/straps region (y: 755..940) of custom 2D underwear overlay while preserving panties (y: 377..755) & neck (y: 944..1005)
+    ctx.fillStyle = `rgb(${skinRgb[0]}, ${skinRgb[1]}, ${skinRgb[2]})`;
+    ctx.fillRect(0, 755, 616, 185);
+  }
   drawUvOverlayLayer(ctx, resolved.corewearOverlay);
 
   // 0. Clear baked base facial features FIRST (before any nose/blush/eyeshadow/facepaint)
@@ -1339,10 +1398,22 @@ export function applyBuddyRigFaceCustomization(
   if (hasCustomEyeOverlay || resolved.eyeStyle || needDefaultEyePatch) {
     clearFeatureRegionWithSkin(ctx, uv.eyeLeftClearRect, skinRgb);
     clearFeatureRegionWithSkin(ctx, uv.eyeRightClearRect, skinRgb);
+    if (gender === 'male') {
+      // Clear baked male upper eyelid crease (y: 165..175) and inner-corner brow/glabella tips (y: 159..176)
+      clearFeatureRegionWithSkin(ctx, { x: 726, y: 165, w: 80, h: 10 }, skinRgb);
+      clearFeatureRegionWithSkin(ctx, { x: 824, y: 165, w: 80, h: 10 }, skinRgb);
+      clearFeatureRegionWithSkin(ctx, { x: 786, y: 159, w: 20, h: 17 }, skinRgb);
+      clearFeatureRegionWithSkin(ctx, { x: 824, y: 159, w: 20, h: 17 }, skinRgb);
+    }
   }
   if (hasCustomBrowOverlay || resolved.browStyle || needDefaultBrowPatch) {
     clearFeatureRegionWithSkin(ctx, uv.browLeftClearRect, skinRgb);
     clearFeatureRegionWithSkin(ctx, uv.browRightClearRect, skinRgb);
+    if (gender === 'male') {
+      // Clear downward-angled inner tips of the baked male eyebrows (x: 786..806 / 824..844, y: 159..176)
+      clearFeatureRegionWithSkin(ctx, { x: 786, y: 159, w: 20, h: 17 }, skinRgb);
+      clearFeatureRegionWithSkin(ctx, { x: 824, y: 159, w: 20, h: 17 }, skinRgb);
+    }
   }
   if (hasCustomLipOverlay || resolved.lipStyle || needDefaultLipPatch) {
     clearFeatureRegionWithSkin(ctx, uv.lipClearRect, skinRgb);
