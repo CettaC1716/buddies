@@ -873,7 +873,9 @@ export const CafeWorkShiftBottomDock: React.FC<CafeWorkShiftBottomDockProps> = (
         nearbyEntity.id === 'npc_hana' ||
         nearbyEntity.id === 'npc_cafe' ||
         nearbyEntity.id === 'npc_kai' ||
-        nearbyEntity.id === 'npc_beach'),
+        nearbyEntity.id === 'npc_beach' ||
+        nearbyEntity.id === 'city_plaza_nadia' ||
+        nearbyEntity.id === 'npc_nadia'),
   );
   const isCitizenNpcEntity = Boolean(nearbyEntity && nearbyEntity.isNpc && !isMerchantEntity);
   const isWhisperablePlayer = Boolean(

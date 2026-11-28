@@ -2804,7 +2804,7 @@ export function buildCozyBitesCafePavilion3D(ctx: UrbanPlazaBuildingsContext): v
   buildUrnBoxwoodPlanter(grp, ctx, [halfW + 0.36, 0, -3.55], 0.94, 'sphere');
   buildUrnBoxwoodPlanter(grp, ctx, [halfW + 0.36, 0, 3.55], 0.94, 'cone');
 
-  // 4 Complete Outdoor Bistro Table + 2 Bentwood Chair Sets at exact Masterplan coordinates
+  // Outdoor Bistro Table + 2 Bentwood Chair Set(s) at Masterplan coordinates
   for (const tbl of CENTRAL_PARK_MASTERPLAN.bistroTables) {
     // Orient West front patio tables' chairs North-South (`0`), South patio tables' chairs East-West (`Math.PI / 2`)
     const isWestPatio = tbl.x < cf.x - 2.0;
@@ -2862,6 +2862,24 @@ export function buildCozyBitesCafePavilionGlb3D(ctx: UrbanPlazaBuildingsContext)
 
   if (typeof window === 'undefined') return; // node/tests: skip async load
   const glowUniforms = ctx.plazaBuildingGlowUniforms ?? createPlazaBuildingGlowUniforms();
+  const bitesExcludedNodes: readonly string[] = [
+    // Tall wrought-iron clock post & hanging flower blooms obstructing Central Plaza walkway
+    'Clock_Face_Back',
+    'Clock_Face_Front',
+    'Clock_Housing_Metal_Wrought_Iron',
+    'Clock_Post_Metal_Wrought_Iron',
+    'Flower_Bloom_Flowers_Hanging_Pink',
+    // Circular slatted wooden bench & planter soil obstructing walkway
+    'Bench_Legs_Wood_Dark_Oak',
+    'Bench_Soil_Soil_Dark',
+    'Bench_Timber_Wood_Honey_Oak',
+    'Curved_Tree_Bench_Wood_Honey_Oak',
+    // North bistro table + 2 chairs baked inside Bites GLB (leaving only 1 bistro set at cozy_cafe_table_fs)
+    'Chair_Iron_Metal_Wrought_Iron',
+    'Chair_Oak_Wood_Honey_Oak',
+    'Table_Iron_Metal_Wrought_Iron',
+    'Table_Oak_Wood_Honey_Oak',
+  ];
   new GLTFLoader().load(
     BITES_SIPS_PAVILION_GLB_PATH,
     (gltf) => {
@@ -2869,8 +2887,19 @@ export function buildCozyBitesCafePavilionGlb3D(ctx: UrbanPlazaBuildingsContext)
       optimizeCentralPlazaBuildingGlb(gltf.scene, {
         buildingId: 'CozyBitesPavilion',
         glowUniforms,
+        windUniforms: ctx.windUniforms,
         isSoftwareGl: ctx.isSoftwareGl,
         glassWarmTintHex: '#ffdfa0',
+        excludedNodeNames: bitesExcludedNodes,
+        excludeTriangleCentroid: (nodeName, c) => {
+          // 1. Hanging terracotta flower pots suspended from the clock post (y > 1.0 in GLB space)
+          if (nodeName === 'Pot_Terra_Pot_Terracotta' && c.y > 1.0) return true;
+          // 2. Tree trunk & branches inside the circular slatted wood bench (c.x > 1.5 && c.z > 1.5)
+          if (nodeName === 'Tree_Trunk_Tree_Bark_Warm' && c.x > 1.5 && c.z > 1.5) return true;
+          // 3. Tree canopy & hanging clock-post greenery (c.x > 1.5 && c.y >= 1.5), keeping low corner shrubs (y < 1.0)
+          if (nodeName === 'Foliage_3D_Foliage_Cafe_Tree' && c.x > 1.5 && c.y >= 1.5) return true;
+          return false;
+        },
       });
       grp.add(gltf.scene);
     },
@@ -2973,6 +3002,7 @@ export function buildVintageCafeGlb3D(ctx: UrbanPlazaBuildingsContext): void {
       optimizeCentralPlazaBuildingGlb(gltf.scene, {
         buildingId: 'VintageCafe',
         glowUniforms,
+        windUniforms: ctx.windUniforms,
         isSoftwareGl: ctx.isSoftwareGl,
         glassWarmTintHex: '#ffe0a3',
       });

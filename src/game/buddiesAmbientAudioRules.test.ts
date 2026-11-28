@@ -30,7 +30,6 @@ test('classifyFootstepSurface resolves distinct surfaces cleanly across map habi
   assert.equal(classifyFootstepSurface(-62.2, 0.0), 'stone_road');
   assert.equal(classifyFootstepSurface(96.0, 108.0), 'stone_road');
   assert.equal(classifyFootstepSurface(0.0, 0.0, 'cafe_interior'), 'stone_road');
-  assert.equal(classifyFootstepSurface(0.0, 0.0, 'salon_interior'), 'stone_road');
 
   // NW Oasis Lake & Open East Ocean (beyond widened 134.0m shoreline)
   assert.equal(classifyFootstepSurface(-31.0, 0.0), 'water');

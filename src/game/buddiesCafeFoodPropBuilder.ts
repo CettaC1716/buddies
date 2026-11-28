@@ -451,6 +451,16 @@ const ITEM_GROUP_BUILDERS: Record<CafeMenuItemId, (addPart: CafePropAddPartFn) =
   muffin: buildMuffinGroup,
 };
 
+export function createCafeFoodPropMesh(
+  itemId: CafeMenuItemId,
+  addPart: CafePropAddPartFn = defaultAddFoodPart,
+): THREE.Group {
+  const builder = ITEM_GROUP_BUILDERS[itemId] ?? buildLatteGroup;
+  const grp = builder(addPart);
+  grp.name = `CafeShowcase_${itemId}`;
+  return grp;
+}
+
 export function createCafeHeldFoodGroup(
   addPart: CafePropAddPartFn = defaultAddFoodPart,
 ): CafeHeldFoodRigHandle {

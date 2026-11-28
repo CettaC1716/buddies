@@ -13,7 +13,6 @@ export const LIGHTING_HYGIENE_LIMITS = {
   laserPointLightMaxDistSq: 48 * 48,
   maxHouseInteriorPointLights: 2,
   maxCafeInteriorPointLights: 2,
-  maxSalonInteriorPointLights: 2,
   defaultShadowMapRes: 1024,
   shadowUpdateMaxIntervalFrames: 12,
   defaultDistrictChunkCullRadiusM: 152,

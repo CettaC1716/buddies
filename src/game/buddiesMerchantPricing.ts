@@ -20,7 +20,7 @@
 import { BaseGardenPresetId, BaseSkinThemeId, CityTransitStationId } from './buddiesBlitzRules';
 import type { ShopBuildingFormId } from './buddiesCityRentalLotsRules';
 
-export type MerchantLocationId = 'lobby_cafe' | 'beach_house';
+export type MerchantLocationId = 'lobby_cafe' | 'beach_house' | 'central_plaza';
 
 export type HouseInteriorSlotId = 'center_table' | 'left_wall' | 'right_wall' | 'corner_plant' | 'trophy_pedestal';
 
@@ -1375,15 +1375,27 @@ export function generateNpcMerchantReply(
   liveContext?: NpcConciergeLiveContext,
 ): string {
   const q = userMessage.trim().toLowerCase();
-  const locName = location === 'lobby_cafe' ? 'Central Plaza Cafe' : 'Beachfront Harbor';
-  const npcName = location === 'lobby_cafe' ? 'Hana' : 'Kai';
+  const locName =
+    location === 'beach_house'
+      ? 'Beachfront Harbor'
+      : location === 'central_plaza'
+        ? 'Central Plaza'
+        : 'Central Plaza Cafe';
+  const npcName =
+    location === 'beach_house'
+      ? 'Kai'
+      : location === 'central_plaza'
+        ? 'Nadia'
+        : 'Hana';
   const quote = evaluateLulToCyonExchangeQuote(state);
   const guestNotice = !balances.walletConnected
     ? ' Sign in first to unlock the Exchange and Catalog.'
     : '';
 
   if (!q) {
-    return `Hi, I am ${npcName} at ${locName}. Ask me about places in the city, fishing, Fish NFT sales, currencies, houses, or the Warzone.`;
+    return location === 'central_plaza'
+      ? `Hi, I am Nadia at Central Plaza. Ask me about Glow face styling, Cerria Bites & Sips gifts and treats, Red Studio animations, or places around the city.`
+      : `Hi, I am ${npcName} at ${locName}. Ask me about places in the city, fishing, Fish NFT sales, currencies, houses, or the Warzone.`;
   }
 
   // 1. Shop support / investor bailout when shop reserve is low
@@ -2622,8 +2634,8 @@ export function buildOfflineChatTransactionAck(
       return `Your starter pack claim card (0.30 NEAR + 100 LUL + 20 CYON) is ready right below in chat.`;
     case 'teleport_places': {
       const targetNameMap: Record<CityTransitStationId, string> = {
-        central_plaza: 'Central Plaza',
-        central_park: 'Central Park',
+        central_plaza: 'West Plaza',
+        central_park: 'Central Plaza',
         beachfront_harbor: 'Beachfront Harbor',
         kai_fish_market: 'Kai Fish Market',
         nw_fishing_lake: 'NW Fishing Lake',

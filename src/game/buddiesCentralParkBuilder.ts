@@ -2448,18 +2448,12 @@ export function buildCentralBotanicalPark3D(
     return out;
   })();
   const terrazzoSlabGeo = createHorizontalPolygonSlabGeometry(insetPlazaVerts, -0.04, 0.042, 2.1);
-  const terrazzoSlabMesh = addPart(staticGroup, terrazzoSlabGeo, '#ffffff', [0, 0, 0], [0, 0, 0], {
+  addPart(staticGroup, terrazzoSlabGeo, '#ffffff', [0, 0, 0], [0, 0, 0], {
     map: terrazzoCheckerTex,
     castShadow: false,
     receiveShadow: true,
     bounce: 0.14,
   });
-  // Push plaza terrazzo slightly back in depth buffer so inlays, curbs & building bases never Z-fight
-  if (!Array.isArray(terrazzoSlabMesh.material)) {
-    terrazzoSlabMesh.material.polygonOffset = true;
-    terrazzoSlabMesh.material.polygonOffsetFactor = 1;
-    terrazzoSlabMesh.material.polygonOffsetUnits = 1;
-  }
 
   // Walkable Beveled Granite/Limestone Perimeter Curbs around all 12 polygon vertices (ZERO barrier fences!)
   const perimeterCurbGeo = createMiteredPerimeterCurbGeometry(CENTRAL_PARK_PERIMETER_VERTICES, 0.36, -0.06, 0.088, 0.035);

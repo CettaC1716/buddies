@@ -15,7 +15,6 @@ export type SceneModeId =
   | 'house_visit'
   | 'cafe_interior'
   | 'casino_interior'
-  | 'salon_interior'
   | 'character_select'
   | 'city_view';
 

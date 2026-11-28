@@ -144,7 +144,7 @@ test('Central Urban Plaza masterplan geometry, buildings, fountain, pergola pond
     );
   }
 
-  assert.equal(mp.bistroTables.length, 4, 'Cozy Bites patio must include 4 outdoor bistro tables');
+  assert.equal(mp.bistroTables.length, 1, 'Cozy Bites patio must include 1 outdoor bistro table');
   for (const tbl of mp.bistroTables) {
     checkInsideAndClear(tbl.id, tbl.x, tbl.z, 2.0);
   }

@@ -82,8 +82,7 @@ export function isFlatIndoorZoneKey(zoneKey: string): boolean {
   return (
     zoneKey.startsWith('house:') ||
     zoneKey.startsWith('cafe:') ||
-    zoneKey.startsWith('casino:') ||
-    zoneKey.startsWith('salon:')
+    zoneKey.startsWith('casino:')
   );
 }
 

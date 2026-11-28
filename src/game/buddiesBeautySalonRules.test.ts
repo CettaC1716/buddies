@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import * as THREE from 'three';
 import {
   SALON_EXTERIOR_DOOR_TRIGGER,
   SALON_EXTERIOR_GLB_SCALE,
@@ -9,69 +8,12 @@ import {
   SALON_INTERIOR_BOUNDS,
   SALON_INTERIOR_COLLIDERS,
   SALON_INTERIOR_SEAT_SPOTS,
-  SALON_ORIGIN_Y,
-  SALON_STATION_TARGETS,
   clampSalonInteriorPosition,
-  computeSalonOrbitCameraPose,
-  computeSalonSeatStandUpPosition,
-  resolveNearestSalonPromptOrSeat,
   resolveSalonInteriorFloorY,
 } from './buddiesBeautySalonRules';
-import { buildBeautySalonInterior } from './buddiesBeautySalonInteriorBuilder';
-import { LIGHTING_HYGIENE_LIMITS } from './buddiesHubRenderOptimizer';
 import { getCentralParkObstacles } from './buddiesCentralParkRules';
-import { isFlatIndoorZoneKey } from './buddiesRemotePresenceSync';
-import { classifyFootstepSurface } from './buddiesAmbientAudioRules';
 
-function withMockDocumentCanvas<T>(fn: () => T): T {
-  const prevDoc = (globalThis as { document?: unknown }).document;
-  if (prevDoc !== undefined) return fn();
-  const noopGrad = { addColorStop: () => {} };
-  const ctxProxy = new Proxy(
-    {
-      fillStyle: '#000',
-      strokeStyle: '#000',
-      lineWidth: 1,
-      font: '12px sans-serif',
-      textAlign: 'left',
-      textBaseline: 'alphabetic',
-      globalAlpha: 1,
-      createLinearGradient: () => noopGrad,
-      createRadialGradient: () => noopGrad,
-      createImageData: (w: number, h: number) => ({
-        data: new Uint8ClampedArray(w * h * 4),
-        width: w,
-        height: h,
-      }),
-      getImageData: (_x: number, _y: number, w: number, h: number) => ({
-        data: new Uint8ClampedArray(w * h * 4),
-        width: w,
-        height: h,
-      }),
-      measureText: () => ({ width: 24 }),
-    },
-    {
-      get(target, prop) {
-        if (prop in target) return (target as Record<PropertyKey, unknown>)[prop];
-        return () => {};
-      },
-    },
-  );
-  (globalThis as { document?: unknown }).document = {
-    createElement: () => ({ width: 256, height: 256, getContext: () => ctxProxy }),
-  };
-  try {
-    return fn();
-  } finally {
-    delete (globalThis as { document?: unknown }).document;
-  }
-}
-
-test('Beauty Salon exterior door threshold sits clear on North Promenade & zone/audio rules stay consistent', () => {
-  assert.equal(SALON_ORIGIN_Y, 355.0);
-  assert.equal(isFlatIndoorZoneKey('salon:beauty_glow'), true);
-  assert.equal(classifyFootstepSurface(0, 0, 'salon_interior'), 'stone_road');
-
+test('Beauty Salon exterior door threshold sits clear on North Promenade', () => {
   const salonObb = getCentralParkObstacles().find((o) => o.id === 'urban_plaza_beauty_salon');
   assert.ok(salonObb, 'Expected exterior Beauty Salon OBB obstacle');
   // Entrance threshold (z = 8.46, exitSpawnZ = 8.26) sits strictly North of the
@@ -169,116 +111,15 @@ test('Beauty Salon L-shaped staircase climbs continuously 1F (0.0m) -> Landing (
   assert.ok(Math.abs(descY - SALON_INTERIOR_BOUNDS.midLandingY) < 1e-4);
 });
 
-test('Rectangular GLB envelope clamps avatars & floor-isolated seating/exit prompts resolve cleanly', () => {
+test('Rectangular GLB envelope clamps avatars & seat/collider registry stays floor-consistent', () => {
   // Attempt to walk far outside the envelope
   const clamped = clampSalonInteriorPosition(99, 99, 0.0);
   assert.ok(clamped.x <= SALON_INTERIOR_BOUNDS.maxX - SALON_INTERIOR_BOUNDS.wallMargin + 1e-6);
   assert.ok(clamped.z <= SALON_INTERIOR_BOUNDS.maxZ - SALON_INTERIOR_BOUNDS.wallMargin + 1e-6);
   assert.equal(clamped.floorY, 0.0);
 
-  // Near 1F Exit Door (the model's main door, South wall)
-  const exitPrompt = resolveNearestSalonPromptOrSeat(
-    SALON_STATION_TARGETS.exitDoor.x - 0.5,
-    SALON_STATION_TARGETS.exitDoor.z,
-    0.0,
-  );
-  assert.equal(exitPrompt.target, 'station');
-  assert.equal(exitPrompt.stationKind, 'exit_door');
-
-  // On 2F above the vanity row, the 1F exit door and 1F vanities stay silent;
-  // the nearest seat is the 2F lounge sofa
-  const upperCheck = resolveNearestSalonPromptOrSeat(3.64, 2.0, SALON_INTERIOR_BOUNDS.secondFloorY);
-  assert.notEqual(upperCheck.stationKind, 'exit_door');
-  if (upperCheck.seatSpot) {
-    assert.equal(upperCheck.seatSpot.floorLevel, '2f');
-  }
-
-  // Stand-up positions for all 6 seats remain within walkable floor level & clear of the seat itself
   assert.equal(SALON_INTERIOR_SEAT_SPOTS.length, 6);
-  for (const spot of SALON_INTERIOR_SEAT_SPOTS) {
-    const up = computeSalonSeatStandUpPosition(spot);
-    assert.equal(up.floorY, spot.floorY);
-    assert.ok(Math.hypot(up.x - spot.x, up.z - spot.z) >= 0.5);
-  }
 
   assert.ok(SALON_INTERIOR_COLLIDERS.some((c) => c.id === 'salon_1f_reception_front' && c.floorLevel === '1f'));
   assert.ok(SALON_INTERIOR_COLLIDERS.some((c) => c.id === 'salon_2f_spa_bed' && c.floorLevel === '2f'));
-});
-
-test('computeSalonOrbitCameraPose frames both 1F showroom and 2F mezzanine without wall clipping', () => {
-  const pose1f = computeSalonOrbitCameraPose({
-    originY: SALON_ORIGIN_Y,
-    anchorX: SALON_INTERIOR_BOUNDS.spawnX,
-    anchorZ: SALON_INTERIOR_BOUNDS.spawnZ,
-    floorY: 0,
-    yaw: 0.62,
-    pitch: 0.48,
-    dist: 6.4,
-  });
-  assert.ok(pose1f.camY > SALON_ORIGIN_Y + 1.5);
-  assert.ok(pose1f.camX >= SALON_INTERIOR_BOUNDS.minX + 0.45);
-  assert.ok(pose1f.camZ >= SALON_INTERIOR_BOUNDS.minZ + 0.45);
-
-  const pose2f = computeSalonOrbitCameraPose({
-    originY: SALON_ORIGIN_Y,
-    anchorX: SALON_STATION_TARGETS.spaSuite.x,
-    anchorZ: SALON_STATION_TARGETS.spaSuite.z,
-    floorY: SALON_INTERIOR_BOUNDS.secondFloorY,
-    yaw: 0.62,
-    pitch: 0.48,
-    dist: 6.4,
-  });
-  assert.ok(pose2f.lookY >= SALON_ORIGIN_Y + SALON_INTERIOR_BOUNDS.secondFloorY + 0.9);
-  assert.ok(pose2f.camY > pose1f.camY + 2.0);
-});
-
-test('buildBeautySalonInterior mounts the Glow GLB at the interior origin with the seat-coin handle contract', () => {
-  const salon = withMockDocumentCanvas(() => buildBeautySalonInterior());
-
-  // Root sits at the isolated interior origin; the GLB mount child carries
-  // the shared salon scale (the model itself loads async in the browser,
-  // so its meshes are not counted synchronously here).
-  assert.equal(salon.root.name, 'BeautyGlowSalonInterior3D');
-  assert.equal(salon.root.position.y, SALON_ORIGIN_Y);
-  const glbMount = salon.root.getObjectByName('BeautyGlowSalonInteriorGlb3D');
-  assert.ok(glbMount, 'Expected the interior GLB mount group');
-  assert.ok(Math.abs(glbMount.scale.x - SALON_GLB_SCALE) < 1e-9);
-
-  // One floating seat-coin indicator per sittable seat spot
-  assert.equal(salon.floorSpotIndicators.length, SALON_INTERIOR_SEAT_SPOTS.length);
-
-  let meshCount = 0;
-  const pointLights: THREE.PointLight[] = [];
-  const spotLights: THREE.SpotLight[] = [];
-  salon.root.traverse((obj) => {
-    if ((obj as THREE.PointLight).isPointLight) pointLights.push(obj as THREE.PointLight);
-    if ((obj as THREE.SpotLight).isSpotLight) spotLights.push(obj as THREE.SpotLight);
-    if ((obj as THREE.Mesh).isMesh) {
-      meshCount++;
-      const mesh = obj as THREE.Mesh;
-      const pos = mesh.geometry?.getAttribute('position');
-      if (pos) {
-        for (let i = 0; i < pos.count; i++) {
-          assert.ok(Number.isFinite(pos.getX(i)), `Non-finite X vertex in ${mesh.name}`);
-          assert.ok(Number.isFinite(pos.getY(i)), `Non-finite Y vertex in ${mesh.name}`);
-          assert.ok(Number.isFinite(pos.getZ(i)), `Non-finite Z vertex in ${mesh.name}`);
-        }
-      }
-    }
-  });
-
-  assert.ok(meshCount >= 4, `Expected the exit pad + seat coin meshes, got ${meshCount}`);
-  assert.equal(spotLights.length, 0);
-  assert.ok(
-    pointLights.length <= LIGHTING_HYGIENE_LIMITS.maxSalonInteriorPointLights,
-    `Expected <= ${LIGHTING_HYGIENE_LIMITS.maxSalonInteriorPointLights} PointLights, got ${pointLights.length}`,
-  );
-  for (const pt of pointLights) {
-    assert.equal(pt.castShadow, false);
-    assert.ok(pt.decay >= 1.2 && pt.decay <= 1.8);
-  }
-
-  salon.updateVisuals(1.25, 'exit_door', 0.0);
-  salon.updateVisuals(2.5, null, SALON_INTERIOR_BOUNDS.secondFloorY);
-  salon.dispose();
 });

@@ -24,8 +24,8 @@ test('My Things defines the four required ownership sections in order', () => {
   );
 });
 
-test('Wallet tabs contain only wallet and history (no assets tab)', () => {
-  assert.deepEqual([...WALLET_TABS], ['wallet', 'history']);
+test('Wallet tabs contain wallet, exchange, and history (no assets tab)', () => {
+  assert.deepEqual([...WALLET_TABS], ['wallet', 'exchange', 'history']);
 });
 
 test('sanitizeOwnedItemLabel strips NFT and NEP token jargon cleanly', () => {

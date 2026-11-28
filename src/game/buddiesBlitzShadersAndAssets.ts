@@ -1975,8 +1975,11 @@ export function upgradeMeshToBlitzWorldMaterial(
   );
   const alphaTest =
     srcMat && typeof srcMat.alphaTest === 'number' && srcMat.alphaTest > 0 ? srcMat.alphaTest : 0.0;
+  const hasPolygonOffset = Boolean(srcMat && srcMat.polygonOffset);
+  const polygonOffsetFactor = hasPolygonOffset ? srcMat.polygonOffsetFactor : 0;
+  const polygonOffsetUnits = hasPolygonOffset ? srcMat.polygonOffsetUnits : 0;
   const showcaseNightUniform = getSharedShowcaseNightUniform(windUniforms);
-  const cacheKey = `${baseColor.getHexString()}_${mapTex ? mapTex.uuid : 'nomap'}_${bounceStrength.toFixed(3)}_${hasVertexColor ? 1 : 0}${alphaTest > 0 ? `_at${alphaTest.toFixed(2)}` : ''}`;
+  const cacheKey = `${baseColor.getHexString()}_${mapTex ? mapTex.uuid : 'nomap'}_${bounceStrength.toFixed(3)}_${hasVertexColor ? 1 : 0}${alphaTest > 0 ? `_at${alphaTest.toFixed(2)}` : ''}${hasPolygonOffset ? `_po${polygonOffsetFactor}_${polygonOffsetUnits}` : ''}`;
   let mat = uniformCache.get(cacheKey);
 
   if (!mat) {
@@ -2001,6 +2004,9 @@ export function upgradeMeshToBlitzWorldMaterial(
       fog: true,
       lights: true,
       vertexColors: hasVertexColor,
+      polygonOffset: hasPolygonOffset,
+      polygonOffsetFactor,
+      polygonOffsetUnits,
       vertexShader: /* glsl */ `
         #include <common>
         #include <color_pars_vertex>
@@ -23670,6 +23676,7 @@ export function createCurvedPlanetEnvironment(
       uCliffOchre: { value: new THREE.Color('#ba9e78') },
       uHillGrassMid: { value: new THREE.Color('#56b838') },
       uHillGrassBright: { value: new THREE.Color('#86dd44') },
+      uCentralPlazaCutout: { value: 1.0 },
     },
     fog: true,
     vertexShader: /* glsl */ `
@@ -23738,6 +23745,7 @@ export function createCurvedPlanetEnvironment(
       uniform vec3 uCliffOchre;
       uniform vec3 uHillGrassMid;
       uniform vec3 uHillGrassBright;
+      uniform float uCentralPlazaCutout;
 
       varying vec3 vFlatWorldPos;
       varying vec3 vNormalW;
@@ -24007,10 +24015,16 @@ export function createCurvedPlanetEnvironment(
         surfaceCol = mix(surfaceCol, uGrassEdge, edgeBand * 0.55);
 
         float centralParkSdf = evaluateCentralParkOctagonSdf(p);
-        float inCentralParkMask = 1.0 - smoothstep(-0.35, 0.25, centralParkSdf);
+        // Cut out CurvedPlanetGround underneath Central Plaza's solid terrazzo slab (+0.042m)
+        // inside the 0.36m granite perimeter curb (-0.18..+0.18) so zero green ground plane
+        // ever sits beneath the terrazzo floor or Z-fights at high camera altitudes.
+        if (uCentralPlazaCutout > 0.5 && centralParkSdf < -0.08) {
+          discard;
+        }
+        float inCentralParkMask = 1.0 - smoothstep(-0.12, 0.42, centralParkSdf);
         if (inCentralParkMask > 0.001) {
-          vec3 parkTurfBase = mix(uGrassFloor * vec3(0.76, 0.96, 0.80), uGrassFloor * vec3(0.84, 1.02, 0.86), 0.5);
-          surfaceCol = mix(surfaceCol, parkTurfBase, inCentralParkMask);
+          vec3 plazaStoneBase = mix(vec3(0.75, 0.71, 0.66), vec3(0.81, 0.77, 0.72), soilNoise) * uGroundLightTint;
+          surfaceCol = mix(surfaceCol, plazaStoneBase, inCentralParkMask);
         }
 
         // 2. Continuous East Coast Tropical Beach Club & Kai's Golden Sand Beachfront + Widened Shoreline
@@ -24380,11 +24394,11 @@ export function createCurvedPlanetEnvironment(
         float castShadow = sampleBlitzCastShadow(vFlatWorldPos);
         float shadowStrength = 1.0 - castShadow;
         if (shadowStrength > 0.005) {
-          float pavedMask = clamp(roadMask + concreteMask + westPlantMask, 0.0, 1.0);
+          float pavedMask = clamp(roadMask + concreteMask + westPlantMask + inCentralParkMask, 0.0, 1.0);
           float underwaterShadowMask = clamp(seaMask + lakeWaterMask, 0.0, 1.0);
           float organicShadow = mix(shadowStrength, smoothstep(0.02, 0.98, shadowStrength), 0.32);
 
-          float grassOrPark = smoothstep(0.15, 0.75, max(grassMask, inCentralParkMask));
+          float grassOrPark = smoothstep(0.15, 0.75, grassMask);
           // Scale ground shadow tints by uGroundLightTint so dirt/grass cast shadows never glow brighter than lit ground at dusk/night
           vec3 naturalTint = mix(uDirtShadowTint, uGrassShadowTint, grassOrPark) * uGroundLightTint;
           vec3 naturalMul = surfaceCol * mix(vec3(0.56, 0.50, 0.44), vec3(0.48, 0.58, 0.46), grassOrPark);
@@ -24408,7 +24422,7 @@ export function createCurvedPlanetEnvironment(
         vec3 preGroundFogRgb = gl_FragColor.rgb;
         #include <fog_fragment>
         #if defined(USE_FOG) && !defined(FOG_EXP2)
-          float grassRegionMask = clamp(max(grassMask, inCentralParkMask), 0.0, 1.0);
+          float grassRegionMask = clamp(grassMask, 0.0, 1.0);
           if (grassRegionMask > 0.01) {
             float horizonBlend = smoothstep(fogNear, fogFar, vFogDepth);
             float grassFogScale = mix(mix(1.0, 0.34, grassRegionMask), 1.0, horizonBlend * horizonBlend);

@@ -34,6 +34,8 @@ export interface RadialInteractPinDescriptor {
   icon: RadialPinIconKind;
   label: string;
   accent?: RadialPinAccentKind;
+  /** When true, both holding (480ms) and a clean tap/click or short [E] press trigger onTrigger. */
+  allowClickTrigger?: boolean;
   onTrigger: () => void;
 }
 
@@ -48,6 +50,28 @@ const livePinScreenAnchors = new Map<string, RadialPinScreenAnchor>();
 
 export function getRadialPinScreenAnchor(pinId: string): RadialPinScreenAnchor | null {
   return livePinScreenAnchors.get(pinId) ?? null;
+}
+
+export interface CharacterSelectedDockEventDetail {
+  expandMenu?: boolean;
+  pinId?: string;
+}
+
+export interface CharacterSelectedDockState {
+  selectedTargetPinId: string | null;
+  isPinTargetPopupOpen: boolean;
+  isTargetMenuExpanded: boolean;
+}
+
+export function resolveCharacterSelectedDockState(
+  detail?: CharacterSelectedDockEventDetail | null,
+): CharacterSelectedDockState {
+  const shouldExpand = Boolean(detail?.expandMenu ?? true);
+  return {
+    selectedTargetPinId: detail?.pinId ?? null,
+    isPinTargetPopupOpen: Boolean(detail?.pinId) && shouldExpand,
+    isTargetMenuExpanded: shouldExpand,
+  };
 }
 
 export const RADIAL_HOLD_DURATION_MS = 480;
@@ -204,7 +228,18 @@ export class RadialInteractPinManager {
       this.activeHold.source === 'pointer' &&
       this.activeHold.pointerId === e.pointerId
     ) {
+      const held = this.activeHold;
       this.activeHold = null;
+      if (!held.completed) {
+        const dist = Math.hypot(e.clientX - held.startX, e.clientY - held.startY);
+        const desc = this.activeDescById.get(held.pinId);
+        if (dist <= RADIAL_DRAG_CANCEL_PX && desc && desc.inRange && desc.allowClickTrigger) {
+          this.burstPinId = desc.id;
+          this.burstUntilMs = performance.now() + 240;
+          soundEngine.playUiClick();
+          desc.onTrigger();
+        }
+      }
     }
   };
 
@@ -244,7 +279,17 @@ export class RadialInteractPinManager {
       this.keyEHeld = false;
       this.keyEConsumed = false;
       if (this.activeHold?.source === 'keyE') {
+        const heldPin = this.activeHold;
         this.activeHold = null;
+        if (!heldPin.completed) {
+          const desc = this.activeDescById.get(heldPin.pinId);
+          if (desc && desc.inRange && desc.allowClickTrigger) {
+            this.burstPinId = desc.id;
+            this.burstUntilMs = nowMs + 240;
+            soundEngine.playUiClick();
+            desc.onTrigger();
+          }
+        }
       }
       return false;
     }
@@ -452,9 +497,19 @@ export class RadialInteractPinManager {
       soundEngine.playUiClick();
     };
     root.onclick = (e) => {
-      // Prevent accidental single-click propagation; interaction happens ONLY on hold completion
+      // Stop click propagation to canvas; pointerup triggers allowClickTrigger pins while hold completion triggers all pins.
       e.stopPropagation();
       e.preventDefault();
+      // Keyboard / accessibility click fallback (detail === 0 when activated without pointerdown)
+      if (e.detail === 0) {
+        const desc = this.activeDescById.get(node.pinId);
+        if (desc && desc.inRange && desc.allowClickTrigger) {
+          this.burstPinId = desc.id;
+          this.burstUntilMs = performance.now() + 240;
+          soundEngine.playUiClick();
+          desc.onTrigger();
+        }
+      }
     };
 
     this.container.appendChild(root);
@@ -657,8 +712,17 @@ export class RadialInteractPinManager {
       if (node.lastLabel !== displayLabel) {
         node.lastLabel = displayLabel;
         node.labelEl.textContent = displayLabel;
-        node.root.setAttribute('aria-label', `Hold to interact: ${pin.label}`);
-        node.root.title = pin.inRange ? `Tekan & tahan: ${pin.label}` : pin.label;
+        node.root.setAttribute(
+          'aria-label',
+          pin.allowClickTrigger
+            ? `Interact: ${pin.label}`
+            : `Hold to interact: ${pin.label}`,
+        );
+        node.root.title = pin.inRange
+          ? pin.allowClickTrigger
+            ? `Klik atau tekan & tahan: ${pin.label}`
+            : `Tekan & tahan: ${pin.label}`
+          : pin.label;
       }
 
       const showLabel = pin.inRange && (isHoldingThis || node.lastHovered || isPrimary);

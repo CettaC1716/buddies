@@ -117,9 +117,16 @@ export function resolvePublicChatSenderAction(params: {
       name: persona?.displayName ?? cleanName,
       distance: matchedNearby?.distance ?? 0,
       isNpc: true,
-      isMerchant: resolvedNpc === 'hana' || resolvedNpc === 'kai',
+      isMerchant:
+        resolvedNpc === 'hana' || resolvedNpc === 'kai' || resolvedNpc === 'nadia',
       merchantLocation:
-        resolvedNpc === 'kai' ? 'beach_house' : resolvedNpc === 'hana' ? 'lobby_cafe' : undefined,
+        resolvedNpc === 'kai'
+          ? 'beach_house'
+          : resolvedNpc === 'hana'
+            ? 'lobby_cafe'
+            : resolvedNpc === 'nadia'
+              ? 'central_plaza'
+              : undefined,
       status: persona?.roleTitle ?? 'Resident',
     };
     return { kind: 'npc_profile', npcEntity };

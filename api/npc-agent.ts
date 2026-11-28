@@ -68,7 +68,7 @@ export interface NpcAgentTradeMove {
 
 export interface NpcAgentRequestPayload {
   userMessage?: string;
-  merchantLocation?: 'lobby_cafe' | 'beach_house';
+  merchantLocation?: 'lobby_cafe' | 'beach_house' | 'central_plaza';
   history?: NpcAgentChatTurn[];
   tradeContext?: NpcAgentTradeContext;
   liveState?: {
@@ -231,13 +231,16 @@ function sanitizePlainDialogue(raw: string): string {
 }
 
 export function buildNpcSystemInstruction(
-  merchantLocation: 'lobby_cafe' | 'beach_house',
+  merchantLocation: 'lobby_cafe' | 'beach_house' | 'central_plaza',
   liveState: NpcAgentRequestPayload['liveState'],
 ): string {
   const isKai = merchantLocation === 'beach_house';
+  const isNadia = merchantLocation === 'central_plaza';
   const npcIdentity = isKai
     ? 'You are Kai, the relaxed and knowledgeable fisherman and keeper of the beach who runs the Fish Market at Beachfront Harbor (South-East coast) in the 3D social city Cerria.'
-    : 'You are Hana, the warm, sharp, and welcoming property & housing agent and city guide at Central Plaza (center of the city) in the 3D social city Cerria.';
+    : isNadia
+      ? 'You are Nadia, the confident, stylish Central Plaza Manager and Merchant in the heart of Cerria, overseeing Glow Face Studio (beauty & makeup), Cerria Bites & Sips (gifts, flowers, food & drinks), and Red Studio (animation sets, dances & poses).'
+      : 'You are Hana, the warm, sharp, and welcoming property & housing agent and city guide at Central Plaza (center of the city) in the 3D social city Cerria.';
 
   const s = liveState ?? {};
   const playerStatus = s.walletConnected
@@ -348,8 +351,12 @@ export async function handleNpcAgentRequest(
     };
   }
 
-  const merchantLocation: 'lobby_cafe' | 'beach_house' =
-    body?.merchantLocation === 'beach_house' ? 'beach_house' : 'lobby_cafe';
+  const merchantLocation: 'lobby_cafe' | 'beach_house' | 'central_plaza' =
+    body?.merchantLocation === 'beach_house'
+      ? 'beach_house'
+      : body?.merchantLocation === 'central_plaza'
+        ? 'central_plaza'
+        : 'lobby_cafe';
 
   // Trade mode: an envelope-bounded negotiation is active. The model may
   // only propose a move; the server clamps it to the pricing rules, so no

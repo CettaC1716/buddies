@@ -14483,15 +14483,15 @@ export const CENTRAL_PARK_TRANSIT_KIOSK_SPEC = {
 export const CITY_TRANSIT_DESTINATIONS: readonly CityTransitDestinationSpec[] = [
   {
     id: 'central_plaza',
-    name: 'Central Plaza',
-    title: 'CENTRAL PLAZA',
-    shortTitle: 'Central Plaza',
-    shortTag: 'PLAZA HUB',
-    tag: 'PLAZA HUB',
+    name: 'West Plaza',
+    title: 'WEST PLAZA',
+    shortTitle: 'West Plaza',
+    shortTag: 'WEST PLAZA',
+    tag: 'WEST PLAZA',
     category: 'district',
     targetWorldMode: 'lobby',
     description:
-      'Main elevated civic promenade featuring Hana Cafe, token exchange, and the Central Plaza tram stop.',
+      'Main elevated civic promenade featuring Hana Commercial Hub, Glasshouse Cafe, and the West Plaza tram stop.',
     heroImageUrl: '/docs/hero-2-tram-station.jpg',
     thumbnailUrl: '/docs/hero-2-tram-station.jpg',
     kioskX: -59.18,
@@ -14509,15 +14509,15 @@ export const CITY_TRANSIT_DESTINATIONS: readonly CityTransitDestinationSpec[] = 
   },
   {
     id: 'central_park',
-    name: 'Central Park',
-    title: 'CENTRAL PARK',
-    shortTitle: 'Central Park',
-    shortTag: 'URBAN PARK',
-    tag: 'URBAN PARK',
+    name: 'Central Plaza',
+    title: 'CENTRAL PLAZA',
+    shortTitle: 'Central Plaza',
+    shortTag: 'CENTRAL PLAZA',
+    tag: 'CENTRAL PLAZA',
     category: 'district',
     targetWorldMode: 'safezone',
     description:
-      'Lush central urban plaza island featuring the Civic Cascade Fountain, Wisteria Pergola Pond, Cozy Bites Cafe, and Glow Studio Salon.',
+      'Lush central urban plaza island featuring the Civic Cascade Fountain, Wisteria Pergola Pond, Cerria Bites & Sips, and Glow Studio Salon.',
     heroImageUrl: '/docs/hero-2-tram-station.jpg',
     thumbnailUrl: '/docs/hero-2-tram-station.jpg',
     kioskX: CENTRAL_PARK_TRANSIT_KIOSK_SPEC.kioskX,
@@ -14678,6 +14678,19 @@ export const CITY_TRANSIT_DESTINATIONS: readonly CityTransitDestinationSpec[] = 
     tramTrackDistance: 215.0,
   },
 ] as const;
+
+export const HIDDEN_TRAVEL_DISTRICT_IDS: readonly CityTransitStationId[] = [
+  'nw_fishing_lake',
+  'warzone_arena',
+] as const;
+
+export function getTravelDistrictDestinations(): CityTransitDestinationSpec[] {
+  return CITY_TRANSIT_DESTINATIONS.filter(
+    (d) =>
+      d.category === 'district' &&
+      !HIDDEN_TRAVEL_DISTRICT_IDS.includes(d.id),
+  );
+}
 
 export function getCityTransitDestinationById(
   id: CityTransitStationId | string | null | undefined,
@@ -16321,7 +16334,7 @@ export interface UnifiedDockProximityCandidate {
   distance: number;
   isNpc: boolean;
   isMerchant?: boolean;
-  merchantLocation?: 'lobby_cafe' | 'beach_house';
+  merchantLocation?: 'lobby_cafe' | 'beach_house' | 'central_plaza';
   gender?: 'male' | 'female';
   team: 'blue' | 'red';
   status: string;

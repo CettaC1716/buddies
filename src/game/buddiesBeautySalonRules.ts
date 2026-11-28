@@ -8,7 +8,6 @@ export interface SalonObbCollider {
   ry: number;
 }
 
-export type SalonStationInteractionKind = 'exit_door' | 'reception_counter' | 'vanity_mirror' | 'spa_facial';
 
 export interface SalonInteriorSeatSpot {
   id: string;
@@ -34,24 +33,7 @@ function clampNum(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
-function distanceToAabb2d(
-  px: number,
-  pz: number,
-  cx: number,
-  cz: number,
-  hx: number,
-  hz: number,
-): number {
-  const dx = Math.max(0, Math.abs(px - cx) - hx);
-  const dz = Math.max(0, Math.abs(pz - cz) - hz);
-  return Math.hypot(dx, dz);
-}
 
-/**
- * Isolated vertical world origin for the 2-story Beauty Salon Interior
- * (`Houses @ 145`, `Glasshouse Cafe @ 215`, `Grand Casino @ 285`, `Beauty Salon @ 355`).
- */
-export const SALON_ORIGIN_Y = 355.0;
 
 export const SALON_INTERIOR_CHARACTER_RADIUS = 0.36;
 
@@ -184,18 +166,6 @@ function isInRect(x: number, z: number, r: SalonRect, expand = 0): boolean {
   return x >= r.minX - expand && x <= r.maxX + expand && z >= r.minZ - expand && z <= r.maxZ + expand;
 }
 
-export const SALON_STATION_TARGETS = {
-  exitDoor: { x: 3.80, markerY: 0.68, promptY: 1.45, z: 5.30, floorLevel: '1f' as const },
-  receptionCounter: { x: -2.22, markerY: 1.62, promptY: 1.85, z: -0.14, floorLevel: '1f' as const },
-  vanityCenter: { x: 3.64, markerY: 2.10, promptY: 2.25, z: 2.00, floorLevel: '1f' as const },
-  spaSuite: {
-    x: -1.61,
-    markerY: SALON_INTERIOR_BOUNDS.secondFloorY + 1.45,
-    promptY: SALON_INTERIOR_BOUNDS.secondFloorY + 1.65,
-    z: -2.24,
-    floorLevel: '2f' as const,
-  },
-} as const;
 
 /**
  * Sittable salon seats, re-anchored onto the Glow GLB's own furniture
@@ -348,13 +318,6 @@ export const SALON_INTERIOR_COLLIDERS: ReadonlyArray<SalonObbCollider> = [
   { id: 'salon_2f_shelf_e', floorLevel: '2f', x: 4.86, z: -3.59, hw: 0.43, hd: 0.46, ry: 0 },
 ];
 
-export function isPointInSalonStairwell(x: number, z: number): boolean {
-  const s = SALON_INTERIOR_BOUNDS.stair;
-  const inFlightA = isInRect(x, z, s.flightA, 0.15);
-  const inLanding = isInRect(x, z, s.landing, 0.08);
-  const inFlightB = isInRect(x, z, s.flightB, 0.08);
-  return inFlightA || inLanding || inFlightB;
-}
 
 /**
  * Resolves exact local floor height (`0.0m` 1F, the L-staircase ramps
@@ -461,179 +424,5 @@ export function clampSalonInteriorPosition(
   return { x, z, floorY };
 }
 
-export const SALON_ORBIT_CAMERA_CONFIG = {
-  fovDeg: 54,
-  defaultYaw: 0.62,
-  defaultPitch: 0.48,
-  defaultDist: 6.40,
-  minPitch: 0.14,
-  maxPitch: 0.94,
-  minDist: 2.4,
-  maxDist: 10.2,
-  lookHeightOffset: 0.96,
-  minCamHeightOffset: 0.62,
-  maxCamHeightOffset: 12.0,
-  // Back walls (-X, -Z) are opaque walls; front-right (+X, +Z) cutaway allows spacious framing
-  wallMinX: SALON_INTERIOR_BOUNDS.minX + 0.48,
-  wallMinZ: SALON_INTERIOR_BOUNDS.minZ + 0.48,
-  cutawayMaxX: SALON_INTERIOR_BOUNDS.maxX + 1.45,
-  cutawayMaxZ: SALON_INTERIOR_BOUNDS.maxZ + 1.45,
-  wallLookShiftFactor: 0.26,
-  maxWallLookShift: 0.72,
-} as const;
 
-export interface SalonOrbitCameraPose {
-  fovDeg: number;
-  camX: number;
-  camY: number;
-  camZ: number;
-  lookX: number;
-  lookY: number;
-  lookZ: number;
-}
 
-/**
- * Computes the 3/4 orbital camera pose inside the 2-story Beauty Salon cutaway,
- * tracking vertical stair/mezzanine movement cleanly without clipping behind back walls.
- */
-export function computeSalonOrbitCameraPose(input: {
-  originY: number;
-  anchorX: number;
-  anchorZ: number;
-  floorY: number;
-  yaw: number;
-  pitch: number;
-  dist: number;
-}): SalonOrbitCameraPose {
-  const cfg = SALON_ORBIT_CAMERA_CONFIG;
-  const safePitch = clampNum(input.pitch, cfg.minPitch, cfg.maxPitch);
-  const safeDist = clampNum(input.dist, cfg.minDist, cfg.maxDist);
-
-  const cosPitch = Math.cos(safePitch);
-  const sinPitch = Math.sin(safePitch);
-  const desiredHoriz = Math.max(0.001, cosPitch * safeDist);
-  const desiredVert = sinPitch * safeDist;
-
-  const rawCamX = input.anchorX + Math.sin(input.yaw) * desiredHoriz;
-  const rawCamZ = input.anchorZ + Math.cos(input.yaw) * desiredHoriz;
-
-  const camX = clampNum(rawCamX, cfg.wallMinX, cfg.cutawayMaxX);
-  const camZ = clampNum(rawCamZ, cfg.wallMinZ, cfg.cutawayMaxZ);
-
-  let shiftX = (camX - rawCamX) * cfg.wallLookShiftFactor;
-  let shiftZ = (camZ - rawCamZ) * cfg.wallLookShiftFactor;
-  const shiftMag = Math.hypot(shiftX, shiftZ);
-  if (shiftMag > cfg.maxWallLookShift && shiftMag > 1e-6) {
-    const scale = cfg.maxWallLookShift / shiftMag;
-    shiftX *= scale;
-    shiftZ *= scale;
-  }
-
-  const lookX = clampNum(input.anchorX + shiftX, SALON_INTERIOR_BOUNDS.minX + 0.7, SALON_INTERIOR_BOUNDS.maxX - 0.7);
-  const lookZ = clampNum(input.anchorZ + shiftZ, SALON_INTERIOR_BOUNDS.minZ + 0.7, SALON_INTERIOR_BOUNDS.maxZ - 0.7);
-  const lookY = input.originY + input.floorY + cfg.lookHeightOffset;
-
-  const actualHoriz = Math.hypot(camX - lookX, camZ - lookZ);
-  const horizRatio = clampNum(actualHoriz / desiredHoriz, 0.42, 1.0);
-  const adjustedVert = desiredVert * (0.82 + 0.18 * horizRatio);
-
-  const camY = clampNum(
-    lookY + adjustedVert,
-    input.originY + input.floorY + cfg.minCamHeightOffset,
-    input.originY + cfg.maxCamHeightOffset,
-  );
-
-  return {
-    fovDeg: cfg.fovDeg,
-    camX,
-    camY,
-    camZ,
-    lookX,
-    lookY,
-    lookZ,
-  };
-}
-
-export interface SalonNearestPromptOrSeatResult {
-  target: 'none' | 'station' | 'seat';
-  stationKind: SalonStationInteractionKind | null;
-  seatIndex: number;
-  seatSpot: SalonInteriorSeatSpot | null;
-  objectDistance: number;
-}
-
-const SALON_SEAT_PROXIMITY_RADIUS = 1.45;
-
-/**
- * Resolves the highest-priority interactive prompt (`exit_door` station vs vanity/sofa/spa seat)
- * filtered strictly to the floor story the player is currently on.
- */
-export function resolveNearestSalonPromptOrSeat(
-  px: number,
-  pz: number,
-  floorY = 0,
-  isSeatOccupied?: (spot: SalonInteriorSeatSpot) => boolean,
-): SalonNearestPromptOrSeatResult {
-  const b = SALON_INTERIOR_BOUNDS;
-  const isOnSecondFloor = floorY >= (b.midLandingY + b.secondFloorY) / 2;
-
-  // 1. Check 1F Exit Door Pad when on Ground Floor
-  const exitDist = !isOnSecondFloor
-    ? Math.hypot(px - SALON_STATION_TARGETS.exitDoor.x, pz - SALON_STATION_TARGETS.exitDoor.z)
-    : Infinity;
-  if (exitDist <= 1.55) {
-    return {
-      target: 'station',
-      stationKind: 'exit_door',
-      seatIndex: -1,
-      seatSpot: null,
-      objectDistance: exitDist,
-    };
-  }
-
-  // 2. Check nearest playable seat on current floor (`vanity_stool`, `lounge_sofa`, `spa_bed`)
-  let bestSeatIdx = -1;
-  let bestSeatDist = Infinity;
-  for (let i = 0; i < SALON_INTERIOR_SEAT_SPOTS.length; i++) {
-    const spot = SALON_INTERIOR_SEAT_SPOTS[i];
-    if (isOnSecondFloor !== (spot.floorLevel === '2f')) continue;
-    if (isSeatOccupied?.(spot)) continue;
-    const cDist = Math.hypot(px - spot.x, pz - spot.z);
-    if (cDist <= SALON_SEAT_PROXIMITY_RADIUS) {
-      const objDist = distanceToAabb2d(px, pz, spot.x, spot.z, 0.28, 0.28);
-      if (objDist < bestSeatDist) {
-        bestSeatDist = objDist;
-        bestSeatIdx = i;
-      }
-    }
-  }
-
-  if (bestSeatIdx !== -1) {
-    return {
-      target: 'seat',
-      stationKind: null,
-      seatIndex: bestSeatIdx,
-      seatSpot: SALON_INTERIOR_SEAT_SPOTS[bestSeatIdx],
-      objectDistance: bestSeatDist,
-    };
-  }
-
-  return {
-    target: 'none',
-    stationKind: null,
-    seatIndex: -1,
-    seatSpot: null,
-    objectDistance: Infinity,
-  };
-}
-
-export function computeSalonSeatStandUpPosition(
-  spot: SalonInteriorSeatSpot,
-): { x: number; z: number; floorY: number } {
-  const clamped = clampSalonInteriorPosition(spot.standUpX, spot.standUpZ, spot.floorY);
-  return {
-    x: clamped.x,
-    z: clamped.z,
-    floorY: spot.floorY,
-  };
-}

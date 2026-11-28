@@ -1,13 +1,29 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, MapPin, TrainFront } from 'lucide-react';
 import {
-  CITY_TRANSIT_DESTINATIONS,
   CityTransitDestinationSpec,
   CityTransitStationId,
   getCityTransitDestinationById,
+  getTravelDistrictDestinations,
 } from '../game/buddiesBlitzRules';
 import { soundEngine } from '../game/audio';
 import { TabletDeviceMockupShell } from './TabletDeviceMockupShell';
+
+import type { HouseArchitectureStyle } from '../game/buddiesBlitzRules';
+
+export interface PublicApartmentEntry {
+  id: string;
+  title: string;
+  shortTitle: string;
+  ownerName: string;
+  styleLabel: string;
+  tag: string;
+  description: string;
+  imageUrl: string;
+  architectureStyle: HouseArchitectureStyle;
+  isOwnApartment?: boolean;
+  isModelShowcase?: boolean;
+}
 
 export interface CityTransitKioskModalProps {
   isOpen: boolean;
@@ -16,11 +32,13 @@ export interface CityTransitKioskModalProps {
   blueTeamOnlineCount: number;
   redTeamOnlineCount: number;
   hasOwnedHouse: boolean;
+  publicApartments?: readonly PublicApartmentEntry[];
   onClose: () => void;
   onConfirmEnterDestination: (
     destination: CityTransitDestinationSpec,
     team?: 'blue' | 'red',
   ) => void;
+  onVisitPublicApartment?: (apartment: PublicApartmentEntry) => void;
   onEnterMyHouseStudio: () => void;
   onOpenHouseCatalog: () => void;
   onOpenShopAndExchange: () => void;
@@ -38,15 +56,24 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
   blueTeamOnlineCount,
   redTeamOnlineCount,
   hasOwnedHouse,
+  publicApartments = [],
   onClose,
   onConfirmEnterDestination,
+  onVisitPublicApartment,
   onEnterMyHouseStudio,
   onOpenHouseCatalog,
   onOpenShopAndExchange,
   cafeJobStatus = null,
   onEnterGlasshouseCafe,
 }) => {
-  const [levelView, setLevelView] = useState<'grid' | 'browser' | 'warzoneTeamSelect' | 'jobs'>('grid');
+  void hasOwnedHouse;
+  void onEnterMyHouseStudio;
+  void onOpenHouseCatalog;
+  const [levelView, setLevelView] = useState<
+    'grid' | 'browser' | 'publicApartments' | 'warzoneTeamSelect' | 'jobs'
+  >('grid');
+  const [selectedApartmentId, setSelectedApartmentId] = useState<string>('');
+  const [apartmentSearchQuery, setApartmentSearchQuery] = useState<string>('');
   const [kioskThumbnails, setKioskThumbnails] = useState<Record<string, string>>(() => {
     if (typeof window !== 'undefined') {
       const winStore = window as unknown as {
@@ -75,53 +102,61 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
   }, []);
 
   useEffect(() => {
-    if (isOpen && typeof window !== 'undefined') {
-      const winStore = window as unknown as {
-        __BUDDIES_KIOSK_THUMBNAILS__?: Record<string, string>;
-      };
-      const store = winStore.__BUDDIES_KIOSK_THUMBNAILS__;
-      const requiredDistrictKeys: CityTransitStationId[] = [
-        'central_plaza',
-        'central_park',
-        'beachfront_harbor',
-        'nw_fishing_lake',
-        'north_residence',
-        'south_residence',
-        'warzone_arena',
-      ];
-      const hasAllDistrictSnapshots =
-        Boolean(store?.travel_districts) &&
-        requiredDistrictKeys.every((key) => Boolean(store?.[key]));
-      if (!hasAllDistrictSnapshots) {
-        window.dispatchEvent(new CustomEvent('request-kiosk-thumbnails'));
-      }
-      if (store) {
-        setKioskThumbnails({ ...store });
-      }
+    if (!isOpen || typeof window === 'undefined') return;
+    const winStore = window as unknown as {
+      __BUDDIES_KIOSK_THUMBNAILS__?: Record<string, string>;
+    };
+    const store = winStore.__BUDDIES_KIOSK_THUMBNAILS__;
+    if (store) {
+      setKioskThumbnails({ ...store });
     }
+    const requiredDistrictKeys: CityTransitStationId[] = [
+      'central_plaza',
+      'central_park',
+      'beachfront_harbor',
+      'kai_fish_market',
+      'north_residence',
+      'south_residence',
+      'warzone_arena',
+    ];
+    const hasAllDistrictSnapshots =
+      store?._version === '2026_11_v2' &&
+      Boolean(store?.travel_districts) &&
+      requiredDistrictKeys.every((key) => Boolean(store?.[key]));
+    if (hasAllDistrictSnapshots) return;
+    const timer = window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('request-kiosk-thumbnails'));
+    }, 40);
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [isOpen]);
 
   const [browserSectionTitle, setBrowserSectionTitle] = useState<string>('TRAVEL & DISTRICTS');
   const [selectedStationId, setSelectedStationId] = useState<CityTransitStationId>('central_plaza');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showRecentOnly, setShowRecentOnly] = useState<boolean>(false);
+  const travelDistrictDestinations = useMemo(() => getTravelDistrictDestinations(), []);
   const [recentStationIds, setRecentStationIds] = useState<CityTransitStationId[]>(() => {
+    const validIds = new Set(getTravelDistrictDestinations().map((d) => d.id));
     if (typeof window !== 'undefined') {
       try {
         const raw = window.localStorage.getItem(RECENT_STATIONS_STORAGE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed)) {
-            return parsed.filter((id): id is CityTransitStationId =>
-              CITY_TRANSIT_DESTINATIONS.some((d) => d.id === id),
+            const cleaned = parsed.filter(
+              (id): id is CityTransitStationId =>
+                typeof id === 'string' && validIds.has(id as CityTransitStationId),
             );
+            if (cleaned.length > 0) return cleaned;
           }
         }
       } catch {
         // ignore storage errors
       }
     }
-    return ['central_plaza', 'beachfront_harbor', 'nw_fishing_lake'];
+    return ['central_plaza', 'central_park', 'beachfront_harbor'];
   });
 
   const activeOriginId: CityTransitStationId =
@@ -132,12 +167,25 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
     if (isOpen) {
       setLevelView('grid');
       setSearchQuery('');
+      setApartmentSearchQuery('');
       setShowRecentOnly(false);
       const defaultTarget: CityTransitStationId =
         activeOriginId === 'central_plaza' ? 'beachfront_harbor' : 'central_plaza';
       setSelectedStationId(defaultTarget);
+      if (publicApartments.length > 0) {
+        setSelectedApartmentId(publicApartments[0].id);
+      }
     }
+    // Only reset navigation state when modal opens or origin station changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, activeOriginId]);
+
+  useEffect(() => {
+    if (!isOpen || publicApartments.length === 0) return;
+    setSelectedApartmentId((prev) =>
+      prev && publicApartments.some((apt) => apt.id === prev) ? prev : publicApartments[0].id,
+    );
+  }, [isOpen, publicApartments]);
 
   const recordRecentStation = (stationId: CityTransitStationId) => {
     setRecentStationIds((prev) => {
@@ -155,7 +203,7 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
 
   const filteredDestinations = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return CITY_TRANSIT_DESTINATIONS.filter((dest) => {
+    return travelDistrictDestinations.filter((dest) => {
       if (showRecentOnly && !recentStationIds.includes(dest.id)) {
         return false;
       }
@@ -172,12 +220,9 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
         ? { ...dest, heroImageUrl: liveSnap, thumbnailUrl: liveSnap }
         : dest;
     });
-  }, [searchQuery, showRecentOnly, recentStationIds, kioskThumbnails]);
+  }, [travelDistrictDestinations, searchQuery, showRecentOnly, recentStationIds, kioskThumbnails]);
 
-  const districtDestinationCount = useMemo(
-    () => CITY_TRANSIT_DESTINATIONS.filter((d) => d.category === 'district').length,
-    [],
-  );
+  const districtDestinationCount = travelDistrictDestinations.length;
 
   const selectedDestination: CityTransitDestinationSpec = useMemo(() => {
     const found = filteredDestinations.find((d) => d.id === selectedStationId);
@@ -189,6 +234,24 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
       ? { ...fallback, heroImageUrl: liveSnap, thumbnailUrl: liveSnap }
       : fallback;
   }, [filteredDestinations, selectedStationId, kioskThumbnails]);
+
+  const filteredPublicApartments = useMemo(() => {
+    const q = apartmentSearchQuery.trim().toLowerCase();
+    if (!q) return publicApartments;
+    return publicApartments.filter(
+      (apt) =>
+        apt.title.toLowerCase().includes(q) ||
+        apt.shortTitle.toLowerCase().includes(q) ||
+        apt.ownerName.toLowerCase().includes(q) ||
+        apt.styleLabel.toLowerCase().includes(q) ||
+        apt.description.toLowerCase().includes(q),
+    );
+  }, [publicApartments, apartmentSearchQuery]);
+
+  const selectedPublicApartment: PublicApartmentEntry | null = useMemo(() => {
+    const found = filteredPublicApartments.find((a) => a.id === selectedApartmentId);
+    return found ?? filteredPublicApartments[0] ?? publicApartments[0] ?? null;
+  }, [filteredPublicApartments, selectedApartmentId, publicApartments]);
 
   if (!isOpen) return null;
 
@@ -221,13 +284,14 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
     setLevelView('warzoneTeamSelect');
   };
 
-  const handleClickMyHouse = () => {
+  const handleOpenPublicApartmentsBrowser = () => {
     soundEngine.playUiClick();
-    if (hasOwnedHouse) {
-      onEnterMyHouseStudio();
-    } else {
-      onOpenHouseCatalog();
+    setBrowserSectionTitle('PUBLIC APARTMENTS · OPEN RESIDENCES');
+    setApartmentSearchQuery('');
+    if (publicApartments.length > 0) {
+      setSelectedApartmentId(publicApartments[0].id);
     }
+    setLevelView('publicApartments');
   };
 
   const handleClickShopExchange = () => {
@@ -359,6 +423,23 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                   placeholder="Search stations..."
                   aria-label="Search transit destinations"
                   className="w-full px-4 py-1.5 rounded-full bg-white/10 border border-white/15 focus:border-sky-400/70 focus:bg-white/15 focus:ring-2 focus:ring-sky-400/25 text-xs font-semibold text-white placeholder:text-white/40 focus:outline-none transition-all"
+                />
+              </div>
+            </div>
+          ) : worldMode !== 'warzone' && levelView === 'publicApartments' ? (
+            <div className="px-4 sm:px-5 py-3 bg-white/[0.04] border-t border-white/[0.12] flex flex-wrap items-center justify-between gap-3 shrink-0">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-300/90">
+                OPEN FOR PUBLIC VISITS ({filteredPublicApartments.length}) · MANAGE PRIVACY IN SMARTPHONE → MY APARTMENT
+              </div>
+              <div className="w-full sm:w-64">
+                <input
+                  type="text"
+                  data-transit-public-apartment-search="true"
+                  value={apartmentSearchQuery}
+                  onChange={(e) => setApartmentSearchQuery(e.target.value)}
+                  placeholder="Search public apartments..."
+                  aria-label="Search public apartments"
+                  className="w-full px-4 py-1.5 rounded-full bg-white/10 border border-white/15 focus:border-emerald-400/70 focus:bg-white/15 focus:ring-2 focus:ring-emerald-400/25 text-xs font-semibold text-white placeholder:text-white/40 focus:outline-none transition-all"
                 />
               </div>
             </div>
@@ -507,37 +588,35 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 </div>
               </button>
 
-              {/* CARD 3: MY HOUSE */}
+              {/* CARD 3: PUBLIC APARTMENT */}
               <button
                 type="button"
-                data-transit-card="my_house"
-                onClick={handleClickMyHouse}
+                data-transit-card="public_apartment"
+                onClick={handleOpenPublicApartmentsBrowser}
                 className="group relative h-[156px] sm:h-[168px] rounded-2xl bg-slate-900/70 border border-white/15 shadow-md hover:border-emerald-400/60 hover:shadow-[0_12px_30px_rgba(0,0,0,0.45)] hover:-translate-y-0.5 transition-all text-left overflow-hidden flex flex-col justify-between cursor-pointer"
               >
                 <img
                   src={kioskThumbnails.my_house || '/docs/hero-3-house-interior.jpg'}
-                  alt="My House Interior"
+                  alt="Public Apartments"
                   className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/35 to-slate-950/15" />
 
                 <div className="relative z-10 p-3.5 flex items-center justify-between">
                   <span className="px-2.5 py-1 rounded-full bg-emerald-500/90 text-white text-[10px] font-bold uppercase tracking-wider shadow-xs">
-                    HOUSE
+                    OPEN RESIDENCES
                   </span>
                   <span className="px-2.5 py-1 rounded-full bg-slate-900/75 text-white border border-white/20 text-[10px] font-bold uppercase">
-                    {hasOwnedHouse ? 'INSTANT ENTRY' : 'BROWSE HOMES'}
+                    {publicApartments.length} PUBLIC
                   </span>
                 </div>
 
                 <div className="relative z-10 p-4 pt-0">
                   <div className="text-lg sm:text-xl font-extrabold uppercase tracking-tight text-white">
-                    MY HOUSE
+                    PUBLIC APARTMENT
                   </div>
                   <p className="mt-1 text-xs font-medium text-slate-200/90 line-clamp-2">
-                    {hasOwnedHouse
-                      ? 'Enter your house interior directly to hang out and arrange furniture.'
-                      : 'Acquire a Private House in Hana Catalog to unlock your interior and city plots.'}
+                    Tour open public apartments and city model residences. Access your own apartment anytime via Smartphone → My Apartment.
                   </p>
                 </div>
               </button>
@@ -768,6 +847,122 @@ export const CityTransitKioskModal: React.FC<CityTransitKioskModalProps> = ({
                 </div>
               </button>
             </div>
+          </div>
+        ) : levelView === 'publicApartments' ? (
+          /* =================================================================
+             PUBLIC APARTMENT MASTER-DETAIL BROWSER (SAME UX AS TRAVEL)
+             ================================================================= */
+          <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+            {/* LEFT SIDEBAR (~30% WIDTH) */}
+            <div
+              data-transit-public-apartments-sidebar="true"
+              className="w-full md:w-[30%] h-[165px] md:h-[430px] overflow-y-auto border-b md:border-b-0 md:border-r border-white/[0.12] bg-white/[0.03] p-3 space-y-2"
+            >
+              {filteredPublicApartments.length === 0 ? (
+                <div className="p-4 text-center text-xs font-bold uppercase text-white/50">
+                  NO PUBLIC APARTMENTS FOUND
+                </div>
+              ) : (
+                filteredPublicApartments.map((apt) => {
+                  const isSelected = selectedPublicApartment?.id === apt.id;
+                  return (
+                    <button
+                      key={apt.id}
+                      type="button"
+                      data-transit-public-apartment-row={apt.id}
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        setSelectedApartmentId(apt.id);
+                      }}
+                      className={`w-full p-2.5 rounded-2xl flex items-center gap-2.5 text-left transition-all cursor-pointer border ${
+                        isSelected
+                          ? 'bg-emerald-500/20 border-emerald-400/70 ring-1 ring-emerald-400/35 shadow-sm'
+                          : 'bg-white/[0.06] hover:bg-white/[0.11] border-white/10'
+                      }`}
+                    >
+                      <img
+                        src={apt.imageUrl}
+                        alt={apt.shortTitle}
+                        className="w-11 h-11 rounded-xl object-cover shrink-0 bg-slate-900 border border-white/10"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold uppercase tracking-tight text-white truncate">
+                          {apt.shortTitle}
+                        </div>
+                        <div className="text-[10px] text-white/60 truncate mt-0.5">
+                          Host: {apt.ownerName}
+                        </div>
+                        <div className="mt-1 flex items-center gap-1.5">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                              apt.isOwnApartment
+                                ? 'bg-amber-400/25 text-amber-200 border border-amber-300/35'
+                                : 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/30'
+                            }`}
+                          >
+                            {apt.tag}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            {/* RIGHT SHOWCASE PANEL (~70% WIDTH) */}
+            {selectedPublicApartment ? (
+              <div className="w-full md:w-[70%] h-[280px] md:h-[430px] relative bg-slate-900 overflow-hidden flex flex-col justify-between">
+                <img
+                  src={selectedPublicApartment.imageUrl}
+                  alt={selectedPublicApartment.title}
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/92 via-slate-950/35 to-slate-950/15" />
+
+                <div className="relative z-10 p-4 flex items-center justify-between gap-2">
+                  <span className="px-3 py-1 rounded-full bg-emerald-500/90 text-white text-xs font-bold uppercase tracking-wider shadow-sm">
+                    {selectedPublicApartment.tag}
+                  </span>
+                  <span className="px-3 py-1 rounded-full bg-slate-950/75 text-white/90 border border-white/15 text-[11px] font-bold uppercase shadow-sm">
+                    {selectedPublicApartment.styleLabel}
+                  </span>
+                </div>
+
+                <div className="relative z-10 p-5 sm:p-6 bg-slate-950/78 border-t border-white/10 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-300 mb-1">
+                      HOST: {selectedPublicApartment.ownerName}
+                    </div>
+                    <h3
+                      data-transit-selected-apartment-title="true"
+                      className="text-xl sm:text-2xl font-extrabold uppercase tracking-tight text-white leading-tight"
+                    >
+                      {selectedPublicApartment.title}
+                    </h3>
+                    <p className="mt-1.5 text-xs sm:text-sm font-medium text-slate-200 line-clamp-2 leading-snug">
+                      {selectedPublicApartment.description}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    data-transit-visit-apartment-btn={selectedPublicApartment.id}
+                    onClick={() => {
+                      soundEngine.playUiConfirm();
+                      onVisitPublicApartment?.(selectedPublicApartment);
+                    }}
+                    className="px-6 py-3 rounded-full font-bold text-xs sm:text-sm uppercase tracking-wider shrink-0 bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md cursor-pointer active:scale-95 transition-all"
+                  >
+                    VISIT APARTMENT &gt;
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="w-full md:w-[70%] h-[280px] md:h-[430px] flex items-center justify-center text-white/60 text-sm font-semibold">
+                Select a public apartment to preview.
+              </div>
+            )}
           </div>
         ) : (
           /* =================================================================

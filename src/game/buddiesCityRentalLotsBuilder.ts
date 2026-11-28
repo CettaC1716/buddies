@@ -4,6 +4,10 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { IndividualCommanderBaseState } from './buddiesBlitzRules';
 import {
+  upgradeMeshToBlitzWorldMaterial,
+  type BlitzWindUniforms,
+} from './buddiesBlitzShadersAndAssets';
+import {
   CITY_RENTAL_LOTS,
   CITY_RENTAL_LOT_SIZE_M,
   COMMERCIAL_SIDEWALK_STRIPS,
@@ -14,12 +18,33 @@ import {
   type CityRentalLotSpec,
   type CityRentalLotStatus,
   type ShopBuildingFormId,
-  type ShopBuildingFormSpec,
 } from './buddiesCityRentalLotsRules';
 import type { QaShopLiveTelemetrySummary, QaShopRenderMode } from './qaDirectorMode';
 
 const LOT_SURFACE_Y = 0.09; // Matches URBAN_SIDEWALK_TOP_Y on the 4-sided commercial block plateau
 const BUILDING_PAVING_TOP_Y = 0.104;
+/** Local +Z placement for each lot's claim kiosk on the front sidewalk apron outside the 20x20m lot. */
+export const LOT_CLAIM_KIOSK_LOCAL_Z = CITY_RENTAL_LOT_SIZE_M.halfDepth + 1.05;
+
+export interface ShopKioskHologramRig {
+  holoRoot: THREE.Group;
+  holoTurntable: THREE.Group;
+  holoSolidMat: THREE.MeshBasicMaterial;
+  holoWireMat: THREE.LineBasicMaterial;
+  holoRingMat: THREE.MeshBasicMaterial;
+  holoBeamMat: THREE.MeshBasicMaterial;
+  shopModels: Record<'default' | ShopBuildingFormId, THREE.Group>;
+  loadingOverlayGroup: THREE.Group;
+  outerHaloRing: THREE.Mesh;
+  innerHaloRing: THREE.Mesh;
+  scanBandMesh: THREE.Mesh;
+  loadingBannerSprite: THREE.Sprite;
+  loadingBannerCanvas: HTMLCanvasElement | null;
+  loadingBannerTex: THREE.CanvasTexture | null;
+  lastBannerKey: string;
+  activeDisplayKey: 'default' | ShopBuildingFormId;
+  formSwitchScale: number;
+}
 
 export interface CityRentalLotNodeController {
   spec: CityRentalLotSpec;
@@ -27,13 +52,17 @@ export interface CityRentalLotNodeController {
   emptyMarkerGroup: THREE.Group;
   emptyTurfMesh: THREE.Mesh;
   claimKioskMesh: THREE.Group;
+  kioskWorldX: number;
+  kioskWorldZ: number;
   lotPavingMesh: THREE.Mesh;
   shopBuildingGroup: THREE.Group;
-  proceduralShellByForm: Partial<Record<ShopBuildingFormId, THREE.Group>>;
-  activeProceduralFormId: ShopBuildingFormId | null;
   glbBuildingMount: THREE.Group;
   loadedGlbFormId: ShopBuildingFormId | null;
   glbLoadStatus: 'idle' | 'loading' | 'loaded' | 'fallback';
+  buildAnimStartSec: number;
+  pendingGlbTemplate: THREE.Group | null;
+  pendingLogoUrl: string | null;
+  hologramRig: ShopKioskHologramRig | null;
   appliedBillboardLogoUrl: string | null;
   activeBillboardMats: THREE.MeshStandardMaterial[];
   highlightGroup: THREE.Group;
@@ -55,6 +84,7 @@ export interface CityRentalLotsVisualController {
     rentedSlotIds?: ReadonlySet<string> | ReadonlyArray<string>;
     lotStatusBySlotId?: Readonly<Record<string, CityRentalLotStatus>>;
     placedBuildingBySlotId?: Readonly<Record<string, ShopBuildingFormId | null | undefined>>;
+    previewFormBySlotId?: Readonly<Record<string, ShopBuildingFormId | null | undefined>>;
     billboardLogoUrlBySlotId?: Readonly<Record<string, string | null | undefined>>;
     selectedSlotId?: string | null;
     hoveredSlotId?: string | null;
@@ -203,19 +233,6 @@ function createRectOutlineGeometry(width: number, depth: number, y: number): THR
   return geo;
 }
 
-function createFrontArrowGeometry(y: number): THREE.BufferGeometry {
-  const halfLot = CITY_RENTAL_LOT_SIZE_M.halfDepth;
-  const z0 = halfLot - 0.8;
-  const z1 = halfLot + 1.4;
-  const positions = new Float32Array([
-    0, y, z0, 0, y, z1,
-    0, y, z1, -0.85, y, z1 - 0.95,
-    0, y, z1, 0.85, y, z1 - 0.95,
-  ]);
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  return geo;
-}
 
 /**
  * Normalizes a cloned BufferGeometry into non-indexed form with guaranteed consistent attributes
@@ -417,6 +434,7 @@ function optimizeShopGlbTemplate(
   sharedMats: SharedShopLightingMaterials,
   neutralBillboardTex: THREE.Texture,
   disposables: Array<{ dispose: () => void }>,
+  windUniforms?: BlitzWindUniforms,
 ): THREE.Group {
   const spec = SHOP_BUILDING_FORMS[formId];
   rawScene.updateMatrixWorld(true);
@@ -522,11 +540,16 @@ function optimizeShopGlbTemplate(
   const mergedUntextured = mergeBucketOrNull(untexturedOpaqueGeos, disposables);
   if (mergedUntextured) {
     const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
-    disposables.push(mat);
     const mesh = new THREE.Mesh(mergedUntextured, mat);
     mesh.name = `ShopOpaqueSolid_${formId}`;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    if (windUniforms) {
+      upgradeMeshToBlitzWorldMaterial(mesh, windUniforms, '#ffffff', 0.14);
+      mat.dispose();
+    } else {
+      disposables.push(mat);
+    }
     optimized.add(mesh);
   }
 
@@ -540,11 +563,16 @@ function optimizeShopGlbTemplate(
       map: tex,
       color: bucket.color,
     });
-    disposables.push(mat);
     const mesh = new THREE.Mesh(mergedTexGeo, mat);
     mesh.name = `ShopOpaqueTex_${formId}_${texIdx++}`;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    if (windUniforms) {
+      upgradeMeshToBlitzWorldMaterial(mesh, windUniforms, undefined, 0.14);
+      mat.dispose();
+    } else {
+      disposables.push(mat);
+    }
     optimized.add(mesh);
   }
 
@@ -650,160 +678,374 @@ function optimizeShopGlbTemplate(
   return optimized;
 }
 
-interface MergedProceduralFormTemplate {
-  solidGeo: THREE.BufferGeometry;
-  showcaseGlassGeo: THREE.BufferGeometry;
-  upperWindowGeo: THREE.BufferGeometry;
-  billboardFaceGeo: THREE.BufferGeometry;
-  spotlightRigTemplate: THREE.Group;
+const MIN_HOLOGRAM_BUILD_DURATION_SEC = 1.65;
+
+const HOLO_FORM_SHORT_NAMES: Record<ShopBuildingFormId, string> = {
+  glass_corner_3story: 'GLASS CORNER 3F',
+  canopy_storefront_2story: 'CANOPY SHOP 2F',
+  brick_rooftop_deck: 'BRICK DECK 2F',
+};
+
+interface SharedShopHologramGeometries {
+  models: Record<'default' | ShopBuildingFormId, { solid: THREE.BufferGeometry; edges: THREE.EdgesGeometry }>;
+  outerHaloGeo: THREE.TorusGeometry;
+  innerHaloGeo: THREE.TorusGeometry;
+  scanBandGeo: THREE.CylinderGeometry;
 }
 
 /**
- * Builds a low-draw-call merged procedural fallback template for a shop form (~5 draw calls total)
- * matching the scaled 20m x 20m lot proportions, with glowing showcase windows and overhead billboard spotlights.
+ * Builds shared merged miniature architectural hologram geometries for the kiosk projector:
+ * - default: crisp retail pavilion silhouette when idle
+ * - glass_corner_3story: 3-story stepped corner tower with rooftop solar panels, dish & billboard
+ * - canopy_storefront_2story: 2-story storefront with cantilevered wrap-around canopy & banner billboard
+ * - brick_rooftop_deck: 2-story brick block with facade pilasters, rooftop terrace parapet & billboard
  */
-function createMergedProceduralFormTemplate(
-  formId: ShopBuildingFormId,
-  sharedMats: SharedShopLightingMaterials,
+function createSharedShopHologramGeometries(
   disposables: Array<{ dispose: () => void }>,
-): MergedProceduralFormTemplate {
-  const spec: ShopBuildingFormSpec = SHOP_BUILDING_FORMS[formId];
-  const bodyW = spec.wallColliderLocal.halfX * 2.0;
-  const bodyD = spec.wallColliderLocal.halfZ * 2.0;
-  const bodyH = formId === 'glass_corner_3story' ? 14.2 : formId === 'canopy_storefront_2story' ? 10.8 : 9.8;
-  const plinthH = 0.32;
-  const baseY = BUILDING_PAVING_TOP_Y;
-  const halfW = bodyW * 0.5;
-  const halfD = bodyD * 0.5;
-
-  const solidGeos: THREE.BufferGeometry[] = [];
-  const showcaseGeos: THREE.BufferGeometry[] = [];
-  const upperGeos: THREE.BufferGeometry[] = [];
-
+): SharedShopHologramGeometries {
   const m4 = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const one = new THREE.Vector3(1, 1, 1);
   const pos = new THREE.Vector3();
 
-  const pushBox = (
-    target: THREE.BufferGeometry[],
-    w: number,
-    h: number,
-    d: number,
-    x: number,
-    y: number,
-    z: number,
-    colorHex?: string,
-    rotX = 0,
-    rotY = 0,
-  ) => {
-    const g = new THREE.BoxGeometry(w, h, d);
-    pos.set(x, y, z);
-    q.setFromEuler(new THREE.Euler(rotX, rotY, 0));
-    m4.compose(pos, q, one);
-    const norm = normalizeGeometryForMerge(g, m4, {
-      includeUv: false,
-      vertexColor: colorHex ? new THREE.Color(colorHex) : undefined,
-    });
-    g.dispose();
-    if (norm) target.push(norm);
+  const buildHoloModel = (
+    builder: (
+      push: (
+        geo: THREE.BufferGeometry,
+        x: number,
+        y: number,
+        z: number,
+        rotX?: number,
+        rotY?: number,
+        rotZ?: number,
+      ) => void,
+    ) => void,
+  ): { solid: THREE.BufferGeometry; edges: THREE.EdgesGeometry } => {
+    const geos: THREE.BufferGeometry[] = [];
+    const push = (
+      geo: THREE.BufferGeometry,
+      x: number,
+      y: number,
+      z: number,
+      rotX = 0,
+      rotY = 0,
+      rotZ = 0,
+    ) => {
+      pos.set(x, y, z);
+      q.setFromEuler(new THREE.Euler(rotX, rotY, rotZ));
+      m4.compose(pos, q, one);
+      const norm = normalizeGeometryForMerge(geo, m4, { includeUv: false });
+      geo.dispose();
+      if (norm) geos.push(norm);
+    };
+    builder(push);
+    const merged = mergeBucketOrNull(geos, disposables) ?? new THREE.BoxGeometry(0.4, 0.4, 0.4);
+    merged.computeBoundingBox();
+    if (merged.boundingBox) {
+      const cx = (merged.boundingBox.min.x + merged.boundingBox.max.x) * 0.5;
+      const cz = (merged.boundingBox.min.z + merged.boundingBox.max.z) * 0.5;
+      const minY = merged.boundingBox.min.y;
+      merged.translate(-cx, -minY, -cz);
+      merged.computeBoundingBox();
+      merged.computeBoundingSphere();
+    }
+    const edges = new THREE.EdgesGeometry(merged, 20);
+    disposables.push(edges);
+    return { solid: merged, edges };
   };
 
-  // Plinth, body, crown, pilasters, door frame, canopy awning
-  pushBox(solidGeos, bodyW + 0.6, plinthH, bodyD + 0.6, 0, baseY + plinthH * 0.5, 0, '#94a3b8');
-  pushBox(solidGeos, bodyW, bodyH, bodyD, 0, baseY + plinthH + bodyH * 0.5, 0, spec.palette.wallHex);
-  pushBox(solidGeos, bodyW + 0.45, 0.55, bodyD + 0.45, 0, baseY + plinthH + bodyH + 0.28, 0, spec.palette.roofHex);
+  // Default idle shop pavilion icon silhouette
+  const defaultModel = buildHoloModel((push) => {
+    push(new THREE.BoxGeometry(0.56, 0.05, 0.56), 0, 0.025, 0);
+    push(new THREE.BoxGeometry(0.44, 0.34, 0.38), 0, 0.22, -0.02);
+    push(new THREE.BoxGeometry(0.48, 0.05, 0.14), 0, 0.31, 0.22, 0.22);
+    push(new THREE.BoxGeometry(0.32, 0.12, 0.04), 0, 0.46, 0.14);
+  });
 
-  for (const px of [-halfW + 0.35, -2.2, 2.2, halfW - 0.35]) {
-    pushBox(solidGeos, 0.45, bodyH, 0.24, px, baseY + plinthH + bodyH * 0.5, halfD + 0.06, spec.palette.trimHex);
-  }
-  // Entrance door frame + canopy awning
-  pushBox(solidGeos, 3.1, 3.6, 0.22, 0, baseY + plinthH + 1.8, halfD + 0.06, '#1e293b');
-  pushBox(
-    solidGeos,
-    bodyW - 0.8,
-    0.22,
-    1.55,
-    0,
-    baseY + plinthH + 4.35,
-    halfD + 0.72,
-    spec.palette.accentHex,
-    0.14,
-  );
+  // 1) Glass Corner 3-Story Tower
+  const glassCornerModel = buildHoloModel((push) => {
+    // Architectural terrace plinth
+    push(new THREE.BoxGeometry(0.66, 0.04, 0.66), 0, 0.02, 0);
+    // Core 3-story stepped volume + prominent horizontal floor slab bands
+    push(new THREE.BoxGeometry(0.46, 0.72, 0.46), 0, 0.40, 0);
+    for (const slabY of [0.28, 0.52, 0.76]) {
+      push(new THREE.BoxGeometry(0.52, 0.032, 0.52), 0, slabY, 0);
+    }
+    // Corner vertical bronze/glass mullions
+    for (const mx of [-0.24, 0.0, 0.24]) {
+      push(new THREE.BoxGeometry(0.028, 0.72, 0.028), mx, 0.40, 0.24);
+    }
+    // Rooftop solar panel array + satellite dish + rooftop billboard
+    push(new THREE.BoxGeometry(0.28, 0.02, 0.16), -0.08, 0.84, -0.08, 0.34);
+    push(new THREE.CylinderGeometry(0.06, 0.015, 0.05, 8), 0.14, 0.85, -0.10, 0.45);
+    push(new THREE.BoxGeometry(0.42, 0.14, 0.03), 0, 0.88, 0.21);
+  });
 
-  // Storefront ground display windows + glass entrance door
-  const winOffsetX = halfW * 0.58;
-  for (const wx of [-winOffsetX, winOffsetX]) {
-    pushBox(showcaseGeos, 3.85, 3.15, 0.08, wx, baseY + plinthH + 2.1, halfD + 0.08);
-  }
-  pushBox(showcaseGeos, 2.65, 3.35, 0.08, 0, baseY + plinthH + 1.78, halfD + 0.14);
+  // 2) Canopy Storefront 2-Story
+  const canopyModel = buildHoloModel((push) => {
+    // Terrace base
+    push(new THREE.BoxGeometry(0.68, 0.04, 0.68), 0, 0.02, 0);
+    // Ground floor recessed storefront + wide cantilevered wrap-around steel canopy
+    push(new THREE.BoxGeometry(0.46, 0.24, 0.44), 0, 0.16, -0.02);
+    push(new THREE.BoxGeometry(0.62, 0.045, 0.56), 0, 0.29, 0.04);
+    // Upper limestone volume + roof cornice
+    push(new THREE.BoxGeometry(0.50, 0.28, 0.46), 0, 0.45, -0.01);
+    push(new THREE.BoxGeometry(0.54, 0.04, 0.50), 0, 0.60, -0.01);
+    // Elevated horizontal rooftop banner billboard + support posts
+    push(new THREE.BoxGeometry(0.025, 0.09, 0.025), -0.16, 0.66, 0.16);
+    push(new THREE.BoxGeometry(0.025, 0.09, 0.025), 0.16, 0.66, 0.16);
+    push(new THREE.BoxGeometry(0.46, 0.12, 0.03), 0, 0.74, 0.18);
+  });
 
-  // Upper floor windows per architectural form
-  if (formId === 'glass_corner_3story') {
-    for (const fy of [baseY + plinthH + 6.9, baseY + plinthH + 11.2]) {
-      pushBox(showcaseGeos, bodyW - 1.2, 2.8, 0.08, 0, fy, halfD + 0.08);
-      for (const sx of [-1, 1]) {
-        pushBox(showcaseGeos, 0.08, 2.8, bodyD * 0.68, sx * (halfW + 0.08), fy, 0.4);
+  // 3) Brick Block with Rooftop Deck
+  const brickDeckModel = buildHoloModel((push) => {
+    // Terrace base
+    push(new THREE.BoxGeometry(0.66, 0.04, 0.66), 0, 0.02, 0);
+    // 2-story solid brick mass + corner pilasters
+    push(new THREE.BoxGeometry(0.48, 0.52, 0.46), 0, 0.30, 0);
+    for (const px of [-0.24, 0.24]) {
+      for (const pz of [-0.23, 0.23]) {
+        push(new THREE.BoxGeometry(0.055, 0.54, 0.055), px, 0.31, pz);
       }
     }
-  } else {
-    const upperY = baseY + plinthH + 7.4;
-    for (const wx of [-4.2, 0, 4.2]) {
-      pushBox(upperGeos, 2.75, 2.55, 0.08, wx, upperY, halfD + 0.08);
-    }
-    for (const sx of [-1, 1]) {
-      pushBox(upperGeos, 0.08, 2.55, bodyD * 0.58, sx * (halfW + 0.08), upperY, 0.2);
-    }
-    if (formId === 'brick_rooftop_deck') {
-      const deckY = baseY + plinthH + bodyH + 0.6;
-      const railY = deckY + 0.68;
-      for (const sz of [-1, 1]) {
-        pushBox(solidGeos, bodyW - 0.4, 0.14, 0.14, 0, railY, sz * (halfD - 0.22), '#1e293b');
-      }
-      for (const sx of [-1, 1]) {
-        pushBox(solidGeos, 0.14, 0.14, bodyD - 0.4, sx * (halfW - 0.22), railY, 0, '#1e293b');
-      }
-    }
-  }
+    // Rooftop timber deck perimeter parapet railings
+    push(new THREE.BoxGeometry(0.48, 0.08, 0.025), 0, 0.60, 0.22);
+    push(new THREE.BoxGeometry(0.48, 0.08, 0.025), 0, 0.60, -0.22);
+    push(new THREE.BoxGeometry(0.025, 0.08, 0.44), -0.23, 0.60, 0);
+    push(new THREE.BoxGeometry(0.025, 0.08, 0.44), 0.23, 0.60, 0);
+    // Rooftop planter accent + panoramic billboard
+    push(new THREE.BoxGeometry(0.11, 0.06, 0.11), -0.14, 0.60, -0.12);
+    push(new THREE.BoxGeometry(0.48, 0.13, 0.03), 0, 0.72, 0.19);
+  });
 
-  // Rooftop billboard backing frame
-  const signW = spec.billboard.widthM;
-  const signH = spec.billboard.heightM;
-  const bbCenterY = baseY + plinthH + bodyH + 0.62 + signH * 0.52;
-  const bbFrontZ = halfD + 0.08;
-  pushBox(solidGeos, signW + 0.36, signH + 0.28, 0.32, 0, bbCenterY, halfD - 0.12, '#1e293b');
-
-  const solidGeo = mergeBucketOrNull(solidGeos, disposables) ?? new THREE.BoxGeometry(1, 1, 1);
-  const showcaseGlassGeo =
-    mergeBucketOrNull(showcaseGeos, disposables) ?? new THREE.BufferGeometry();
-  const upperWindowGeo = mergeBucketOrNull(upperGeos, disposables) ?? new THREE.BufferGeometry();
-
-  const billboardFaceGeo = new THREE.PlaneGeometry(signW, signH);
-  billboardFaceGeo.translate(0, bbCenterY, bbFrontZ);
-  disposables.push(billboardFaceGeo);
-
-  const spotlightRigTemplate = buildBillboardOverheadSpotlightRig(
-    0,
-    bbCenterY + signH * 0.5,
-    bbCenterY,
-    bbFrontZ,
-    signW,
-    signH,
-    true,
-    {
-      lampHousingMat: sharedMats.lampHousingMat,
-      lampBulbMat: sharedMats.fixtureLampMat,
-      billboardWashMat: sharedMats.billboardWashMat,
-    },
-    disposables,
-  );
+  const outerHaloGeo = new THREE.TorusGeometry(0.48, 0.016, 8, 36);
+  const innerHaloGeo = new THREE.TorusGeometry(0.38, 0.012, 8, 32);
+  const scanBandGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.055, 24, 1, true);
+  disposables.push(outerHaloGeo, innerHaloGeo, scanBandGeo);
 
   return {
-    solidGeo,
-    showcaseGlassGeo,
-    upperWindowGeo,
-    billboardFaceGeo,
-    spotlightRigTemplate,
+    models: {
+      default: defaultModel,
+      glass_corner_3story: glassCornerModel,
+      canopy_storefront_2story: canopyModel,
+      brick_rooftop_deck: brickDeckModel,
+    },
+    outerHaloGeo,
+    innerHaloGeo,
+    scanBandGeo,
+  };
+}
+
+function drawHoloLoadingBanner(
+  canvas: HTMLCanvasElement,
+  tex: THREE.CanvasTexture,
+  title: string,
+  progress01: number,
+): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const w = canvas.width;
+  const h = canvas.height;
+  const pct = Math.max(0, Math.min(100, Math.round(progress01 * 100)));
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Sleek translucent frosted dark glass rounded card matching Cerria OS aesthetic
+  const r = 18;
+  ctx.beginPath();
+  ctx.moveTo(r + 4, 4);
+  ctx.lineTo(w - r - 4, 4);
+  ctx.quadraticCurveTo(w - 4, 4, w - 4, r + 4);
+  ctx.lineTo(w - 4, h - r - 4);
+  ctx.quadraticCurveTo(w - 4, h - 4, w - r - 4, h - 4);
+  ctx.lineTo(r + 4, h - 4);
+  ctx.quadraticCurveTo(4, h - 4, 4, h - r - 4);
+  ctx.lineTo(4, r + 4);
+  ctx.quadraticCurveTo(4, 4, r + 4, 4);
+  ctx.closePath();
+
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+  bgGrad.addColorStop(0, 'rgba(15, 23, 42, 0.90)');
+  bgGrad.addColorStop(1, 'rgba(12, 18, 32, 0.94)');
+  ctx.fillStyle = bgGrad;
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.72)';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Top label row: "BUILDING" + live percentage
+  ctx.font = '700 16px system-ui, -apple-system, sans-serif';
+  ctx.fillStyle = '#67e8f9';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('BUILDING SHOP', 20, 28);
+
+  ctx.font = '800 18px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.fillStyle = '#34d399';
+  ctx.textAlign = 'right';
+  ctx.fillText(`${pct}%`, w - 20, 28);
+
+  // Building form subtitle
+  ctx.font = '700 18px system-ui, -apple-system, sans-serif';
+  ctx.fillStyle = '#f8fafc';
+  ctx.textAlign = 'left';
+  ctx.fillText(title, 20, 56);
+
+  // Progress bar track
+  const barX = 20;
+  const barY = 78;
+  const barW = w - 40;
+  const barH = 12;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+  ctx.beginPath();
+  ctx.roundRect(barX, barY, barW, barH, 6);
+  ctx.fill();
+
+  // Animated cyan -> emerald fill
+  const fillW = Math.max(12, Math.round(barW * Math.max(0.04, progress01)));
+  const fillGrad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+  fillGrad.addColorStop(0, '#38bdf8');
+  fillGrad.addColorStop(1, '#34d399');
+  ctx.fillStyle = fillGrad;
+  ctx.beginPath();
+  ctx.roundRect(barX, barY, fillW, barH, 6);
+  ctx.fill();
+
+  tex.needsUpdate = true;
+}
+
+function attachShopHologramRigToKiosk(
+  claimKioskMesh: THREE.Group,
+  sharedHoloGeos: SharedShopHologramGeometries,
+  disposables: Array<{ dispose: () => void }>,
+): ShopKioskHologramRig | null {
+  const sideHolo = claimKioskMesh.userData?.sideHologram as
+    | {
+        holoRoot: THREE.Group;
+        holoTurntable: THREE.Group;
+        holoModels: Record<string, THREE.Group>;
+        holoSolidMat: THREE.MeshBasicMaterial;
+        holoWireMat: THREE.LineBasicMaterial;
+        holoRingMat: THREE.MeshBasicMaterial;
+        holoBeamMat: THREE.MeshBasicMaterial;
+      }
+    | undefined;
+  if (!sideHolo) return null;
+
+  // Hide all warzone weapon/buddy hologram meshes on commercial shop lot kiosks
+  for (const grp of Object.values(sideHolo.holoModels)) {
+    grp.visible = false;
+  }
+
+  sideHolo.holoRoot.visible = true;
+  sideHolo.holoTurntable.position.set(0, 0.42, 0);
+
+  const shopModels = {} as Record<'default' | ShopBuildingFormId, THREE.Group>;
+  const keys: Array<'default' | ShopBuildingFormId> = [
+    'default',
+    'glass_corner_3story',
+    'canopy_storefront_2story',
+    'brick_rooftop_deck',
+  ];
+  for (const key of keys) {
+    const geomPair = sharedHoloGeos.models[key];
+    const grp = new THREE.Group();
+    grp.name = `ShopHoloModel_${key}`;
+    const solidMesh = new THREE.Mesh(geomPair.solid, sideHolo.holoSolidMat);
+    const wireMesh = new THREE.LineSegments(geomPair.edges, sideHolo.holoWireMat);
+    wireMesh.scale.setScalar(1.012);
+    grp.add(solidMesh, wireMesh);
+    grp.scale.setScalar(1.25);
+    grp.visible = key === 'default';
+    sideHolo.holoTurntable.add(grp);
+    shopModels[key] = grp;
+  }
+
+  // Aesthetic loading state rig positioned around & above the hologram
+  const loadingOverlayGroup = new THREE.Group();
+  loadingOverlayGroup.name = 'ShopHoloLoadingOverlay';
+  loadingOverlayGroup.visible = false;
+  sideHolo.holoRoot.add(loadingOverlayGroup);
+
+  const outerHaloMat = new THREE.MeshBasicMaterial({
+    color: '#38bdf8',
+    transparent: true,
+    opacity: 0.85,
+    depthWrite: false,
+  });
+  const innerHaloMat = new THREE.MeshBasicMaterial({
+    color: '#34d399',
+    transparent: true,
+    opacity: 0.82,
+    depthWrite: false,
+  });
+  const scanBandMat = new THREE.MeshBasicMaterial({
+    color: '#5eead4',
+    transparent: true,
+    opacity: 0.55,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  disposables.push(outerHaloMat, innerHaloMat, scanBandMat);
+
+  const outerHaloRing = new THREE.Mesh(sharedHoloGeos.outerHaloGeo, outerHaloMat);
+  outerHaloRing.position.set(0, 0.92, 0);
+  outerHaloRing.rotation.x = Math.PI * 0.38;
+  loadingOverlayGroup.add(outerHaloRing);
+
+  const innerHaloRing = new THREE.Mesh(sharedHoloGeos.innerHaloGeo, innerHaloMat);
+  innerHaloRing.position.set(0, 0.92, 0);
+  innerHaloRing.rotation.x = -Math.PI * 0.34;
+  loadingOverlayGroup.add(innerHaloRing);
+
+  const scanBandMesh = new THREE.Mesh(sharedHoloGeos.scanBandGeo, scanBandMat);
+  scanBandMesh.position.set(0, 0.65, 0);
+  loadingOverlayGroup.add(scanBandMesh);
+
+  let loadingBannerCanvas: HTMLCanvasElement | null = null;
+  let loadingBannerTex: THREE.CanvasTexture | null = null;
+  const bannerMat = new THREE.SpriteMaterial({
+    transparent: true,
+    depthWrite: false,
+  });
+  if (typeof document !== 'undefined') {
+    loadingBannerCanvas = document.createElement('canvas');
+    loadingBannerCanvas.width = 320;
+    loadingBannerCanvas.height = 108;
+    loadingBannerTex = new THREE.CanvasTexture(loadingBannerCanvas);
+    loadingBannerTex.colorSpace = THREE.SRGBColorSpace;
+    bannerMat.map = loadingBannerTex;
+    disposables.push(loadingBannerTex);
+  }
+  disposables.push(bannerMat);
+
+  const loadingBannerSprite = new THREE.Sprite(bannerMat);
+  loadingBannerSprite.name = 'ShopHoloLoadingBanner';
+  loadingBannerSprite.position.set(0, 2.04, 0);
+  loadingBannerSprite.scale.set(2.1, 0.71, 1);
+  loadingBannerSprite.renderOrder = 10;
+  loadingOverlayGroup.add(loadingBannerSprite);
+
+  return {
+    holoRoot: sideHolo.holoRoot,
+    holoTurntable: sideHolo.holoTurntable,
+    holoSolidMat: sideHolo.holoSolidMat,
+    holoWireMat: sideHolo.holoWireMat,
+    holoRingMat: sideHolo.holoRingMat,
+    holoBeamMat: sideHolo.holoBeamMat,
+    shopModels,
+    loadingOverlayGroup,
+    outerHaloRing,
+    innerHaloRing,
+    scanBandMesh,
+    loadingBannerSprite,
+    loadingBannerCanvas,
+    loadingBannerTex,
+    lastBannerKey: '',
+    activeDisplayKey: 'default',
+    formSwitchScale: 1,
   };
 }
 
@@ -816,7 +1058,9 @@ function createMergedProceduralFormTemplate(
  */
 export function buildCityRentalLotsVisuals(options?: {
   createKioskMesh?: () => THREE.Group;
+  windUniforms?: BlitzWindUniforms;
 }): CityRentalLotsVisualController {
+  const windUniforms = options?.windUniforms;
   const rootGroup = new THREE.Group();
   rootGroup.name = 'CityRentalLotsSystemRoot';
 
@@ -849,7 +1093,7 @@ export function buildCityRentalLotsVisuals(options?: {
   const highlightEWGeo = regGeo(new THREE.PlaneGeometry(0.34, lotD - 0.68));
   highlightEWGeo.rotateX(-Math.PI * 0.5);
 
-  // Shared 3D QA Bounds Overlay Geometries & Materials (20m lot, 19.6m package cap, front facing arrow)
+  // Shared 3D QA Bounds Overlay Geometries & Materials (20m lot, 19.6m package cap)
   const qaLotOutlineGeo = regGeo(createRectOutlineGeometry(lotW, lotD, BUILDING_PAVING_TOP_Y + 0.04));
   const qaCapOutlineGeo = regGeo(
     createRectOutlineGeometry(
@@ -858,10 +1102,8 @@ export function buildCityRentalLotsVisuals(options?: {
       BUILDING_PAVING_TOP_Y + 0.05,
     ),
   );
-  const qaFrontArrowGeo = regGeo(createFrontArrowGeometry(BUILDING_PAVING_TOP_Y + 0.06));
   const qaLotOutlineMat = regMat(new THREE.LineBasicMaterial({ color: '#22d3ee' }));
   const qaCapOutlineMat = regMat(new THREE.LineBasicMaterial({ color: '#fbbf24' }));
-  const qaFrontArrowMat = regMat(new THREE.LineBasicMaterial({ color: '#a3e635' }));
 
   // Shared flat white lot boundary markings (visible cleanly on unbuilt lots)
   const whiteLineMat = regMat(
@@ -953,25 +1195,7 @@ export function buildCityRentalLotsVisuals(options?: {
   };
   sharedShopMats.billboardWashMat.visible = false;
 
-  const proceduralSolidMat = regMat(new THREE.MeshLambertMaterial({ vertexColors: true }));
-
-  const proceduralTemplatesByForm: Record<ShopBuildingFormId, MergedProceduralFormTemplate> = {
-    glass_corner_3story: createMergedProceduralFormTemplate(
-      'glass_corner_3story',
-      sharedShopMats,
-      disposables,
-    ),
-    canopy_storefront_2story: createMergedProceduralFormTemplate(
-      'canopy_storefront_2story',
-      sharedShopMats,
-      disposables,
-    ),
-    brick_rooftop_deck: createMergedProceduralFormTemplate(
-      'brick_rooftop_deck',
-      sharedShopMats,
-      disposables,
-    ),
-  };
+  const sharedHoloGeos = createSharedShopHologramGeometries(disposables);
 
   /**
    * Visually distinct Building Paving ("Trotoar Bangunan") textures:
@@ -984,9 +1208,18 @@ export function buildCityRentalLotsVisuals(options?: {
     accentHex: string,
     borderHex: string,
     tileCount: number,
-  ): THREE.MeshLambertMaterial => {
+  ): THREE.Material => {
+    const makeWorldMat = (fallback: THREE.MeshLambertMaterial, tintHex?: string): THREE.Material => {
+      if (!windUniforms) return regMat(fallback);
+      const tmpGeo = new THREE.BufferGeometry();
+      const tmpMesh = new THREE.Mesh(tmpGeo, fallback);
+      upgradeMeshToBlitzWorldMaterial(tmpMesh, windUniforms, tintHex, 0.08);
+      fallback.dispose();
+      tmpGeo.dispose();
+      return tmpMesh.material as THREE.Material;
+    };
     if (typeof document === 'undefined') {
-      return regMat(new THREE.MeshLambertMaterial({ color: baseHex }));
+      return makeWorldMat(new THREE.MeshLambertMaterial({ color: baseHex }), baseHex);
     }
     const c = document.createElement('canvas');
     c.width = 512;
@@ -1037,10 +1270,10 @@ export function buildCityRentalLotsVisuals(options?: {
     tex.anisotropy = 4;
     tex.colorSpace = THREE.SRGBColorSpace;
     disposables.push(tex);
-    return regMat(new THREE.MeshLambertMaterial({ map: tex }));
+    return makeWorldMat(new THREE.MeshLambertMaterial({ map: tex }), '#ffffff');
   };
 
-  const lotPavingMatByForm: Record<ShopBuildingFormId, THREE.MeshLambertMaterial> = {
+  const lotPavingMatByForm: Record<ShopBuildingFormId, THREE.Material> = {
     glass_corner_3story: createBuildingFormPavingMat(
       '#ddd6c8',
       '#b5ab9b',
@@ -1070,6 +1303,7 @@ export function buildCityRentalLotsVisuals(options?: {
   const gltfLoader = new GLTFLoader();
   const textureLoader = new THREE.TextureLoader();
   const glbTemplateCache = new Map<ShopBuildingFormId, Promise<THREE.Group | null>>();
+  const resolvedGlbTemplates = new Map<ShopBuildingFormId, THREE.Group>();
   const neutralBillboardTex = createNeutralBillboardTexture(disposables);
   let disposed = false;
   let lastPreviewAllBuildings = false;
@@ -1131,6 +1365,9 @@ export function buildCityRentalLotsVisuals(options?: {
     emptyTurfMesh.name = `LotEmptyTurf_${spec.slotId}`;
     emptyTurfMesh.position.set(0, LOT_SURFACE_Y - 0.018, 0);
     emptyTurfMesh.receiveShadow = true;
+    if (windUniforms) {
+      upgradeMeshToBlitzWorldMaterial(emptyTurfMesh, windUniforms, '#6ec44a', 0.12);
+    }
     emptyMarkerGroup.add(emptyTurfMesh);
     emptyMarkerGroup.add(boundaryGroup);
 
@@ -1138,8 +1375,11 @@ export function buildCityRentalLotsVisuals(options?: {
       ? options.createKioskMesh()
       : new THREE.Group();
     claimKioskMesh.name = `LotClaimKiosk_${spec.slotId}`;
-    claimKioskMesh.position.set(0, LOT_SURFACE_Y, 0);
+    claimKioskMesh.position.set(0, LOT_SURFACE_Y, LOT_CLAIM_KIOSK_LOCAL_Z);
     emptyMarkerGroup.add(claimKioskMesh);
+    const hologramRig = attachShopHologramRigToKiosk(claimKioskMesh, sharedHoloGeos, disposables);
+    const kioskWorldX = spec.x + spec.frontDirX * LOT_CLAIM_KIOSK_LOCAL_Z;
+    const kioskWorldZ = spec.z + spec.frontDirZ * LOT_CLAIM_KIOSK_LOCAL_Z;
 
     const availTex = createLotGroundPlaqueTexture(spec.shortCode, 'available', disposables);
     const statusSignMat = regMat(new THREE.MeshBasicMaterial({ map: availTex }));
@@ -1149,7 +1389,7 @@ export function buildCityRentalLotsVisuals(options?: {
       emptyMarkerGroup.add(plaqueFace);
     }
 
-    // 3. Dynamic Procedural Shop Building Container (low-draw-call merged fallback)
+    // 3. Kept empty & hidden (procedural poly shop fallback retired — GLB only)
     const shopBuildingGroup = new THREE.Group();
     shopBuildingGroup.name = `ProceduralShopMount_${spec.slotId}`;
     shopBuildingGroup.visible = false;
@@ -1198,13 +1438,12 @@ export function buildCityRentalLotsVisuals(options?: {
       highlightGroup.add(vBar);
     }
 
-    // 4B. 3D Shop QA Bounds & Margin Overlay (20m outer cyan, 19.6m cap amber, +Z front arrow)
+    // 4B. 3D Shop QA Bounds & Margin Overlay (20m outer cyan, 19.6m cap amber)
     const qaBoundsGroup = new THREE.Group();
     qaBoundsGroup.name = `LotQaBounds_${spec.slotId}`;
     qaBoundsGroup.visible = false;
     qaBoundsGroup.add(new THREE.LineSegments(qaLotOutlineGeo, qaLotOutlineMat));
     qaBoundsGroup.add(new THREE.LineSegments(qaCapOutlineGeo, qaCapOutlineMat));
-    qaBoundsGroup.add(new THREE.LineSegments(qaFrontArrowGeo, qaFrontArrowMat));
     lotRoot.add(qaBoundsGroup);
 
     // 5. Raycast Hit Proxy Mesh tagged with userData.cityRentalLotId
@@ -1220,13 +1459,17 @@ export function buildCityRentalLotsVisuals(options?: {
       emptyMarkerGroup,
       emptyTurfMesh,
       claimKioskMesh,
+      kioskWorldX,
+      kioskWorldZ,
       lotPavingMesh,
       shopBuildingGroup,
-      proceduralShellByForm: {},
-      activeProceduralFormId: null,
       glbBuildingMount,
       loadedGlbFormId: null,
       glbLoadStatus: 'idle',
+      buildAnimStartSec: 0,
+      pendingGlbTemplate: null,
+      pendingLogoUrl: null,
+      hologramRig,
       appliedBillboardLogoUrl: null,
       activeBillboardMats: [],
       highlightGroup,
@@ -1274,14 +1517,6 @@ export function buildCityRentalLotsVisuals(options?: {
 
     for (let zi = 0; zi < solidFurnitureZ.length; zi++) {
       const fz = solidFurnitureZ[zi];
-      poleTransforms.push(new THREE.Matrix4().makeTranslation(fx, LOT_SURFACE_Y + 1.8, fz));
-      globeTransforms.push(new THREE.Matrix4().makeTranslation(fx, LOT_SURFACE_Y + 3.66, fz));
-      planterTransforms.push(
-        new THREE.Matrix4().makeTranslation(fx, LOT_SURFACE_Y + 0.25, fz + zSign * 2.0),
-      );
-      bushTransforms.push(
-        new THREE.Matrix4().makeTranslation(fx, LOT_SURFACE_Y + 0.65, fz + zSign * 2.0),
-      );
 
       if (zi === 1) {
         benchTransforms.push(
@@ -1305,6 +1540,7 @@ export function buildCityRentalLotsVisuals(options?: {
     geo: THREE.BufferGeometry,
     mat: THREE.Material,
     transforms: THREE.Matrix4[],
+    upgradeWorld = true,
   ) => {
     if (transforms.length === 0) return;
     const inst = new THREE.InstancedMesh(geo, mat, transforms.length);
@@ -1313,15 +1549,18 @@ export function buildCityRentalLotsVisuals(options?: {
       inst.setMatrixAt(idx, transforms[idx]);
     }
     inst.instanceMatrix.needsUpdate = true;
+    if (windUniforms && upgradeWorld) {
+      upgradeMeshToBlitzWorldMaterial(inst, windUniforms, undefined, 0.12);
+    }
     sidewalkFurnitureGroup.add(inst);
   };
 
-  addInstancedFurniture('CommercialLampPoles', lampPoleGeo, lampPostMat, poleTransforms);
-  addInstancedFurniture('CommercialLampGlobes', lampHeadGeo, avenueLampGlobeMat, globeTransforms);
-  addInstancedFurniture('CommercialPlanterBoxes', planterBoxGeo, planterPotMat, planterTransforms);
-  addInstancedFurniture('CommercialPlanterBushes', planterBushGeo, planterFoliageMat, bushTransforms);
-  addInstancedFurniture('CommercialBenches', benchSeatGeo, benchWoodMat, benchTransforms);
-  addInstancedFurniture('CommercialBikeRacks', bikeRackLoopGeo, lampPostMat, rackTransforms);
+  addInstancedFurniture('CommercialLampPoles', lampPoleGeo, lampPostMat, poleTransforms, true);
+  addInstancedFurniture('CommercialLampGlobes', lampHeadGeo, avenueLampGlobeMat, globeTransforms, false);
+  addInstancedFurniture('CommercialPlanterBoxes', planterBoxGeo, planterPotMat, planterTransforms, true);
+  addInstancedFurniture('CommercialPlanterBushes', planterBushGeo, planterFoliageMat, bushTransforms, true);
+  addInstancedFurniture('CommercialBenches', benchSeatGeo, benchWoodMat, benchTransforms, true);
+  addInstancedFurniture('CommercialBikeRacks', bikeRackLoopGeo, lampPostMat, rackTransforms, true);
 
   const registerActiveBillboardMats = (node: CityRentalLotNodeController, root: THREE.Object3D) => {
     node.activeBillboardMats.length = 0;
@@ -1342,62 +1581,9 @@ export function buildCityRentalLotsVisuals(options?: {
     });
   };
 
-  const ensureProceduralShellForNode = (
-    node: CityRentalLotNodeController,
-    formId: ShopBuildingFormId,
-  ): THREE.Group => {
-    let shell = node.proceduralShellByForm[formId];
-    if (!shell) {
-      const tpl = proceduralTemplatesByForm[formId];
-      shell = new THREE.Group();
-      shell.name = `ProceduralShop_${node.spec.slotId}_${formId}`;
-
-      const solidMesh = new THREE.Mesh(tpl.solidGeo, proceduralSolidMat);
-      solidMesh.castShadow = true;
-      solidMesh.receiveShadow = true;
-      shell.add(solidMesh);
-
-      if (tpl.showcaseGlassGeo.getAttribute('position')) {
-        const glassMesh = new THREE.Mesh(tpl.showcaseGlassGeo, sharedShopMats.showcaseGlassMat);
-        glassMesh.renderOrder = 2;
-        shell.add(glassMesh);
-      }
-      if (tpl.upperWindowGeo.getAttribute('position')) {
-        const upperMesh = new THREE.Mesh(tpl.upperWindowGeo, sharedShopMats.upperWindowMat);
-        shell.add(upperMesh);
-      }
-
-      const signFaceMat = new THREE.MeshStandardMaterial({
-        map: neutralBillboardTex,
-        emissiveMap: neutralBillboardTex,
-        color: '#ffffff',
-        emissive: new THREE.Color('#fff1d6'),
-        emissiveIntensity: lastNightFactor01 * 0.82,
-        roughness: 0.55,
-        metalness: 0.0,
-      });
-      signFaceMat.name = SHOP_BILLBOARD_MESH_SPEC.materialName;
-      disposables.push(signFaceMat);
-
-      const signFace = new THREE.Mesh(tpl.billboardFaceGeo, signFaceMat);
-      signFace.name = SHOP_BILLBOARD_MESH_SPEC.meshName;
-      shell.add(signFace);
-
-      shell.add(tpl.spotlightRigTemplate.clone(true));
-
-      node.proceduralShellByForm[formId] = shell;
-      node.shopBuildingGroup.add(shell);
-    }
-    if (node.activeProceduralFormId !== formId) {
-      for (const [fid, grp] of Object.entries(node.proceduralShellByForm)) {
-        if (grp) grp.visible = fid === formId;
-      }
-      node.activeProceduralFormId = formId;
-    }
-    return shell;
-  };
-
   const loadShopGlbTemplate = (formId: ShopBuildingFormId): Promise<THREE.Group | null> => {
+    const ready = resolvedGlbTemplates.get(formId);
+    if (ready) return Promise.resolve(ready);
     const cached = glbTemplateCache.get(formId);
     if (cached) return cached;
     const spec = SHOP_BUILDING_FORMS[formId];
@@ -1419,15 +1605,56 @@ export function buildCityRentalLotsVisuals(options?: {
             sharedShopMats,
             neutralBillboardTex,
             disposables,
+            windUniforms,
           );
+          resolvedGlbTemplates.set(formId, optimized);
           resolve(optimized);
         },
         undefined,
-        () => resolve(null),
+        () => {
+          glbTemplateCache.delete(formId);
+          resolve(null);
+        },
       );
     });
     glbTemplateCache.set(formId, p);
     return p;
+  };
+
+  const mountResolvedGlbOnNode = (
+    node: CityRentalLotNodeController,
+    formId: ShopBuildingFormId,
+    template: THREE.Group,
+    logoUrl: string | null,
+  ) => {
+    // Shallow clone shares all merged BufferGeometries & shared materials across all 16 lots!
+    const clone = template.clone(true);
+    // Clone ONLY the per-lot rooftop billboard material so logo textures NEVER bleed across lots
+    clone.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (
+        mesh.isMesh &&
+        (mesh.name === SHOP_BILLBOARD_MESH_SPEC.meshName ||
+          (mesh.material as THREE.Material | undefined)?.name ===
+            SHOP_BILLBOARD_MESH_SPEC.materialName)
+      ) {
+        const clonedMat = (mesh.material as THREE.Material).clone();
+        disposables.push(clonedMat);
+        mesh.material = clonedMat;
+      }
+    });
+    node.lotPavingMesh.material = lotPavingMatByForm[formId];
+    node.lotPavingMesh.visible = true;
+    node.glbBuildingMount.clear();
+    node.glbBuildingMount.add(clone);
+    node.glbBuildingMount.visible = true;
+    node.shopBuildingGroup.visible = false;
+    node.emptyMarkerGroup.visible = false;
+    node.glbLoadStatus = 'loaded';
+    node.pendingGlbTemplate = null;
+    node.appliedBillboardLogoUrl = logoUrl;
+    applyBillboardLogoToObject(clone, logoUrl);
+    registerActiveBillboardMats(node, clone);
   };
 
   const applyBillboardLogoToObject = (root: THREE.Object3D, logoUrl: string | null) => {
@@ -1529,10 +1756,8 @@ export function buildCityRentalLotsVisuals(options?: {
       previewAllBuildingsFit: params.previewAllBuildingsFit,
     });
 
-    const pulse =
-      typeof params.timeSec === 'number'
-        ? 0.78 + 0.22 * Math.sin(params.timeSec * 5.2)
-        : 0.92;
+    const nowSec = typeof params.timeSec === 'number' ? params.timeSec : performance.now() * 0.001;
+    const pulse = 0.78 + 0.22 * Math.sin(nowSec * 5.2);
 
     for (let i = 0; i < lotNodes.length; i++) {
       const node = lotNodes[i];
@@ -1543,66 +1768,65 @@ export function buildCityRentalLotsVisuals(options?: {
       node.qaBoundsGroup.visible = lastDebugShopBounds3D;
 
       const targetForm = st.showShopBuilding ? st.placedBuildingFormId : null;
+      const previewForm = params.previewFormBySlotId?.[node.spec.slotId] ?? null;
       const targetLogoUrl = params.billboardLogoUrlBySlotId?.[node.spec.slotId] ?? null;
 
-      if (targetForm) {
-        node.lotPavingMesh.material = lotPavingMatByForm[targetForm];
-        node.lotPavingMesh.visible = true;
-        const activeProceduralShell = ensureProceduralShellForNode(node, targetForm);
+      // Never show the retired procedural poly box building
+      node.shopBuildingGroup.visible = false;
 
+      if (targetForm) {
         if (node.loadedGlbFormId !== targetForm) {
           node.loadedGlbFormId = targetForm;
-          node.glbLoadStatus = 'loading';
+          node.pendingLogoUrl = targetLogoUrl;
           node.appliedBillboardLogoUrl = targetLogoUrl;
           node.glbBuildingMount.clear();
           node.glbBuildingMount.visible = false;
-          node.shopBuildingGroup.visible = true;
-          applyBillboardLogoToObject(activeProceduralShell, targetLogoUrl);
-          registerActiveBillboardMats(node, activeProceduralShell);
+          node.lotPavingMesh.visible = false;
 
-          void loadShopGlbTemplate(targetForm).then((template) => {
-            if (disposed || node.loadedGlbFormId !== targetForm) return;
-            if (!template) {
-              node.glbLoadStatus = 'fallback';
-              return;
+          const syncReadyTemplate = resolvedGlbTemplates.get(targetForm) ?? null;
+
+          // QA bulk fit-preview mounts immediately; real player builds animate the kiosk hologram loading state
+          if (lastPreviewAllBuildings && syncReadyTemplate) {
+            mountResolvedGlbOnNode(node, targetForm, syncReadyTemplate, targetLogoUrl);
+          } else {
+            node.glbLoadStatus = 'loading';
+            node.buildAnimStartSec = nowSec;
+            node.pendingGlbTemplate = syncReadyTemplate;
+            node.emptyMarkerGroup.visible = true;
+
+            if (!syncReadyTemplate) {
+              void loadShopGlbTemplate(targetForm).then((template) => {
+                if (disposed || node.loadedGlbFormId !== targetForm) return;
+                if (!template) {
+                  node.glbLoadStatus = 'fallback';
+                  return;
+                }
+                node.pendingGlbTemplate = template;
+              });
             }
-            // Shallow clone shares all merged BufferGeometries & shared materials across all 16 lots!
-            const clone = template.clone(true);
-            // Clone ONLY the per-lot rooftop billboard material so logo textures NEVER bleed across lots
-            clone.traverse((obj) => {
-              const mesh = obj as THREE.Mesh;
-              if (
-                mesh.isMesh &&
-                (mesh.name === SHOP_BILLBOARD_MESH_SPEC.meshName ||
-                  (mesh.material as THREE.Material | undefined)?.name ===
-                    SHOP_BILLBOARD_MESH_SPEC.materialName)
-              ) {
-                const clonedMat = (mesh.material as THREE.Material).clone();
-                disposables.push(clonedMat);
-                mesh.material = clonedMat;
-              }
-            });
-            node.glbBuildingMount.clear();
-            node.glbBuildingMount.add(clone);
-            node.glbBuildingMount.visible = true;
-            node.shopBuildingGroup.visible = false;
-            node.glbLoadStatus = 'loaded';
-            node.appliedBillboardLogoUrl = targetLogoUrl;
-            applyBillboardLogoToObject(clone, targetLogoUrl);
-            registerActiveBillboardMats(node, clone);
-          });
-        } else if (node.appliedBillboardLogoUrl !== targetLogoUrl) {
+          }
+        } else if (node.glbLoadStatus === 'loading') {
+          node.pendingLogoUrl = targetLogoUrl;
+          const elapsed = Math.max(0, nowSec - node.buildAnimStartSec);
+          const animDone = lastPreviewAllBuildings || elapsed >= MIN_HOLOGRAM_BUILD_DURATION_SEC;
+          if (node.pendingGlbTemplate && animDone) {
+            mountResolvedGlbOnNode(
+              node,
+              targetForm,
+              node.pendingGlbTemplate,
+              node.pendingLogoUrl,
+            );
+          }
+        } else if (node.glbLoadStatus === 'loaded' && node.appliedBillboardLogoUrl !== targetLogoUrl) {
           node.appliedBillboardLogoUrl = targetLogoUrl;
-          applyBillboardLogoToObject(
-            node.glbBuildingMount.visible ? node.glbBuildingMount : activeProceduralShell,
-            targetLogoUrl,
-          );
+          applyBillboardLogoToObject(node.glbBuildingMount, targetLogoUrl);
         }
       } else {
         node.lotPavingMesh.visible = false;
-        node.shopBuildingGroup.visible = false;
         node.glbBuildingMount.visible = false;
         node.glbLoadStatus = 'idle';
+        node.pendingGlbTemplate = null;
+        node.pendingLogoUrl = null;
         node.activeBillboardMats.length = 0;
         if (node.loadedGlbFormId !== null) {
           node.loadedGlbFormId = null;
@@ -1611,7 +1835,85 @@ export function buildCityRentalLotsVisuals(options?: {
         }
       }
 
-      node.emptyMarkerGroup.visible = !st.showShopBuilding;
+      const isGlbBuiltAndVisible =
+        Boolean(targetForm) && node.glbLoadStatus === 'loaded' && node.glbBuildingMount.visible;
+      node.emptyMarkerGroup.visible = !isGlbBuiltAndVisible;
+
+      // Update Kiosk 3D Hologram reflection & aesthetic loading state while kiosk is visible
+      const rig = node.hologramRig;
+      if (rig && node.emptyMarkerGroup.visible) {
+        const isBuildingNow = Boolean(targetForm) && node.glbLoadStatus === 'loading';
+        const displayKey: 'default' | ShopBuildingFormId = isBuildingNow
+          ? targetForm!
+          : previewForm ?? 'default';
+
+        if (rig.activeDisplayKey !== displayKey) {
+          rig.activeDisplayKey = displayKey;
+          rig.formSwitchScale = 0.72;
+          for (const [k, grp] of Object.entries(rig.shopModels)) {
+            grp.visible = k === displayKey;
+          }
+        }
+        if (rig.formSwitchScale < 1) {
+          rig.formSwitchScale = Math.min(1, rig.formSwitchScale + 0.08);
+        }
+
+        const spinSpeed = isBuildingNow ? 2.15 : previewForm ? 1.35 : 0.78;
+        rig.holoTurntable.rotation.y = nowSec * spinSpeed + i * 0.45;
+        rig.holoTurntable.position.y = 0.36 + Math.sin(nowSec * 2.8 + i) * 0.045;
+        rig.holoTurntable.scale.setScalar(rig.formSwitchScale);
+
+        if (isBuildingNow && targetForm) {
+          const elapsed = Math.max(0, nowSec - node.buildAnimStartSec);
+          const timeProgress = Math.min(1, elapsed / MIN_HOLOGRAM_BUILD_DURATION_SEC);
+          // Cap smoothly at 92% while network GLB download is still in flight; surge to 100% once GLB ready
+          const displayProgress = node.pendingGlbTemplate
+            ? timeProgress
+            : Math.min(0.92, timeProgress * 0.92);
+
+          rig.loadingOverlayGroup.visible = true;
+          rig.outerHaloRing.rotation.z = nowSec * 2.4;
+          rig.outerHaloRing.rotation.y = nowSec * 1.1;
+          rig.innerHaloRing.rotation.z = -nowSec * 3.1;
+          rig.innerHaloRing.rotation.y = -nowSec * 1.4;
+
+          const scanWave = 0.5 + 0.5 * Math.sin(nowSec * 4.4);
+          rig.scanBandMesh.position.y = 0.38 + scanWave * 1.02;
+
+          // Vibrant cyan -> mint-emerald holographic construction pulse
+          const huePulse = 0.5 + 0.5 * Math.sin(nowSec * 6.0);
+          const activeHex = huePulse > 0.5 ? 0x34d399 : 0x38bdf8;
+          rig.holoSolidMat.color.setHex(activeHex);
+          rig.holoSolidMat.opacity = 0.34 + 0.16 * huePulse;
+          rig.holoWireMat.color.setHex(0x99f6e4);
+          rig.holoRingMat.color.setHex(0x34d399);
+          rig.holoBeamMat.color.setHex(0x2dd4bf);
+          rig.holoBeamMat.opacity = 0.24 + 0.08 * huePulse;
+
+          if (rig.loadingBannerCanvas && rig.loadingBannerTex) {
+            const pctBucket = Math.round(displayProgress * 50); // Update texture smoothly at 2% steps
+            const bannerKey = `${targetForm}:${pctBucket}`;
+            if (rig.lastBannerKey !== bannerKey) {
+              rig.lastBannerKey = bannerKey;
+              drawHoloLoadingBanner(
+                rig.loadingBannerCanvas,
+                rig.loadingBannerTex,
+                HOLO_FORM_SHORT_NAMES[targetForm],
+                displayProgress,
+              );
+            }
+          }
+        } else {
+          rig.loadingOverlayGroup.visible = false;
+          const isPreviewing = Boolean(previewForm);
+          rig.holoSolidMat.color.setHex(isPreviewing ? 0x38bdf8 : 0x00d2ff);
+          rig.holoSolidMat.opacity = isPreviewing ? 0.44 : 0.32;
+          rig.holoWireMat.color.setHex(isPreviewing ? 0xa5f3fc : 0x67e8f9);
+          rig.holoRingMat.color.setHex(isPreviewing ? 0x38bdf8 : 0x00d2ff);
+          rig.holoBeamMat.color.setHex(0x00d2ff);
+          rig.holoBeamMat.opacity = isPreviewing ? 0.20 : 0.13;
+        }
+      }
 
       const isSelected = params.selectedSlotId === node.spec.slotId;
       const isHovered = params.hoveredSlotId === node.spec.slotId;

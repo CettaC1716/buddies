@@ -683,7 +683,7 @@ export interface NearbyEntityLike {
   isSelf?: boolean;
   isNpc?: boolean;
   isMerchant?: boolean;
-  merchantLocation?: 'lobby_cafe' | 'beach_house';
+  merchantLocation?: 'lobby_cafe' | 'beach_house' | 'central_plaza';
   gender?: 'male' | 'female';
 }
 

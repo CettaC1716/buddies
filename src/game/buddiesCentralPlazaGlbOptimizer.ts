@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import {
+  upgradeMeshToBlitzWorldMaterial,
+  type BlitzWindUniforms,
+} from './buddiesBlitzShadersAndAssets';
 
 export interface PlazaBuildingGlowUniforms {
   uNightFactor: { value: number };
@@ -16,10 +20,16 @@ export function createPlazaBuildingGlowUniforms(): PlazaBuildingGlowUniforms {
 export interface OptimizeCentralPlazaGlbOptions {
   buildingId: string;
   glowUniforms: PlazaBuildingGlowUniforms;
+  /** When provided (outdoor exterior GLBs), upgrades opaque walls/roofs to Blitz sky/moonlight world shader. */
+  windUniforms?: BlitzWindUniforms;
   isSoftwareGl?: boolean;
   castShadow?: boolean;
   receiveShadow?: boolean;
   glassWarmTintHex?: string;
+  /** Optional exact GLTF node names (or regex matchers) to drop completely during optimization. */
+  excludedNodeNames?: readonly (string | RegExp)[];
+  /** Optional per-triangle filter evaluated on triangle centroids in gltfScene-local coordinates. */
+  excludeTriangleCentroid?: (nodeName: string, localCentroid: THREE.Vector3) => boolean;
 }
 
 export interface CentralPlazaGlbOptimizationReport {
@@ -242,6 +252,53 @@ function flipNonIndexedWinding(geo: THREE.BufferGeometry): void {
   }
 }
 
+function filterTrianglesByCentroid(
+  geo: THREE.BufferGeometry,
+  nodeName: string,
+  shouldExclude: (nodeName: string, localCentroid: THREE.Vector3) => boolean,
+): THREE.BufferGeometry | null {
+  const pos = geo.getAttribute('position');
+  if (!pos || pos.count < 3) return geo;
+  const keepTriIndices: number[] = [];
+  const centroid = new THREE.Vector3();
+  for (let i = 0; i + 2 < pos.count; i += 3) {
+    centroid.set(
+      (pos.getX(i) + pos.getX(i + 1) + pos.getX(i + 2)) / 3,
+      (pos.getY(i) + pos.getY(i + 1) + pos.getY(i + 2)) / 3,
+      (pos.getZ(i) + pos.getZ(i + 1) + pos.getZ(i + 2)) / 3,
+    );
+    if (!shouldExclude(nodeName, centroid)) {
+      keepTriIndices.push(i);
+    }
+  }
+  const totalTris = Math.floor(pos.count / 3);
+  if (keepTriIndices.length === totalTris) {
+    return geo;
+  }
+  if (keepTriIndices.length === 0) {
+    geo.dispose();
+    return null;
+  }
+  const filtered = new THREE.BufferGeometry();
+  const keptVerts = keepTriIndices.length * 3;
+  for (const [attrName, attr] of Object.entries(geo.attributes)) {
+    const itemSize = attr.itemSize;
+    const src = attr.array as ArrayLike<number>;
+    const dst = new Float32Array(keptVerts * itemSize);
+    let writeOffset = 0;
+    for (const triStart of keepTriIndices) {
+      const startEl = triStart * itemSize;
+      const countEl = 3 * itemSize;
+      for (let k = 0; k < countEl; k++) {
+        dst[writeOffset++] = src[startEl + k];
+      }
+    }
+    filtered.setAttribute(attrName, new THREE.BufferAttribute(dst, itemSize));
+  }
+  geo.dispose();
+  return filtered;
+}
+
 function buildMaterialSignature(
   mat: THREE.Material,
   role: GlbMaterialRole,
@@ -301,6 +358,11 @@ export function optimizeCentralPlazaBuildingGlb(
   const allowCastShadow = !isSoftwareGl && (options.castShadow ?? true);
   const allowReceiveShadow = !isSoftwareGl && (options.receiveShadow ?? true);
   const warmTintHex = options.glassWarmTintHex ?? '#ffdf9e';
+  const excludedMatchers = options.excludedNodeNames ?? [];
+  const isNodeExcluded = (name: string): boolean => {
+    if (!name || excludedMatchers.length === 0) return false;
+    return excludedMatchers.some((m) => (typeof m === 'string' ? m === name : m.test(name)));
+  };
 
   gltfScene.updateMatrixWorld(true);
   const rootInv = gltfScene.matrixWorld.clone().invert();
@@ -331,6 +393,13 @@ export function optimizeCentralPlazaBuildingGlb(
     if (obj instanceof THREE.SkinnedMesh || obj instanceof THREE.InstancedMesh) return;
     if (!obj.geometry || Array.isArray(obj.material)) return;
 
+    const nodeName = obj.name || '';
+    if (isNodeExcluded(nodeName)) {
+      beforeDrawCalls++;
+      meshesToRemove.push(obj);
+      return;
+    }
+
     const posAttr = obj.geometry.getAttribute('position');
     if (!posAttr || posAttr.count === 0) return;
 
@@ -339,7 +408,7 @@ export function optimizeCentralPlazaBuildingGlb(
 
     let role = processedMaterials.get(mat);
     if (!role) {
-      role = classifyGlbMaterialRole(mat, obj.name || '');
+      role = classifyGlbMaterialRole(mat, nodeName);
       processedMaterials.set(mat, role);
 
       if (mat instanceof THREE.MeshStandardMaterial) {
@@ -370,7 +439,10 @@ export function optimizeCentralPlazaBuildingGlb(
     const renderOrder = isGlassTransparent ? 2 : role === 'wall_decal_sign' ? 1 : 0;
 
     // Normalize geometry into non-indexed world-relative space with uniform attribute schema
-    const g = obj.geometry.index ? obj.geometry.toNonIndexed() : obj.geometry.clone();
+    let g: THREE.BufferGeometry | null = obj.geometry.index
+      ? obj.geometry.toNonIndexed()
+      : obj.geometry.clone();
+    if (!g) return;
     const gPos = g.getAttribute('position');
     if (!gPos || gPos.count === 0) {
       g.dispose();
@@ -405,6 +477,14 @@ export function optimizeCentralPlazaBuildingGlb(
       flipNonIndexedWinding(g);
     }
     g.applyMatrix4(relMatrix);
+
+    if (options.excludeTriangleCentroid) {
+      g = filterTrianglesByCentroid(g, nodeName, options.excludeTriangleCentroid);
+      if (!g) {
+        meshesToRemove.push(obj);
+        return;
+      }
+    }
 
     const sig = buildMaterialSignature(mat, role, castShadow, receiveShadow, renderOrder);
     let bucket = buckets.get(sig);
@@ -465,6 +545,14 @@ export function optimizeCentralPlazaBuildingGlb(
     mergedMesh.frustumCulled = true;
     mergedMesh.userData.plazaGlbOptimized = true;
     mergedMesh.userData.plazaGlowRole = bucket.role;
+    // Upgrade outdoor opaque building architecture to Blitz sky/moonlight shader (matching Grand Casino & Municipal Hall)
+    if (
+      options.windUniforms &&
+      (bucket.role === 'standard' || bucket.role === 'wall_decal_sign') &&
+      !bucket.material.transparent
+    ) {
+      upgradeMeshToBlitzWorldMaterial(mergedMesh, options.windUniforms, undefined, 0.14);
+    }
     gltfScene.add(mergedMesh);
     afterDrawCalls++;
   }

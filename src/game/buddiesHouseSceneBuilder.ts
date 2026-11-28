@@ -133,9 +133,7 @@ export interface GlassModernHouseSceneHandle {
 }
 
 /**
- * Mounts the Glass Modern house GLB as the private-house interior scene.
- *
- * Follows the salon interior precedent (buddiesBeautySalonInteriorBuilder):
+ * Mounts the Glass Modern house GLB as the private-house interior scene:
  * the model is loaded as-is behind a `window` guard (skipped under
  * node/tests), and every rule that depends on the room (spawn, exit,
  * furniture placement) keeps working from the shared room frame even if the

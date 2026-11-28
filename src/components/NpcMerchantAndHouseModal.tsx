@@ -66,6 +66,7 @@ import type { UrbanScooterKind } from '../game/buddiesUrbanScooterRules';
 import {
   buildNpcPairPoseDecisionReply,
   canGiftNpcToday,
+  filterGiftPickerItems,
   getGiftCatalogItem,
   type GiftItemInput,
 } from '../game/npcGiftEngine';
@@ -279,6 +280,8 @@ interface NpcMerchantAndHouseModalProps {
     originStationId: CityTransitStationId,
   ) => void;
   onOpenExternalCatalog?: (tab?: 'house' | 'furniture' | 'market') => void;
+  onOpenWestPlazaCatalog?: () => void;
+  onOpenSmartphoneWalletExchange?: () => void;
   accountKey?: string;
   npcClosenessStore?: NpcClosenessStore;
   ownedApparelIds?: readonly string[];
@@ -526,6 +529,8 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
   onOpenTeleportKioskFromPitch,
   onTeleportToDestination,
   onOpenExternalCatalog,
+  onOpenWestPlazaCatalog,
+  onOpenSmartphoneWalletExchange,
   accountKey,
   npcClosenessStore,
   ownedApparelIds = [],
@@ -678,33 +683,54 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
     );
   };
 
-  const npcShortName = merchantLocation === 'lobby_cafe' ? 'HANA' : 'KAI';
-  const activeMerchantNpcId: NpcId = merchantLocation === 'beach_house' ? 'kai' : 'hana';
+  const npcDisplayName =
+    merchantLocation === 'beach_house'
+      ? 'Kai'
+      : merchantLocation === 'central_plaza'
+        ? 'Nadia'
+        : 'Hana';
+  const activeMerchantNpcId: NpcId =
+    merchantLocation === 'beach_house'
+      ? 'kai'
+      : merchantLocation === 'central_plaza'
+        ? 'nadia'
+        : 'hana';
   const chatAccountKey = (accountKey ?? playerNearAccount ?? '').trim().toLowerCase() || 'guest';
 
   const buildInitialNpcGreeting = (): string => {
-    const locLabel = merchantLocation === 'lobby_cafe' ? 'Central Plaza' : 'Beachfront Harbor';
+    const locLabel =
+      merchantLocation === 'beach_house'
+        ? 'Beachfront Harbor'
+        : merchantLocation === 'central_plaza'
+          ? 'Central Plaza'
+          : 'West Plaza';
     const displayCitizen = citizenDisplayName?.trim() || 'Buddy';
+    if (merchantLocation === 'central_plaza') {
+      if (!walletConnected) {
+        return `Hi there, I'm Nadia \u2014 the Central Plaza Merchant & Hospitality Manager. I curate Glow Face Studio, Cerria Bites & Sips (gifts, flowers & treats), and Red Studio animations. Open the Central Plaza Catalog from my dock anytime, or ask me about styling, gifts, or plaza life!`;
+      }
+      return `Welcome to Central Plaza, ${displayCitizen} \u2014 Nadia here, your Central Plaza Manager. Glow Face Studio, Cerria Bites & Sips gifts & treats, and Red Studio animations are all unified in our Central Plaza Catalog right from my dock. What are you in the mood for today?`;
+    }
     if (merchantLocation === 'lobby_cafe' && hanaPitchOrigin && !hasHouseOwnership) {
-      return `Hi ${displayCitizen}, I'm Hana \u2014 the city's property & housing agent, and your guide around town. I help citizens find their homes and exchange currency. It looks like you don't own any property in this city yet. Would you like a place to call your own? Browse the property catalog whenever you are ready \u2014 or step inside our model house first and see what your future home could look like. You can also ask me anything at all \u2014 about the game or anything else on your mind!`;
+      return `Hi ${displayCitizen}, I'm Hana \u2014 the West Plaza Commercial & Lifestyle Manager. I oversee our West Plaza Flagship Catalog (Fashion Boutique, Real Estate & Commercial Lots N-01..S-08, and Urban Mobility Scooters). It looks like you don't own a home yet \u2014 you can tour our Model House for free or open the West Plaza Catalog anytime. For currency exchange (LUL \u2192 CYON or NEAR \u2194 RESPITE), open your Smartphone Wallet's Exchange tab!`;
     }
     if (
       merchantLocation === 'lobby_cafe' &&
       walletConnected &&
       !hanaWelcomeNearClaimed
     ) {
-      return `Welcome to ${locLabel}, ${displayCitizen}! I'm Hana \u2014 the city's property & housing agent and your city guide. I welcome new citizens, handle home purchases, and help with currency exchange. Claim your starter pack below (0.30 NEAR + 100 LUL + 20 CYON) to get started. Ask me anything at all \u2014 about Cerria or any topic you want!`;
+      return `Welcome to ${locLabel}, ${displayCitizen}! I'm Hana \u2014 your West Plaza Commercial & Lifestyle Manager. I curate the West Plaza Flagship Catalog covering Fashion, Real Estate & Commercial Shop Lots, and Urban Scooters. You can also claim your Citizen Starter Grant (+0.30 NEAR + 100 LUL + 20 CYON) and swap tokens anytime inside your Smartphone Wallet's Exchange tab!`;
     }
     if (!walletConnected && merchantLocation === 'beach_house') {
       return `Ahoy! I'm Kai \u2014 a fisherman and the keeper of this beach. I run the fish market here at ${locLabel}: I buy your catches, sell tackle, and trade Fish NFTs. You are in Guest Mode, but you can still sell me your raw catches for LUL right here in chat \u2014 and ask me anything at all, whether about fishing or anything else!`;
     }
     if (!walletConnected) {
-      return `Hi there, I'm Hana \u2014 the city's property & housing agent and city guide. I help citizens find homes, browse the property catalog, and exchange currency. You are in Guest Mode, so trading unlocks after you sign in \u2014 but looking around is free, and you can ask me anything at all right here in chat!`;
+      return `Hi there, I'm Hana \u2014 the West Plaza Commercial & Lifestyle Manager. I manage West Plaza's Fashion Boutique, Real Estate & Commercial Shop Lots (N-01..S-08), and Urban Mobility Scooters. Tap "West Plaza Catalog" above to browse our 3D collections, or ask me anything about business lots, homes, or city life!`;
     }
     if (merchantLocation === 'beach_house') {
       return `Ahoy, ${displayCitizen}! I'm Kai \u2014 a fisherman and the keeper of this beach. I run the fish market here at ${locLabel}: I buy your catches, sell tackle, and trade Fish NFTs. Show me what you caught \u2014 and feel free to ask me anything at all, about the ocean, the market, or anything on your mind!`;
     }
-    return `Welcome back, ${displayCitizen} \u2014 Hana here, your property & housing agent and city guide. City homes, the catalog, and currency exchange are my desk \u2014 ask me anything at all, about the city or any topic you are curious about!`;
+    return `Welcome back to West Plaza, ${displayCitizen} \u2014 Hana here, your West Plaza Commercial & Lifestyle Manager. Fashion collections, Private Houses, Commercial Shop Lots (N-01..S-08), and Urban Scooters are all unified in our West Plaza Catalog, while currency exchange lives in your Smartphone Wallet. What can I help you with today?`;
   };
 
   const resetChatToGreeting = () => {
@@ -1327,14 +1353,26 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         return resolved;
       }
       if (resolved.kind === 'exchange_lul_cyon') {
+        if (merchantLocation === 'lobby_cafe' && onOpenSmartphoneWalletExchange) {
+          onOpenSmartphoneWalletExchange();
+          return resolved;
+        }
         setQuickLulAmountOverride(resolved.suggestedLulAmount ?? null);
         setActiveTab('transaksi');
         setExchangeQuickMode('exchange_lul');
       } else if (resolved.kind === 'swap_near_respite') {
+        if (merchantLocation === 'lobby_cafe' && onOpenSmartphoneWalletExchange) {
+          onOpenSmartphoneWalletExchange();
+          return resolved;
+        }
         setQuickSwapNearOverride(resolved.suggestedNearAmount ?? null);
         setActiveTab('transaksi');
         setExchangeQuickMode('swap_near');
       } else if (resolved.kind === 'buy_house') {
+        if (merchantLocation === 'lobby_cafe' && onOpenWestPlazaCatalog) {
+          onOpenWestPlazaCatalog();
+          return resolved;
+        }
         if (merchantLocation === 'lobby_cafe' && !hasHouseOwnership) {
           setActivePropertyOfferBoth({ lang: housingOfferLang });
           return resolved;
@@ -1343,6 +1381,10 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         setActiveTab('transaksi');
         setExchangeQuickMode('buy_house');
       } else if (resolved.kind === 'buy_catalog_item') {
+        if (merchantLocation === 'lobby_cafe' && onOpenWestPlazaCatalog) {
+          onOpenWestPlazaCatalog();
+          return resolved;
+        }
         setActiveTab('transaksi');
         setExchangeQuickMode(merchantLocation === 'beach_house' ? 'fishing_gear' : 'quick_shop');
       } else if (resolved.kind === 'teleport_places') {
@@ -1377,7 +1419,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         },
       );
 
-    const activeNpcId: NpcId = merchantLocation === 'beach_house' ? 'kai' : 'hana';
+    const activeNpcId: NpcId =
+      merchantLocation === 'beach_house'
+        ? 'kai'
+        : merchantLocation === 'central_plaza'
+          ? 'nadia'
+          : 'hana';
 
     // Natural typed togetherness invitation (walk / ride / get off) routed through WS12 engine
     const typedIntent = detectChatTogethernessIntent(text);
@@ -1426,9 +1473,11 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
       tradePhaseRef.current === 'offering' &&
       Boolean(tradeSessionRef.current);
     const isMerchantTransactionQuery =
-      isKaiTradeNegotiating ||
-      Boolean(localTxIntent) ||
-      (merchantLocation === 'lobby_cafe' && isHanaHousingTopicQuery(text));
+      merchantLocation === 'central_plaza'
+        ? localTxIntent?.kind === 'teleport_places'
+        : isKaiTradeNegotiating ||
+          Boolean(localTxIntent) ||
+          (merchantLocation === 'lobby_cafe' && isHanaHousingTopicQuery(text));
 
     void (async () => {
       if (!isMerchantTransactionQuery) {
@@ -1624,7 +1673,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
 
   useEffect(() => {
     if (activeModalMode !== 'npc_merchant') return;
-    const merchantNpcId: NpcId = merchantLocation === 'beach_house' ? 'kai' : 'hana';
+    const merchantNpcId: NpcId =
+      merchantLocation === 'beach_house'
+        ? 'kai'
+        : merchantLocation === 'central_plaza'
+          ? 'nadia'
+          : 'hana';
     const onUserChat = (ev: Event) => {
       const text = (ev as CustomEvent<{ text?: string }>).detail?.text?.trim();
       if (!text) return;
@@ -2388,19 +2442,28 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
         <div className="shrink-0 flex items-center justify-between gap-2.5 px-3.5 py-2 border-b border-white/12">
           <div className="flex items-center gap-2.5 min-w-0">
             <img
-              src={resolveNpcPhotoUrl(npcShortName === 'HANA' ? 'npc_hana' : 'npc_kai', 'avatar')}
-              alt={npcShortName === 'HANA' ? 'Hana' : 'Kai'}
+              src={resolveNpcPhotoUrl(
+                merchantLocation === 'beach_house'
+                  ? 'npc_kai'
+                  : merchantLocation === 'central_plaza'
+                    ? 'city_plaza_nadia'
+                    : 'npc_hana',
+                'avatar',
+              )}
+              alt={npcDisplayName}
               draggable={false}
               className="w-8 h-8 rounded-full object-cover object-center ring-1 ring-white/25 shrink-0"
             />
             <div className="min-w-0">
               <div className="text-xs font-bold text-white leading-tight truncate">
-                {npcShortName === 'HANA' ? 'Hana' : 'Kai'}
+                {npcDisplayName}
               </div>
               <div className="text-[10px] text-white/65 leading-tight truncate">
                 {merchantLocation === 'lobby_cafe'
-                  ? 'Central Plaza · Property & Exchange'
-                  : 'Beachfront Harbor · Fish Market'}
+                  ? 'West Plaza · Commercial & Lifestyle Manager'
+                  : merchantLocation === 'central_plaza'
+                    ? 'Central Plaza · Hospitality & Plaza Manager'
+                    : 'Beachfront Harbor · Fish Market'}
               </div>
             </div>
           </div>
@@ -2425,27 +2488,29 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             <span>Chat Session</span>
           </button>
 
-          <button
-            type="button"
-            data-merchant-exchange-tab="true"
-            onClick={() => {
-              soundEngine.playUiClick();
-              if (activeTab === 'transaksi' && exchangeQuickMode !== null) {
-                setExchangeQuickMode(null);
-              } else {
-                setActiveTab('transaksi');
-              }
-            }}
-            className={`px-3 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-all ${
-              activeTab === 'transaksi'
-                ? 'bg-emerald-500 text-white shadow-sm'
-                : 'bg-white/10 hover:bg-white/18 text-white/75 hover:text-white border border-white/10'
-            }`}
-          >
-            <span>
-              {exchangeQuickMode ? EXCHANGE_QUICK_MODE_LABELS[exchangeQuickMode] : 'Exchange'}
-            </span>
-          </button>
+          {merchantLocation === 'lobby_cafe' || merchantLocation === 'central_plaza' ? null : (
+            <button
+              type="button"
+              data-merchant-exchange-tab="true"
+              onClick={() => {
+                soundEngine.playUiClick();
+                if (activeTab === 'transaksi' && exchangeQuickMode !== null) {
+                  setExchangeQuickMode(null);
+                } else {
+                  setActiveTab('transaksi');
+                }
+              }}
+              className={`px-3 py-1 rounded-full text-[10.5px] font-semibold cursor-pointer transition-all ${
+                activeTab === 'transaksi'
+                  ? 'bg-emerald-500 text-white shadow-sm'
+                  : 'bg-white/10 hover:bg-white/18 text-white/75 hover:text-white border border-white/10'
+              }`}
+            >
+              <span>
+                {exchangeQuickMode ? EXCHANGE_QUICK_MODE_LABELS[exchangeQuickMode] : 'Exchange'}
+              </span>
+            </button>
+          )}
 
           {merchantLocation === 'beach_house' && (
             <button
@@ -2609,7 +2674,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                           <div key={entry.id} className="flex flex-col items-start">
                             <div className="flex items-center gap-1.5 mb-1 px-1.5">
                               <span className="text-[10px] font-semibold text-white/75">
-                                {npcShortName === 'HANA' ? 'Hana' : 'Kai'}
+                                {npcDisplayName}
                               </span>
                             </div>
                             <div
@@ -2642,7 +2707,7 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                         <div className="flex items-center gap-1.5 mb-1 px-1.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
                           <span className="text-[10px] font-semibold text-white/75">
-                            {npcShortName === 'HANA' ? 'Hana' : 'Kai'}
+                            {npcDisplayName}
                           </span>
                         </div>
                         <div
@@ -3026,7 +3091,12 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
               {/* Quick Question Chips + Togetherness Actions (plain English, zero closeness UI) + Clear Chat */}
               <div className="pt-2 border-t border-white/12 shrink-0 space-y-1.5">
                 {(() => {
-                  const merchantNpcId: NpcId = merchantLocation === 'beach_house' ? 'kai' : 'hana';
+                  const merchantNpcId: NpcId =
+                    merchantLocation === 'beach_house'
+                      ? 'kai'
+                      : merchantLocation === 'central_plaza'
+                        ? 'nadia'
+                        : 'hana';
                   const ctxOpts = resolveChatTogethernessOptions({
                     npcId: merchantNpcId,
                     playerScooterKind,
@@ -3096,12 +3166,17 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
                   );
                 })()}
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  {(
-                    [
-                      'What is this game?',
-                      'What can I do in this game?',
-                      'How do currencies work?',
-                    ] as const
+                  {(merchantLocation === 'central_plaza'
+                    ? ([
+                        'What is at Central Plaza?',
+                        'Any styling tips today?',
+                        'What does Red Studio sell?',
+                      ] as const)
+                    : ([
+                        'What is this game?',
+                        'What can I do in this game?',
+                        'How do currencies work?',
+                      ] as const)
                   ).map((prompt) => (
                     <button
                       key={prompt}
@@ -4551,16 +4626,17 @@ export const NpcMerchantAndHouseModal: React.FC<NpcMerchantAndHouseModalProps> =
             </div>
           )}
           {activeTab === 'gift' && onGiveNpcOwnedGift && (() => {
-            const giftNpcId: NpcId = merchantLocation === 'beach_house' ? 'kai' : 'hana';
-            const giftNpcName = giftNpcId === 'kai' ? 'Kai' : 'Hana';
+            const giftNpcId: NpcId =
+              merchantLocation === 'beach_house'
+                ? 'kai'
+                : merchantLocation === 'central_plaza'
+                  ? 'nadia'
+                  : 'hana';
+            const giftNpcName =
+              giftNpcId === 'kai' ? 'Kai' : giftNpcId === 'nadia' ? 'Nadia' : 'Hana';
             const closenessStore = npcClosenessStore ?? createEmptyNpcClosenessStore();
             const alreadyGiftedToday = !canGiftNpcToday(closenessStore, giftNpcId);
-            const cafeItems = Array.from(new Set(ownedCafeFoodIds))
-              .map((id) => getGiftCatalogItem(id))
-              .filter(
-                (item): item is NonNullable<typeof item> =>
-                  Boolean(item && item.category === 'cafe_food'),
-              );
+            const cafeItems = filterGiftPickerItems(Array.from(new Set(ownedCafeFoodIds)));
             const apparelItems = Array.from(new Set(ownedApparelIds))
               .map((id) => getGiftCatalogItem(id))
               .filter(

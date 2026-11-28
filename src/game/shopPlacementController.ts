@@ -26,12 +26,14 @@ export interface ShopLotPlacementSyncPayload {
   placedBuildingBySlotId: Record<string, ShopBuildingFormId | null>;
   billboardLogoUrlBySlotId: Record<string, string | null>;
   selectedSlotId?: string | null;
+  previewFormBySlotId?: Record<string, ShopBuildingFormId | null>;
 }
 
 export function buildShopLotPlacementSyncPayload(
   store: LotRentalStore,
   nowMs: number = Date.now(),
   selectedSlotId: string | null = null,
+  previewFormBySlotId?: Record<string, ShopBuildingFormId | null>,
 ): ShopLotPlacementSyncPayload {
   const rentedSlotIds: string[] = [];
   const lotStatusBySlotId: Record<string, 'available' | 'rented' | 'grace' | 'freeing'> = {};
@@ -54,6 +56,7 @@ export function buildShopLotPlacementSyncPayload(
     placedBuildingBySlotId,
     billboardLogoUrlBySlotId,
     selectedSlotId,
+    previewFormBySlotId,
   };
 }
 

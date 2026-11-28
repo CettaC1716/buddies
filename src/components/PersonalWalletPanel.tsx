@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowLeftRight,
   Clock,
   Coins,
   Delete,
@@ -8,6 +9,7 @@ import {
   History,
   Lock,
   Send,
+  Sparkles,
   Wallet,
   X,
 } from 'lucide-react';
@@ -53,8 +55,8 @@ export interface PersonalWalletPanelProps {
   isUnlocked: boolean;
   onUnlock: () => void;
   onLock: () => void;
-  activeTab: 'wallet' | 'history';
-  onSelectTab: (tab: 'wallet' | 'history') => void;
+  activeTab: 'wallet' | 'exchange' | 'history';
+  onSelectTab: (tab: 'wallet' | 'exchange' | 'history') => void;
   connectedGoogleEmail: string;
   walletId: string;
   playerUid: string;
@@ -86,6 +88,24 @@ export interface PersonalWalletPanelProps {
   nowMs: number;
   onConfirmPendingTx: (txId: string) => void;
   onRejectPendingTx: (txId: string) => void;
+  /** Exchange & Swap integration moved 100% from Hana chat modal into Smartphone Wallet */
+  lulCostFor10Cyon?: number;
+  onExchangeLulToCyon?: (customLulSpent?: number, customCyonGranted?: number) => void;
+  onSwapNearAndRespite?: (
+    direction: 'near_to_respite' | 'respite_to_near',
+    amountIn: number,
+  ) => Promise<{
+    ok: boolean;
+    txHash?: string;
+    error?: string;
+    amountOut: number;
+  }>;
+  hanaWelcomeNearClaimed?: boolean;
+  onClaimHanaWelcomeNear?: () => Promise<{
+    ok: boolean;
+    txHash?: string;
+    error?: string;
+  }>;
 }
 
 const CURRENCY_BADGE_STYLE: Record<
@@ -145,6 +165,11 @@ export const PersonalWalletPanel: React.FC<PersonalWalletPanelProps> = ({
   nowMs,
   onConfirmPendingTx,
   onRejectPendingTx,
+  lulCostFor10Cyon = 100,
+  onExchangeLulToCyon,
+  onSwapNearAndRespite,
+  hanaWelcomeNearClaimed = false,
+  onClaimHanaWelcomeNear,
 }) => {
   const [hasPin, setHasPin] = useState<boolean>(() => hasWalletPinConfigured());
   const [pinStep, setPinStep] = useState<'enter' | 'create' | 'confirm'>(() =>
@@ -158,6 +183,20 @@ export const PersonalWalletPanel: React.FC<PersonalWalletPanelProps> = ({
   const [isBalanceVisible, setIsBalanceVisible] = useState<boolean>(() => !hideBalancesDefault);
   const [copiedAddress, setCopiedAddress] = useState<boolean>(false);
   const [activeReviewTxId, setActiveReviewTxId] = useState<string | null>(null);
+
+  // Smartphone Wallet Exchange & Swap state
+  const [swapDirection, setSwapDirection] = useState<'near_to_respite' | 'respite_to_near'>(
+    'near_to_respite',
+  );
+  const [swapAmountStr, setSwapAmountStr] = useState<string>('0.20');
+  const [isSwappingNear, setIsSwappingNear] = useState<boolean>(false);
+  const [ isClaimingGrant, setIsClaimingGrant] = useState<boolean>(false);
+  const [cyonPackets, setCyonPackets] = useState<number>(1);
+  const [exchangeFeedback, setExchangeFeedback] = useState<{
+    type: 'success' | 'error';
+    text: string;
+    txHash?: string;
+  } | null>(null);
 
   const peekTimerRef = useRef<number | null>(null);
   const prevPendingIdsRef = useRef<Set<string>>(new Set());
@@ -543,7 +582,7 @@ export const PersonalWalletPanel: React.FC<PersonalWalletPanelProps> = ({
         <div
           role="tablist"
           aria-label="Wallet Sections"
-          className="flex-1 grid grid-cols-2 gap-1 p-1 rounded-2xl bg-white/[0.07] border border-white/14"
+          className="flex-1 grid grid-cols-3 gap-1 p-1 rounded-2xl bg-white/[0.07] border border-white/14"
         >
           <button
             type="button"
@@ -567,6 +606,26 @@ export const PersonalWalletPanel: React.FC<PersonalWalletPanelProps> = ({
                 {activePendingCount}
               </span>
             )}
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'exchange'}
+            data-wallet-tab="exchange"
+            onClick={() => {
+              soundEngine.playUiClick();
+              setExchangeFeedback(null);
+              onSelectTab('exchange');
+            }}
+            className={`py-1.5 px-2 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap ${
+              activeTab === 'exchange'
+                ? 'bg-emerald-500/30 text-emerald-100 border border-emerald-400/35 shadow-xs'
+                : 'text-white/65 hover:text-white hover:bg-white/[0.08]'
+            }`}
+          >
+            <ArrowLeftRight className="w-3.5 h-3.5 stroke-[2.2]" aria-hidden="true" />
+            <span>Exchange</span>
           </button>
 
           <button
@@ -906,6 +965,294 @@ export const PersonalWalletPanel: React.FC<PersonalWalletPanelProps> = ({
               )}
             </div>
           </>
+        ) : activeTab === 'exchange' ? (
+          <div data-wallet-exchange-panel="true" className="space-y-3">
+            {/* LIVE BALANCES COMPACT BAR */}
+            <div className="rounded-2xl bg-white/[0.06] border border-white/12 p-3 grid grid-cols-2 gap-2">
+              <div className="px-2.5 py-1.5 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-violet-300">RESPITE</span>
+                <span className="text-xs font-bold font-mono tabular-nums text-white">
+                  {respiteBalance.toLocaleString()}
+                </span>
+              </div>
+              <div className="px-2.5 py-1.5 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-emerald-300">NEAR</span>
+                <span className="text-xs font-bold font-mono tabular-nums text-white">
+                  {nearBalance.toFixed(2)}
+                </span>
+              </div>
+              <div className="px-2.5 py-1.5 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-amber-300">LUL</span>
+                <span className="text-xs font-bold font-mono tabular-nums text-white">
+                  {lulBalance.toLocaleString()}
+                </span>
+              </div>
+              <div className="px-2.5 py-1.5 rounded-xl bg-white/[0.05] border border-white/10 flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-sky-300">CYON</span>
+                <span className="text-xs font-bold font-mono tabular-nums text-white">
+                  {cyonBalance.toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            {exchangeFeedback && (
+              <div
+                className={`px-3 py-2.5 rounded-2xl border text-xs font-medium ${
+                  exchangeFeedback.type === 'success'
+                    ? 'bg-emerald-500/15 border-emerald-400/35 text-emerald-200'
+                    : 'bg-rose-500/15 border-rose-400/35 text-rose-200'
+                }`}
+              >
+                <div>{exchangeFeedback.text}</div>
+                {exchangeFeedback.txHash && (
+                  <a
+                    href={`https://testnet.nearblocks.io/txns/${exchangeFeedback.txHash}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline text-sky-300 text-[11px] break-all mt-1 inline-block"
+                  >
+                    View On-Chain Receipt ↗
+                  </a>
+                )}
+              </div>
+            )}
+
+            {/* 1. STARTER WELCOME GRANT (IF UNCLAIMED) */}
+            {!hanaWelcomeNearClaimed && onClaimHanaWelcomeNear && (
+              <div
+                data-wallet-starter-grant-card="true"
+                className="rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/10 border border-emerald-400/35 p-3.5 space-y-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-200">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-300" aria-hidden="true" />
+                    <span>Citizen Welcome Grant</span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-200 text-[10px] font-bold">
+                    FREE
+                  </span>
+                </div>
+                <p className="text-[11px] text-white/75 leading-snug">
+                  Claim your one-time starter balance: <strong>+0.30 NEAR</strong>,{' '}
+                  <strong>+100 LUL</strong>, and <strong>+20 CYON</strong>.
+                </p>
+                <button
+                  type="button"
+                  disabled={isClaimingGrant}
+                  onClick={async () => {
+                    soundEngine.playUiClick();
+                    setIsClaimingGrant(true);
+                    setExchangeFeedback(null);
+                    try {
+                      const res = await onClaimHanaWelcomeNear();
+                      if (res.ok) {
+                        setExchangeFeedback({
+                          type: 'success',
+                          text: 'Claimed Citizen Starter Grant (+0.30 NEAR, +100 LUL, +20 CYON)!',
+                          txHash: res.txHash,
+                        });
+                      } else {
+                        setExchangeFeedback({
+                          type: 'error',
+                          text: res.error || 'Could not claim starter grant right now.',
+                        });
+                      }
+                    } finally {
+                      setIsClaimingGrant(false);
+                    }
+                  }}
+                  className="w-full py-2 px-3 rounded-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  {isClaimingGrant ? 'Claiming Grant...' : 'Claim Starter Grant'}
+                </button>
+              </div>
+            )}
+
+            {/* 2. NEAR <-> RESPITE INSTANT SWAP */}
+            <div
+              data-wallet-near-respite-swap-card="true"
+              className="rounded-2xl bg-white/[0.06] border border-white/12 p-3.5 space-y-2.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                  <ArrowLeftRight className="w-3.5 h-3.5 text-emerald-300" aria-hidden="true" />
+                  <span>Swap NEAR ↔ RESPITE</span>
+                </div>
+                <span className="text-[10.5px] font-mono text-white/60">1 NEAR = 250 RS</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-white/[0.06] border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    setSwapDirection('near_to_respite');
+                    setSwapAmountStr('0.20');
+                  }}
+                  className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold cursor-pointer transition-colors ${
+                    swapDirection === 'near_to_respite'
+                      ? 'bg-emerald-500 text-slate-950 font-bold'
+                      : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  NEAR → RESPITE
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playUiClick();
+                    setSwapDirection('respite_to_near');
+                    setSwapAmountStr('50');
+                  }}
+                  className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold cursor-pointer transition-colors ${
+                    swapDirection === 'respite_to_near'
+                      ? 'bg-violet-500 text-white font-bold'
+                      : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  RESPITE → NEAR
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                {(swapDirection === 'near_to_respite'
+                  ? ['0.10', '0.20', '0.50', '1.00']
+                  : ['25', '50', '100', '250']
+                ).map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setSwapAmountStr(preset);
+                    }}
+                    className={`flex-1 py-1 rounded-lg text-[10.5px] font-mono font-semibold border cursor-pointer transition-colors ${
+                      swapAmountStr === preset
+                        ? 'bg-white/20 border-white/40 text-white'
+                        : 'bg-white/[0.05] border-white/10 text-white/70 hover:text-white'
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  step={swapDirection === 'near_to_respite' ? '0.05' : '5'}
+                  min={swapDirection === 'near_to_respite' ? 0.01 : 1}
+                  value={swapAmountStr}
+                  onChange={(e) => setSwapAmountStr(e.target.value)}
+                  className="w-28 px-3 py-2 rounded-xl bg-white/[0.08] border border-white/15 text-white font-mono tabular-nums font-semibold text-xs focus:outline-none focus:ring-2 focus:ring-emerald-400/45"
+                />
+                <button
+                  type="button"
+                  disabled={isSwappingNear || !onSwapNearAndRespite}
+                  onClick={async () => {
+                    if (!onSwapNearAndRespite) return;
+                    soundEngine.playUiClick();
+                    const amt = Number(swapAmountStr);
+                    if (!Number.isFinite(amt) || amt <= 0) {
+                      setExchangeFeedback({
+                        type: 'error',
+                        text: 'Enter a valid swap amount.',
+                      });
+                      return;
+                    }
+                    setIsSwappingNear(true);
+                    setExchangeFeedback(null);
+                    try {
+                      const res = await onSwapNearAndRespite(swapDirection, amt);
+                      if (res.ok) {
+                        setExchangeFeedback({
+                          type: 'success',
+                          text:
+                            swapDirection === 'near_to_respite'
+                              ? `Swapped ${amt} NEAR for +${res.amountOut} RESPITE.`
+                              : `Swapped ${amt} RESPITE for +${res.amountOut.toFixed(3)} NEAR.`,
+                          txHash: res.txHash,
+                        });
+                      } else {
+                        setExchangeFeedback({
+                          type: 'error',
+                          text: res.error || 'Swap could not be completed.',
+                        });
+                      }
+                    } finally {
+                      setIsSwappingNear(false);
+                    }
+                  }}
+                  className="flex-1 px-4 py-2 rounded-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-45 text-slate-950 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  {isSwappingNear
+                    ? 'Swapping...'
+                    : swapDirection === 'near_to_respite'
+                      ? `Get +${Math.max(0, Math.round((Number(swapAmountStr) || 0) * 250))} RESPITE`
+                      : `Get +${Math.max(0, (Number(swapAmountStr) || 0) / 250).toFixed(2)} NEAR`}
+                </button>
+              </div>
+            </div>
+
+            {/* 3. LUL -> CYON CURRENCY EXCHANGE */}
+            <div
+              data-wallet-lul-cyon-exchange-card="true"
+              className="rounded-2xl bg-white/[0.06] border border-white/12 p-3.5 space-y-2.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                  <Coins className="w-3.5 h-3.5 text-amber-300" aria-hidden="true" />
+                  <span>Exchange LUL → CYON</span>
+                </div>
+                <span className="text-[10.5px] font-mono text-amber-200">
+                  {lulCostFor10Cyon} LUL = +10 CYON
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                {[1, 2, 5, 10].map((pkt) => (
+                  <button
+                    key={pkt}
+                    type="button"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      setCyonPackets(pkt);
+                    }}
+                    className={`flex-1 py-1.5 rounded-lg text-[11px] font-mono font-semibold border cursor-pointer transition-colors ${
+                      cyonPackets === pkt
+                        ? 'bg-amber-400/25 border-amber-300/60 text-amber-100'
+                        : 'bg-white/[0.05] border-white/10 text-white/70 hover:text-white'
+                    }`}
+                  >
+                    +{pkt * 10} CY
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                disabled={
+                  !onExchangeLulToCyon || lulBalance < cyonPackets * Math.max(1, lulCostFor10Cyon)
+                }
+                onClick={() => {
+                  if (!onExchangeLulToCyon) return;
+                  soundEngine.playUiClick();
+                  const lulCost = cyonPackets * Math.max(1, lulCostFor10Cyon);
+                  const cyonOut = cyonPackets * 10;
+                  onExchangeLulToCyon(lulCost, cyonOut);
+                  setExchangeFeedback({
+                    type: 'success',
+                    text: `Exchanged ${lulCost} LUL for +${cyonOut} CYON.`,
+                  });
+                }}
+                className="w-full py-2 px-4 rounded-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-bold text-xs transition-colors cursor-pointer"
+              >
+                {lulBalance < cyonPackets * Math.max(1, lulCostFor10Cyon)
+                  ? `Need ${cyonPackets * Math.max(1, lulCostFor10Cyon)} LUL (Have ${lulBalance})`
+                  : `Exchange ${cyonPackets * Math.max(1, lulCostFor10Cyon)} LUL → +${cyonPackets * 10} CYON`}
+              </button>
+            </div>
+          </div>
         ) : (
           <div data-wallet-history-panel="true" className="space-y-3">
             {/* HISTORY HEADER & FILTER PILLS (canonical order: RESPITE, NEAR, LUL, CYON) */}

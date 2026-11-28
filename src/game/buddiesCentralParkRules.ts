@@ -188,16 +188,9 @@ export const CENTRAL_PARK_MASTERPLAN = {
     secondFloorHeight: 8.35,
     totalHeight: 9.7,
   },
-  // District bistro tables around the Cozy Bites pavilion. The two south
-  // tables moved south (z 4.95 -> 8.30) and the two west tables west/north
-  // (x 40.25 -> 38.80) in the polish pass: the pavilion GLB's 1.489
-  // proportion scale would otherwise swallow the south pair inside its
-  // walls and press the west pair against its west face and bike cart.
+  // Single bistro table + 2 chairs set remaining in front of Cozy Bites & Sips.
   bistroTables: [
-    { id: 'cozy_cafe_table_fn', x: 38.8, z: -4.6 },
     { id: 'cozy_cafe_table_fs', x: 38.8, z: 2.6 },
-    { id: 'cozy_cafe_table_sn', x: 43.35, z: 8.3 },
-    { id: 'cozy_cafe_table_ss', x: 46.95, z: 8.3 },
   ] as const,
 } as const;
 
@@ -527,9 +520,7 @@ export function getCentralParkObstacles(): StaticWorldStructureObb[] {
   });
 
   // 6. Central Urban Plaza Beauty Salon ("BEAUTY & GLOW / GLOW STUDIO", South)
-  // Owner GLB body box: walls span local +/-4.40m, mounted at SALON_EXTERIOR_GLB_SCALE
-  // (1.40, calibrated for the 3.31m outdoor avatar) around origin (29.87, 14.90) so its
-  // north doorway aligns exactly with SALON_EXTERIOR_DOOR_TRIGGER.doorX (25.74).
+  // Owner GLB body box mounted at (29.87, 14.90) with scale 1.40.
   obs.push({
     id: 'urban_plaza_beauty_salon',
     x: 29.87,

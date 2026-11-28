@@ -32,12 +32,11 @@ import {
 import { getPlanetShortestDelta, wrapPlanetCoord } from './buddiesPlanetCurvature';
 
 describe('buddiesRemotePresenceSync', () => {
-  it('classifies flat indoor zones (house:*, cafe:*, casino:*, salon:*) separately from outdoor world zones', () => {
+  it('classifies flat indoor zones (house:*, cafe:*, casino:*) separately from outdoor world zones', () => {
     assert.equal(isFlatIndoorZoneKey('house:sample'), true);
     assert.equal(isFlatIndoorZoneKey('house:alice.testnet'), true);
     assert.equal(isFlatIndoorZoneKey('cafe:glasshouse'), true);
     assert.equal(isFlatIndoorZoneKey('casino:grand'), true);
-    assert.equal(isFlatIndoorZoneKey('salon:beauty_glow'), true);
     assert.equal(isFlatIndoorZoneKey('city'), false);
     assert.equal(isFlatIndoorZoneKey('warzone'), false);
   });

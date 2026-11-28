@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Backpack,
+  Building2,
   ChevronLeft,
   ClipboardList,
   Globe,
@@ -29,6 +30,7 @@ export type SmartphoneAppId =
   | 'home'
   | 'wallet'
   | 'my_things'
+  | 'my_apartment'
   | 'missions'
   | 'profile'
   | 'public'
@@ -203,6 +205,7 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
     activeApp === 'city_feed' ||
     activeApp === 'wallet' ||
     activeApp === 'my_things' ||
+    activeApp === 'my_apartment' ||
     activeApp === 'missions' ||
     activeApp === 'public' ||
     activeApp === 'messages' ||
@@ -281,11 +284,18 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
       onClick: () => openInPhone('wallet'),
     },
     {
-      id: 'public',
-      label: 'Public',
-      gradient: 'from-rose-400 to-pink-600',
-      icon: <Globe className="w-6 h-6 text-white stroke-[1.9]" />,
-      onClick: () => openInPhone('public'),
+      id: 'my_apartment',
+      label: 'My Apartment',
+      gradient: 'from-rose-400 to-orange-500',
+      icon: <Building2 className="w-6 h-6 text-white stroke-[1.9]" />,
+      onClick: () => openInPhone('my_apartment'),
+    },
+    {
+      id: 'profile',
+      label: 'Profile',
+      gradient: 'from-emerald-400 to-green-600',
+      icon: <User className="w-6 h-6 text-white stroke-[1.9]" />,
+      onClick: () => openInPhone('profile'),
     },
     {
       id: 'letters',
@@ -311,11 +321,13 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
       onClick: () => openInPhone('settings'),
     },
     {
-      id: 'city_feed',
-      label: 'City Feed',
-      gradient: 'from-cyan-400 to-teal-600',
-      icon: <Newspaper className="w-6 h-6 text-white stroke-[1.9]" />,
-      onClick: () => openInPhone('city_feed'),
+      id: 'missions',
+      label: 'Missions',
+      gradient: 'from-purple-400 to-fuchsia-600',
+      icon: <ClipboardList className="w-6 h-6 text-white stroke-[1.9]" />,
+      badge: actionableMissionsCount > 0 ? actionableMissionsCount : undefined,
+      badgeColor: 'bg-emerald-400 text-slate-950',
+      onClick: () => openInPhone('missions'),
     },
   ];
 
@@ -515,36 +527,31 @@ export const SmartphoneOsModal: React.FC<SmartphoneOsModalProps> = ({
                   ))}
                 </div>
 
-                {/* Home Screen 4-App Dock (Profile · Missions · Messages · Contacts) */}
+                {/* Home Screen 4-App Dock (Public · City Feed · Messages · Contacts) */}
                 <div className="mt-auto pt-3">
                   <div className="grid grid-cols-4 gap-2 px-2 py-2 rounded-2xl bg-white/[0.12] border border-white/15">
                     <button
                       type="button"
-                      data-smartphone-dock="profile"
-                      onClick={() => openInPhone('profile')}
+                      data-smartphone-dock="public"
+                      onClick={() => openInPhone('public')}
                       className="group flex flex-col items-center gap-1 cursor-pointer"
                     >
-                      <span className="w-11 h-11 rounded-[13px] bg-gradient-to-br from-emerald-400 to-green-600 shadow-md flex items-center justify-center transition-transform group-hover:scale-105 group-active:scale-95">
-                        <User className="w-5 h-5 text-white stroke-[2]" />
+                      <span className="w-11 h-11 rounded-[13px] bg-gradient-to-br from-rose-400 to-pink-600 shadow-md flex items-center justify-center transition-transform group-hover:scale-105 group-active:scale-95">
+                        <Globe className="w-5 h-5 text-white stroke-[2]" />
                       </span>
-                      <span className="text-[9.5px] font-medium text-white/90">Profile</span>
+                      <span className="text-[9.5px] font-medium text-white/90">Public</span>
                     </button>
 
                     <button
                       type="button"
-                      data-smartphone-dock="missions"
-                      onClick={() => openInPhone('missions')}
+                      data-smartphone-dock="city_feed"
+                      onClick={() => openInPhone('city_feed')}
                       className="group flex flex-col items-center gap-1 cursor-pointer"
                     >
-                      <span className="relative w-11 h-11 rounded-[13px] bg-gradient-to-br from-purple-400 to-fuchsia-600 shadow-md flex items-center justify-center transition-transform group-hover:scale-105 group-active:scale-95">
-                        <ClipboardList className="w-5 h-5 text-white stroke-[2]" />
-                        {actionableMissionsCount > 0 && (
-                          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-emerald-400 text-slate-950 text-[9px] font-bold flex items-center justify-center">
-                            {actionableMissionsCount}
-                          </span>
-                        )}
+                      <span className="w-11 h-11 rounded-[13px] bg-gradient-to-br from-cyan-400 to-teal-600 shadow-md flex items-center justify-center transition-transform group-hover:scale-105 group-active:scale-95">
+                        <Newspaper className="w-5 h-5 text-white stroke-[2]" />
                       </span>
-                      <span className="text-[9.5px] font-medium text-white/90">Missions</span>
+                      <span className="text-[9.5px] font-medium text-white/90">City Feed</span>
                     </button>
 
                     <button

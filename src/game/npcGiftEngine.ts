@@ -132,6 +132,106 @@ export const GIFT_REACTION_BASE_DELTAS: Readonly<Record<GiftReactionTier, number
   disliked: -3,
 };
 
+export interface CentralPlazaSpecialGiftSpec {
+  readonly id: string;
+  readonly name: string;
+  readonly category: 'gift_special' | 'gift_consumable';
+  readonly subCategory: 'flower' | 'patisserie' | 'confection' | 'tea';
+  readonly priceRespite: number;
+  readonly description: string;
+  readonly previewGiftKind:
+    | 'rose_bouquet'
+    | 'sunflower_bouquet'
+    | 'lavender_bouquet'
+    | 'macaron_box'
+    | 'truffle_box'
+    | 'tea_set';
+  readonly primaryHex: string;
+  readonly secondaryHex: string;
+  readonly accentHex: string;
+}
+
+export const CENTRAL_PLAZA_SPECIAL_GIFT_ITEMS: readonly CentralPlazaSpecialGiftSpec[] = [
+  {
+    id: 'gift_velvet_rose_bouquet',
+    name: 'Velvet Rose Bouquet',
+    category: 'gift_special',
+    subCategory: 'flower',
+    priceRespite: 18,
+    description:
+      'Hand-tied crimson garden roses wrapped in linen paper and satin ribbon, ready to gift to any friend in Cerria.',
+    previewGiftKind: 'rose_bouquet',
+    primaryHex: '#C83E4D',
+    secondaryHex: '#355E3B',
+    accentHex: '#F3DFC1',
+  },
+  {
+    id: 'gift_sunlit_sunflower_bundle',
+    name: 'Sunlit Sunflower Bundle',
+    category: 'gift_special',
+    subCategory: 'flower',
+    priceRespite: 14,
+    description:
+      'Bright golden sunflowers cut fresh from the plaza conservatory and wrapped in kraft parchment for warm daily gifting.',
+    previewGiftKind: 'sunflower_bouquet',
+    primaryHex: '#EAB308',
+    secondaryHex: '#4A3219',
+    accentHex: '#3F6A3C',
+  },
+  {
+    id: 'gift_lavender_blossom_wrap',
+    name: 'Lavender Blossom Wrap',
+    category: 'gift_special',
+    subCategory: 'flower',
+    priceRespite: 16,
+    description:
+      'Fragrant purple lavender stems paired with soft eucalyptus leaves, tied with cream twine for calming social gifts.',
+    previewGiftKind: 'lavender_bouquet',
+    primaryHex: '#8B6BB8',
+    secondaryHex: '#4A6B53',
+    accentHex: '#EDE4D6',
+  },
+  {
+    id: 'gift_pastel_macaron_box',
+    name: 'Pastel Macaron Box',
+    category: 'gift_consumable',
+    subCategory: 'patisserie',
+    priceRespite: 15,
+    description:
+      'Six French almond macarons in rose, pistachio, and vanilla cream arranged in a ribboned keepsake box for NPC gifting.',
+    previewGiftKind: 'macaron_box',
+    primaryHex: '#F2C6CE',
+    secondaryHex: '#C7A97C',
+    accentHex: '#A7C7A5',
+  },
+  {
+    id: 'gift_matcha_truffle_tin',
+    name: 'Matcha Truffle Tin',
+    category: 'gift_consumable',
+    subCategory: 'confection',
+    priceRespite: 20,
+    description:
+      'Velvety dark chocolate ganache dusted with ceremonial Kyoto matcha inside a brushed brass patisserie tin.',
+    previewGiftKind: 'truffle_box',
+    primaryHex: '#4D7348',
+    secondaryHex: '#3D271C',
+    accentHex: '#D5AA4E',
+  },
+  {
+    id: 'gift_artisan_honey_tea_set',
+    name: 'Artisan Honey Tea Set',
+    category: 'gift_special',
+    subCategory: 'tea',
+    priceRespite: 24,
+    description:
+      'Small-batch wildflower honey and loose chamomile petals paired with stoneware tasting cups for thoughtful gifting.',
+    previewGiftKind: 'tea_set',
+    primaryHex: '#D99B38',
+    secondaryHex: '#EDE6DA',
+    accentHex: '#7A5438',
+  },
+] as const;
+
 const WEARABLE_APPAREL_SLOTS = new Set<string>(['top', 'bottoms', 'set', 'hair', 'shoes']);
 const FURNITURE_MERCHANT_CATEGORIES = new Set<string>([
   'non_nft_furniture',
@@ -171,6 +271,17 @@ function buildGiftCatalog(): {
       name: food.name,
       category: 'cafe_food',
       subCategory: food.category,
+    });
+  }
+
+  // 2b. Central Plaza Flowers, Confections & Special Gifts (Cerria Bites & Sips)
+  for (const gift of CENTRAL_PLAZA_SPECIAL_GIFT_ITEMS) {
+    if (map.has(gift.id)) continue;
+    map.set(gift.id, {
+      itemId: gift.id,
+      name: gift.name,
+      category: gift.category,
+      subCategory: gift.subCategory,
     });
   }
 

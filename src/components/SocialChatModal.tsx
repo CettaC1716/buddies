@@ -85,7 +85,7 @@ export interface NearbyEntityUser {
   distance: number;
   isNpc?: boolean;
   isMerchant?: boolean;
-  merchantLocation?: 'lobby_cafe' | 'beach_house';
+  merchantLocation?: 'lobby_cafe' | 'beach_house' | 'central_plaza';
   gender?: 'male' | 'female';
   isSelf?: boolean;
   team?: 'red' | 'blue';

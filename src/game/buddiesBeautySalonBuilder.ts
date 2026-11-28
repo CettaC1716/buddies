@@ -6,7 +6,6 @@ import {
   tagCityWindowMesh,
 } from './buddiesWindowAuditRules';
 import { CENTRAL_PARK_MASTERPLAN } from './buddiesCentralParkRules';
-import { SALON_EXTERIOR_GLB_SCALE } from './buddiesBeautySalonRules';
 import {
   applyGrainUvs,
   buildArchedCasementWindow,
@@ -1671,14 +1670,18 @@ export function buildBeautySalonStudio3D(ctx: UrbanPlazaBuildingsContext): void 
 export const GLOW_STUDIO_SALON_GLB_PATH = '/assets/buildings/glow_studio_salon.glb';
 
 /**
- * Horizontal shifts (m) applied to the GLB origin at SALON_EXTERIOR_GLB_SCALE
- * (1.40, calibrated for the 3.31m outdoor avatar) so the model's entry door
- * frame centre (local +2.95, +4.26) lands on world (25.74, 8.94) under yaw PI
- * — keeping SALON_EXTERIOR_DOOR_TRIGGER.doorX = 25.74 exact while clearing both
- * the South curb and Central Fountain ring.
+ * Uniform scale applied to the owner Glow Studio GLB on the outdoor Central
+ * Urban Plaza (calibrated for the ~3.31m outdoor rig, matching Vintage Cafe & Bites & Sips).
  */
+export const SALON_EXTERIOR_GLB_SCALE = 1.4;
+
 export const GLOW_STUDIO_SALON_GLB_ORIGIN_SHIFT_X = 0.37;
 export const GLOW_STUDIO_SALON_GLB_ORIGIN_SHIFT_Z = -0.1;
+
+const SALON_WALKWAY_AFRAME_ART_NODES: readonly string[] = [
+  'AFrame_Art_-5.0_1',
+  'AFrame_Art_-5.0_-1',
+];
 
 export function buildBeautySalonStudioGlb3D(ctx: UrbanPlazaBuildingsContext): void {
   const bs = CENTRAL_PARK_MASTERPLAN.beautySalon;
@@ -1702,8 +1705,14 @@ export function buildBeautySalonStudioGlb3D(ctx: UrbanPlazaBuildingsContext): vo
       optimizeCentralPlazaBuildingGlb(gltf.scene, {
         buildingId: 'GlowStudioSalon',
         glowUniforms,
+        windUniforms: ctx.windUniforms,
         isSoftwareGl: ctx.isSoftwareGl,
         glassWarmTintHex: '#ffe3b5',
+        excludedNodeNames: SALON_WALKWAY_AFRAME_ART_NODES,
+        excludeTriangleCentroid: (nodeName, c) =>
+          // Strip only the east walkway A-frame wooden easel (local x ≈ -5.0),
+          // keeping the front Cerria BEAUTY & GLOW A-frame (local x ≈ +0.8).
+          nodeName === 'AFrame_Wood_Wood_Boutique_Oak' && c.x < -2.0,
       });
       grp.add(gltf.scene);
     },

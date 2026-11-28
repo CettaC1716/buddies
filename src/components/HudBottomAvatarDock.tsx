@@ -10,7 +10,6 @@ import {
   Lock,
   MessageCircle,
   Square,
-  Store,
   User,
   X,
   Zap,
@@ -147,7 +146,9 @@ function isEntityMerchant(entity: NearbyEntityUser): boolean {
       entity.id === 'npc_hana' ||
       entity.id === 'npc_cafe' ||
       entity.id === 'npc_kai' ||
-      entity.id === 'npc_beach',
+      entity.id === 'npc_beach' ||
+      entity.id === 'city_plaza_nadia' ||
+      entity.id === 'npc_nadia',
   );
 }
 
@@ -304,6 +305,7 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
       <div
         data-hud-avatar-dock="true"
         data-hud-avatar-dock-variant="phone"
+        onPointerDown={(e) => e.stopPropagation()}
         style={{
           top: 'calc(2.1rem + var(--safe-top))',
           left: 'max(0.75rem, var(--safe-left))',
@@ -443,18 +445,20 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                 )}
               </button>
             )}
-            <button
-              type="button"
-              data-target-action="close"
-              onClick={() => {
-                soundEngine.playUiClick();
-                onClearTargetEntity?.();
-              }}
-              aria-label="Back to own dock"
-              className="w-6 h-6 rounded-full bg-white/10 text-white/80 flex items-center justify-center shrink-0 cursor-pointer"
-            >
-              <X className="w-3 h-3" />
-            </button>
+            {!isNpcChatSessionActive && (
+              <button
+                type="button"
+                data-target-action="close"
+                onClick={() => {
+                  soundEngine.playUiClick();
+                  onClearTargetEntity?.();
+                }}
+                aria-label="Back to own dock"
+                className="w-6 h-6 rounded-full bg-white/10 text-white/80 flex items-center justify-center shrink-0 cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
           </div>
         ) : (
           <div className="h-10 px-2 rounded-2xl bg-[#111622]/86 border border-white/22 shadow-[0_8px_24px_rgba(0,0,0,0.45)] flex items-center gap-1.5 min-w-0">
@@ -576,7 +580,10 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
       }
     >
       {/* Main Constant-Width 2-Tier Hero Dock (Scaled slightly on Tablet) */}
-      <div className="pointer-events-auto flex items-end gap-2">
+      <div
+        onPointerDown={(e) => e.stopPropagation()}
+        className="pointer-events-auto flex items-end gap-2"
+      >
         {/* Left: Portrait Card with top-left overlapping status badge */}
         <div className="relative shrink-0">
           <button
@@ -908,22 +915,24 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                 )}
               </div>
 
-              {/* Return to Quick Items */}
-              <div className="pl-2 border-l border-white/12 flex items-center">
-                <button
-                  type="button"
-                  data-target-action="close"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    onToggleTargetInteraction?.();
-                  }}
-                  title="Back to Quick Items"
-                  aria-label="Back to Quick Items"
-                  className="w-8 h-8 rounded-full bg-rose-500/25 hover:bg-rose-500/45 border border-rose-300/45 text-rose-200 hover:text-white flex items-center justify-center transition-all active:scale-95 cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5 stroke-[2.3]" aria-hidden="true" />
-                </button>
-              </div>
+              {/* Return to Quick Items (hidden during NPC chat since chat modal already has Close) */}
+              {!isNpcChatSessionActive && (
+                <div className="pl-2 border-l border-white/12 flex items-center">
+                  <button
+                    type="button"
+                    data-target-action="close"
+                    onClick={() => {
+                      soundEngine.playUiClick();
+                      onToggleTargetInteraction?.();
+                    }}
+                    title="Back to Quick Items"
+                    aria-label="Back to Quick Items"
+                    className="w-8 h-8 rounded-full bg-rose-500/25 hover:bg-rose-500/45 border border-rose-300/45 text-rose-200 hover:text-white flex items-center justify-center transition-all active:scale-95 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5 stroke-[2.3]" aria-hidden="true" />
+                  </button>
+                </div>
+              )}
             </div>
           ) : dockCategory === 'scooter' ? (
             <div
@@ -1003,22 +1012,6 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                   </button>
                 )}
               </div>
-
-              {/* Open Scooter Showroom Shortcut (Rose-Pink Glossy Button) */}
-              <div className="pl-2 border-l border-white/12 flex items-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    onOpenScooterShowroom();
-                  }}
-                  title="Open My Vehicles"
-                  aria-label="Open My Vehicles"
-                  className="w-9 h-9 rounded-full bg-gradient-to-br from-rose-400 to-pink-600 hover:brightness-110 border border-rose-200/50 text-white shadow-[0_4px_12px_rgba(244,63,94,0.4)] flex items-center justify-center transition-all active:scale-95 cursor-pointer"
-                >
-                  <Store className="w-4 h-4 stroke-[2.1]" aria-hidden="true" />
-                </button>
-              </div>
             </div>
           ) : (
             <div
@@ -1070,22 +1063,6 @@ export const HudBottomAvatarDock: React.FC<HudBottomAvatarDockProps> = ({
                     <Camera className="w-4 h-4 stroke-[2.2]" aria-hidden="true" />
                   </button>
                 )}
-              </div>
-
-              {/* 2. Open Full Personal Bag Shortcut (Emerald-Teal Glossy Button) */}
-              <div className="pl-2 border-l border-white/12 flex items-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.playUiClick();
-                    onOpenBag();
-                  }}
-                  title="Open My Things"
-                  aria-label="Open My Things"
-                  className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 hover:brightness-110 border border-emerald-200/50 text-white shadow-[0_4px_12px_rgba(16,185,129,0.42)] flex items-center justify-center transition-all active:scale-95 cursor-pointer"
-                >
-                  <Backpack className="w-4 h-4 stroke-[2.1]" aria-hidden="true" />
-                </button>
               </div>
             </div>
           )}

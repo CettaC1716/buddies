@@ -15,9 +15,9 @@ import {
   X,
 } from 'lucide-react';
 import {
-  CITY_TRANSIT_DESTINATIONS,
   type CityTransitDestinationSpec,
   type CityTransitStationId,
+  getTravelDistrictDestinations,
 } from '../game/buddiesBlitzRules';
 import {
   MERCHANT_CATALOG_ITEMS,
@@ -906,14 +906,15 @@ export function InlineTeleportPlacesPanel({
     merchantLocation === 'lobby_cafe' ? 'central_plaza' : 'kai_fish_market';
 
   const orderedDestinations = React.useMemo(() => {
+    const visibleList = getTravelDistrictDestinations();
     const priorityIds: CityTransitStationId[] = [currentStationId];
     if (focusStationId && focusStationId !== currentStationId) {
       priorityIds.push(focusStationId);
     }
     const prioritized = priorityIds
-      .map((id) => CITY_TRANSIT_DESTINATIONS.find((d) => d.id === id))
+      .map((id) => visibleList.find((d) => d.id === id))
       .filter((d): d is CityTransitDestinationSpec => Boolean(d));
-    const remaining = CITY_TRANSIT_DESTINATIONS.filter(
+    const remaining = visibleList.filter(
       (d) => !priorityIds.includes(d.id),
     );
     return [...prioritized, ...remaining];

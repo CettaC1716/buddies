@@ -27,8 +27,7 @@ export type AmbientEnvironmentMode =
   | 'outdoor'
   | 'house_interior'
   | 'cafe_interior'
-  | 'casino_interior'
-  | 'salon_interior';
+  | 'casino_interior';
 
 export interface AmbientSoundscapeInput {
   listenerX: number;
@@ -108,11 +107,7 @@ export function classifyFootstepSurface(
   environmentMode: AmbientEnvironmentMode = 'outdoor',
 ): FootstepSurfaceType {
   if (environmentMode === 'house_interior') return 'wood';
-  if (
-    environmentMode === 'cafe_interior' ||
-    environmentMode === 'casino_interior' ||
-    environmentMode === 'salon_interior'
-  ) {
+  if (environmentMode === 'cafe_interior' || environmentMode === 'casino_interior') {
     return 'stone_road';
   }
 

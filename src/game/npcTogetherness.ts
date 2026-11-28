@@ -515,6 +515,28 @@ export function resolveNpcScheduledPatrolWaypoints(
   rawNpcId: string,
   timeOfDayHours: number,
 ): CityAmbientNpcWaypoint[] | null {
+  // Major NPC Manager Nadia hosts Central Urban Plaza (Vintage Cafe, Cozy Bites Pavilion & Fountain Plaza)
+  if (rawNpcId === 'city_plaza_nadia') {
+    const nadiaCentralAnchors = [
+      'central_boutique_front',
+      'central_cozy_cafe_front',
+      'central_beauty_salon_front',
+      'central_plaza_north_walk',
+    ] as const;
+    return nadiaCentralAnchors
+      .map((id) => getCityLifeAnchor(id))
+      .filter((a): a is CityLifeAnchor => Boolean(a))
+      .map((anchor) => ({
+        x: anchor.x,
+        z: anchor.z,
+        yaw: anchor.yaw,
+        activity: anchor.activity,
+        moveMode: 'walk' as const,
+        label: anchor.label,
+        durationSec: 28.0,
+        seatLiftY: anchor.seatLiftY,
+      }));
+  }
   // Ambient Raka roams Central Urban Plaza (map center) per WS7 pairing revision
   if (rawNpcId === 'city_plaza_raka') {
     const rakaAnchorIds = [

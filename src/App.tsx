@@ -23,6 +23,7 @@ import {
   UserPlus,
   Users,
   Zap,
+  ShoppingBag,
 } from 'lucide-react';
 import {
   CITY_MINIMAP_POIS,
@@ -68,6 +69,7 @@ import {
   type CityViewTargetId,
 } from './game/buddiesBlitzRules';
 import { resolveBottomChatInputTarget } from './game/chatInputTargetResolver';
+import { resolveCharacterSelectedDockState } from './game/buddiesRadialInteractPinSystem';
 import { soundEngine } from './game/audio';
 import { subscribeBlitz3dAssetProgress } from './game/buddiesBlitzShadersAndAssets';
 import {
@@ -130,6 +132,7 @@ const TacticalKioskModal = lazyDeferredModal(
   'TacticalKioskModal',
   (p) => Boolean(p.isOpen),
 );
+import type { PublicApartmentEntry } from './components/CityTransitKioskModal';
 const CityTransitKioskModal = lazyDeferredModal(
   () => import('./components/CityTransitKioskModal'),
   'CityTransitKioskModal',
@@ -285,6 +288,23 @@ const LotRentalModal = lazyDeferredModal(
   'LotRentalModal',
   (p) => Boolean(p.open),
 );
+const ShopStorefrontTabletModal = lazyNamedModal(
+  () => import('./components/ShopStorefrontTabletModal'),
+  'ShopStorefrontTabletModal',
+);
+const MyApartmentPhoneApp = lazyNamedModal(
+  () => import('./components/MyApartmentPhoneApp'),
+  'MyApartmentPhoneApp',
+);
+import {
+  loadPersistedStorefrontCatalogMap,
+  resolveLotStorefrontConfig,
+  savePersistedStorefrontCatalogMap,
+  type DistrictPlazaStoreId,
+  type LotStorefrontConfig,
+  type StorefrontCatalogMap,
+  type WestPlazaDepartmentId,
+} from './game/shopStorefrontCatalogEngine';
 import {
   createInitialMerchantMarketState,
   executeLulToCyonExchange,
@@ -387,6 +407,8 @@ import {
 import {
   EMPTY_GIFT_PICKER_HINT,
   filterGiftPickerItems,
+  getGiftCatalogItem,
+  isGiftPickerEligibleItem,
   loadNpcTreasuryStore,
   recordNpcTreasuryGift,
   saveNpcTreasuryStore,
@@ -581,6 +603,7 @@ import {
 import {
   EMPTY_WARDROBE_DRAFT,
   WARDROBE_STUDIO_ITEMS,
+  getWardrobeCatalogItemById,
   getWardrobeDraftStorageKey,
   getOwnedPairedAnimationItems,
   getOwnedQuickPoseActionItems,
@@ -1009,6 +1032,11 @@ export default function App() {
       unsubscribe3d();
     };
   }, [syncPreloadProgressState]);
+
+  useEffect(() => {
+    if (!isPreloadComplete) return;
+    void import('./components/CityTransitKioskModal');
+  }, [isPreloadComplete]);
   const [walletConnectInput, setWalletConnectInput] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       return window.localStorage.getItem('bb_connected_google_email_v2') || '';
@@ -1148,7 +1176,6 @@ export default function App() {
   const [isInsidePrivateHouse, setIsInsidePrivateHouse] = useState<boolean>(false);
   const [isInsideGlasshouseCafe, setIsInsideGlasshouseCafe] = useState<boolean>(false);
   const [isInsideGrandCasino, setIsInsideGrandCasino] = useState<boolean>(false);
-  const [isInsideBeautySalon, setIsInsideBeautySalon] = useState<boolean>(false);
   const [activeCafeModal, setActiveCafeModal] = useState<
     | 'none'
     | 'order'
@@ -1162,7 +1189,6 @@ export default function App() {
   const [unifiedBottomDockMode, setUnifiedBottomDockMode] =
     useState<UnifiedBottomDockActionMode>('none');
   const [isCafeRotaMenuExpanded, setIsCafeRotaMenuExpanded] = useState<boolean>(false);
-  const [isSalonEntryMenuExpanded, setIsSalonEntryMenuExpanded] = useState<boolean>(false);
   const [isCafeOrderSlideBannerVisible, setIsCafeOrderSlideBannerVisible] =
     useState<boolean>(false);
   const [hasUnreadCafeOrderNotif, setHasUnreadCafeOrderNotif] = useState<boolean>(false);
@@ -1214,7 +1240,12 @@ export default function App() {
     setIsDailyMissionsModalOpen(false);
     setSocialChatText('');
     setActiveSpecialModal('npc_merchant');
-    const merchantCitizenId: CitizenId = loc === 'beach_house' ? 'npc_kai' : 'npc_hana';
+    const merchantCitizenId: CitizenId =
+      loc === 'beach_house'
+        ? 'npc_kai'
+        : loc === 'central_plaza'
+          ? 'city_plaza_nadia'
+          : 'npc_hana';
     const talkSync = recordCitizenDailyTalk(citizenFriendshipStoreRef.current, merchantCitizenId);
     citizenFriendshipStoreRef.current = talkSync.store;
     setCitizenFriendshipStore(talkSync.store);
@@ -1245,13 +1276,17 @@ export default function App() {
     activeSpecialModal === 'npc_merchant'
       ? merchantLocation === 'lobby_cafe'
         ? 'HANA'
-        : 'KAI'
+        : merchantLocation === 'central_plaza'
+          ? 'NADIA'
+          : 'KAI'
       : (activeCitizenProfile?.name.toUpperCase() ?? 'CITIZEN');
   const activeNpcChatBarName =
     activeSpecialModal === 'npc_merchant'
       ? merchantLocation === 'lobby_cafe'
         ? 'Hana'
-        : 'Kai'
+        : merchantLocation === 'central_plaza'
+          ? 'Nadia'
+          : 'Kai'
       : (activeCitizenProfile?.name ?? 'Citizen');
 
   const openCitizenDialogueForId = useCallback(
@@ -1277,6 +1312,11 @@ export default function App() {
       setActiveTeleportKioskModal('none');
       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
 
+      if (canonical === 'city_plaza_nadia') {
+        openMerchantInChatSession('central_plaza');
+        return;
+      }
+
       const talkRes = recordCitizenDailyTalk(citizenFriendshipStoreRef.current, canonical);
       citizenFriendshipStoreRef.current = talkRes.store;
       setCitizenFriendshipStore(talkRes.store);
@@ -1287,7 +1327,7 @@ export default function App() {
       setCitizenOpenSeq((prev) => prev + 1);
       setIsCitizenDialogueOpen(true);
     },
-    [],
+    [openMerchantInChatSession],
   );
   const dailyMissionsAccountKey =
     (hud.nearWalletId || playerUid || 'guest').trim().toLowerCase() || 'guest';
@@ -1381,6 +1421,28 @@ export default function App() {
     [qaDirectorAvailable],
   );
 
+  const loadOwnedGiftBagFromStorage = useCallback((accountKey: string): string[] => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = window.localStorage.getItem(`bb_owned_gift_bag_v1:${accountKey}`);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed)
+        ? parsed.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+        : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const [ownedGiftBagItemIds, setOwnedGiftBagItemIds] = useState<string[]>(() =>
+    loadOwnedGiftBagFromStorage(dailyMissionsAccountKey),
+  );
+
+  useEffect(() => {
+    setOwnedGiftBagItemIds(loadOwnedGiftBagFromStorage(dailyMissionsAccountKey));
+  }, [dailyMissionsAccountKey, loadOwnedGiftBagFromStorage]);
+
   const handleGiveNpcOwnedGift = useCallback(
     (npcId: NpcId, itemInput: GiftItemInput, fishInstanceId?: string) => {
       const outcome = evaluateNpcGiftSubmission({
@@ -1423,6 +1485,21 @@ export default function App() {
       }
       if (fishInstanceId) {
         setCaughtFishBucket((prev) => prev.filter((item) => item.id !== fishInstanceId));
+      } else if (outcome.itemId) {
+        setOwnedGiftBagItemIds((prev) => {
+          const removeIdx = prev.indexOf(outcome.itemId);
+          if (removeIdx < 0) return prev;
+          const next = [...prev.slice(0, removeIdx), ...prev.slice(removeIdx + 1)];
+          try {
+            window.localStorage.setItem(
+              `bb_owned_gift_bag_v1:${dailyMissionsAccountRef.current}`,
+              JSON.stringify(next),
+            );
+          } catch {
+            // ignore storage errors
+          }
+          return next;
+        });
       }
       return {
         accepted: true,
@@ -1435,13 +1512,13 @@ export default function App() {
   );
 
   const ownedCafeFoodIds = useMemo(() => {
-    const ids: string[] = [];
+    const ids: string[] = [...ownedGiftBagItemIds];
     if (cafeConsumerState.activeItem) ids.push(cafeConsumerState.activeItem.id);
     for (const item of cafeConsumerState.queuedItems) {
       ids.push(item.id);
     }
     return ids;
-  }, [cafeConsumerState.activeItem, cafeConsumerState.queuedItems]);
+  }, [ownedGiftBagItemIds, cafeConsumerState.activeItem, cafeConsumerState.queuedItems]);
 
   const [npcTogethernessState, setNpcTogethernessState] =
     useState<NpcTogethernessStateSnapshot>(EMPTY_NPC_TOGETHERNESS_STATE);
@@ -1643,6 +1720,16 @@ export default function App() {
   const qaShopDirtyRef = useRef<boolean>(false);
   const [selectedRentalLotId, setSelectedRentalLotId] = useState<string | null>(null);
   const [isLotRentalModalOpen, setIsLotRentalModalOpen] = useState<boolean>(false);
+  const [activeDistrictPlazaCatalog, setActiveDistrictPlazaCatalog] =
+    useState<DistrictPlazaStoreId | null>(null);
+  const [westPlazaInitialDept, setWestPlazaInitialDept] =
+    useState<WestPlazaDepartmentId | null>(null);
+  const [districtStorefrontMap, setDistrictStorefrontMap] = useState<StorefrontCatalogMap>(() =>
+    loadPersistedStorefrontCatalogMap(),
+  );
+  const [previewBuildingFormByLotId, setPreviewBuildingFormByLotId] = useState<
+    Record<string, ShopBuildingFormId | null>
+  >({});
   useEffect(() => {
     if (typeof window === 'undefined') return;
     window.dispatchEvent(
@@ -1651,6 +1738,7 @@ export default function App() {
           lotRentalStore,
           Date.now(),
           selectedRentalLotId,
+          previewBuildingFormByLotId,
         ),
       }),
     );
@@ -1662,7 +1750,7 @@ export default function App() {
         // Storage unavailable (private mode / quota): simulation state stays in memory.
       }
     }
-  }, [lotRentalStore, selectedRentalLotId]);
+  }, [lotRentalStore, selectedRentalLotId, previewBuildingFormByLotId]);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const onOpenLotRental = (ev: Event) => {
@@ -1702,7 +1790,10 @@ export default function App() {
       lotId: selectedRentalLotId,
       accountId: acct,
     });
-    if (res.ok) setLotRentalStore(res.store);
+    if (res.ok) {
+      setLotRentalStore(res.store);
+      setPreviewBuildingFormByLotId((prev) => ({ ...prev, [selectedRentalLotId]: null }));
+    }
   }, [hud.nearWalletId, playerUid, lotRentalStore, selectedRentalLotId]);
   const handlePlaceLotBuildingSimulated = useCallback(
     (formId: string) => {
@@ -1714,7 +1805,10 @@ export default function App() {
         accountId: acct,
         buildingFormId: formId as ShopBuildingFormId,
       });
-      if (res.ok) setLotRentalStore(res.store);
+      if (res.ok) {
+        setLotRentalStore(res.store);
+        setPreviewBuildingFormByLotId((prev) => ({ ...prev, [selectedRentalLotId]: null }));
+      }
     },
     [hud.nearWalletId, playerUid, lotRentalStore, selectedRentalLotId],
   );
@@ -1726,7 +1820,10 @@ export default function App() {
       lotId: selectedRentalLotId,
       accountId: acct,
     });
-    if (res.ok) setLotRentalStore(res.store);
+    if (res.ok) {
+      setLotRentalStore(res.store);
+      setPreviewBuildingFormByLotId((prev) => ({ ...prev, [selectedRentalLotId]: null }));
+    }
   }, [hud.nearWalletId, playerUid, lotRentalStore, selectedRentalLotId]);
   const [isDexModalOpen, setIsDexModalOpen] = useState<boolean>(false);
   const loadOwnedScootersFromStorage = useCallback((acctKey: string): string[] => {
@@ -2456,8 +2553,14 @@ export default function App() {
 
   const handleQaTriggerProactiveTopic = useCallback(
     (npcId: NpcId) => {
-      if (npcId === 'hana' || npcId === 'kai') {
-        openMerchantInChatSession(npcId === 'hana' ? 'lobby_cafe' : 'beach_house');
+      if (npcId === 'hana' || npcId === 'kai' || npcId === 'nadia') {
+        openMerchantInChatSession(
+          npcId === 'hana'
+            ? 'lobby_cafe'
+            : npcId === 'kai'
+              ? 'beach_house'
+              : 'central_plaza',
+        );
       } else {
         openCitizenDialogueForId(npcIdToCitizenId(npcId), 'sesi_chat');
       }
@@ -3203,7 +3306,8 @@ export default function App() {
     void fetchNpcMerchantsFromSupabase().then((rows) => {
       if (!mounted || rows.length === 0) return;
       setSupabaseConnected(true);
-      const activeRow = rows.find((r) => r.merchant_id === merchantLocation) || rows[0];
+      const dbMerchantLoc = merchantLocation === 'beach_house' ? 'beach_house' : 'lobby_cafe';
+      const activeRow = rows.find((r) => r.merchant_id === dbMerchantLoc) || rows[0];
       if (activeRow) {
         setMarketState((prev) => ({
           ...prev,
@@ -3927,8 +4031,6 @@ export default function App() {
   const cafeLoadingTimeoutRef = useRef<number | null>(null);
   const [isCasinoInteriorLoading, setIsCasinoInteriorLoading] = useState<boolean>(false);
   const casinoLoadingTimeoutRef = useRef<number | null>(null);
-  const [isSalonInteriorLoading, setIsSalonInteriorLoading] = useState<boolean>(false);
-  const salonLoadingTimeoutRef = useRef<number | null>(null);
   const [loadingTargetMode, setLoadingTargetMode] = useState<WorldMode | null>(null);
   const loadingTimeoutRef = useRef<number | null>(null);
   const loadingCommitTimeoutRef = useRef<number | null>(null);
@@ -3949,20 +4051,14 @@ export default function App() {
         window.clearTimeout(casinoLoadingTimeoutRef.current);
         casinoLoadingTimeoutRef.current = null;
       }
-      if (salonLoadingTimeoutRef.current !== null) {
-        window.clearTimeout(salonLoadingTimeoutRef.current);
-        salonLoadingTimeoutRef.current = null;
-      }
       setIsKioskModalOpen(false);
       setIsGrandCasinoModalOpen(false);
       setActiveSpecialModal('none');
       setIsInsidePrivateHouse(false);
       setIsInsideGlasshouseCafe(false);
       setIsInsideGrandCasino(false);
-      setIsInsideBeautySalon(false);
       setIsCafeInteriorLoading(false);
       setIsCasinoInteriorLoading(false);
-      setIsSalonInteriorLoading(false);
       setIsSocialChatModalOpen(false);
       setActiveTeleportKioskModal('none');
       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
@@ -4670,7 +4766,12 @@ export default function App() {
         ev as CustomEvent<{ location?: MerchantLocationId; locationId?: MerchantLocationId }>
       ).detail;
       const rawLoc = detail?.location ?? detail?.locationId;
-      const loc: MerchantLocationId = rawLoc === 'beach_house' ? 'beach_house' : 'lobby_cafe';
+      const loc: MerchantLocationId =
+        rawLoc === 'beach_house'
+          ? 'beach_house'
+          : rawLoc === 'central_plaza'
+            ? 'central_plaza'
+            : 'lobby_cafe';
       setIsKioskModalOpen(false);
       setIsCitizenDialogueOpen(false);
       setIsSocialChatModalOpen(false);
@@ -4726,8 +4827,6 @@ export default function App() {
       setIsCafeInteriorLoading(false);
       setIsInsideGrandCasino(false);
       setIsCasinoInteriorLoading(false);
-      setIsInsideBeautySalon(false);
-      setIsSalonInteriorLoading(false);
       setActiveTeleportKioskModal('none');
       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
       setHouseEntryScanState('scanning');
@@ -4761,8 +4860,6 @@ export default function App() {
       setIsGrandCasinoModalOpen(false);
       setIsInsideGrandCasino(false);
       setIsCasinoInteriorLoading(false);
-      setIsInsideBeautySalon(false);
-      setIsSalonInteriorLoading(false);
       setActiveTeleportKioskModal('none');
       window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
       setActiveSpecialModal('none');
@@ -4806,8 +4903,6 @@ export default function App() {
       setIsInsidePrivateHouse(false);
       setIsInsideGlasshouseCafe(false);
       setIsCafeInteriorLoading(false);
-      setIsInsideBeautySalon(false);
-      setIsSalonInteriorLoading(false);
       setActiveCafeModal('none');
       if (casinoLoadingTimeoutRef.current !== null) {
         window.clearTimeout(casinoLoadingTimeoutRef.current);
@@ -4827,43 +4922,6 @@ export default function App() {
       setIsCasinoInteriorLoading(false);
       setIsInsideGrandCasino(false);
       setIsGrandCasinoModalOpen(false);
-    };
-    const onEnterBeautySalonInterior = () => {
-      if (hudRef.current.worldMode === 'warzone') return;
-      setIsKioskModalOpen(false);
-      setIsSocialChatModalOpen(false);
-      setIsPersonalWalletModalOpen(false);
-      setIsProfileModalOpen(false);
-      setIsDailyMissionsModalOpen(false);
-      setIsScooterShowroomModalOpen(false);
-      setIsRealEstateCatalogModalOpen(false);
-      setIsGrandCasinoModalOpen(false);
-      setActiveTeleportKioskModal('none');
-      window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
-      setActiveSpecialModal('none');
-      setIsInsidePrivateHouse(false);
-      setIsInsideGlasshouseCafe(false);
-      setIsCafeInteriorLoading(false);
-      setIsInsideGrandCasino(false);
-      setIsCasinoInteriorLoading(false);
-      setActiveCafeModal('none');
-      if (salonLoadingTimeoutRef.current !== null) {
-        window.clearTimeout(salonLoadingTimeoutRef.current);
-      }
-      setIsSalonInteriorLoading(true);
-      salonLoadingTimeoutRef.current = window.setTimeout(() => {
-        salonLoadingTimeoutRef.current = null;
-        setIsSalonInteriorLoading(false);
-      }, 4000);
-      setIsInsideBeautySalon(true);
-    };
-    const onExitBeautySalonInterior = () => {
-      if (salonLoadingTimeoutRef.current !== null) {
-        window.clearTimeout(salonLoadingTimeoutRef.current);
-        salonLoadingTimeoutRef.current = null;
-      }
-      setIsSalonInteriorLoading(false);
-      setIsInsideBeautySalon(false);
     };
     const onStartCafeWorkShiftEvent = () => {
       window.dispatchEvent(new CustomEvent('app-cafe-action', { detail: 'start_shift' }));
@@ -4913,9 +4971,6 @@ export default function App() {
       setUnifiedBottomDockMode('work_shift');
       setIsCafeRotaMenuExpanded((prev) => !prev);
     };
-    const onToggleSalonEntryMenu = () => {
-      setIsSalonEntryMenuExpanded((prev) => !prev);
-    };
     const onStopCafeWorkShiftEvent = () => {
       window.dispatchEvent(new CustomEvent('app-cafe-action', { detail: 'stop_shift' }));
     };
@@ -4961,16 +5016,11 @@ export default function App() {
         pinId?: string;
       }>;
       if (customEv.detail?.user) {
+        const nextDockState = resolveCharacterSelectedDockState(customEv.detail);
         setSelectedTargetUser(customEv.detail.user);
-        if (customEv.detail.pinId) {
-          setSelectedTargetPinId(customEv.detail.pinId);
-          setIsPinTargetPopupOpen(Boolean(customEv.detail.expandMenu));
-          setIsTargetMenuExpanded(false);
-        } else {
-          setSelectedTargetPinId(null);
-          setIsPinTargetPopupOpen(false);
-          setIsTargetMenuExpanded(Boolean(customEv.detail.expandMenu));
-        }
+        setSelectedTargetPinId(nextDockState.selectedTargetPinId);
+        setIsPinTargetPopupOpen(nextDockState.isPinTargetPopupOpen);
+        setIsTargetMenuExpanded(nextDockState.isTargetMenuExpanded);
       }
     };
     const onCharacterDeselected = () => {
@@ -5187,22 +5237,12 @@ export default function App() {
       }
       setIsCasinoInteriorLoading(false);
     };
-    const onSalonInteriorReady = () => {
-      if (salonLoadingTimeoutRef.current !== null) {
-        window.clearTimeout(salonLoadingTimeoutRef.current);
-        salonLoadingTimeoutRef.current = null;
-      }
-      setIsSalonInteriorLoading(false);
-    };
     window.addEventListener('enter-glasshouse-cafe', onEnterGlasshouseCafe);
     window.addEventListener('exit-glasshouse-cafe', onExitGlasshouseCafe);
     window.addEventListener('cafe-interior-ready', onCafeInteriorReady);
     window.addEventListener('enter-grand-casino-interior', onEnterGrandCasinoInterior);
     window.addEventListener('exit-grand-casino-interior', onExitGrandCasinoInterior);
     window.addEventListener('casino-interior-ready', onCasinoInteriorReady);
-    window.addEventListener('enter-beauty-salon-interior', onEnterBeautySalonInterior);
-    window.addEventListener('exit-beauty-salon-interior', onExitBeautySalonInterior);
-    window.addEventListener('beauty-salon-interior-ready', onSalonInteriorReady);
     window.addEventListener('open-cafe-order-modal', onOpenCafeOrderModal);
     window.addEventListener('open-cafe-atm-modal', onOpenCafeAtmModal);
     window.addEventListener('open-cafe-arcade-slot-modal', onOpenCafeArcadeSlotModal);
@@ -5210,7 +5250,6 @@ export default function App() {
     window.addEventListener('unified-bottom-dock-change', onUnifiedBottomDockChange);
     window.addEventListener('cafe-rota-proximity-change', onCafeRotaProximityChange);
     window.addEventListener('toggle-cafe-rota-dock-menu', onToggleCafeRotaDockMenu);
-    window.addEventListener('toggle-salon-entry-menu', onToggleSalonEntryMenu);
     window.addEventListener('start-cafe-work-shift', onStartCafeWorkShiftEvent);
     window.addEventListener('stop-cafe-work-shift', onStopCafeWorkShiftEvent);
     window.addEventListener('serve-cafe-active-order', onServeCafeActiveOrderEvent);
@@ -5261,19 +5300,12 @@ export default function App() {
         window.clearTimeout(casinoLoadingTimeoutRef.current);
         casinoLoadingTimeoutRef.current = null;
       }
-      if (salonLoadingTimeoutRef.current !== null) {
-        window.clearTimeout(salonLoadingTimeoutRef.current);
-        salonLoadingTimeoutRef.current = null;
-      }
       window.removeEventListener('enter-glasshouse-cafe', onEnterGlasshouseCafe);
       window.removeEventListener('exit-glasshouse-cafe', onExitGlasshouseCafe);
       window.removeEventListener('cafe-interior-ready', onCafeInteriorReady);
       window.removeEventListener('enter-grand-casino-interior', onEnterGrandCasinoInterior);
       window.removeEventListener('exit-grand-casino-interior', onExitGrandCasinoInterior);
       window.removeEventListener('casino-interior-ready', onCasinoInteriorReady);
-      window.removeEventListener('enter-beauty-salon-interior', onEnterBeautySalonInterior);
-      window.removeEventListener('exit-beauty-salon-interior', onExitBeautySalonInterior);
-      window.removeEventListener('beauty-salon-interior-ready', onSalonInteriorReady);
       window.removeEventListener('open-cafe-order-modal', onOpenCafeOrderModal);
       window.removeEventListener('open-cafe-atm-modal', onOpenCafeAtmModal);
       window.removeEventListener('open-cafe-arcade-slot-modal', onOpenCafeArcadeSlotModal);
@@ -5281,7 +5313,6 @@ export default function App() {
       window.removeEventListener('unified-bottom-dock-change', onUnifiedBottomDockChange);
       window.removeEventListener('cafe-rota-proximity-change', onCafeRotaProximityChange);
       window.removeEventListener('toggle-cafe-rota-dock-menu', onToggleCafeRotaDockMenu);
-      window.removeEventListener('toggle-salon-entry-menu', onToggleSalonEntryMenu);
       window.removeEventListener('start-cafe-work-shift', onStartCafeWorkShiftEvent);
       window.removeEventListener('stop-cafe-work-shift', onStopCafeWorkShiftEvent);
       window.removeEventListener('serve-cafe-active-order', onServeCafeActiveOrderEvent);
@@ -6022,14 +6053,14 @@ export default function App() {
       // exchange, including guests, or the same CYON could be farmed again
       // next session from a restored treasury.
       void syncNpcMerchantToSupabase({
-        merchant_id: merchantLocation,
+        merchant_id: merchantLocation === 'beach_house' ? 'beach_house' : 'lobby_cafe',
         cyon_treasury: res.updatedState.treasuryCyon,
         is_bankrupt: res.updatedState.isShopBroke,
         last_headline: res.updatedState.lastMarketHeadline,
       });
       if (actorAccount) {
         void logMarketTransactionToSupabase({
-          merchant_id: merchantLocation,
+          merchant_id: merchantLocation === 'beach_house' ? 'beach_house' : 'lobby_cafe',
           actor_near_account: actorAccount,
           action_type: 'exchange',
           currency: 'CYON',
@@ -6243,7 +6274,6 @@ export default function App() {
       document.body.dataset.playerXp = String(levelProgress.totalXp);
       document.body.dataset.cafeInterior = String(isInsideGlasshouseCafe);
       document.body.dataset.casinoInterior = String(isInsideGrandCasino);
-      document.body.dataset.salonInterior = String(isInsideBeautySalon);
       document.body.dataset.cafeShiftWorking = String(cafeShiftState.isWorking);
     }
   }, [
@@ -6251,7 +6281,6 @@ export default function App() {
     levelProgress.totalXp,
     isInsideGlasshouseCafe,
     isInsideGrandCasino,
-    isInsideBeautySalon,
     cafeShiftState.isWorking,
   ]);
 
@@ -6267,13 +6296,11 @@ export default function App() {
             ? 'character_select'
             : activeSpecialModal === 'none' && isInsideGrandCasino
               ? 'casino_interior'
-              : activeSpecialModal === 'none' && isInsideBeautySalon
-                ? 'salon_interior'
-                : activeSpecialModal === 'none' && isInsideGlasshouseCafe
-                  ? 'cafe_interior'
-                  : activeSpecialModal === 'none' && isInsidePrivateHouse
-                    ? 'house_visit'
-                    : activeSpecialModal;
+              : activeSpecialModal === 'none' && isInsideGlasshouseCafe
+                ? 'cafe_interior'
+                : activeSpecialModal === 'none' && isInsidePrivateHouse
+                  ? 'house_visit'
+                  : activeSpecialModal;
     const syncDetail = {
       mode: effectiveMode,
       flyTargetMode: plazaFlyTargetMode,
@@ -6314,7 +6341,6 @@ export default function App() {
     plazaFlyTargetMode,
     activeSpecialModal,
     isInsideGrandCasino,
-    isInsideBeautySalon,
     isInsideGlasshouseCafe,
     isInsidePrivateHouse,
     isSampleHouseView,
@@ -9358,7 +9384,7 @@ export default function App() {
         unlockedSkins: buildProfileUnlockedSkins(characterGender, chosenStyle),
       });
       void logMarketTransactionToSupabase({
-        merchant_id: merchantLocation,
+        merchant_id: merchantLocation === 'beach_house' ? 'beach_house' : 'lobby_cafe',
         actor_near_account: resolvedActor,
         action_type: 'buy_item',
         item_id: `house_ownership:${chosenStyle}`,
@@ -9552,7 +9578,12 @@ export default function App() {
         title: `Certificate of Ownership — ${item.name}`,
         payload: {
           buyerAccount: actorAccount,
-          sellerName: merchantLocation === 'beach_house' ? 'Kai Fish Market' : 'Hana Property & Housing',
+          sellerName:
+            merchantLocation === 'beach_house'
+              ? 'Kai Fish Market'
+              : merchantLocation === 'central_plaza'
+                ? 'Nadia Central Plaza Hub'
+                : 'Hana Property & Housing',
           sellerAccount: 'buddiesblitz.testnet',
           itemName: item.name,
           itemId: item.id,
@@ -9607,14 +9638,14 @@ export default function App() {
 
       if (actorAccount) {
         void syncNpcMerchantToSupabase({
-          merchant_id: merchantLocation,
+          merchant_id: merchantLocation === 'beach_house' ? 'beach_house' : 'lobby_cafe',
           cyon_treasury: nextTreasury,
           stock_by_item: nextStock,
           recent_demand_by_item: nextDemand,
           last_headline: headline,
         });
         void logMarketTransactionToSupabase({
-          merchant_id: merchantLocation,
+          merchant_id: merchantLocation === 'beach_house' ? 'beach_house' : 'lobby_cafe',
           actor_near_account: actorAccount,
           action_type: 'buy_item',
           item_id: item.id,
@@ -9713,7 +9744,7 @@ export default function App() {
         respiteBalance: nextRespite,
       });
       void logMarketTransactionToSupabase({
-        merchant_id: merchantLocation,
+        merchant_id: merchantLocation === 'beach_house' ? 'beach_house' : 'lobby_cafe',
         actor_near_account: resolvedActor,
         action_type: 'exchange',
         nep245_token_id: receipt.tokenContractId,
@@ -10106,6 +10137,88 @@ export default function App() {
       nowMs={pendingTxNowMs}
       onConfirmPendingTx={handleConfirmPendingWalletTx}
       onRejectPendingTx={handleRejectPendingWalletTx}
+      lulCostFor10Cyon={evaluateLulToCyonExchangeQuote(marketState).lulCostFor10Cyon}
+      onExchangeLulToCyon={(customLulSpent, customCyonGranted) => {
+        soundEngine.playUiClick();
+        const actorAccount = hud.nearWalletId || playerUid;
+        if (
+          typeof customLulSpent === 'number' &&
+          typeof customCyonGranted === 'number' &&
+          customLulSpent > 0 &&
+          customCyonGranted > 0
+        ) {
+          const quoteNow = evaluateLulToCyonExchangeQuote(marketState);
+          const packets = Math.floor(customLulSpent / Math.max(1, quoteNow.lulCostFor10Cyon));
+          if (packets >= 1) {
+            const res = executeLulToCyonExchangePackets(
+              marketState,
+              hud.gold,
+              cyonBalance,
+              packets,
+            );
+            if (res.ok) {
+              const lulSpent = Math.max(0, hud.gold - res.updatedLul);
+              const cyonGranted = res.updatedCyon - cyonBalance;
+              dispatchBuddyAction(`adjustPlayerLul:${-lulSpent}`);
+              setCyonBalance(res.updatedCyon);
+              setMarketState(res.updatedState);
+              if (actorAccount) {
+                void logMarketTransactionToSupabase({
+                  merchant_id: 'lobby_cafe',
+                  actor_near_account: actorAccount,
+                  action_type: 'exchange',
+                  currency: 'CYON',
+                  amount: cyonGranted,
+                  unit_price: Number((lulSpent / Math.max(1, cyonGranted)).toFixed(2)),
+                  reasoning_summary: `Exchanged ${lulSpent} LUL for ${cyonGranted} CYON via Smartphone Wallet`,
+                });
+                void syncPlayerBalancesToSupabase({
+                  nearAccountId: actorAccount,
+                  lulBalance: res.updatedLul,
+                  cyonBalance: res.updatedCyon,
+                  respiteBalance,
+                });
+              }
+            }
+          }
+          return;
+        }
+        const res = executeLulToCyonExchange(marketState, hud.gold, cyonBalance);
+        if (res.ok) {
+          const lulSpent = Math.max(0, hud.gold - res.updatedLul);
+          dispatchBuddyAction(`adjustPlayerLul:${-lulSpent}`);
+          setCyonBalance(res.updatedCyon);
+          setMarketState(res.updatedState);
+          if (actorAccount) {
+            void logMarketTransactionToSupabase({
+              merchant_id: 'lobby_cafe',
+              actor_near_account: actorAccount,
+              action_type: 'exchange',
+              currency: 'CYON',
+              amount: res.updatedCyon - cyonBalance,
+              unit_price: lulSpent,
+              reasoning_summary: res.updatedState.lastMarketHeadline,
+            });
+          }
+        }
+      }}
+      onSwapNearAndRespite={async (direction, amountIn) => {
+        const receipt = await handleSwapNearAndRespite(direction, amountIn);
+        if (!receipt) {
+          return {
+            ok: false,
+            error: 'Swap could not be completed. Check your wallet connection and balance.',
+            amountOut: 0,
+          };
+        }
+        return {
+          ok: true,
+          txHash: receipt.txHash,
+          amountOut: direction === 'near_to_respite' ? receipt.respiteAmount : receipt.nearAmount,
+        };
+      }}
+      hanaWelcomeNearClaimed={hanaWelcomeNearClaimed}
+      onClaimHanaWelcomeNear={handleClaimHanaWelcomeNear}
     />
   );
 
@@ -10414,9 +10527,6 @@ export default function App() {
     if (isInsideGrandCasino) {
       dispatchBuddyAction('exitGrandCasino');
     }
-    if (isInsideBeautySalon) {
-      dispatchBuddyAction('exitBeautySalon');
-    }
     if (missionId === 'claim_plot_house' || missionId === 'visit_claimed_house') {
       // WS20: Reroute apartment missions directly to the player's apartment (or Real Estate Catalog if no deed yet).
       if (hasHouseOwnership || Boolean(hud.nearHasGamepassNft)) {
@@ -10624,6 +10734,75 @@ export default function App() {
     onToggleFollowPlayer: handleToggleFollowPlayer,
   };
 
+  const ownHouseAvailable = Boolean(hasHouseOwnership || hud.nearHasGamepassNft);
+  const effectiveOwnHouseStyle = ownedHouseStyle ?? houseArchitectureStyle;
+  const publicApartmentsList = useMemo<PublicApartmentEntry[]>(() => {
+    const list: PublicApartmentEntry[] = [
+      {
+        id: 'public_city_model_residence',
+        title: 'City Model Residence · Glass Modern',
+        shortTitle: 'City Model Residence',
+        ownerName: 'Cerria City Showcase',
+        styleLabel: 'Glass Modern',
+        tag: 'CITY SHOWCASE',
+        description:
+          'Open-house city model apartment featuring full Glass Modern architecture and interior layout preview.',
+        imageUrl: '/assets/kiosk/glass_modern_exterior.jpg',
+        architectureStyle: 'glass_modern',
+        isModelShowcase: true,
+      },
+    ];
+    if (ownHouseAvailable && playerPrivacySettings.apartmentVisits === 'everyone') {
+      list.push({
+        id: 'public_own_apartment',
+        title: `${playerDisplayName || 'My'}'s Residence`,
+        shortTitle: `${playerDisplayName || 'My'}'s Apartment`,
+        ownerName: `${playerDisplayName || 'You'} (You)`,
+        styleLabel: 'Glass Modern',
+        tag: 'YOUR OPEN HOUSE',
+        description:
+          'Your own apartment is currently set to Public (Open House) in Smartphone → My Apartment.',
+        imageUrl: '/assets/kiosk/glass_modern_exterior.jpg',
+        architectureStyle: effectiveOwnHouseStyle,
+        isOwnApartment: true,
+      });
+    }
+    list.push(
+      {
+        id: 'public_hana_west_penthouse',
+        title: "Hana's West Plaza Studio Loft",
+        shortTitle: "Hana's Studio Loft",
+        ownerName: 'Hana · West Plaza Manager',
+        styleLabel: 'Glass Modern',
+        tag: 'OPEN HOUSE',
+        description:
+          'Warm minimalist residence curated by Hana with collector furniture and architectural accents.',
+        imageUrl: '/docs/hero-3-house-interior.jpg',
+        architectureStyle: 'glass_modern',
+        isModelShowcase: true,
+      },
+      {
+        id: 'public_nadia_central_garden',
+        title: "Nadia's Botanical Garden Flat",
+        shortTitle: "Nadia's Botanical Flat",
+        ownerName: 'Nadia · Central Plaza Manager',
+        styleLabel: 'Glass Modern',
+        tag: 'OPEN HOUSE',
+        description:
+          'Sunlit open-door apartment hosted by Nadia near Central Plaza with warm tea table and bonsai decor.',
+        imageUrl: '/assets/kiosk/glass_modern_exterior.jpg',
+        architectureStyle: 'glass_modern',
+        isModelShowcase: true,
+      },
+    );
+    return list;
+  }, [
+    ownHouseAvailable,
+    playerPrivacySettings.apartmentVisits,
+    playerDisplayName,
+    effectiveOwnHouseStyle,
+  ]);
+
   return (
     <main
       data-adaptive-device={adaptiveViewport.device}
@@ -10707,21 +10886,6 @@ export default function App() {
           </div>
           <p className="text-xs sm:text-sm font-black tracking-widest uppercase text-amber-200/90">
             Preparing Luxury Grand Casino Interior
-          </p>
-        </div>
-      )}
-
-      {/* Beauty & Glow Salon Lazy-Loading Overlay */}
-      {isPreloadComplete && !isWorldLoading && isSalonInteriorLoading && (
-        <div
-          data-salon-loading="true"
-          className="fixed inset-0 z-[140] bg-[#2a1d1b] flex flex-col items-center justify-center gap-4 select-none pointer-events-auto"
-        >
-          <div className="-skew-x-12 px-8 py-4 bg-[#f9a8d4] text-[#0d0f12] border-4 border-[#0d0f12] ring-4 ring-white shadow-[6px_6px_0_#0d0f12] font-black text-2xl sm:text-3xl tracking-widest uppercase">
-            <span className="skew-x-12 inline-block">ENTERING BEAUTY SALON...</span>
-          </div>
-          <p className="text-xs sm:text-sm font-black tracking-widest uppercase text-pink-200/90">
-            Preparing Beauty &amp; Glow Studio Interior
           </p>
         </div>
       )}
@@ -11652,7 +11816,6 @@ export default function App() {
         !cityViewActive &&
         !isSelfieCameraOpen &&
         !isInsideGrandCasino &&
-        !isInsideBeautySalon &&
         !isInsideGlasshouseCafe &&
         !isInsidePrivateHouse &&
         activeSpecialModal === 'none' &&
@@ -11811,20 +11974,17 @@ export default function App() {
                       ? 'Glasshouse Cafe'
                       : isInsideGrandCasino
                         ? 'Grand Casino'
-                        : isInsideBeautySalon
-                          ? 'Glow Studio Salon'
-                          : resolveCityDistrictLabelAtPosition(
-                              hud.playerWorldX ?? -85,
-                              hud.playerWorldZ ?? 0,
-                            )}
+                        : resolveCityDistrictLabelAtPosition(
+                            hud.playerWorldX ?? -85,
+                            hud.playerWorldZ ?? 0,
+                          )}
               </span>
             </div>
 
-            {/* Compact 1:1 Calibrated Radar (Hidden inside Lobby room, Private House, Glasshouse Cafe, Grand Casino & Beauty Salon interior) */}
+            {/* Compact 1:1 Calibrated Radar (Hidden inside Lobby room, Private House, Glasshouse Cafe & Grand Casino interior) */}
             {!isInsidePrivateHouse &&
               !isInsideGlasshouseCafe &&
               !isInsideGrandCasino &&
-              !isInsideBeautySalon &&
               activeSpecialModal !== 'npc_merchant' &&
               !isSocialChatVisible &&
               peacefulUiState.minimapRadarVisible &&
@@ -12311,7 +12471,6 @@ export default function App() {
             !isInsidePrivateHouse &&
             !isInsideGlasshouseCafe &&
             !isInsideGrandCasino &&
-            !isInsideBeautySalon &&
             activeSpecialModal === 'none' &&
             !tramRideCutsceneUi?.active &&
             (() => {
@@ -13250,21 +13409,30 @@ export default function App() {
                 }
                 if (activeSpecialModal === 'npc_merchant') {
                   const isKai = merchantLocation === 'beach_house';
-                  const merchantId = isKai ? 'npc_kai' : 'npc_hana';
+                  const isNadia = merchantLocation === 'central_plaza';
+                  const merchantId = isKai
+                    ? 'npc_kai'
+                    : isNadia
+                      ? 'city_plaza_nadia'
+                      : 'npc_hana';
                   const foundNearby = (hud.nearbyRadiusUsers ?? []).find(
                     (u) => String(u.id) === merchantId,
                   );
                   if (foundNearby) return foundNearby;
                   return {
                     id: merchantId,
-                    name: isKai ? 'Kai' : 'Hana',
+                    name: isKai ? 'Kai' : isNadia ? 'Nadia' : 'Hana',
                     distance: 1.5,
-                    team: 'blue',
-                    status: 'Online',
+                    team: isNadia ? 'red' : 'blue',
+                    status: isNadia ? 'Central Plaza Merchant' : 'Online',
                     isSelf: false,
                     isNpc: true,
                     isMerchant: true,
-                    merchantLocation: isKai ? 'beach_house' : 'lobby_cafe',
+                    merchantLocation: isKai
+                      ? 'beach_house'
+                      : isNadia
+                        ? 'central_plaza'
+                        : 'lobby_cafe',
                     gender: isKai ? 'male' : 'female',
                   };
                 }
@@ -13311,11 +13479,9 @@ export default function App() {
                             ? 'In Cafe'
                             : isInsideGrandCasino
                               ? 'Casino'
-                              : isInsideBeautySalon
-                                ? 'Salon'
-                                : isInsidePrivateHouse
-                                  ? 'Home'
-                                  : 'Online'
+                              : isInsidePrivateHouse
+                                ? 'Home'
+                                : 'Online'
                   }
                   statusTone={
                     equippedScooterKind || hud.equippedWeapon === 'Joran Fishing'
@@ -13334,7 +13500,6 @@ export default function App() {
                     !isInsidePrivateHouse &&
                     !isInsideGlasshouseCafe &&
                     !isInsideGrandCasino &&
-                    !isInsideBeautySalon &&
                     activeSpecialModal === 'none' &&
                     !hud.isRidingCityTram &&
                     hud.controlMode !== 'tank'
@@ -13378,7 +13543,9 @@ export default function App() {
                       currentIdx >= 0 ? (currentIdx + 1) % nearbyCycleList.length : 0;
                     const nextUser = nearbyCycleList[nextIdx];
                     if (nextUser) {
+                      setIsPinTargetPopupOpen(false);
                       setSelectedTargetUser(nextUser);
+                      setIsTargetMenuExpanded(true);
                       window.dispatchEvent(
                         new CustomEvent('select-character-by-id', {
                           detail: { id: nextUser.id },
@@ -13387,11 +13554,13 @@ export default function App() {
                     }
                   }}
                   onOpenTargetProfile={(entity) => {
+                    setIsPinTargetPopupOpen(false);
                     setIsTargetMenuExpanded(false);
                     setPairedInteractTarget(null);
                     openSmartphoneApp('profile', { profileTarget: entity });
                   }}
                   onWhisperTarget={(entity) => {
+                    setIsPinTargetPopupOpen(false);
                     closeSmartphone();
                     setIsTargetMenuExpanded(false);
                     setPairedInteractTarget(null);
@@ -13405,6 +13574,7 @@ export default function App() {
                     setIsSocialChatModalOpen(true);
                   }}
                   onTalkMerchantTarget={(entity) => {
+                    setIsPinTargetPopupOpen(false);
                     closeSmartphone();
                     setIsTargetMenuExpanded(false);
                     setIsKioskModalOpen(false);
@@ -13416,7 +13586,9 @@ export default function App() {
                       entity.merchantLocation ??
                       (entity.id === 'npc_beach' || entity.id === 'npc_kai'
                         ? 'beach_house'
-                        : 'lobby_cafe');
+                        : entity.id === 'city_plaza_nadia' || entity.id === 'npc_nadia'
+                          ? 'central_plaza'
+                          : 'lobby_cafe');
                     window.dispatchEvent(
                       new CustomEvent('open-npc-merchant-ui', {
                         detail: { location },
@@ -13424,10 +13596,12 @@ export default function App() {
                     );
                   }}
                   onTalkCitizenTarget={(entity) => {
+                    setIsPinTargetPopupOpen(false);
                     closeSmartphone();
                     openCitizenDialogueForId(String(entity.id), 'sesi_chat');
                   }}
                   onGiftTarget={(entity) => {
+                    setIsPinTargetPopupOpen(false);
                     setIsTargetMenuExpanded(false);
                     setPairedInteractTarget(null);
                     const namedGiftNpc = resolveNpcId(String(entity.id));
@@ -13437,12 +13611,23 @@ export default function App() {
                           resolveNpcId(String(activeCitizenId)) === namedGiftNpc) ||
                         (activeSpecialModal === 'npc_merchant' &&
                           ((merchantLocation === 'beach_house' && namedGiftNpc === 'kai') ||
-                            (merchantLocation !== 'beach_house' && namedGiftNpc === 'hana')));
+                            (merchantLocation === 'central_plaza' && namedGiftNpc === 'nadia') ||
+                            (merchantLocation === 'lobby_cafe' && namedGiftNpc === 'hana')));
                       // WS13: Never give silently outside chat; open chat session first if not open.
                       if (!isChattingWithThisNpc) {
                         closeSmartphone();
-                        if (namedGiftNpc === 'hana' || namedGiftNpc === 'kai') {
-                          setMerchantLocation(namedGiftNpc === 'kai' ? 'beach_house' : 'lobby_cafe');
+                        if (
+                          namedGiftNpc === 'hana' ||
+                          namedGiftNpc === 'kai' ||
+                          namedGiftNpc === 'nadia'
+                        ) {
+                          setMerchantLocation(
+                            namedGiftNpc === 'kai'
+                              ? 'beach_house'
+                              : namedGiftNpc === 'nadia'
+                                ? 'central_plaza'
+                                : 'lobby_cafe',
+                          );
                           setActiveSpecialModal('npc_merchant');
                         } else {
                           openCitizenDialogueForId(npcIdToCitizenId(namedGiftNpc), 'sesi_chat');
@@ -13481,12 +13666,19 @@ export default function App() {
                           resolveNpcId(String(activeCitizenId)) === namedNpc) ||
                         (activeSpecialModal === 'npc_merchant' &&
                           ((merchantLocation === 'beach_house' && namedNpc === 'kai') ||
-                            (merchantLocation !== 'beach_house' && namedNpc === 'hana')));
+                            (merchantLocation === 'central_plaza' && namedNpc === 'nadia') ||
+                            (merchantLocation === 'lobby_cafe' && namedNpc === 'hana')));
                       // WS13: Relational paired pose with named NPCs ONLY runs through the chat session & closeness check.
                       if (!isChattingWithThisNpc) {
                         closeSmartphone();
-                        if (namedNpc === 'hana' || namedNpc === 'kai') {
-                          setMerchantLocation(namedNpc === 'kai' ? 'beach_house' : 'lobby_cafe');
+                        if (namedNpc === 'hana' || namedNpc === 'kai' || namedNpc === 'nadia') {
+                          setMerchantLocation(
+                            namedNpc === 'kai'
+                              ? 'beach_house'
+                              : namedNpc === 'nadia'
+                                ? 'central_plaza'
+                                : 'lobby_cafe',
+                          );
                           setActiveSpecialModal('npc_merchant');
                         } else {
                           openCitizenDialogueForId(npcIdToCitizenId(namedNpc), 'sesi_chat');
@@ -13501,6 +13693,7 @@ export default function App() {
                       );
                       return;
                     }
+                    setIsPinTargetPopupOpen(false);
                     closeSmartphone();
                     setIsQuickPoseModalOpen(false);
                     setSelectedTargetUser(entity);
@@ -13712,6 +13905,19 @@ export default function App() {
           setActiveSpecialModal('none');
           setIsRealEstateCatalogModalOpen(true);
         }}
+        onOpenWestPlazaCatalog={() => {
+          soundEngine.playUiClick();
+          setActiveSpecialModal('none');
+          setWestPlazaInitialDept(null);
+          setDistrictStorefrontMap(loadPersistedStorefrontCatalogMap());
+          setActiveDistrictPlazaCatalog('WEST-PLAZA');
+        }}
+        onOpenSmartphoneWalletExchange={() => {
+          soundEngine.playUiClick();
+          setActiveSpecialModal('none');
+          setPersonalWalletTab('exchange');
+          openSmartphoneApp('wallet');
+        }}
         onOpenTeleportKioskFromPitch={
           hanaPitchOrigin === 'kiosk'
             ? () => {
@@ -13792,7 +13998,7 @@ export default function App() {
               respiteBalance: nextRespite,
             });
             void logMarketTransactionToSupabase({
-              merchant_id: merchantLocation,
+              merchant_id: merchantLocation === 'beach_house' ? 'beach_house' : 'lobby_cafe',
               actor_near_account: resolvedActor,
               action_type: 'buy_item',
               item_id: `family_member_${plan.id}`,
@@ -13870,14 +14076,14 @@ export default function App() {
                 setCyonBalance(res.updatedCyon);
                 setMarketState(res.updatedState);
                 void syncNpcMerchantToSupabase({
-                  merchant_id: merchantLocation,
+                  merchant_id: merchantLocation === 'beach_house' ? 'beach_house' : 'lobby_cafe',
                   cyon_treasury: res.updatedState.treasuryCyon,
                   is_bankrupt: res.updatedState.isShopBroke,
                   last_headline: res.updatedState.lastMarketHeadline,
                 });
                 if (actorAccount) {
                   void logMarketTransactionToSupabase({
-                    merchant_id: merchantLocation,
+                    merchant_id: merchantLocation === 'beach_house' ? 'beach_house' : 'lobby_cafe',
                     actor_near_account: actorAccount,
                     action_type: 'exchange',
                     currency: 'CYON',
@@ -13904,13 +14110,13 @@ export default function App() {
             setMarketState(res.updatedState);
             if (actorAccount) {
               void syncNpcMerchantToSupabase({
-                merchant_id: merchantLocation,
+                merchant_id: merchantLocation === 'beach_house' ? 'beach_house' : 'lobby_cafe',
                 cyon_treasury: res.updatedState.treasuryCyon,
                 is_bankrupt: res.updatedState.isShopBroke,
                 last_headline: res.updatedState.lastMarketHeadline,
               });
               void logMarketTransactionToSupabase({
-                merchant_id: merchantLocation,
+                merchant_id: merchantLocation === 'beach_house' ? 'beach_house' : 'lobby_cafe',
                 actor_near_account: actorAccount,
                 action_type: 'exchange',
                 currency: 'CYON',
@@ -13932,13 +14138,13 @@ export default function App() {
             setMarketState(res.updatedState);
             if (actorAccount) {
               void syncNpcMerchantToSupabase({
-                merchant_id: merchantLocation,
+                merchant_id: merchantLocation === 'beach_house' ? 'beach_house' : 'lobby_cafe',
                 cyon_treasury: res.updatedState.treasuryCyon,
                 is_bankrupt: res.updatedState.isShopBroke,
                 last_headline: res.updatedState.lastMarketHeadline,
               });
               void logMarketTransactionToSupabase({
-                merchant_id: merchantLocation,
+                merchant_id: merchantLocation === 'beach_house' ? 'beach_house' : 'lobby_cafe',
                 actor_near_account: actorAccount,
                 action_type: 'invest_shop',
                 currency: 'LUL',
@@ -14025,14 +14231,14 @@ export default function App() {
             const headline = `You sold back ${item.name} (+${refund} ${item.currency}). Shop stock increased!`;
 
             void syncNpcMerchantToSupabase({
-              merchant_id: merchantLocation,
+              merchant_id: merchantLocation === 'beach_house' ? 'beach_house' : 'lobby_cafe',
               cyon_treasury: nextTreasury,
               stock_by_item: nextStock,
               recent_demand_by_item: nextDemand,
               last_headline: headline,
             });
             void logMarketTransactionToSupabase({
-              merchant_id: merchantLocation,
+              merchant_id: merchantLocation === 'beach_house' ? 'beach_house' : 'lobby_cafe',
               actor_near_account: actorAccount,
               action_type: 'sell_item',
               item_id: item.id,
@@ -14285,6 +14491,20 @@ export default function App() {
         hasOwnedHouse={Boolean(hasHouseOwnership || hud.nearHasGamepassNft)}
         blueTeamOnlineCount={hud.blueOnlinePopulation ?? 1}
         redTeamOnlineCount={hud.redOnlinePopulation ?? 0}
+        publicApartments={publicApartmentsList}
+        onVisitPublicApartment={(apt: PublicApartmentEntry) => {
+          soundEngine.playUiConfirm();
+          setActiveTeleportKioskModal('none');
+          window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+          setIsKioskModalOpen(false);
+          setIsSocialChatModalOpen(false);
+          setIsDailyMissionsModalOpen(false);
+          if (apt.isOwnApartment) {
+            handleEnterOwnHouse(apt.architectureStyle);
+          } else {
+            handleViewModelHouse(apt.architectureStyle);
+          }
+        }}
         onClose={() => {
           soundEngine.playUiClick();
           setActiveTeleportKioskModal('none');
@@ -14421,6 +14641,39 @@ export default function App() {
         renderAppContent={(app) => {
           if (app === 'wallet') return renderPersonalWalletApp(true);
           if (app === 'my_things') return renderMyThingsApp(true);
+          if (app === 'my_apartment') {
+            const ownHasHouse = Boolean(hasHouseOwnership || hud.nearHasGamepassNft);
+            const displaySpec = getHouseStyleDisplaySpec(
+              ownedHouseStyle ?? houseArchitectureStyle,
+            );
+            return (
+              <MyApartmentPhoneApp
+                hasOwnedHouse={ownHasHouse}
+                ownerDisplayName={playerDisplayName || 'Citizen'}
+                architectureTitle={displaySpec.title}
+                architectureImageSrc={displaySpec.imageSrc}
+                deedBadgeLabel={
+                  ownHasHouse
+                    ? onChainDeedLedger?.token_id || hud.nearGamepassTokenId || 'OWNED DEED'
+                    : 'NO DEED'
+                }
+                visitPermission={playerPrivacySettings.apartmentVisits}
+                onChangeVisitPermission={(nextPerm) => {
+                  handleUpdatePlayerPrivacySettings({ apartmentVisits: nextPerm });
+                }}
+                onEnterMyApartment={() => {
+                  closeSmartphone();
+                  handleEnterOwnHouse();
+                }}
+                onOpenApartmentsCatalog={() => {
+                  closeSmartphone();
+                  setWestPlazaInitialDept('apartments');
+                  setDistrictStorefrontMap(loadPersistedStorefrontCatalogMap());
+                  setActiveDistrictPlazaCatalog('WEST-PLAZA');
+                }}
+              />
+            );
+          }
           if (app === 'missions') {
             return (
               <DailyMissionsModal
@@ -14465,12 +14718,10 @@ export default function App() {
                     ? 'Glasshouse Cafe'
                     : isInsideGrandCasino
                       ? 'Grand Casino'
-                      : isInsideBeautySalon
-                        ? 'Glow Studio Salon'
-                        : resolveCityDistrictLabelAtPosition(
-                            hud.playerWorldX ?? -85,
-                            hud.playerWorldZ ?? 0,
-                          );
+                      : resolveCityDistrictLabelAtPosition(
+                          hud.playerWorldX ?? -85,
+                          hud.playerWorldZ ?? 0,
+                        );
             return (
               <CityFeedModal
                 embeddedInPhone
@@ -14613,12 +14864,10 @@ export default function App() {
               ? 'Glasshouse Cafe'
               : isInsideGrandCasino
                 ? 'Grand Casino'
-                : isInsideBeautySalon
-                  ? 'Glow Studio Salon'
-                  : resolveCityDistrictLabelAtPosition(
-                      hud.playerWorldX ?? -85,
-                      hud.playerWorldZ ?? 0,
-                    )
+                : resolveCityDistrictLabelAtPosition(
+                    hud.playerWorldX ?? -85,
+                    hud.playerWorldZ ?? 0,
+                  )
         }
         playerDisplayName={playerDisplayName || 'Buddy'}
         characterGender={characterGender}
@@ -14676,6 +14925,7 @@ export default function App() {
           isQuickPoseModalOpen ||
           isSelfieCameraOpen ||
           Boolean(pairedInteractTarget) ||
+          Boolean(activeDistrictPlazaCatalog) ||
           activeSpecialModal !== 'none' ||
           activeTeleportKioskModal !== 'none'
         }
@@ -14916,6 +15166,7 @@ export default function App() {
           isDexModalOpen ||
           isGrandCasinoModalOpen ||
           isCitizenDialogueOpen ||
+          Boolean(activeDistrictPlazaCatalog) ||
           activeSpecialModal !== 'none' ||
           activeTeleportKioskModal !== 'none' ||
           activeCafeModal !== 'none' ||
@@ -15031,30 +15282,6 @@ export default function App() {
           </div>
         ) : undefined;
 
-        const salonEntryHeaderStrip = (
-          <div className="rounded-full px-3 py-1 bg-[#141926]/82 backdrop-blur-xl border border-white/25 shadow-lg text-white flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wider">
-            <span className="text-pink-300 truncate">Glow Studio Salon</span>
-            <span className="px-2 py-0.5 rounded-full bg-pink-400/20 text-pink-200 border border-pink-300/30 font-mono-tabular">
-              Beauty
-            </span>
-          </div>
-        );
-
-        const salonEntryMenuItems: PinAnchoredMenuItem[] = [
-          {
-            id: 'enter_salon',
-            label: 'Enter Salon',
-            icon: <LogIn className="w-3.5 h-3.5" aria-hidden="true" />,
-            iconWrapClassName: 'bg-pink-100 text-pink-700',
-            pillAccentClassName: 'border-pink-300/90 text-pink-950',
-            dataAttr: { 'data-salon-entry-enter-btn': 'true' },
-            onSelect: () => {
-              setIsSalonEntryMenuExpanded(false);
-              window.dispatchEvent(new CustomEvent('buddy-action', { detail: 'enterBeautySalon' }));
-            },
-          },
-        ];
-
         const targetPopupItems: PinAnchoredMenuItem[] = (() => {
           if (!dockEntity) return [];
           const cleanEntityName = dockEntity.name
@@ -15065,7 +15292,9 @@ export default function App() {
               dockEntity.id === 'npc_hana' ||
               dockEntity.id === 'npc_cafe' ||
               dockEntity.id === 'npc_kai' ||
-              dockEntity.id === 'npc_beach',
+              dockEntity.id === 'npc_beach' ||
+              dockEntity.id === 'city_plaza_nadia' ||
+              dockEntity.id === 'npc_nadia',
           );
           const isCitizenNpcEntity = Boolean(dockEntity.isNpc && !isMerchantEntity);
           const isWhisperablePlayer = Boolean(
@@ -15110,7 +15339,9 @@ export default function App() {
                   dockEntity.merchantLocation ??
                   (dockEntity.id === 'npc_beach' || dockEntity.id === 'npc_kai'
                     ? 'beach_house'
-                    : 'lobby_cafe');
+                    : dockEntity.id === 'city_plaza_nadia' || dockEntity.id === 'npc_nadia'
+                      ? 'central_plaza'
+                      : 'lobby_cafe');
                 window.dispatchEvent(
                   new CustomEvent('open-npc-merchant-ui', {
                     detail: { location },
@@ -15118,6 +15349,63 @@ export default function App() {
                 );
               },
             });
+            if (
+              dockEntity.id === 'npc_hana' ||
+              dockEntity.id === 'npc_cafe' ||
+              dockEntity.merchantLocation === 'lobby_cafe'
+            ) {
+              items.push({
+                id: 'open_west_plaza_catalog',
+                label: 'Open West Plaza Catalog',
+                icon: <ShoppingBag className="w-3.5 h-3.5" aria-hidden="true" />,
+                iconWrapClassName: 'bg-rose-100 text-rose-700',
+                pillAccentClassName: 'border-rose-300/90 text-rose-950',
+                dataAttr: { 'data-nearby-hana-west-plaza-catalog-btn': 'true' },
+                onSelect: () => {
+                  soundEngine.playUiClick();
+                  setIsPinTargetPopupOpen(false);
+                  closeSmartphone();
+                  setIsTargetMenuExpanded(false);
+                  setIsKioskModalOpen(false);
+                  setIsSocialChatModalOpen(false);
+                  setIsPersonalWalletModalOpen(false);
+                  setActiveSpecialModal('none');
+                  setActiveTeleportKioskModal('none');
+                  window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                  setWestPlazaInitialDept(null);
+                  setDistrictStorefrontMap(loadPersistedStorefrontCatalogMap());
+                  setActiveDistrictPlazaCatalog('WEST-PLAZA');
+                },
+              });
+            } else if (
+              dockEntity.id === 'city_plaza_nadia' ||
+              dockEntity.id === 'npc_nadia' ||
+              dockEntity.merchantLocation === 'central_plaza'
+            ) {
+              items.push({
+                id: 'open_central_plaza_catalog',
+                label: 'Open Central Plaza Catalog',
+                icon: <ShoppingBag className="w-3.5 h-3.5" aria-hidden="true" />,
+                iconWrapClassName: 'bg-amber-100 text-amber-800',
+                pillAccentClassName: 'border-amber-300/90 text-amber-950',
+                dataAttr: { 'data-nearby-nadia-central-plaza-catalog-btn': 'true' },
+                onSelect: () => {
+                  soundEngine.playUiClick();
+                  setIsPinTargetPopupOpen(false);
+                  closeSmartphone();
+                  setIsTargetMenuExpanded(false);
+                  setIsKioskModalOpen(false);
+                  setIsSocialChatModalOpen(false);
+                  setIsPersonalWalletModalOpen(false);
+                  setIsCitizenDialogueOpen(false);
+                  setActiveSpecialModal('none');
+                  setActiveTeleportKioskModal('none');
+                  window.dispatchEvent(new CustomEvent('close-teleport-kiosk-ui'));
+                  setDistrictStorefrontMap(loadPersistedStorefrontCatalogMap());
+                  setActiveDistrictPlazaCatalog('CENTRAL-PLAZA');
+                },
+              });
+            }
           } else if (isCitizenNpcEntity) {
             items.push({
               id: 'talk_citizen',
@@ -15275,14 +15563,6 @@ export default function App() {
               items={targetPopupItems}
               onClose={() => setIsPinTargetPopupOpen(false)}
             />
-            <PinAnchoredInteractionMenu
-              isOpen={!isDockBlockedByModal && isSalonEntryMenuExpanded}
-              anchorPinId="door_salon"
-              menuDataAttrs={{ 'data-salon-entry-menu': 'true' }}
-              headerStrip={salonEntryHeaderStrip}
-              items={salonEntryMenuItems}
-              onClose={() => setIsSalonEntryMenuExpanded(false)}
-            />
             <CafeWorkShiftBottomDock
             isVisible={effectiveDockMode !== 'none'}
             actionMode={effectiveDockMode}
@@ -15340,7 +15620,9 @@ export default function App() {
                 entity.merchantLocation ??
                 (entity.id === 'npc_beach' || entity.id === 'npc_kai'
                   ? 'beach_house'
-                  : 'lobby_cafe');
+                  : entity.id === 'city_plaza_nadia' || entity.id === 'npc_nadia'
+                    ? 'central_plaza'
+                    : 'lobby_cafe');
               window.dispatchEvent(
                 new CustomEvent('open-npc-merchant-ui', {
                   detail: { location },
@@ -15716,12 +15998,71 @@ export default function App() {
         lotId={selectedRentalLotId}
         store={lotRentalStore}
         accountId={(hud.nearWalletId || playerUid || '').trim()}
-        onClose={() => setIsLotRentalModalOpen(false)}
+        ownedMerchantItemIds={effectiveOwnedMerchantItemIds}
+        respiteBalance={respiteBalance}
+        previewBuildingFormId={
+          selectedRentalLotId ? previewBuildingFormByLotId[selectedRentalLotId] ?? null : null
+        }
+        onPreviewBuildingForm={(formId) => {
+          if (!selectedRentalLotId) return;
+          setPreviewBuildingFormByLotId((prev) => ({
+            ...prev,
+            [selectedRentalLotId]: formId,
+          }));
+        }}
+        onOpenShopCatalog={() => {
+          if (selectedRentalLotId) {
+            setPreviewBuildingFormByLotId((prev) => ({ ...prev, [selectedRentalLotId]: null }));
+          }
+          setIsLotRentalModalOpen(false);
+          setRealEstateCatalogTab('shops');
+          setIsRealEstateCatalogModalOpen(true);
+        }}
+        onClose={() => {
+          if (selectedRentalLotId) {
+            setPreviewBuildingFormByLotId((prev) => ({ ...prev, [selectedRentalLotId]: null }));
+          }
+          setIsLotRentalModalOpen(false);
+        }}
         onRent={handleRentLotSimulated}
         onExtend={handleExtendLotSimulated}
         onEnd={handleEndLotSimulated}
         onPlaceBuilding={handlePlaceLotBuildingSimulated}
         onRemoveBuilding={handleRemoveLotBuildingSimulated}
+        onUpdateBillboardLogo={(logoUrl) => {
+          if (!selectedRentalLotId) return;
+          setLotRentalStore((prev) => {
+            const rec = prev.rentalsByLotId[selectedRentalLotId];
+            if (!rec) return prev;
+            return {
+              ...prev,
+              rentalsByLotId: {
+                ...prev.rentalsByLotId,
+                [selectedRentalLotId]: {
+                  ...rec,
+                  billboardLogoUrl: logoUrl,
+                },
+              },
+            };
+          });
+        }}
+        onSettleAtomicPurchase={({
+          grossRespite,
+          cityFeeRespite,
+          isSelfOwnerPurchase,
+          purchasedInventoryItemIds,
+        }) => {
+          setRespiteBalance((prev) => {
+            const base = prev > 0 ? prev : 1250;
+            const delta = isSelfOwnerPurchase ? cityFeeRespite : grossRespite;
+            return Math.max(0, base - delta);
+          });
+          if (purchasedInventoryItemIds.length > 0) {
+            setOwnedMerchantItemIds((prev) =>
+              Array.from(new Set([...prev, ...purchasedInventoryItemIds])),
+            );
+          }
+        }}
         placedBuildingOwned={(() => {
           const rec = selectedRentalLotId
             ? lotRentalStore.rentalsByLotId[selectedRentalLotId]
@@ -15732,6 +16073,157 @@ export default function App() {
           return spec ? effectiveOwnedMerchantItemIds.includes(spec.catalogItemId) : false;
         })()}
       />
+      {activeDistrictPlazaCatalog && hud.worldMode !== 'warzone' && (() => {
+        const plazaId = activeDistrictPlazaCatalog;
+        const formId: ShopBuildingFormId = 'brick_rooftop_deck';
+        const ownerAccount =
+          plazaId === 'WEST-PLAZA' ? 'hana.westplaza.cerria' : 'nadia.centralplaza.cerria';
+        const config = resolveLotStorefrontConfig(
+          districtStorefrontMap,
+          plazaId,
+          formId,
+        );
+        const persistDistrictConfig = (nextConfig: LotStorefrontConfig) => {
+          setDistrictStorefrontMap((prev) => {
+            const updated = {
+              ...prev,
+              [plazaId]: nextConfig,
+            };
+            savePersistedStorefrontCatalogMap(updated);
+            return updated;
+          });
+        };
+        const districtStudioActions = undefined;
+        return (
+          <ShopStorefrontTabletModal
+            lotId={plazaId}
+            buildingFormId={formId}
+            config={config}
+            isOwner={false}
+            ownerAccountId={ownerAccount}
+            visitorAccountId={(hud.nearWalletId || playerUid || 'guest').trim()}
+            respiteBalance={respiteBalance > 0 ? respiteBalance : 1250}
+            ownedMerchantItemIds={effectiveOwnedMerchantItemIds}
+            billboardLogoUrl={null}
+            leaseExpiresText="Permanent District Flagship"
+            isGracePeriod={false}
+            termDays={365}
+            initialWestPlazaDepartment={
+              plazaId === 'WEST-PLAZA' ? westPlazaInitialDept : undefined
+            }
+            districtStudioActions={districtStudioActions}
+            onClose={() => setActiveDistrictPlazaCatalog(null)}
+            onUpdateConfig={persistDistrictConfig}
+            onUpdateBillboardLogo={() => {}}
+            onExtendLease={() => {}}
+            onEndLease={() => {}}
+            onRemoveBuilding={() => {}}
+            onAtomicPurchase={(purchase) => {
+              const qtyByItemId: Record<string, number> = {};
+              const purchasedInventoryItemIds: string[] = [];
+              const purchasedGiftBagUnits: string[] = [];
+              let unitsBought = 0;
+
+              for (const line of purchase.items) {
+                qtyByItemId[line.item.id] = (qtyByItemId[line.item.id] || 0) + line.quantity;
+                unitsBought += line.quantity;
+                if (line.item.linkedInventoryItemId) {
+                  purchasedInventoryItemIds.push(line.item.linkedInventoryItemId);
+                  const giftEntry = getGiftCatalogItem(line.item.linkedInventoryItemId);
+                  if (giftEntry && isGiftPickerEligibleItem(giftEntry)) {
+                    for (let q = 0; q < line.quantity; q += 1) {
+                      purchasedGiftBagUnits.push(line.item.linkedInventoryItemId);
+                    }
+                  }
+                }
+              }
+
+              const updatedItems = config.items.map((it) => {
+                const bought = qtyByItemId[it.id] || 0;
+                if (!bought) return it;
+                return {
+                  ...it,
+                  escrowStockCount: Math.max(0, it.escrowStockCount - bought),
+                };
+              });
+
+              persistDistrictConfig({
+                ...config,
+                items: updatedItems,
+                totalSettledOwnerRespite:
+                  config.totalSettledOwnerRespite + purchase.ownerSettledRespite,
+                totalCityFeeRespite:
+                  config.totalCityFeeRespite + purchase.cityFeeRespite,
+                totalUnitsSold: config.totalUnitsSold + unitsBought,
+              });
+
+              setRespiteBalance((prev) => {
+                const base = prev > 0 ? prev : 1250;
+                return Math.max(0, base - purchase.grossRespite);
+              });
+              if (purchasedGiftBagUnits.length > 0) {
+                setOwnedGiftBagItemIds((prev) => {
+                  const next = [...prev, ...purchasedGiftBagUnits];
+                  try {
+                    window.localStorage.setItem(
+                      `bb_owned_gift_bag_v1:${dailyMissionsAccountKey}`,
+                      JSON.stringify(next),
+                    );
+                  } catch {
+                    // ignore storage errors
+                  }
+                  return next;
+                });
+              }
+              if (purchasedInventoryItemIds.length > 0) {
+                setOwnedMerchantItemIds((prev) =>
+                  Array.from(new Set([...prev, ...purchasedInventoryItemIds])),
+                );
+                if (purchasedInventoryItemIds.includes('private_house_deed')) {
+                  setHasHouseOwnership(true);
+                }
+                const purchasedScooters = purchasedInventoryItemIds.filter(
+                  (id) => id === 'scooter_electric_bike' || id === 'scooter_push_kick',
+                );
+                if (purchasedScooters.length > 0) {
+                  setOwnedScooterIds((prev) => {
+                    const next = Array.from(new Set([...prev, ...purchasedScooters]));
+                    try {
+                      window.localStorage.setItem(
+                        `bb_owned_scooters_v1:${dailyMissionsAccountKey}`,
+                        JSON.stringify(next),
+                      );
+                    } catch {
+                      // ignore storage failures
+                    }
+                    return next;
+                  });
+                }
+                const purchasedWardrobeItems = purchasedInventoryItemIds.filter(
+                  (id) =>
+                    id.startsWith('apparel_') ||
+                    id.startsWith('bl_set_') ||
+                    Boolean(getWardrobeCatalogItemById(id)),
+                );
+                if (purchasedWardrobeItems.length > 0) {
+                  setOwnedApparelIds((prev) => {
+                    const next = Array.from(new Set([...prev, ...purchasedWardrobeItems]));
+                    try {
+                      window.localStorage.setItem(
+                        getOwnedApparelStorageKey(dailyMissionsAccountKey),
+                        JSON.stringify(next),
+                      );
+                    } catch {
+                      // ignore storage errors
+                    }
+                    return next;
+                  });
+                }
+              }
+            }}
+          />
+        );
+      })()}
       <DexMarketplaceModal
         isOpen={isDexModalOpen && hud.worldMode !== 'warzone'}
         onClose={() => setIsDexModalOpen(false)}
@@ -15940,12 +16432,10 @@ export default function App() {
             ? 'Glasshouse Cafe'
             : isInsideGrandCasino
               ? 'Grand Casino'
-              : isInsideBeautySalon
-                ? 'Glow Studio Salon'
-                : resolveCityDistrictLabelAtPosition(
-                    hud.playerWorldX ?? -85,
-                    hud.playerWorldZ ?? 0,
-                  )
+              : resolveCityDistrictLabelAtPosition(
+                  hud.playerWorldX ?? -85,
+                  hud.playerWorldZ ?? 0,
+                )
         }
         weatherLabel={weatherCondition === 'hujan' ? 'rainy' : 'clear'}
         daytimePhase={

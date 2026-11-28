@@ -30,7 +30,7 @@ export const MY_THINGS_SECTIONS: readonly MyThingsSectionTab[] = [
   { id: 'collectibles', label: 'Collectibles' },
 ] as const;
 
-export const WALLET_TABS = ['wallet', 'history'] as const;
+export const WALLET_TABS = ['wallet', 'exchange', 'history'] as const;
 export type PersonalWalletTabId = (typeof WALLET_TABS)[number];
 
 const CLOTHING_WARDROBE_SLOTS = new Set<WardrobeCatalogItem['slot']>([

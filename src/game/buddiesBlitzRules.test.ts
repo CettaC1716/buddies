@@ -5400,12 +5400,13 @@ test('City Transit Kiosks, Rail-Aligned Halte Shelter Rules, and 3D Tram Ride Cu
   const {
     CITY_TRANSIT_DESTINATIONS,
     getCityTransitDestinationById,
+    getTravelDistrictDestinations,
     evaluateNearestCityTransitKioskProximity,
     evaluateTramRideTransitionStep,
   } = await import('./buddiesBlitzRules');
 
-  // 1. Halte Shelters along the active tram rail loop (Central Plaza, Beachfront Harbor, North Residence, South Residence);
-  //    standalone Black Kiosks ONLY (no shelter roof) at NW Fishing Lake and Warzone Arena
+  // 1. Halte Shelters along the active tram rail loop (West Plaza, Beachfront Harbor, North Residence, South Residence);
+  //    standalone Black Kiosks ONLY (no shelter roof) at Central Plaza, Kai Fish Market, NW Fishing Lake, and Warzone Arena
   const withShelter = CITY_TRANSIT_DESTINATIONS.filter((d) => d.hasHalteShelter).map((d) => d.id);
   const withoutShelter = CITY_TRANSIT_DESTINATIONS.filter((d) => !d.hasHalteShelter).map(
     (d) => d.id,
@@ -5423,11 +5424,25 @@ test('City Transit Kiosks, Rail-Aligned Halte Shelter Rules, and 3D Tram Ride Cu
     'warzone_arena',
   ]);
 
+  const westPlazaSpec = getCityTransitDestinationById('central_plaza');
+  assert.equal(westPlazaSpec.name, 'West Plaza');
+  assert.equal(westPlazaSpec.title, 'WEST PLAZA');
+
   const centralParkSpec = getCityTransitDestinationById('central_park');
-  assert.equal(centralParkSpec.name, 'Central Park');
-  assert.equal(centralParkSpec.title, 'CENTRAL PARK');
+  assert.equal(centralParkSpec.name, 'Central Plaza');
+  assert.equal(centralParkSpec.title, 'CENTRAL PLAZA');
   assert.equal(centralParkSpec.category, 'district');
   assert.equal(centralParkSpec.hasHalteShelter, false);
+
+  const visibleTravelIds = getTravelDistrictDestinations().map((d) => d.id);
+  assert.deepEqual(visibleTravelIds, [
+    'central_plaza',
+    'central_park',
+    'beachfront_harbor',
+    'kai_fish_market',
+    'north_residence',
+    'south_residence',
+  ]);
 
   const beachSpec = getCityTransitDestinationById('beachfront_harbor');
   assert.equal(beachSpec.shelterX, 61.03);
